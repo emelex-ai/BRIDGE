@@ -110,6 +110,38 @@ for _ in range(exp_count):
             opt.step()
             opt.zero_grad()
 
+
+
+            #NEW NEW NEW NEW NEW NEW NEW NEW NEW
+
+            # Accuracy function for orthography.
+            # Take argmax of orthographic logits for accuracy comparison:
+            A_orth = pt.argmax(logits['orth'], dim=1)
+            # Keep orthographic encoder input ids unchanged:
+            B_orth = orthography['enc_input_ids'][:,1:]
+            # Compute orthographic accuracy:
+            orth_accuracy = pt.tensor(pt.where((A_orth == B_orth).all(dim=1))[0].size())/pt.tensor(A_orth.size())[0]
+
+            # Accuracy function for phonology.
+            # Compute dimensions for phonological logit and target reshaping:
+            oldshape = logits['phon'].size()
+            newshape_0 = oldshape[0] * oldshape[2]
+            newshape_1 = oldshape[3]
+            # Take argmax of phonological logits for accuracy comparison, reshaping to get a square tensor:
+            A_phon = pt.argmax(logits['phon'], dim=1)
+            A_phon = pt.reshape(A_phon, [newshape_0, newshape_1])
+            print('\nA_phon shape:', A_phon.size())
+            # Reshape phonological targets:
+            B_phon = phonology['targets']
+            B_phon = pt.reshape(B_phon, [newshape_0, newshape_1])
+            print('B_phon shape:', B_phon.size(),'\n')
+            # Compute phonoloigcal accuracy:
+            phon_accuracy = pt.tensor(pt.where((A_phon == B_phon).all(dim=1))[0].size())/pt.tensor(A_phon.size())[0]
+
+            #END END END END END END END END END
+
+
+
             # Now we generate orthographic tokens and phonological vectors for the input 'elephant'
             if 1:
               orth = ds.character_tokenizer.encode(['elephant'])
@@ -132,7 +164,9 @@ for _ in range(exp_count):
                        "train/global_embedding_magnitude": pt.norm(model.global_embedding[0], p=2),
                        "train/model_weights_magnitude": pt.sqrt(sum([pt.norm(w[0],p=2)**2 for w in model.parameters()])),
                        #"train/lr": opt.state_dict()['param_groups'][0]['lr'],
-                       "train/generated_text_table": generated_text_table
+                       "train/generated_text_table": generated_text_table,
+                       "orthographic accuracy": orth_accuracy,
+                       "phonological accuracy": phon_accuracy
                       }
             run.log(metrics)
 
