@@ -467,3 +467,26 @@ def reconstruct(x, y, repdict=None, join=True, remove_=False, axis=0):
         for e in r:
             return([''.join(e) for e in r] == y)
 
+
+def hot_nodes(x):
+    """Determine which nodes are hot in a binary representation.
+
+    Parameters
+    ----------
+    x : list or array
+        A vector-type object containing binary values from which
+        to determine the hot nodes (which elements are st to 1).
+
+    Returns
+    -------
+    list
+        A list of integers showing the hod nodes of x.
+
+    """
+    hot_nodes = []
+    for i, bit in enumerate(x):
+        if bit == 1:
+            hot_nodes.append(i)
+    return hot_nodes
+
+

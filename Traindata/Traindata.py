@@ -6,7 +6,7 @@ import nltk
 from copy import deepcopy as cp
 import string
 
-from .utilities import phontable, phonemedict, represent, n_syllables, reconstruct
+from utilities import phontable, phonemedict, represent, n_syllables, reconstruct, hot_nodes, key
 
 
 
@@ -237,13 +237,13 @@ class Traindata():
         pool = [word for word in pool if word not in notin_cmu]
         for word in notin_cmu:
             excluded[word] = "missing from cmudict"
-            #print(word, 'removed from pool because it is missing in cmudict')
+            print(word, 'removed from pool because it is missing in cmudict')
 
         if not oneletter:
             for word in pool:
                 if len(word) == 1:
                     pool.remove(word)
-                    #print(word, 'removed from pool because it has one letter')
+                    print(word, 'removed from pool because it has one letter')
                     excluded[word] = "one letter word"
 
         if maxorth is not None:
@@ -251,14 +251,14 @@ class Traindata():
             pool = [word for word in pool if word not in toomanyletters]
             for word in toomanyletters:
                 excluded[word] = "too many letters"
-                #print(word, 'removed from pool because it has too many letters')
+                print(word, 'removed from pool because it has too many letters')
 
         if maxphon is not None:
             toomanyphones = [word for word in pool if len(cmudict[word]) > maxphon]
             pool = [word for word in pool if word not in toomanyphones]
             for word in toomanyphones:
                 excluded[word] = "too many phonemes"
-                #print(word, 'removed from pool because it has too many phonemes')
+                print(word, 'removed from pool because it has too many phonemes')
 
 
         if minorth is not None:
@@ -266,21 +266,21 @@ class Traindata():
             pool = [word for word in pool if word not in toofewletters]
             for word in toofewletters:
                 excluded[word] = "too few letters"
-                #print(word, 'removed from pool because it has too few letters')
+                print(word, 'removed from pool because it has too few letters')
 
         if minphon is not None:
             toofewphones = [word for word in pool if len(cmudict[word]) < minphon]
             pool = [word for word in pool if word not in toofewphones]
             for word in toofewphones:
                 excluded[word] = "too few phonemes"
-                #print(word, 'removed from pool because it has too few phonemes')
+                print(word, 'removed from pool because it has too few phonemes')
 
         if maxsyll is not None:
             toomanysyllables = [word for word in pool if n_syllables(cmudict[word]) > maxsyll]
             pool = [word for word in pool if word not in toomanysyllables]
             for word in toomanysyllables:
                 excluded[word] = "too many syllables"
-                #print(word, 'removed from pool because it has too many syllables')
+                print(word, 'removed from pool because it has too many syllables')
 
         if not punctuation:
             punct = string.punctuation
@@ -288,14 +288,14 @@ class Traindata():
             pool = [word for word in pool if word not in has_punct]
             for word in has_punct:
                 excluded[word] = "puctuation present"
-                #print(word, 'removed because punctuation is present')
+                print(word, 'removed because punctuation is present')
 
         if not numerals:
             has_numerals = [word for word in pool if any(ch.isdigit() for ch in word)]
             pool = [word for word in pool if word not in has_numerals]
             for word in has_numerals:
                 excluded[word] = 'contains numerals'
-                #print(word, 'removed because it contains numerals')
+                print(word, 'removed because it contains numerals')
 
         if tolower:
             pool = [word.lower() for word in pool]
@@ -311,7 +311,10 @@ class Traindata():
         self.phonpath = phonpath
         self.phontable = phontable(phonpath)
         self.phonreps = phonemedict(phonpath, terminals=terminals)
-        
+        self.phonreps_hot_nodes = {phoneme : hot_nodes(rep) for phoneme, rep in self.phonreps.items()}
+
+
+
         if onehot:
             orthpath = 'raw/orthreps_onehot.json'
         elif not onehot:
@@ -321,6 +324,7 @@ class Traindata():
             orthreps = json.load(f)
         
         self.orthreps = orthreps
+        self.orthreps_hot_nodes = {letter : hot_nodes(rep) for letter, rep in self.orthreps.items()}
         self.outliers = outliers
         self.excluded = excluded
 
@@ -478,6 +482,50 @@ class Traindata():
 
         print('Representations initialized. Done.')
 
+    def convert_numeric_prediction(self, prediction, phonology=True, hot_nodes=True):
+
+        """Convert a numeric prediction of orthographic or phonological output to a human-readable format.
+        
+        Parameters
+        ----------
+        prediction : list or array
+            A numeric prediction from a model that has learned from this traindata. This
+            prediction is specified as a list or array, whose elements are lists or arrays.
+            Each element corresponds to a phoneme (if phonology=True) or letter (if False).
+
+        phonology : bool
+            Is the prediction a phonological one (True) or orthographic one (False). This
+            argument specifies which phonreps to reference internal to Traindata. If
+            phonology is set to True, the phonreps of Traindata are referenced, and if False
+            the orthreps of Traindata are referenced (see hot_nodes parameter for more on this).
+
+        hot_nodes : bool
+            Is the prediction provided with specifications of the hot nodes over feature
+            representations (hot_nodes=True) or with the true distributed (binary) feature
+            representations (hot_nodes=False). If hot_nodes is set to True, the representations
+            (attributes) in Traindata are specified with the _hot_nodes suffix
+            (i.e., phonreps_hot_nodes or orthreps_hot_nodes). If hot_nodes is set to False
+            then the phonreps (if phonology=True) or orthreps (if phonology=False) are referenced.
+            Defaults to True for readability of predictions.
+
+        Returns
+        -------
+        list or str
+            A human-readable version of the prediction is provided. If phonological, the return
+            object is a list. If orthographic, the return object is a string.
+
+        """
+
+        if phonology:
+            if hot_nodes:
+                return [key(self.phonreps_hot_nodes, rep) for rep in prediction]
+            elif not hot_nodes:
+                return [key(self.phonreps, rep) for rep in prediction]
+        elif not phonology:
+            if hot_nodes:
+                return ''.join([key(self.orthreps_hot_nodes, rep) for rep in prediction])
+            elif not hot_nodes:
+                return ''.join([key(self.orthreps, rep) for rep in prediction])
 
 if __name__ == "__main__":
     
