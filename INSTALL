@@ -1,0 +1,7 @@
+# Requirements file: requirements.txt or a poetry setup.
+
+
+# To run the program: 
+python train.py
+
+

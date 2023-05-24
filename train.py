@@ -6,6 +6,8 @@ import tqdm
 import sys
 import math
 import glob
+
+# I have to first type this line from the command line and enter the API key
 wandb.login()
 
 MODEL_PATH = './models'
@@ -40,8 +42,15 @@ for batch in range(math.ceil((len(ds)-cutpoint)/batch_size)):
 
 # Get latest model run information
 model_runs = glob.glob(MODEL_PATH+'/*')
+print("model_runs: ", model_runs)
 if model_runs:
+    #GE comments
+    # Whatever numbering you are using for model_runs, you should use integers with leading zeros, or else sorted will not work correctly.
+    # Sorting on letters is dangerous since different people might have different sorting conventions
   latest_run = sorted(model_runs)[-1].split('/')[-1]
+  print("latest_run: ", latest_run)  # model_checkpoint35.pth
+  
+  print("split: ", latest_run.split("_"))
   model_id, epoch_num = int(latest_run.split("_")[0][5:]), int(latest_run.split("_")[-1].split('.')[0][10:])
   if not CONTINUE:
     model_id += 1
@@ -66,8 +75,10 @@ for _ in range(exp_count):
       opt = pt.optim.AdamW(model.parameters(), learning_rate)
 
     # 🐝 initialise a wandb run
+    # I created a new project
     run = wandb.init(
-              project="ConnTextUL_WandB",
+              entity="emelex",   # Necessary because I am in multiple teams
+              project="GE_ConnTextUL_WandB",
               config={
                   "starting_epoch": epoch_num,
                   "epochs": num_epochs,

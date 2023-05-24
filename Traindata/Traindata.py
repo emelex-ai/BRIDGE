@@ -6,7 +6,7 @@ import nltk
 from copy import deepcopy as cp
 import string
 
-from utilities import phontable, phonemedict, represent, n_syllables, reconstruct, hot_nodes, key
+from .utilities import phontable, phonemedict, represent, n_syllables, reconstruct, hot_nodes, key
 
 
 
