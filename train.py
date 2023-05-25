@@ -18,7 +18,7 @@ if pt.cuda.is_available():
 else:
    device = pt.device('cpu')
 
-device = 'cpu'
+#device = 'cpu'
 print("device = ", device)
 
 exp_count = 1
@@ -41,7 +41,7 @@ for batch in range(math.ceil((len(ds)-cutpoint)/batch_size)):
   val_dataset_slices.append(slice(cutpoint+batch*batch_size, min(cutpoint+(batch+1)*batch_size, len(ds))))
 
 # Get latest model run information
-model_runs = glob.glob(MODEL_PATH+'/*')
+model_runs = glob.glob(MODEL_PATH+'/model[0-9]*')  # GE added model[0-9]
 print("model_runs: ", model_runs)
 if model_runs:
     #GE comments
@@ -96,7 +96,14 @@ for _ in range(exp_count):
 
     pbar = tqdm.tqdm(range(epoch_num, epoch_num+num_epochs), position=0)
 
-    run.watch(model, log='all')
+    step = 0
+    for step, batch_slice in enumerate(train_dataset_slices):
+      step += 1
+    print("number steps of epoch: ", step)  # 2223
+    assert "1 == 0", "stop"
+
+    # Does not seem to slow down the code
+    run.watch(model, log='all', log_freq=100)   # Comment out by GE
 
     model.to(device)
 
@@ -105,6 +112,7 @@ for _ in range(exp_count):
     for epoch in pbar:
         model.train()
         print("\nTraining Loop...")
+        step = 0 # GE: added
         for step, batch_slice in enumerate(train_dataset_slices):
             batch = ds[batch_slice]
             orthography, phonology = batch['orthography'].to(device), batch['phonology'].to(device)
@@ -141,11 +149,11 @@ for _ in range(exp_count):
             # Take argmax of phonological logits for accuracy comparison, reshaping to get a square tensor:
             A_phon = pt.argmax(logits['phon'], dim=1)
             A_phon = pt.reshape(A_phon, [newshape_0, newshape_1])
-            print('\nA_phon shape:', A_phon.size())
+            print(f'\n{epoch}/{step}: A_phon shape:', A_phon.size())  # GE: changed
             # Reshape phonological targets:
             B_phon = phonology['targets']
             B_phon = pt.reshape(B_phon, [newshape_0, newshape_1])
-            print('B_phon shape:', B_phon.size(),'\n')
+            print(f'{epoch}/{step}: B_phon shape:', B_phon.size(),'\n')  # GE: changed
             # Compute phonoloigcal accuracy:
             phon_accuracy = pt.tensor(pt.where((A_phon == B_phon).all(dim=1))[0].size())/pt.tensor(A_phon.size())[0]
 
@@ -179,9 +187,10 @@ for _ in range(exp_count):
                        "orthographic accuracy": orth_accuracy,
                        "phonological accuracy": phon_accuracy
                       }
-            run.log(metrics)
 
-        model.eval()
+        run.log(metrics)
+
+        model.eval()   # GE: eval once per epoch
         with pt.no_grad():
           print("\nValidation Loop...")
           for step, batch_slice in enumerate(val_dataset_slices):

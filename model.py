@@ -3,7 +3,8 @@ import torch as pt
 class Encoder(pt.nn.Module):
     def __init__(self, d_model=512, nhead=1, num_layers=1):
         super(Encoder, self).__init__()
-        encoder_layer = pt.nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, batch_first=True)
+        # GE: added dim_feedforward
+        encoder_layer = pt.nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, batch_first=True, dim_feedforward=4*d_model)
         self.transformer_encoder = pt.nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
     def forward(self, src, src_mask=None, src_key_padding_mask=None):
@@ -13,7 +14,8 @@ class Encoder(pt.nn.Module):
 class Decoder(pt.nn.Module):
     def __init__(self, d_model=512, nhead=1, num_layers=1):
         super().__init__()
-        decoder_layer = pt.nn.TransformerDecoderLayer(d_model=d_model, nhead=nhead, batch_first=True)
+        # GE: added dim_feedforward
+        decoder_layer = pt.nn.TransformerDecoderLayer(d_model=d_model, nhead=nhead, batch_first=True, dim_feedforward=4*d_model)
         self.transformer_decoder = pt.nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
 
     def forward(self, tgt, memory, tgt_mask=None, memory_mask=None, tgt_key_padding_mask=None, memory_key_padding_mask=None):
