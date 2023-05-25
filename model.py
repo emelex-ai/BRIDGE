@@ -3,7 +3,11 @@ import torch as pt
 class Encoder(pt.nn.Module):
     def __init__(self, d_model=512, nhead=1, num_layers=1):
         super(Encoder, self).__init__()
+        # Single layer with multi-head attention
         encoder_layer = pt.nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, batch_first=True)
+        # Multiple layers with multi-head attention
+        # Defaults: dim_feedforward=2048, dropout=0.1, activation='relu', norm_first=False
+        # Opinion: 2048 embedding is way too large!
         self.transformer_encoder = pt.nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
     def forward(self, src, src_mask=None, src_key_padding_mask=None):
