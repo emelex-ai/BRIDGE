@@ -1,0 +1,26 @@
+May 25, 2023
+Need nltk, torch, wandb
+
+conda activate torch (on my Linux box)
+pip install nltk
+pip install wandb
+----------------------------------------------------------------------
+In models: make sure that the model name has the form `models#_checkpoint#.pth` where `#` refers to a numeral that is of the form `0034` for example. Make sure there are leading zeros. 
+----------------------------------------------------------------------
+Installed a .gitignore should be a .gitignore to make sure that `pyc` files are not uploaded to the repo. 
+----------------------------------------------------------------------
+To create a new branch 'gordon': 
+    git branch -b gordon   # creates the branch and checks it out
+To set up tracking of the new branch with the remote repo: 
+    git push -u origin gordon
+From this point on, I can simply type: 
+    git pull
+    git push
+and the correspondance local <-> remote will be established. 
+----------------------------------------------------------------------
+May 26, 2023
+- I would store all parameters in a global dictionary 
+- In the Model, do you use Layer Normalization? 
+- I recommend have smaller functions. Very long functions is a poor programming practice. 
+  Advantage: use "Go Definition" and "Go references" more effectively
+----------------------------------------------------------------------
