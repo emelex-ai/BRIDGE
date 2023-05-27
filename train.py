@@ -7,6 +7,8 @@ import sys
 import math
 import glob
 
+# Works if is_wandb_on=False
+# crashes if is_wandb_on=True
 wandb = WandbWrapper(is_wandb_on=True)
 
 # I have to first type this line from the command line and enter the API key
@@ -94,7 +96,7 @@ for _ in range(exp_count):
             "phon_dec": 1,
             "phon_enc": 1,
             "orth_dec": 1,
-            "phon_enc": 1,
+            "orth_enc": 1,
             "mixing_enc": 1,
         }
         model = Model(

@@ -36,11 +36,11 @@ class WandbWrapper:
 
     def watch(self, *kargs, **kwargs):
         if self.is_wandb_on and self.run:
-            self.run.watch(*kwargs, **kwargs)
+            self.run.watch(*kargs, **kwargs)
 
     def Table(self, *kargs, **kwargs):
         if self.is_wandb_on and self.run:
-            return self.run.Table(*kwargs, **kwargs)
+            return wandb.Table(*kargs, **kwargs)   # Recursion. Why? 
         else:
             return self.my_table
 

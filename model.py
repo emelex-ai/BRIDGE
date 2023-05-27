@@ -40,7 +40,7 @@ class Model(pt.nn.Module):
         nlayers_phon_dec  = num_layers_dict["phon_dec"]
         nlayers_orth_enc  = num_layers_dict["orth_enc"]
         nlayers_orth_dec  = num_layers_dict["orth_dec"]
-        nlayers_mixed_enc = num_layers_dict["mixed_enc"]
+        nlayers_mixing_enc = num_layers_dict["mixing_enc"]
 
         # Initial embeddings for orthography, phonology, and position
         # Emebdding for orthography
@@ -73,7 +73,7 @@ class Model(pt.nn.Module):
 
 
         # Segment of ConnTextUL model that mixes orthography/phonology representation
-        self.transformer_mixer = Encoder(d_model=self.d_model, nhead=nhead, num_layers=nlayers_mixed_enc)
+        self.transformer_mixer = Encoder(d_model=self.d_model, nhead=nhead, num_layers=nlayers_mixing_enc)
         self.reduce = pt.nn.Linear(self.d_model, self.d_model)
         self.reduce_layer_norm = pt.nn.LayerNorm(d_model)
 
