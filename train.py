@@ -42,7 +42,7 @@ for batch in range(math.ceil((len(ds)-cutpoint)/batch_size)):
   val_dataset_slices.append(slice(cutpoint+batch*batch_size, min(cutpoint+(batch+1)*batch_size, len(ds))))
 
 # Get latest model run information
-model_runs = glob.glob(MODEL_PATH+'/*')
+model_runs = glob.glob(MODEL_PATH+'/model*')
 print("model_runs: ", model_runs)
 if model_runs:
     #GE comments
@@ -66,7 +66,8 @@ n_steps_per_epoch = len(train_dataset_slices)
 for _ in range(exp_count):
 
     if CONTINUE:
-      # GE 2023-05-26: fix checkpoint to allow for more general layer structure
+      # GE 2023-05-26: fix checkpoint to allow for more general layer structure. 
+      # Add num_layers_dict arg. 
       chkpt = pt.load(MODEL_PATH+f"/model{model_id}_checkpoint{epoch_num}.pth")
       model = Model(len(ds.character_tokenizer), len(ds.phonology_tokenizer), d_model=chkpt['d_model'], nhead=chkpt['nhead'])
       model.load_state_dict(chkpt['model'])
@@ -74,8 +75,8 @@ for _ in range(exp_count):
       opt.load_state_dict(chkpt['optimizer'])
     else:
       # GE 2023-05-26: added fine-grain control over layer structure
-      num_layers_dict = {phon_dec:1, phon_enc:1, orth_dec:1, phon_enc:1}
-      model = Model(len(ds.character_tokenizer), len(ds.phonology_tokenizer), d_model=d_model, nhead=nhead, num_layers=num_layers_dict)
+      num_layers_dict = {"phon_dec":1, "phon_enc":1, "orth_dec":1, "orth_enc":1, "mixed_enc":1}
+      model = Model(len(ds.character_tokenizer), len(ds.phonology_tokenizer), d_model=d_model, nhead=nhead, num_layers_dict=num_layers_dict)
       opt = pt.optim.AdamW(model.parameters(), learning_rate)
 
     # 🐝 initialise a wandb run

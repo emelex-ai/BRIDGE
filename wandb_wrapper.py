@@ -7,10 +7,20 @@ class MyRun:
         self.config = config
     def watch(self, *kargs, **kwargs):
         pass
+    def log(self, *kargs, **kwargs):
+        pass
+
+class MyTable:
+    def __init__(self, config=None):
+        self.config = config
+    def add_data(self, *kargs, **kwargs):
+        pass
+
 
 class WandbWrapper:
     def __init__(self, is_wandb_on, config=None):
         self.my_run = MyRun()
+        self.my_table = MyTable()
         self.is_wandb_on = is_wandb_on
         self.run = None
         self.config = config if config else {}
@@ -31,6 +41,8 @@ class WandbWrapper:
     def Table(self, *kargs, **kwargs):
         if self.is_wandb_on and self.run:
             return self.run.Table(*kwargs, **kwargs)
+        else:
+            return self.my_table
 
 
     def finish(self):
