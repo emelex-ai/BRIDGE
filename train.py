@@ -6,10 +6,11 @@ import tqdm
 import sys
 import math
 import glob
+import time
 
 # Works if is_wandb_on=False
 # crashes if is_wandb_on=True
-wandb = WandbWrapper(is_wandb_on=True)
+wandb = WandbWrapper(is_wandb_on=False)
 
 # I have to first type this line from the command line and enter the API key
 print("before wandb.login")
@@ -30,11 +31,20 @@ exp_count = 1
 num_epochs = 100
 CONTINUE = False
 learning_rate = 1e-3
-batch_size = 32
+batch_size = 32 # 32
 train_test_split = 0.8
 cutpoint = int(train_test_split * len(ds))
-d_model = 128
+d_model = 32
 nhead = 4
+
+# GE 2023-05-27: added fine-grain control over layer structure
+num_layers_dict = {
+    "phon_dec": 4,
+    "phon_enc": 4,
+    "orth_dec": 4,
+    "orth_enc": 4,
+    "mixing_enc": 4,
+}
 assert d_model % nhead == 0, "d_model must be evenly divisible by nhead"
 
 train_dataset_slices = []
@@ -80,7 +90,9 @@ n_steps_per_epoch = len(train_dataset_slices)
 for _ in range(exp_count):
     if CONTINUE:
         # GE 2023-05-27: fix checkpoint to allow for more general layer structure
+        # The code will not work as is. 
         chkpt = pt.load(MODEL_PATH + f"/model{model_id}_checkpoint{epoch_num}.pth")
+        # GE: TODO:  Construct a layer dictionary from the chekpointed data 
         model = Model(
             len(ds.character_tokenizer),
             len(ds.phonology_tokenizer),
@@ -91,14 +103,6 @@ for _ in range(exp_count):
         opt = pt.optim.AdamW(model.parameters(), learning_rate)
         opt.load_state_dict(chkpt["optimizer"])
     else:
-        # GE 2023-05-27: added fine-grain control over layer structure
-        num_layers_dict = {
-            "phon_dec": 1,
-            "phon_enc": 1,
-            "orth_dec": 1,
-            "orth_enc": 1,
-            "mixing_enc": 1,
-        }
         model = Model(
             len(ds.character_tokenizer),
             len(ds.phonology_tokenizer),
@@ -107,6 +111,7 @@ for _ in range(exp_count):
             num_layers_dict=num_layers_dict,  # New, GE, 2023-05-27
         )
         opt = pt.optim.AdamW(model.parameters(), learning_rate)
+        print(model)
 
     print(
         "char/phon tokenizers len: ",
@@ -149,113 +154,117 @@ for _ in range(exp_count):
     model.to(device)
 
     # Training
-    example_ct = 0
-    for epoch in pbar:
-        model.train()
-        print("\nTraining Loop...")
-        step = 0  # GE: added
-        for step, batch_slice in enumerate(train_dataset_slices):
-            batch = ds[batch_slice]
-            orthography, phonology = batch["orthography"].to(device), batch[
-                "phonology"
-            ].to(device)
-            logits = model(
-                orthography["enc_input_ids"],
-                orthography["enc_pad_mask"],
-                orthography["dec_input_ids"],
-                orthography["dec_pad_mask"],
-                phonology["enc_input_ids"],
-                phonology["enc_pad_mask"],
-                phonology["dec_input_ids"],
-                phonology["dec_pad_mask"],
+    # GE: Function train_single_step()
+    # pbar, model, train_dataset_slices, batch_slice, device, ds   # end of actual step
+    # Diagnostics: 
+    
+    #----------------------------------------------------------------------
+    # GE: 2023-05-27: simplify code
+    def single_step(pbar, model, train_dataset_slices, batch_slice, ds, device, example_ct):
+        batch = ds[batch_slice]
+        orthography, phonology = batch["orthography"].to(device), batch[
+            "phonology"
+        ].to(device)
+        logits = model(
+            orthography["enc_input_ids"],
+            orthography["enc_pad_mask"],
+            orthography["dec_input_ids"],
+            orthography["dec_pad_mask"],
+            phonology["enc_input_ids"],
+            phonology["enc_pad_mask"],
+            phonology["dec_input_ids"],
+            phonology["dec_pad_mask"],
+        )
+    
+        orth_loss = pt.nn.CrossEntropyLoss(ignore_index=4)(
+            logits["orth"], orthography["enc_input_ids"][:, 1:]
+        )
+        phon_loss = pt.nn.CrossEntropyLoss(ignore_index=2)(
+            logits["phon"], phonology["targets"]
+        )
+        loss = orth_loss + phon_loss
+    
+        loss.backward()
+        opt.step()
+        opt.zero_grad()
+
+        # NEW NEW NEW NEW NEW NEW NEW NEW NEW
+    
+        # Accuracy function for orthography.
+        # Take argmax of orthographic logits for accuracy comparison:
+        A_orth = pt.argmax(logits["orth"], dim=1)
+        # Keep orthographic encoder input ids unchanged:
+        B_orth = orthography["enc_input_ids"][:, 1:]
+        # Compute orthographic accuracy:
+        orth_accuracy = (
+            pt.tensor(pt.where((A_orth == B_orth).all(dim=1))[0].size())
+            / pt.tensor(A_orth.size())[0]
+        )
+    
+        # Accuracy function for phonology.
+        # Compute dimensions for phonological logit and target reshaping:
+        oldshape = logits["phon"].size()
+        newshape_0 = oldshape[0] * oldshape[2]
+        newshape_1 = oldshape[3]
+        # Take argmax of phonological logits for accuracy comparison, reshaping to get a square tensor:
+        A_phon = pt.argmax(logits["phon"], dim=1)
+        A_phon = pt.reshape(A_phon, [newshape_0, newshape_1])
+        print(f"\n{epoch}/{step}: A_phon shape:", A_phon.size())  # GE: changed
+        # Reshape phonological targets:
+        B_phon = phonology["targets"]
+        B_phon = pt.reshape(B_phon, [newshape_0, newshape_1])
+        print(f"{epoch}/{step}: B_phon shape:", B_phon.size(), "\n")  # GE: changed
+        # Compute phonoloigcal accuracy:
+        phon_accuracy = (
+            pt.tensor(pt.where((A_phon == B_phon).all(dim=1))[0].size())
+            / pt.tensor(A_phon.size())[0]
+        )
+    
+        # END END END END END END END END END
+    
+        # Now we generate orthographic tokens and phonological vectors for the input 'elephant'
+        if 1:
+            orth = ds.character_tokenizer.encode(["elephant"])
+            orthography = orth["enc_input_ids"].to(device)
+            orthography_mask = orth["enc_pad_mask"].to(device)
+            phon = ds.phonology_tokenizer.encode(["elephant"])
+            phonology = [
+                [t.to(device) for t in tokens] for tokens in phon["enc_input_ids"]
+            ]
+            phonology_mask = phon["enc_pad_mask"].to(device)
+            generation = model.generate(
+                orthography, orthography_mask, phonology, phonology_mask
             )
+            generated_text = ds.character_tokenizer.decode(
+                generation["orth"].tolist()
+            )[0]
+            # Log the text in the WandB table
+            generated_text_table.add_data(step, generated_text)
 
-            orth_loss = pt.nn.CrossEntropyLoss(ignore_index=4)(
-                logits["orth"], orthography["enc_input_ids"][:, 1:]
-            )
-            phon_loss = pt.nn.CrossEntropyLoss(ignore_index=2)(
-                logits["phon"], phonology["targets"]
-            )
-            loss = orth_loss + phon_loss
+            example_ct[0] += len(batch["orthography"])
+        metrics = {
+            "train/orth_loss": orth_loss,
+            "train/phon_loss": phon_loss,
+            "train/train_loss": loss,
+            "train/epoch": epoch,
+            "train/example_ct": example_ct[0],  # GE: put in a list so I could use it in a function argument
+            "train/global_embedding_magnitude": pt.norm(
+                model.global_embedding[0], p=2
+            ),
+            "train/model_weights_magnitude": pt.sqrt(
+                sum([pt.norm(w[0], p=2) ** 2 for w in model.parameters()])
+            ),
+            # "train/lr": opt.state_dict()['param_groups'][0]['lr'],
+            "train/generated_text_table": generated_text_table,
+            "orthographic accuracy": orth_accuracy,
+            "phonological accuracy": phon_accuracy,
+        }
 
-            loss.backward()
-            opt.step()
-            opt.zero_grad()
+        return metrics
 
-            # NEW NEW NEW NEW NEW NEW NEW NEW NEW
-
-            # Accuracy function for orthography.
-            # Take argmax of orthographic logits for accuracy comparison:
-            A_orth = pt.argmax(logits["orth"], dim=1)
-            # Keep orthographic encoder input ids unchanged:
-            B_orth = orthography["enc_input_ids"][:, 1:]
-            # Compute orthographic accuracy:
-            orth_accuracy = (
-                pt.tensor(pt.where((A_orth == B_orth).all(dim=1))[0].size())
-                / pt.tensor(A_orth.size())[0]
-            )
-
-            # Accuracy function for phonology.
-            # Compute dimensions for phonological logit and target reshaping:
-            oldshape = logits["phon"].size()
-            newshape_0 = oldshape[0] * oldshape[2]
-            newshape_1 = oldshape[3]
-            # Take argmax of phonological logits for accuracy comparison, reshaping to get a square tensor:
-            A_phon = pt.argmax(logits["phon"], dim=1)
-            A_phon = pt.reshape(A_phon, [newshape_0, newshape_1])
-            print(f"\n{epoch}/{step}: A_phon shape:", A_phon.size())  # GE: changed
-            # Reshape phonological targets:
-            B_phon = phonology["targets"]
-            B_phon = pt.reshape(B_phon, [newshape_0, newshape_1])
-            print(f"{epoch}/{step}: B_phon shape:", B_phon.size(), "\n")  # GE: changed
-            # Compute phonoloigcal accuracy:
-            phon_accuracy = (
-                pt.tensor(pt.where((A_phon == B_phon).all(dim=1))[0].size())
-                / pt.tensor(A_phon.size())[0]
-            )
-
-            # END END END END END END END END END
-
-            # Now we generate orthographic tokens and phonological vectors for the input 'elephant'
-            if 1:
-                orth = ds.character_tokenizer.encode(["elephant"])
-                orthography = orth["enc_input_ids"].to(device)
-                orthography_mask = orth["enc_pad_mask"].to(device)
-                phon = ds.phonology_tokenizer.encode(["elephant"])
-                phonology = [
-                    [t.to(device) for t in tokens] for tokens in phon["enc_input_ids"]
-                ]
-                phonology_mask = phon["enc_pad_mask"].to(device)
-                generation = model.generate(
-                    orthography, orthography_mask, phonology, phonology_mask
-                )
-                generated_text = ds.character_tokenizer.decode(
-                    generation["orth"].tolist()
-                )[0]
-                # Log the text in the WandB table
-                generated_text_table.add_data(step, generated_text)
-
-            example_ct += len(batch["orthography"])
-            metrics = {
-                "train/orth_loss": orth_loss,
-                "train/phon_loss": phon_loss,
-                "train/train_loss": loss,
-                "train/epoch": epoch,
-                "train/example_ct": example_ct,
-                "train/global_embedding_magnitude": pt.norm(
-                    model.global_embedding[0], p=2
-                ),
-                "train/model_weights_magnitude": pt.sqrt(
-                    sum([pt.norm(w[0], p=2) ** 2 for w in model.parameters()])
-                ),
-                # "train/lr": opt.state_dict()['param_groups'][0]['lr'],
-                "train/generated_text_table": generated_text_table,
-                "orthographic accuracy": orth_accuracy,
-                "phonological accuracy": phon_accuracy,
-            }
-
-        run.log(metrics)  # GE: only execute once per epoch
-
+    #----------------------------------------------------------------------
+    # GE: 2023-05-27: simplify code
+    def evaluate_model(model, val_dataset_slices, device):
         model.eval()  # GE: eval once per epoch
         with pt.no_grad():
             print("\nValidation Loop...")
@@ -295,6 +304,30 @@ for _ in range(exp_count):
             },
             MODEL_PATH + f"/model{model_id}_checkpoint{epoch}.pth",
         )
+
+
+        # NEW NEW NEW NEW NEW NEW NEW NEW NEW
+    #---------------------------
+    
+    example_ct = [0]
+    for epoch in pbar:
+        model.train()
+        print("\nTraining Loop...")
+        step = 0  # GE: added
+        nb_steps_to_run = 50
+        start = time.time()
+        for step, batch_slice in enumerate(train_dataset_slices):
+            if step == nb_steps_to_run:  # GE, 2023-05-27
+                break                    # GE, 2023-05-27
+            metrics = single_step(pbar, model, train_dataset_slices, batch_slice, ds, device, example_ct)
+
+        time = (time.time() - start) / nb_steps_to_run
+        print("time per step (sec); ", time)
+        raise "error"
+
+        run.log(metrics)  # GE: only execute once per epoch
+
+        evaluate_model(model, val_dataset_slices, device)
 
 # 🐝 Close your wandb run
 run.finish()
