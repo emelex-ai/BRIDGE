@@ -1,13 +1,14 @@
 from dataset import ConnTextULDataset
 from model import Model
 import torch as pt
-import wandb
+from wandb_wrapper import WandbWrapper
 import tqdm
 import sys
 import math
 import glob
 
 # I have to first type this line from the command line and enter the API key
+wandb = WandbWrapper(is_wandb_on = False)
 wandb.login()
 
 MODEL_PATH = './models'

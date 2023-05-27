@@ -24,3 +24,7 @@ May 26, 2023
 - I recommend have smaller functions. Very long functions is a poor programming practice. 
   Advantage: use "Go Definition" and "Go references" more effectively
 ----------------------------------------------------------------------
+May 26, 2023
+- Added separate positional embeddings for orthography and phonology
+- Added fine-grained control over the number of layers of both encoders and decoders
+----------------------------------------------------------------------
