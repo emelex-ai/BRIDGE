@@ -33,16 +33,23 @@ class Model(pt.nn.Module):
                  phon_vocab_size,
                  d_model=512,
                  nhead=1,
-                 num_layers=1,
+                 num_layers_dict= {},  # Dictionary
                  max_seq_len=20):
         super().__init__()
+
+        nlayers_phon_enc = num_layer_dicts["phon_enc"]
+        nlayers_phon_dec = num_layers_dict["phon_dec"]
+        nlayers_orth_enc = num_layers_dict["orth_enc"]
+        nlayers_orth_dec = num_layers_dict["orth_dec"]
 
         # Initial embeddings for orthography, phonology, and position
         # Emebdding for orthography
         self.orthography_embedding = pt.nn.Embedding(orth_vocab_size, d_model)
+        self.orthography_pos_embedding = pt.nn.Embedding(orth_vocab_size, d_model)  # GE added, 2023-05-26
         # Embedding for phonology
         self.phonology_embedding = pt.nn.Embedding(phon_vocab_size, d_model)
-        self.position_embedding = pt.nn.Embedding(max_seq_len, d_model)
+        # self.position_embedding = pt.nn.Embedding(max_seq_len, d_model)   # GE removed, 2023-05-26
+        self.phonology_pos_embedding = pt.nn.Embedding(max_seq_len, d_model) # GE added, 2023-05-26
 
         self.vocab_sizes = {'orth_vocab_size': orth_vocab_size, 
                             'phon_vocab_size': phon_vocab_size}
@@ -54,9 +61,9 @@ class Model(pt.nn.Module):
 
         # Initial, encoding segment of our ConnTextUL model:
         # Instance of our Encoder module (defined above), for encoding orthography
-        self.orthography_encoder = Encoder(d_model=d_model, nhead=nhead, num_layers=num_layers)
+        self.orthography_encoder = Encoder(d_model=d_model, nhead=nhead, num_layers=nlayers_orth_enc)
         # Instance of our Encoder module (defined above), for encoding phonology
-        self.phonology_encoder = Encoder(d_model=d_model, nhead=nhead, num_layers=num_layers)
+        self.phonology_encoder = Encoder(d_model=d_model, nhead=nhead, num_layers=nlayers_phon_enc)
 
         # Criss-crossing orthography/phonology cross-attenion segment of ConnTextUL model
         self.gp_multihead_attention = pt.nn.MultiheadAttention(embed_dim=d_model, num_heads=nhead, batch_first=True)
@@ -72,26 +79,31 @@ class Model(pt.nn.Module):
 
         # Decoder segment of ConnTextUL model
         # Orthography component of Decoder segment
-        self.orthography_decoder = Decoder(d_model=self.d_model, nhead=nhead, num_layers=num_layers)
+        self.orthography_decoder = Decoder(d_model=self.d_model, nhead=nhead, num_layers=nlayers_orth_dec)
         self.linear_orthography_decoder = pt.nn.Linear(self.d_model, self.vocab_sizes['orth_vocab_size'])
         # Phonology component of Decoder segment
-        self.phonology_decoder = Decoder(d_model=self.d_model, nhead=nhead, num_layers=num_layers)
+        self.phonology_decoder = Decoder(d_model=self.d_model, nhead=nhead, num_layers=nlayers_phon_dec)
+        # GE 2023-05-26:  Why the factor 2? Why the name linear? 
         self.linear_phonology_decoder = pt.nn.Linear(self.d_model, 2*(self.vocab_sizes['phon_vocab_size']-1))
 
     # Returns a size×size, strictly upper-triangular Boolean tensor
     def generate_triangular_mask(self, size, device):
+        # Compare to Neel Nanda 
         mask = pt.triu(pt.ones((size, size), dtype=pt.bool, device=device), 1)
         return mask
 
+    # Returns embeddings
     def embed_tokens(self, tokens, mode='o'):
         assert mode in ['o','p']
 
         if mode == 'o':
            assert isinstance(tokens, pt.Tensor), "For orthographic embeddings, tokens must be a pytorch tensor of integers (indices of orthography_embedding)"
            assert tokens.dtype == pt.long or tokens.dtype == pt.int, f"Input tensor to Embedding must be type int or long but is {tokens.dtype}"
-           return self.orthography_embedding(tokens) + self.position_embedding.weight[None,:tokens.shape[1]]
+           # learned positional embeddings
+           #GE  return self.orthography_embedding(tokens) + self.position_embedding.weight[None,:tokens.shape[1]] # GE, 2023-05-26
+           return self.orthography_embedding(tokens) + self.orthography_pos_embedding.weight[None,:tokens.shape[1]]  # GE, 2023-05-26
         # This is where we need to average the phonological embedding vectors
-        else:
+        else:  # mode == 'p'
            try:
              isinstance(tokens, list)
            except:
@@ -114,7 +126,8 @@ class Model(pt.nn.Module):
                avg_embedding = self.phonology_embedding(tokes).mean(axis=0)
                # Insert the resulting averaged embedding vector into the output_embedding tensor as a new row
                output_embedding[batch_num, indx, :] = avg_embedding
-           return output_embedding + self.position_embedding.weight[None,:len(tokens[0])] 
+           #return output_embedding + self.position_embedding.weight[None,:len(tokens[0])]   # GE 2023-05-26
+           return output_embedding + self.phonology_pos_embedding.weight[None,:len(tokens[0])]  # GE 2023-05-26
 
     def embed(self, orthography, orthography_padding_mask, phonology, phonology_padding_mask):
         orthography, phonology = self.embed_tokens(orthography, 'o'), self.embed_tokens(phonology, 'p')
