@@ -65,16 +65,13 @@ n_steps_per_epoch = len(train_dataset_slices)
 for _ in range(exp_count):
 
     if CONTINUE:
-      # GE 2023-05-26: fix checkpoint to allow for more general layer structure
       chkpt = pt.load(MODEL_PATH+f"/model{model_id}_checkpoint{epoch_num}.pth")
       model = Model(len(ds.character_tokenizer), len(ds.phonology_tokenizer), d_model=chkpt['d_model'], nhead=chkpt['nhead'])
       model.load_state_dict(chkpt['model'])
       opt = pt.optim.AdamW(model.parameters(), learning_rate)
       opt.load_state_dict(chkpt['optimizer'])
     else:
-      # GE 2023-05-26: added fine-grain control over layer structure
-      num_layers_dict = {phon_dec:1, phon_enc:1, orth_dec:1, phon_enc:1}
-      model = Model(len(ds.character_tokenizer), len(ds.phonology_tokenizer), d_model=d_model, nhead=nhead, num_layers=num_layers_dict)
+      model = Model(len(ds.character_tokenizer), len(ds.phonology_tokenizer), d_model=d_model, nhead=nhead)
       opt = pt.optim.AdamW(model.parameters(), learning_rate)
 
     # 🐝 initialise a wandb run
