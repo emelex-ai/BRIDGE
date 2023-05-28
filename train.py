@@ -3,7 +3,6 @@ from dataset import ConnTextULDataset
 import torch as pt
 import tqdm
 import sys
-import math
 import time
 import train_impl as train_impl
 
@@ -47,20 +46,7 @@ def run_code_impl(run):
     }
     assert c.d_model % c.nhead == 0, "d_model must be evenly divisible by nhead"
     
-    train_dataset_slices = []
-    for batch in range(math.ceil(cutpoint / c.batch_size)):
-        train_dataset_slices.append(
-            slice(batch * c.batch_size, min((batch + 1) * c.batch_size, cutpoint))
-        )
-    
-    val_dataset_slices = []
-    for batch in range(math.ceil((len(ds) - cutpoint) / c.batch_size)):
-        val_dataset_slices.append(
-            slice(
-                cutpoint + batch * c.batch_size,
-                min(cutpoint + (batch + 1) * c.batch_size, len(ds)),
-            )
-        )
+    train_dataset_slices, val_dataset_slices = train_impl.create_data_slices(cutpoint, c, ds)
     
     # Use startup data to determine starting epoch. Update the model_id
     model_id, epoch_num = train_impl.get_starting_model_epoch(MODEL_PATH, c)
@@ -70,43 +56,6 @@ def run_code_impl(run):
     print("n_steps_per_epoch: ", n_steps_per_epoch)
     
     model, opt = train_impl.setup_model(MODEL_PATH, c, ds, num_layers_dict)
-
-    """
-    def setup_model(MODEL_PATH, ds):
-        # Continuation run
-        if c.CONTINUE:
-            # GE 2023-05-27: fix checkpoint to allow for more general layer structure
-            # The code will not work as is. 
-            chkpt = pt.load(MODEL_PATH + f"/model{model_id}_checkpoint{epoch_num}.pth")
-            # GE: TODO:  Construct a layer dictionary from the chekpointed data 
-            model = Model(
-                len(ds.character_tokenizer),
-                len(ds.phonology_tokenizer),
-                d_model=chkpt["d_model"],
-                nhead=chkpt["nhead"],
-            )
-            model.load_state_dict(chkpt["model"])
-            opt = pt.optim.AdamW(model.parameters(), c.learning_rate)
-            opt.load_state_dict(chkpt["optimizer"])
-    
-        # Start a new urn
-        else:
-            model = Model(
-                len(ds.character_tokenizer),
-                len(ds.phonology_tokenizer),
-                d_model=c.d_model,
-                nhead=c.nhead,
-                num_layers_dict=num_layers_dict,  # New, GE, 2023-05-27
-            )
-            opt = pt.optim.AdamW(model.parameters(), c.learning_rate)
-    
-        print(
-            "char/phon tokenizers len: ",
-            len(ds.character_tokenizer),
-            len(ds.phonology_tokenizer),
-        )
-        return model, opt
-    """
 
     generated_text_table = wandb.Table(columns=["Step", "Generated Output"])
     run.watch(model, log="all", log_freq=100)  # Comment out by GE
