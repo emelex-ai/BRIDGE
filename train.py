@@ -224,6 +224,7 @@ def main():
 
     if args.sweep:
         wandb = WandbWrapper(config=config, is_sweep=True, is_wandb_on=is_wandb_enabled)
+        # make wandb wrapper accessible globally
         globals().update({'wandb':wandb})
         wandb.login()
         # Is it possible to update a sweep configuration? I'd like the default sweep 
@@ -234,7 +235,7 @@ def main():
             'parameters': {
                 'batch_size': {'values': [32, 64]},
                 'd_model': {'values': [16, 32]},
-                'nlayers': {'values': [1 ]}
+                'common_num_layers': {'values': [1 ]}
             }
         }
 
@@ -243,6 +244,7 @@ def main():
             if param not in sweep_config['parameters']:
                 sweep_config['parameters'][param] = {'values': [value]}
 
+        # KEY ISSUE: wandb.init() not called in this case. So I must set run.config differently
 
         sweep_id = wandb.sweep(sweep_config, project=project, entity=entity)
         wandb.agent(sweep_id, run_code)
