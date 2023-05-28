@@ -35,13 +35,19 @@ class MyTable:
 
 
 class WandbWrapper(Singleton):
-    def __init__(self, is_wandb_on=False, is_sweep=False, config=None):
+    def __init__(self): #, is_wandb_on=False, is_sweep=False, config=None):
         self.my_run = MyRun()
         self.my_table = MyTable()
+        self.run = None
+
+    def set_params(self, is_wandb_on=False, is_sweep=False, config=None):
         self.is_wandb_on = is_wandb_on
         self.is_sweep = is_sweep
-        self.run = None
         self.config = AttrDict(config) if config else AttrDict({})
+
+    #@classmethod
+    def get_wandb(self):
+        return self
 
     def init(self, *kargs, **kwargs):
         if "config" in kwargs:
