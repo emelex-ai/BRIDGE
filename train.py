@@ -1,15 +1,16 @@
 from dataset import ConnTextULDataset
 from model import Model
 import torch as pt
-#from wandb_wrapper import WandbWrapper
-import wandb
+from wandb_wrapper import WandbWrapper
+#import wandb
 import tqdm
 import sys
 import math
 import glob
 import time
 import train_impl as train_impl
-import argparse
+import argparse  # NEW LIBRARY (pip install argparse)
+#from attrdict import AttrDict  # NEW LIBRARY (pip install attrdict)
 
 #----------------------------------------------------------------------
 """ 
@@ -26,7 +27,6 @@ def run_code_impl(run):
     # create a non-empty configuration. I'll have to make sure this configuraation words with the dot notation. 
 
     print("run.config: ", run.config)
-    raise "error"
     c = run.config
     num_epochs = c.num_epochs
     CONTINUE = c.CONTINUE
@@ -189,6 +189,12 @@ def run_code_impl(run):
 def main():
     """
     """
+    #  Three parameters specific to W&B
+    entity  = "emelex"
+    project = "GE_ConnTextUL"
+    is_wandb_enabled = True
+
+    #  Parameters specific to the main code
     num_epochs = 1  # 100
     CONTINUE = False
     learning_rate = 1e-3
@@ -211,15 +217,15 @@ def main():
         "common_num_layers": common_num_layers, 
     }
 
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--sweep", action="store_true")
     args = parser.parse_args()
 
-    wandb.login()
-    entity  = "emelex"
-    project = "GE_ConnTextUL"
-
     if args.sweep:
+        wandb = WandbWrapper(config=config, is_sweep=True, is_wandb_on=is_wandb_enabled)
+        globals().update({'wandb':wandb})
+        wandb.login()
         # Is it possible to update a sweep configuration? I'd like the default sweep 
         # configuration to contain the parameters of config. 
         sweep_config = {
@@ -241,19 +247,22 @@ def main():
         sweep_id = wandb.sweep(sweep_config, project=project, entity=entity)
         wandb.agent(sweep_id, run_code)
     else:
+        wandb = WandbWrapper(config=config, is_sweep=False, is_wandb_on=is_wandb_enabled)
+        globals().update({'wandb':wandb})
+        wandb.login()
         # 🐝 initialise a wandb run
         # I created a new project
         run = wandb.init(
             entity=entity,  # Necessary because I am in multiple teams
             project=project,
             config=config,
-            mode='disabled',  # 'offline', 'online', 'disabled'
         )
         # When 'disabled', the returned run.config is an empty dictionary {}
-        if isinstance(wandb.run, wandb.sdk.lib.disabled.RunDisabled):
+        if not is_wandb_enabled:
             print("wandb is disabled")
-            run = wandb.init()
-            run.config = config   # INCORRECT
+            run = wandb.init(config=config)
+            # make sure I config is accessible with the dot notation
+            #run.config = AttrDict(config)   # INCORRECT
             run_code()
         #if run != None:  # wandb not 'disabled'
         else:

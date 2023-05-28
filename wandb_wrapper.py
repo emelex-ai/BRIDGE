@@ -1,6 +1,7 @@
 # Wrapper around wandb to allow user use or not use it
 # Author: G. Erlebacher
 import wandb
+from attrdict import AttrDict   # dot notation for dictionaries
 
 class Singleton(object):
     _instance = None
@@ -40,11 +41,19 @@ class WandbWrapper(Singleton):
         self.is_wandb_on = is_wandb_on
         self.is_sweep = is_sweep
         self.run = None
-        self.config = config if config else {}
+        self.config = AttrDict(config) if config else AttrDict({})
 
     def init(self, *kargs, **kwargs):
+        print("inside wrapper init")
+        print("kwargs: ", kwargs)
+        if "config" in kwargs:
+            print("config in kwargs")
+            self.config = AttrDict(kwargs["config"])
         if self.is_wandb_on:
             self.run = wandb.init(*kargs, **kwargs)
+            return self.run
+        else:  # wandb is disabled
+            self.my_run.config = self.config
         return self.my_run  # I need to return something with a config attribute
 
     def log(self, *kargs, **kwargs):
