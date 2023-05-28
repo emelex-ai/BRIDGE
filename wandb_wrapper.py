@@ -44,10 +44,7 @@ class WandbWrapper(Singleton):
         self.config = AttrDict(config) if config else AttrDict({})
 
     def init(self, *kargs, **kwargs):
-        print("inside wrapper init")
-        print("kwargs: ", kwargs)
         if "config" in kwargs:
-            print("config in kwargs")
             self.config = AttrDict(kwargs["config"])
         if self.is_wandb_on:
             self.run = wandb.init(*kargs, **kwargs)
@@ -71,25 +68,17 @@ class WandbWrapper(Singleton):
             return self.my_table
 
     def sweep(self, *kargs, **kwargs):
-        print("-inside wrapper sweep")
-        print("kwargs: ", kwargs)
-        print(self.is_wandb_on, self.is_sweep, self.run) # self.run is None
         if len(kargs) > 0: 
-            print("sweep_config in kwargs")
             self.config = AttrDict(kargs[0])
-            print("self.config: ", self.config)
             self.run = self.my_run
             self.my_run.config = self.config
         if self.is_wandb_on and self.run and self.is_sweep:
-            print("--> inside wrapper sweep")
             return wandb.sweep(*kargs, **kwargs)
         else:
                 return self.my_run
 
     def agent(self, *kargs, **kwargs):
-        print("-inside wrapper agent")
         if self.is_wandb_on and self.run and self.is_sweep:
-            print("inside wrapper agent")
             return wandb.agent(*kargs, **kwargs)
 
     def finish(self):
