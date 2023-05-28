@@ -13,6 +13,9 @@ class Singleton(object):
 
 
 class MyRun(Singleton):
+    """
+    A proxy class to handle the `run` variable when wwanb is disabled. 
+    """
     def __init__(self, config=None):
         self.config = config
 
@@ -27,6 +30,9 @@ class MyRun(Singleton):
 
 
 class MyTable:
+    """
+    An object to return when calling wandb.Table()
+    """
     def __init__(self, config=None):
         self.config = config
 
@@ -35,6 +41,14 @@ class MyTable:
 
 
 class WandbWrapper(Singleton):
+    """
+    A wrapper around wandb to allow it to be disabled. 
+
+    While wandb.init() has a mode='disabled' option, there are problems when 
+    implementing sweeps. My objective was to easily handl sweep and non-sweep
+    runs as easily as possible within a single code, and easily be able to turn 
+    wandb on and off. 
+    """
     def __init__(self): #, is_wandb_on=False, is_sweep=False, config=None):
         self.my_run = MyRun()
         self.my_table = MyTable()
@@ -45,7 +59,6 @@ class WandbWrapper(Singleton):
         self.is_sweep = is_sweep
         self.config = AttrDict(config) if config else AttrDict({})
 
-    #@classmethod
     def get_wandb(self):
         return self
 
