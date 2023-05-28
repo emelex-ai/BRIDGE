@@ -1,11 +1,9 @@
 from wandb_wrapper import WandbWrapper
 from dataset import ConnTextULDataset
-from model import Model
 import torch as pt
 import tqdm
 import sys
 import math
-import glob
 import time
 import train_impl as train_impl
 
@@ -64,72 +62,54 @@ def run_code_impl(run):
             )
         )
     
-    # Get latest model run information
-    # GE: what if model_runs is True and CONTINUE is False? Shouldn't one go to the else branch?
-    model_runs = glob.glob(MODEL_PATH + "/model[0-9]*")  # GE added model[0-9]
-    print("model_runs: ", model_runs)
-
-    if model_runs:
-        # GE comments
-        # Whatever numbering you are using for model_runs, you should use integers with leading zeros, or else sorted will not work correctly.
-        # Sorting on letters is dangerous since different people might have different sorting conventions
-        latest_run = sorted(model_runs)[-1].split("/")[-1]
-        print("latest_run: ", latest_run)  # model_checkpoint35.pth
-    
-        print("split: ", latest_run.split("_"))
-        model_id, epoch_num = int(latest_run.split("_")[0][5:]), int(
-            latest_run.split("_")[-1].split(".")[0][10:]
-        )
-        if not c.CONTINUE:
-            model_id += 1
-            epoch_num = 0
-    else:
-        model_id, epoch_num = 0, 0
+    # Use startup data to determine starting epoch. Update the model_id
+    model_id, epoch_num = train_impl.get_starting_model_epoch(MODEL_PATH, c)
     
     # A number for WandB:
     n_steps_per_epoch = len(train_dataset_slices)
     print("n_steps_per_epoch: ", n_steps_per_epoch)
     
-    if c.CONTINUE:
-        # GE 2023-05-27: fix checkpoint to allow for more general layer structure
-        # The code will not work as is. 
-        chkpt = pt.load(MODEL_PATH + f"/model{model_id}_checkpoint{epoch_num}.pth")
-        # GE: TODO:  Construct a layer dictionary from the chekpointed data 
-        model = Model(
+    model, opt = train_impl.setup_model(MODEL_PATH, c, ds, num_layers_dict)
+
+    """
+    def setup_model(MODEL_PATH, ds):
+        # Continuation run
+        if c.CONTINUE:
+            # GE 2023-05-27: fix checkpoint to allow for more general layer structure
+            # The code will not work as is. 
+            chkpt = pt.load(MODEL_PATH + f"/model{model_id}_checkpoint{epoch_num}.pth")
+            # GE: TODO:  Construct a layer dictionary from the chekpointed data 
+            model = Model(
+                len(ds.character_tokenizer),
+                len(ds.phonology_tokenizer),
+                d_model=chkpt["d_model"],
+                nhead=chkpt["nhead"],
+            )
+            model.load_state_dict(chkpt["model"])
+            opt = pt.optim.AdamW(model.parameters(), c.learning_rate)
+            opt.load_state_dict(chkpt["optimizer"])
+    
+        # Start a new urn
+        else:
+            model = Model(
+                len(ds.character_tokenizer),
+                len(ds.phonology_tokenizer),
+                d_model=c.d_model,
+                nhead=c.nhead,
+                num_layers_dict=num_layers_dict,  # New, GE, 2023-05-27
+            )
+            opt = pt.optim.AdamW(model.parameters(), c.learning_rate)
+    
+        print(
+            "char/phon tokenizers len: ",
             len(ds.character_tokenizer),
             len(ds.phonology_tokenizer),
-            d_model=chkpt["d_model"],
-            nhead=chkpt["nhead"],
         )
-        model.load_state_dict(chkpt["model"])
-        opt = pt.optim.AdamW(model.parameters(), c.learning_rate)
-        opt.load_state_dict(chkpt["optimizer"])
-    else:
-        model = Model(
-            len(ds.character_tokenizer),
-            len(ds.phonology_tokenizer),
-            d_model=c.d_model,
-            nhead=c.nhead,
-            num_layers_dict=num_layers_dict,  # New, GE, 2023-05-27
-        )
-        opt = pt.optim.AdamW(model.parameters(), c.learning_rate)
-
-    print(
-        "char/phon tokenizers len: ",
-        len(ds.character_tokenizer),
-        len(ds.phonology_tokenizer),
-    )
-    print("d_model: ", c.d_model)
-    print("n_head: ", c.nhead)
-
+        return model, opt
+    """
 
     generated_text_table = wandb.Table(columns=["Step", "Generated Output"])
-
-
-    # Does not seem to slow down the code
     run.watch(model, log="all", log_freq=100)  # Comment out by GE
-
-    # number steps of epoch: 2223
 
     #----------------------------------------------------------------------
 

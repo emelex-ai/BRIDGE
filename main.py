@@ -10,7 +10,7 @@ def main():
     #  Three parameters specific to W&B
     entity  = "emelex"
     project = "GE_ConnTextUL"
-    is_wandb_enabled = True
+    is_wandb_enabled = False
 
     #  Parameters specific to the main code
 
