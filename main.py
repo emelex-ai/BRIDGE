@@ -48,10 +48,10 @@ def main():
         # GE: suggestion: load different sweeps from files to keep track. 
         sweep_config = {
             "method": "grid",
-            "name": "sweep_time_per_step",
+            "name": "sweep_time_per_epoch",
             "metric": {
                 'goal': 'minimize', 
-                'name': 'time_per_step',
+                'name': 'time_per_epoch',
             },
             "parameters": {
                 "batch_size": {"values": [32, 64, 128]},

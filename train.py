@@ -57,8 +57,8 @@ def run_code_impl(run):
     model_id, epoch_num = train_impl.get_starting_model_epoch(MODEL_PATH, c)
 
     # A number for WandB:
-    n_steps_per_epoch = len(train_dataset_slices)
-    print("n_steps_per_epoch: ", n_steps_per_epoch)
+    c.n_steps_per_epoch = len(train_dataset_slices)
+    print("n_steps_per_epoch: ", c.n_steps_per_epoch)
 
     model, opt = train_impl.setup_model(MODEL_PATH, c, ds, num_layers_dict)
 
@@ -108,7 +108,7 @@ def run_code_impl(run):
     run.finish()
 
     print("time per step (sec); ", time)
-    print("n_steps_per_epoch: ", n_steps_per_epoch)
+    print("n_steps_per_epoch: ", c.n_steps_per_epoch)
 
 
 # ----------------------------------------------------------------------
