@@ -69,7 +69,6 @@ def run_code_impl(run):
 
     model.to(device)
     pbar = tqdm.tqdm(range(epoch_num, epoch_num + c.num_epochs), position=0)
-    nb_steps_to_run = 2
     example_ct = [0]
 
     # Function closure (GE)
@@ -91,7 +90,7 @@ def run_code_impl(run):
         model, val_dataset_slices, device, opt, ds
     )
     single_epoch_fct = lambda epoch: train_impl.single_epoch(
-        model, train_dataset_slices, nb_steps_to_run, epoch, single_step_fct
+        c, model, train_dataset_slices, epoch, single_step_fct
     )
     save_fct = lambda epoch: train_impl.save(
         epoch, c, model, opt, MODEL_PATH, model_id, epoch_num
@@ -100,7 +99,9 @@ def run_code_impl(run):
     for epoch in pbar:
         metrics = single_epoch_fct(epoch)
         run.log(metrics)  # GE: only execute once per epoch
-        evaluate_model_fct()  # GE: 05/28
+        # When experimenting, skip evaluate_model_fct for speedup
+        if c.max_nb_steps < 0:
+            evaluate_model_fct()  # GE: 05/28
         save_fct(epoch)
 
     # 🐝 Close your wandb run

@@ -10,7 +10,7 @@ def main():
     #  Three parameters specific to W&B
     entity = "emelex"
     project = "GE_ConnTextUL"
-    is_wandb_enabled = False
+    is_wandb_enabled = True
 
     #  Parameters specific to the main code
 
@@ -25,11 +25,15 @@ def main():
         "train_test_split": 0.8,
         # "id": model_id,  # Add back later once code is debugged
         "common_num_layers": 1,
+        # Set to -1 if all the steps should be executed
+        "max_nb_steps": 10,   # to speed up testing
     }
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--sweep", action="store_true")
+    parser.add_argument("--sweep", action="store_true", default='False')
     args = parser.parse_args()
+
+    print("args.sweep: ", args.sweep)
 
     if args.sweep:
         wandb.set_params(
@@ -41,13 +45,18 @@ def main():
         wandb.login()
         # Is it possible to update a sweep configuration? I'd like the default sweep
         # configuration to contain the parameters of config.
+        # GE: suggestion: load different sweeps from files to keep track. 
         sweep_config = {
             "method": "grid",
-            "name": "sweep_d_model",
+            "name": "sweep_time_per_step",
+            "metric": {
+                'goal': 'minimize', 
+                'name': 'time_per_step',
+            },
             "parameters": {
-                "batch_size": {"values": [32, 64]},
-                "d_model": {"values": [16, 32]},
-                "common_num_layers": {"values": [1]},
+                "batch_size": {"values": [32, 64, 128]},
+                "d_model": {"values": [16, 32, 64, 128]},
+                "common_num_layers": {"values": [1, 2, 4]},
             },
         }
 
