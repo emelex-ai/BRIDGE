@@ -5,7 +5,7 @@ import tqdm
 import sys
 import time
 import train_impl as train_impl
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 
 wandb = WandbWrapper()
 
@@ -29,7 +29,13 @@ def run_code_impl(run):
     c = run.config
 
     MODEL_PATH = "./models"  # Hardcoded
-    ds = ConnTextULDataset()
+    # GE, May 30, 2024: added nb_rows argument to read a subset
+    ds = ConnTextULDataset(nb_rows=1000)
+    # Extract the top 1000 rows and return a Dataset
+    # For some reason, Subset does not work. It should. 
+    #ds = Subset(ds, indices=range(len(ds)))  # Generates an error. Something wrong. 
+    # ds = ds[slice(0, 1000, 1)]  # len(ds) returns 2. Why is that? 
+    print("len(ds): ", len(ds))  # 88,891
 
     if pt.cuda.is_available():
         device = pt.device("cuda:0")
@@ -50,6 +56,10 @@ def run_code_impl(run):
     assert c.d_model % c.nhead == 0, "d_model must be evenly divisible by nhead"
 
     num_train = int(len(ds) * c.train_test_split)
+    print("type(ds): ", type(ds))
+    print("num_train: ", num_train)
+    print("num_valid: ", len(ds) - num_train)
+    #cutpoint = int(c.train_test_split * len(ds))
 
     """ MIGHT ADD LATER. Not sure why you are not using a DataLoader """
     """
@@ -115,6 +125,8 @@ def run_code_impl(run):
 
     for epoch in pbar:
         metrics = single_epoch_fct(epoch)
+        print("epoch: ", epoch)
+        print("metrics: ", metrics)
         run.log(metrics)  # GE: only execute once per epoch
         # When experimenting, skip evaluate_model_fct for speedup
         if c.max_nb_steps < 0:

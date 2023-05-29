@@ -17,8 +17,8 @@ def main():
     config = {
         # "starting_epoch": epoch_num,   # Add it back later once code is debugged
         "CONTINUE": False,
-        "num_epochs": 1,
-        "batch_size": 128,
+        "num_epochs": 100,
+        "batch_size": 32,
         "d_model": 32,
         "nhead": 4,
         "learning_rate": 1.0e-3,
@@ -26,8 +26,9 @@ def main():
         # "id": model_id,  # Add back later once code is debugged
         "common_num_layers": 1,
         # Set to -1 if all the steps should be executed
-        "max_nb_steps": 10,   # to speed up testing
+        "max_nb_steps": -1,   # to speed up testing
     }
+    print("config: ", config)
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--sweep", action="store_true", default='False')

@@ -198,9 +198,11 @@ class ConnTextULDataset(Dataset):
   For Matt's Phonoligical Feature Vectors, we will use (31, 32, 33) to represent ('[BOS]', '[EOS]', '[PAD]')
 
   """
-  def __init__(self):
+  def __init__(self, nb_rows=None):
 
-      self.dataset = pd.read_csv(DATA_PATH+'/data.csv')
+      # nrows added by GE to reduced nb rows for code testing 
+      self.dataset = pd.read_csv(DATA_PATH+'/data.csv', nrows=nb_rows)
+
       tmp_words = self.dataset['word_raw'].str.lower() # Series of all lowercased words
       if os.path.exists(DATA_PATH+'/phonology_tokenizer.pkl'):
         with open(DATA_PATH+'/phonology_tokenizer.pkl', 'rb') as f:

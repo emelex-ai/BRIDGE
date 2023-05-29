@@ -88,6 +88,9 @@ class Model(pt.nn.Module):
     ):
         super().__init__()
 
+        #print("ortho: vocabulary size: ", orth_vocab_size)  # 49
+        #print("phono: vocabulary size: ", phon_vocab_size)  # 34
+
         nlayers_phon_enc = num_layers_dict["phon_enc"]
         nlayers_phon_dec = num_layers_dict["phon_dec"]
         nlayers_orth_enc = num_layers_dict["orth_enc"]
