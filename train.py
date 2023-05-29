@@ -5,6 +5,7 @@ import tqdm
 import sys
 import time
 import train_impl as train_impl
+from torch.utils.data import DataLoader
 
 wandb = WandbWrapper()
 
@@ -29,7 +30,6 @@ def run_code_impl(run):
 
     MODEL_PATH = "./models"  # Hardcoded
     ds = ConnTextULDataset()
-    cutpoint = int(c.train_test_split * len(ds))
 
     if pt.cuda.is_available():
         device = pt.device("cuda:0")
@@ -49,8 +49,25 @@ def run_code_impl(run):
     }
     assert c.d_model % c.nhead == 0, "d_model must be evenly divisible by nhead"
 
+    num_train = int(len(ds) * c.train_test_split)
+
+    """ MIGHT ADD LATER. Not sure why you are not using a DataLoader """
+    """
+    # Added by Gordon
+    dataset_train = train_impl.ConnDataset(ds[:num_train])
+    dataset_valid = train_impl.ConnDataset(ds[num_train:])
+    #dataset_train = train_impl.ConnDataset(ds[:num_train])
+    #dataset_valid = train_impl.ConnDataset(ds[num_train:])
+
+    # The advantage of dataloaders is that it is very easy to change batch size from 
+    # epoch to epoch
+    loader_train = DataLoader(ds, batch_size=c.batch_size, shuffle=True)
+    loader_valid = DataLoader(ds, batch_size=1, shuffle=True)
+    """
+
+    # Original code. GE replaced cutpoint by num_tarin
     train_dataset_slices, val_dataset_slices = train_impl.create_data_slices(
-        cutpoint, c, ds
+        num_train, c, ds
     )
 
     # Use startup data to determine starting epoch. Update the model_id
@@ -86,11 +103,11 @@ def run_code_impl(run):
         step,
         generated_text_table,
     )
-    evaluate_model_fct = lambda: train_impl.evaluate_model(
-        model, val_dataset_slices, device, opt, ds
-    )
     single_epoch_fct = lambda epoch: train_impl.single_epoch(
-        c, model, train_dataset_slices, epoch, single_step_fct
+        c, model, train_dataset_slices, epoch, single_step_fct, 
+    )
+    evaluate_model_fct = lambda: train_impl.evaluate_model(
+        model, val_dataset_slices, device, opt, ds, 
     )
     save_fct = lambda epoch: train_impl.save(
         epoch, c, model, opt, MODEL_PATH, model_id, epoch_num

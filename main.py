@@ -10,7 +10,7 @@ def main():
     #  Three parameters specific to W&B
     entity = "emelex"
     project = "GE_ConnTextUL"
-    is_wandb_enabled = True
+    is_wandb_enabled = False
 
     #  Parameters specific to the main code
 
@@ -35,7 +35,8 @@ def main():
 
     print("args.sweep: ", args.sweep)
 
-    if args.sweep:
+    if args.sweep == True:
+        print("args.sweep")
         wandb.set_params(
             config=config, is_sweep=True, is_wandb_on=is_wandb_enabled
         )  # GE: new function
@@ -68,6 +69,7 @@ def main():
         sweep_id = wandb.sweep(sweep_config, project=project, entity=entity)
         wandb.agent(sweep_id, run_code)
     else:
+        print("else")
         wandb.set_params(config=config, is_sweep=False, is_wandb_on=is_wandb_enabled)
 
         globals().update({"wandb": wandb})
