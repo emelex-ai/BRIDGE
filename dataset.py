@@ -1,7 +1,7 @@
 from Traindata import Traindata
 from torch.utils.data import Dataset
 import pandas as pd
-import torch as pt
+import torch
 import nltk
 nltk.download('cmudict')
 import numpy as np
@@ -23,7 +23,7 @@ class CUDA_Dict(dict):
         except:
           print(f"batches = {batches}")
           raise
-      elif isinstance(batches, pt.Tensor):
+      elif isinstance(batches, torch.Tensor):
         output[key] = batches.to(device)
       else:
         raise TypeError("Must be list or torch tensor")
@@ -67,13 +67,13 @@ class CharacterTokenizer:
         list_of_dec_strings = list(map(dec_pad, list_of_strings))
 
         # Initiate encoder tokens tensor as tensor of zeros, 
-        enc_input_ids = pt.zeros((len(list_of_enc_strings), 2 + max_length), dtype=pt.long)
+        enc_input_ids = torch.zeros((len(list_of_enc_strings), 2 + max_length), dtype=torch.long)
         for idx, string in enumerate(list_of_enc_strings):
             for jdx, char in enumerate(string):
                 enc_input_ids[idx, jdx] = self.char_2_idx.get(char, 3) # Default to [UNK]
 
         # Initiate decoder tokens tensor as tensor of zeros, 
-        dec_input_ids = pt.zeros((len(list_of_dec_strings), 1 + max_length), dtype=pt.long)
+        dec_input_ids = torch.zeros((len(list_of_dec_strings), 1 + max_length), dtype=torch.long)
         for idx, string in enumerate(list_of_dec_strings):
             for jdx, char in enumerate(string):
                 dec_input_ids[idx, jdx] = self.char_2_idx.get(char, 3) # Default to [UNK]                
@@ -116,9 +116,9 @@ class Phonemizer():
       for word_num, (phon_vec_sos, phon_vec_eos) in enumerate(zip(traindata[length]['phonSOS'], traindata[length]['phonEOS'])):
         word = traindata[length]['wordlist'][word_num]
         # The encoder receives the entire phonological vector include the BOS and EOS tokens
-        self.enc_inputs[word] = [pt.tensor(np.where(vec)[0], dtype=pt.long) for vec in phon_vec_sos] + [pt.tensor([32])] # 32 is the EOS token location
+        self.enc_inputs[word] = [torch.tensor(np.where(vec)[0], dtype=torch.long) for vec in phon_vec_sos] + [torch.tensor([32])] # 32 is the EOS token location
         # The decoder received the entire phonological vectors including the BOS token, but not the EOS token
-        self.dec_inputs[word] = [pt.tensor(np.where(vec)[0], dtype=pt.long) for vec in phon_vec_sos]
+        self.dec_inputs[word] = [torch.tensor(np.where(vec)[0], dtype=torch.long) for vec in phon_vec_sos]
         # The target for the decoder is all phonological vectors including the EOS token, but excluding the BOS token
         self.targets[word] = phon_vec_eos
 
@@ -147,31 +147,31 @@ class Phonemizer():
         # Collect all token lists in a larger list while calculating the max length of this batch
         enc_input_ids.append(enc_input.copy())
         dec_input_ids.append(dec_input.copy())
-        targets.append(pt.tensor(target.copy(), dtype=pt.long))
+        targets.append(torch.tensor(target.copy(), dtype=torch.long))
         # All three, enc_input, dec_input, and target should be the same length. So all share the same max_length
         # (though we subtract 1 from the decoder input and targets because the BOS/EOS tokens were removed)
         max_length = max(max_length, len(enc_input))
       # Now that we know the max length of this batch, we pad the encoder and decoder input token list with PAD tokens
       for epv, dpv in zip(enc_input_ids, dec_input_ids):
-        epv.extend([pt.tensor([self.PAD])]*(max_length-len(epv)))
-        dpv.extend([pt.tensor([self.PAD])]*(max_length-1-len(dpv)))
+        epv.extend([torch.tensor([self.PAD])]*(max_length-len(epv)))
+        dpv.extend([torch.tensor([self.PAD])]*(max_length-1-len(dpv)))
       # We then include padding, or indices in the targets to be passed to the 'ignore_index' parameter in the CrossEntropyLoss
       # Since each phonological vector is either on or off, it is a binary classification problem, so valid labels are either 0, or 1.
       # We will include labels of '2' where the padding is in the target vectors
       #print("targets = ", targets)
       for i in range(len(targets)):
         tv = targets[i]
-        targets[i] = pt.concat((tv, pt.tensor([[2]*33]*(max_length-1-len(tv)), dtype=pt.long)))
+        targets[i] = torch.concat((tv, torch.tensor([[2]*33]*(max_length-1-len(tv)), dtype=torch.long)))
         #print("len(tv) = ", len(tv))
-        #tv = pt.concat((tv, pt.tensor([[2]*33]*(max_length-len(tv)))))
+        #tv = torch.concat((tv, torch.tensor([[2]*33]*(max_length-len(tv)))))
         #print("tv = ", tv)
         #sys.exit()
     else:
       raise TypeError('encode only accepts lists or a single string as input')
 
-    enc_pad_mask = pt.tensor([[all(val == pt.tensor([self.PAD])) for val in token] for token in enc_input_ids])
-    dec_pad_mask = pt.tensor([[all(val == pt.tensor([self.PAD])) for val in token] for token in dec_input_ids])
-    #dec_pad_mask = pt.tensor([1])
+    enc_pad_mask = torch.tensor([[all(val == torch.tensor([self.PAD])) for val in token] for token in enc_input_ids])
+    dec_pad_mask = torch.tensor([[all(val == torch.tensor([self.PAD])) for val in token] for token in dec_input_ids])
+    #dec_pad_mask = torch.tensor([1])
 
     # Ensure that the number of tokens matches the number of boolean values in the mask
     assert len(enc_input_ids) == len(enc_pad_mask), f"tokens is length {len(enc_input_ids)}, enc_pad_mask is length {len(enc_pad_mask)}. They must be equal"
@@ -181,10 +181,10 @@ class Phonemizer():
                       'enc_pad_mask':enc_pad_mask.bool(), 
                       'dec_input_ids':dec_input_ids,
                       'dec_pad_mask':dec_pad_mask.bool(),
-                      'targets':pt.stack(targets, 0)})
+                      'targets':torch.stack(targets, 0)})
   
   def decode(self, tokens):
-    output = pt.zeros(len(tokens), 33)
+    output = torch.zeros(len(tokens), 33)
     for i, token in enumerate(tokens):
        output[i, token] = 1
 
@@ -198,9 +198,12 @@ class ConnTextULDataset(Dataset):
   For Matt's Phonoligical Feature Vectors, we will use (31, 32, 33) to represent ('[BOS]', '[EOS]', '[PAD]')
 
   """
-  def __init__(self):
+  def __init__(self, test=False):
 
-      self.dataset = pd.read_csv(DATA_PATH+'/data.csv')
+      if test:
+        self.dataset = pd.read_csv(DATA_PATH+'/test.csv')
+      else:
+        self.dataset = pd.read_csv(DATA_PATH+'/data.csv')
       tmp_words = self.dataset['word_raw'].str.lower() # Series of all lowercased words
       if os.path.exists(DATA_PATH+'/phonology_tokenizer.pkl'):
         with open(DATA_PATH+'/phonology_tokenizer.pkl', 'rb') as f:
