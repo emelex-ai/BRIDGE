@@ -217,7 +217,8 @@ class ConnTextULDataset(Dataset):
       # Notice I created a tokenizer in this class.
       # We can use it to tokenize word output of __getitem__ below,
       # although I haven't implemented yet.
-      list_of_characters = set(''.join([c for word in tmp_words for c in word]))
+      list_of_characters = sorted(set([c for word in tmp_words for c in word]))
+
       self.character_tokenizer = CharacterTokenizer(list_of_characters)
 
       final_words = []
