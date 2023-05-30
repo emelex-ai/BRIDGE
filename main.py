@@ -10,23 +10,23 @@ def main():
     #  Three parameters specific to W&B
     entity = "emelex"
     project = "GE_ConnTextUL"
-    is_wandb_enabled = False
+    is_wandb_enabled = True
 
     #  Parameters specific to the main code
 
     config = {
         # "starting_epoch": epoch_num,   # Add it back later once code is debugged
         "CONTINUE": False,
-        "num_epochs": 100,
-        "batch_size": 32,
+        "num_epochs": 400,
+        "batch_size": 128,
         "d_model": 32,
         "nhead": 4,
         "learning_rate": 1.0e-3,
         "train_test_split": 0.8,
         # "id": model_id,  # Add back later once code is debugged
-        "common_num_layers": 1,
+        "common_num_layers": 4,
         # Set to -1 if all the steps should be executed
-        "max_nb_steps": -1,   # to speed up testing
+        "max_nb_steps": -1,   # to speed up testing. Set to -1 to process full data. 
     }
     print("config: ", config)
 
@@ -50,15 +50,15 @@ def main():
         # GE: suggestion: load different sweeps from files to keep track. 
         sweep_config = {
             "method": "grid",
-            "name": "sweep_time_per_epoch",
+            "name": "sweep_400ep_64d_m_128b",
             "metric": {
                 'goal': 'minimize', 
                 'name': 'time_per_epoch',
             },
             "parameters": {
-                "batch_size": {"values": [32, 64, 128]},
-                "d_model": {"values": [16, 32, 64, 128]},
-                "common_num_layers": {"values": [1, 2, 4]},
+                "batch_size": {"values": [128]},
+                "d_model": {"values": [64]},
+                "common_num_layers": {"values": [1, 4]},
             },
         }
 

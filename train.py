@@ -30,12 +30,14 @@ def run_code_impl(run):
 
     MODEL_PATH = "./models"  # Hardcoded
     # GE, May 30, 2024: added nb_rows argument to read a subset
-    ds = ConnTextULDataset(nb_rows=1000)
+    #ds = ConnTextULDataset() # first sweep, use all rows
+    #ds = ConnTextULDataset(nb_rows=1000) # first sweep, use `nb_rows` rows
+    ds = ConnTextULDataset(nb_rows=10000) # first sweep
     # Extract the top 1000 rows and return a Dataset
     # For some reason, Subset does not work. It should. 
     #ds = Subset(ds, indices=range(len(ds)))  # Generates an error. Something wrong. 
     # ds = ds[slice(0, 1000, 1)]  # len(ds) returns 2. Why is that? 
-    print("len(ds): ", len(ds))  # 88,891
+    print("len(ds): ", len(ds))  # 88,891 
 
     if pt.cuda.is_available():
         device = pt.device("cuda:0")
@@ -88,6 +90,8 @@ def run_code_impl(run):
     print("n_steps_per_epoch: ", c.n_steps_per_epoch)
 
     model, opt = train_impl.setup_model(MODEL_PATH, c, ds, num_layers_dict)
+    print(model)
+    raise "error"
 
     generated_text_table = wandb.Table(columns=["Step", "Generated Output"])
     run.watch(model, log="all", log_freq=100)  # Comment out by GE
