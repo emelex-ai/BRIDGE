@@ -103,12 +103,12 @@ class Phonemizer():
 
     self.PAD = 33
 
-    traindata = Traindata.Traindata(wordlist, 
+    self.traindata = Traindata.Traindata(wordlist, 
                           phonpath='raw/phonreps.csv',  
                           terminals=True,
                           oneletter=True,
-                          verbose=False).traindata
-    self.traindata = traindata
+                          verbose=False)
+    traindata = self.traindata.traindata
     self.enc_inputs = {}
     self.dec_inputs = {}
     self.targets = {}
