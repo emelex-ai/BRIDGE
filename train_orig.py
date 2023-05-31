@@ -49,8 +49,9 @@ if TEST:
   num_layers = 2
   batch_size = 8  # orig 1
   learning_rate = 0.001
-  num_epochs = 1
+  num_epochs = 2
   CONTINUE = False
+  train_test_split = 0.8  # Added by GE
   seed = 1337
   torch.manual_seed(seed)
   torch.cuda.manual_seed_all(seed)
@@ -72,8 +73,10 @@ else:
 
 device = 'cpu'
 
-train_test_split = 0.95
+print("train_test_split: ", train_test_split)
 cutpoint = int(train_test_split * len(ds))
+print("cutpoint: ", cutpoint)
+
 train_dataset_slices = []
 for batch in range(math.ceil(cutpoint/batch_size)):
   train_dataset_slices.append(slice(batch*batch_size, min((batch+1)*batch_size, cutpoint)))
@@ -98,6 +101,7 @@ else:
 n_steps_per_epoch = len(train_dataset_slices)
 
 print("num_layers: ", num_layers)
+print("len(ds): ", len(ds))
 
 
 if CONTINUE:
@@ -150,9 +154,11 @@ example_ct = 0
 for epoch in pbar:
     model.train()
     print("\nTraining Loop...")
+    print("len(train_dataset_slices): ", len(train_dataset_slices))
     for step, batch_slice in enumerate(train_dataset_slices):
         batch = ds[batch_slice]
-        print("batch = ", batch)
+        print(f"step: {step}, batch_slice: ", batch_slice)
+        #print("batch: ", batch)
         orthography, phonology = batch['orthography'].to(device), batch['phonology'].to(device)
         logits = model(orthography['enc_input_ids'], orthography['enc_pad_mask'],
                     orthography['dec_input_ids'], orthography['dec_pad_mask'],
@@ -236,14 +242,12 @@ for epoch in pbar:
                   }
 
         # DEBUGGING
-        for k,v in metrics.items():
-            print(f"metrics[{k}] = {v}")
+        #for k,v in metrics.items():
+            #print(f"metrics[{k}] = {v}")
 
         #raise "error, after print metrics"    # <<<< Part of debugging
 
         run.log(metrics)
-
-        if step == 1: break  # DEBUGGING
 
     model.eval()
     with torch.no_grad():

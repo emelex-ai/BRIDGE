@@ -78,7 +78,8 @@ def run_code_impl(run, ds):
     """
 
     # Original code. GE replaced cutpoint by num_tarin
-    print("num_train= ", num_train)
+    print("num_train/cutpoint: ", num_train)  # Same value in old and new code?
+
     train_dataset_slices, val_dataset_slices = train_impl.create_data_slices(
         num_train, c, ds
     )
@@ -127,6 +128,7 @@ def run_code_impl(run, ds):
     )
 
     for epoch in pbar:
+        print("\nTraining Loop...")
         metrics = single_epoch_fct(epoch)
         print("epoch: ", epoch)
         print("metrics: ", metrics)

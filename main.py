@@ -50,7 +50,7 @@ def main():
         num_layers = 2
         batch_size = 8
         learning_rate = 0.001
-        num_epochs = 1
+        num_epochs = 2
         max_nb_steps = -1
         CONTINUE = False
         seed = 1337

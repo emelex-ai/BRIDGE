@@ -45,7 +45,8 @@ def evaluate_model(model, val_dataset_slices, device, opt, ds):
 #----------------------------------------------------------------------
 def single_step(pbar, model, train_dataset_slices, batch_slice, ds, device, example_ct, opt, epoch, step, generated_text_table):
     batch = ds[batch_slice]
-    print("batch = ", batch)
+    #print("batch_slice: ", batch_slice)
+    #print("batch = ", batch)
     orthography, phonology = batch["orthography"].to(device), batch[
         "phonology"
     ].to(device)
@@ -165,8 +166,8 @@ def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss,
     }
 
     # DEBUGGING
-    for k,v in metrics.items(): 
-        print(f"metrics[{k}] = {v}")
+    #for k,v in metrics.items(): 
+        #print(f"metrics[{k}] = {v}")
 
     
     return metrics
@@ -176,15 +177,18 @@ def single_epoch(c, model, train_dataset_slices, epoch, single_step_fct):
     nb_steps = 0  # GE: added
     start = time.time()
 
+    print("len(train_dataset_slices): ", len(train_dataset_slices))
+
+
     for step, batch_slice in enumerate(train_dataset_slices):
+        print(f"step: {step}, batch_slice: ", batch_slice)
         nb_steps += 1
         if c.max_nb_steps > 0 and nb_steps >= c.max_nb_steps:
+            print("max_nb_steps: ", c.max_nb_steps)  # does not reach this point in test mode
+            raise "should not occur"
             break
-        single_step_fct(batch_slice, step, epoch)   # GE: new
+        metrics = single_step_fct(batch_slice, step, epoch)   # GE: new
         print_weight_norms(model, f"DEBUG: step: {step}, norm: ")  # GE: debug
-        metrics = single_step_fct(batch_slice, step, epoch)   # GE: original
-
-        if step == 1: break
 
     print("nb_steps: ", nb_steps)
     metrics['time_per_step'] = (time.time() - start) / nb_steps
