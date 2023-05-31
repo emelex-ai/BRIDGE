@@ -45,6 +45,7 @@ def evaluate_model(model, val_dataset_slices, device, opt, ds):
 #----------------------------------------------------------------------
 def single_step(pbar, model, train_dataset_slices, batch_slice, ds, device, example_ct, opt, epoch, step, generated_text_table):
     batch = ds[batch_slice]
+    print("batch = ", batch)
     orthography, phonology = batch["orthography"].to(device), batch[
         "phonology"
     ].to(device)
@@ -66,14 +67,20 @@ def single_step(pbar, model, train_dataset_slices, batch_slice, ds, device, exam
         logits["phon"], phonology["targets"]
     )
     loss = orth_loss + phon_loss
+    print("phon_loss: ", phon_loss.item())
+    print("orth_loss: ", orth_loss.item())
     print("loss: ", loss.item())
 
+    print_weight_norms(model, "before loss.backward")
     loss.backward()
     opt.step()
+    print_weight_norms(model, "after opt.step")
     opt.zero_grad()
 
     # Suggestion: compute cheap metrics every step, more complex metrics every epoch
     metrics = compute_metrics(logits, orthography, phonology, batch, example_ct, orth_loss, phon_loss, loss, epoch, step, ds, device, model, generated_text_table)
+    print("DEBUG metrics: ", metrics)
+    #raise "error, after print metrics"
     return metrics
 
 #----------------------------------------------------------------------
@@ -86,10 +93,13 @@ def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss,
     # Keep orthographic encoder input ids unchanged:
     B_orth = orthography["enc_input_ids"][:, 1:]
     # Compute orthographic accuracy:
-    orth_accuracy = (
-        pt.tensor(pt.where((A_orth == B_orth).all(dim=1))[0].size())
-        / pt.tensor(A_orth.size())[0]
-    )
+    word_accuracy = pt.tensor(pt.where((A_orth == B_orth).all(dim=1))[0].size())/pt.tensor(A_orth.size())[0]
+    char_accuracy = (A_orth == B_orth).sum()/pt.tensor(A_orth.shape).prod()
+
+    #orth_accuracy = 
+        #pt.tensor(pt.where((A_orth == B_orth).all(dim=1))[0].size())
+        #/ pt.tensor(A_orth.size())[0]
+    #)
 
     # Accuracy function for phonology.
     # Compute dimensions for phonological logit and target reshaping:
@@ -133,8 +143,8 @@ def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss,
         )[0]
         # Log the text in the WandB table
         generated_text_table.add_data(step, generated_text)
-        example_ct[0] += len(batch["orthography"])
 
+    example_ct[0] += len(batch["orthography"])
     metrics = {
         "train/orth_loss": orth_loss,
         "train/phon_loss": phon_loss,
@@ -149,9 +159,16 @@ def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss,
         ),
         # "train/lr": opt.state_dict()['param_groups'][0]['lr'],
         "train/generated_text_table": generated_text_table,
-        "orthographic accuracy": orth_accuracy,
+        "word accuracy": word_accuracy,
         "phonological accuracy": phon_accuracy,
+        "character accuracy": char_accuracy,
     }
+
+    # DEBUGGING
+    for k,v in metrics.items(): 
+        print(f"metrics[{k}] = {v}")
+
+    
     return metrics
 #----------------------------------------------------------------------
 def single_epoch(c, model, train_dataset_slices, epoch, single_step_fct):
@@ -166,6 +183,8 @@ def single_epoch(c, model, train_dataset_slices, epoch, single_step_fct):
         single_step_fct(batch_slice, step, epoch)   # GE: new
         print_weight_norms(model, f"DEBUG: step: {step}, norm: ")  # GE: debug
         metrics = single_step_fct(batch_slice, step, epoch)   # GE: original
+
+        if step == 1: break
 
     print("nb_steps: ", nb_steps)
     metrics['time_per_step'] = (time.time() - start) / nb_steps
@@ -244,7 +263,6 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
     print("original model weights")
     print_weight_norms(model, "initial model weights")
     print(model)
-    raise "error"
 
     print(
         "char/phon tokenizers len: ",
