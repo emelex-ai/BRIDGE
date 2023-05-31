@@ -241,6 +241,10 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
             num_layers_dict=num_layers_dict,  # New, GE, 2023-05-27
         )
         opt = pt.optim.AdamW(model.parameters(), c.learning_rate)
+    print("original model weights")
+    print_weight_norms(model, "initial model weights")
+    print(model)
+    raise "error"
 
     print(
         "char/phon tokenizers len: ",

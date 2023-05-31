@@ -48,7 +48,7 @@ def main():
         d_model = 16
         nhead = 2
         num_layers = 2
-        batch_size = 1
+        batch_size = 8
         learning_rate = 0.001
         num_epochs = 1
         max_nb_steps = -1
