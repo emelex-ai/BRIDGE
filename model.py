@@ -38,9 +38,10 @@ class Model(torch.nn.Module):
         # Initial embeddings for orthography, phonology, and position
         # Emebdding for orthography
         self.orthography_embedding = torch.nn.Embedding(orth_vocab_size, d_model)
+        self.orth_position_embedding = torch.nn.Embedding(max_seq_len, d_model)  # GE  added an independent pos embedding
         # Embedding for phonology
         self.phonology_embedding = torch.nn.Embedding(phon_vocab_size, d_model)
-        self.position_embedding = torch.nn.Embedding(max_seq_len, d_model)
+        self.phon_position_embedding = torch.nn.Embedding(max_seq_len, d_model)  # GE
 
         self.vocab_sizes = {'orth_vocab_size': orth_vocab_size, 
                             'phon_vocab_size': phon_vocab_size}
@@ -87,7 +88,7 @@ class Model(torch.nn.Module):
         if mode == 'o':
            assert isinstance(tokens, torch.Tensor), "For orthographic embeddings, tokens must be a pytorch tensor of integers (indices of orthography_embedding)"
            assert tokens.dtype == torch.long or tokens.dtype == torch.int, f"Input tensor to Embedding must be type int or long but is {tokens.dtype}"
-           return self.orthography_embedding(tokens) + self.position_embedding.weight[None,:tokens.shape[1]]
+           return self.orthography_embedding(tokens) + self.orth_position_embedding.weight[None,:tokens.shape[1]] # GE
         # This is where we need to average the phonological embedding vectors
         else:
            try:
@@ -112,7 +113,7 @@ class Model(torch.nn.Module):
                avg_embedding = self.phonology_embedding(tokes).mean(axis=0)
                # Insert the resulting averaged embedding vector into the output_embedding tensor as a new row
                output_embedding[batch_num, indx, :] = avg_embedding
-           return output_embedding + self.position_embedding.weight[None,:len(tokens[0])] 
+           return output_embedding + self.phon_position_embedding.weight[None,:len(tokens[0])]   # GE: independent positional encodings
 
     def embed(self, orthography, orthography_padding_mask, phonology, phonology_padding_mask):
         orthography, phonology = self.embed_tokens(orthography, 'o'), self.embed_tokens(phonology, 'p')
