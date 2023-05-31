@@ -2,6 +2,7 @@ import argparse  # NEW LIBRARY (pip install argparse)
 from wandb_wrapper import WandbWrapper
 from train import run_code
 from dataset import ConnTextULDataset
+import torch
 
 wandb = WandbWrapper()
 
@@ -54,14 +55,14 @@ def main():
         CONTINUE = False
         seed = 1337
         train_test_split = 0.8
-        torch.manual_seed(seed)
+        # GE: I would prefer ref to torch not be in main.py
+        torch.manual_seed(seed)  
         torch.cuda.manual_seed_all(seed)
-        torch.use_deterministic_algorithms(True)
+        #torch.use_deterministic_algorithms(True)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
     else:
         ds = ConnTextULDataset()
-
 
 
 
@@ -138,9 +139,9 @@ def main():
             print("wandb is disabled")
             run = wandb.init(config=config)
             # make sure I config is accessible with the dot notation
-            run_code()
+            run_code(ds)
         else:
-            run_code()
+            run_code(ds)
 
 
 if __name__ == "__main__":

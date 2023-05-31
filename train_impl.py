@@ -164,6 +164,7 @@ def single_epoch(c, model, train_dataset_slices, epoch, single_step_fct):
         if c.max_nb_steps > 0 and nb_steps >= c.max_nb_steps:
             break
         single_step_fct(batch_slice, step, epoch)   # GE: new
+        print_weight_norms(model, f"DEBUG: step: {step}, norm: ")  # GE: debug
         metrics = single_step_fct(batch_slice, step, epoch)   # GE: original
 
     print("nb_steps: ", nb_steps)
@@ -292,6 +293,7 @@ def create_data_slices(cutpoint, c, ds):
     """
 
     """ GE: original code """
+    print("len slices: ", len(train_dataset_slices), len(val_dataset_slices))
     return train_dataset_slices, val_dataset_slices
 #----------------------------------------------------------------------
 # Not used
@@ -305,4 +307,8 @@ class ConnDataset(Dataset):
     def __get_item(self, i):
         return ds[i]
 
+#----------------------------------------------------------------------
+def print_weight_norms(model, msg):
+    norm = pt.sqrt(sum([pt.norm(w[0], p=2) ** 2 for w in model.parameters()]))
+    print(f"==> {msg}, {norm}")
 #----------------------------------------------------------------------

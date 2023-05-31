@@ -28,3 +28,9 @@ May 26, 2023
 - Added separate positional embeddings for orthography and phonology
 - Added fine-grained control over the number of layers of both encoders and decoders
 ----------------------------------------------------------------------
+May 30, 2023
+- The code produces the same results on multiple runs in test mode (python main.py --test)
+- Tomorrow, I will run the original code and print out the weights after every step with the same
+  architecture. If the results are the same at all steps, we'll declare the codes the same. 
+  My refactorings should not have changed the order or number of operations. 
+----------------------------------------------------------------------

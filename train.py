@@ -15,12 +15,12 @@ More complex code structure to accomodate running wandb with and with hypersweep
 """
 
 
-def run_code():
+def run_code(ds):
     run = wandb.init()
-    run_code_impl(run)
+    run_code_impl(run, ds)
 
 
-def run_code_impl(run):
+def run_code_impl(run, ds):
     # This approach of copying variables from the dictionary is prone to error if additional variables are
     # added due to violation of the
     # DRY principle (Don't Repeat Yourself)
@@ -32,7 +32,7 @@ def run_code_impl(run):
     # GE, May 30, 2024: added nb_rows argument to read a subset
     #ds = ConnTextULDataset() # first sweep, use all rows
     #ds = ConnTextULDataset(nb_rows=1000) # first sweep, use `nb_rows` rows
-    ds = ConnTextULDataset(nb_rows=10000) # first sweep
+    #ds = ConnTextULDataset(nb_rows=10000) # first sweep
     # Extract the top 1000 rows and return a Dataset
     # For some reason, Subset does not work. It should. 
     #ds = Subset(ds, indices=range(len(ds)))  # Generates an error. Something wrong. 
@@ -44,8 +44,8 @@ def run_code_impl(run):
     else:
         device = pt.device("cpu")
 
-    # device = 'cpu'
-    print("device = ", device)
+    device = 'cpu'
+    #print("device = ", device)
 
     # GE 2023-05-27: added fine-grain control over layer structure
     num_layers_dict = {
@@ -78,6 +78,7 @@ def run_code_impl(run):
     """
 
     # Original code. GE replaced cutpoint by num_tarin
+    print("num_train= ", num_train)
     train_dataset_slices, val_dataset_slices = train_impl.create_data_slices(
         num_train, c, ds
     )
@@ -90,8 +91,6 @@ def run_code_impl(run):
     print("n_steps_per_epoch: ", c.n_steps_per_epoch)
 
     model, opt = train_impl.setup_model(MODEL_PATH, c, ds, num_layers_dict)
-    print(model)
-    raise "error"
 
     generated_text_table = wandb.Table(columns=["Step", "Generated Output"])
     run.watch(model, log="all", log_freq=100)  # Comment out by GE
