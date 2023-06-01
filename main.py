@@ -16,16 +16,14 @@ def main():
     parser.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate")
     parser.add_argument("--continue_training", type=bool, default=False, help="Continue training from last checkpoint")
     parser.add_argument("--d_model", type=int, default=128, help="Dimensionality of the internal model components \
-                                                                  including Embedding layer, transformer layers, \
-                                                                  and linear layers. Must be evenly divisible by nhead")
+                        including Embedding layer, transformer layers, \
+                        and linear layers. Must be evenly divisible by nhead")
     parser.add_argument("--nhead", type=int, default=4, help="Number of attention heads for all attention modules. \
-                                                              Must evenly divide d_model.")
-    parser.add_argument("--test", type=bool, default=False, help="Test mode: only run one epoch on a small subset of the data")
+                        Must evenly divide d_model.")
+    parser.add_argument("--test", action='store_true', default=False, help="Test mode: only run one epoch on a small subset of the data")
     parser.add_argument("--max_nb_steps", type=int, default=-1, help="Hardcode nb steps per epoch for fast testing")
     parser.add_argument("--train_test_split", type=float, default=0.8, help="Fraction of data in the training set")
-
-    # GE
-    parser.add_argument("--sweep", action="store_true", default='False')
+    parser.add_argument("--sweep", action="store_true", default=False, help="Run a sweep with wandb")
 
     
     args = parser.parse_args()
@@ -64,8 +62,6 @@ def main():
     else:
         ds = ConnTextULDataset()
 
-
-
     #  Three parameters specific to W&B
     entity = "emelex"
     project = "ConnTextUL"
@@ -75,6 +71,7 @@ def main():
 
     config = {
         # "starting_epoch": epoch_num,   # Add it back later once code is debugged
+        "model_path": MODEL_PATH,
         "CONTINUE": CONTINUE,
         "num_epochs": num_epochs,
         "batch_size": batch_size,

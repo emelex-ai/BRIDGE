@@ -11,7 +11,7 @@ wandb = WandbWrapper()
 
 # ----------------------------------------------------------------------
 """ 
-More complex code structure to accomodate running wandb with and with hypersweeps
+More complex code structure to accomodate running wandb with and without hypersweeps
 """
 
 
@@ -28,7 +28,7 @@ def run_code_impl(run, ds):
 
     c = run.config
 
-    MODEL_PATH = "./models"  # Hardcoded
+    MODEL_PATH = c.model_path
     # GE, May 30, 2024: added nb_rows argument to read a subset
     #ds = ConnTextULDataset() # first sweep, use all rows
     #ds = ConnTextULDataset(nb_rows=1000) # first sweep, use `nb_rows` rows
