@@ -42,7 +42,7 @@ def main():
     assert d_model%nhead == 0, "d_model must be evenly divisible by nhead"
 
     if TEST:
-        ds = ConnTextULDataset(test=True)
+        #ds = ConnTextULDataset(test=True)
         d_model = 16
         nhead = 2
         num_layers = 2
@@ -60,7 +60,8 @@ def main():
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
     else:
-        ds = ConnTextULDataset()
+        #ds = ConnTextULDataset()
+        pass
 
     #  Three parameters specific to W&B
     entity = "emelex"
@@ -83,6 +84,7 @@ def main():
         "common_num_layers": num_layers,
         # Set to -1 if all the steps should be executed
         "max_nb_steps": max_nb_steps,   # to speed up testing. Set to -1 to process full data. 
+        "which_dataset": 1, # select dataset from data/ folder
     }
     print("config: ", config)
 
@@ -99,15 +101,17 @@ def main():
         # GE: suggestion: load different sweeps from files to keep track. 
         sweep_config = {
             "method": "grid",
-            "name": "sweep_400ep_64d_m_128b",
+            "name": "sweep_ep100_d64",
             "metric": {
                 'goal': 'minimize', 
-                'name': 'time_per_epoch',
+                'name': 'character accuracy',
             },
             "parameters": {
-                "batch_size": {"values": [128]},
-                "d_model": {"values": [64]},
+                "num_epochs": {"values": [100]},
+                "batch_size": {"values": [16, 32, 64]},
+                "d_model": {"values": [16, 64]},
                 "common_num_layers": {"values": [1, 4]},
+                "which_dataset": {"values": [1, 20, 50, 100, 250, 500, 1000]},
             },
         }
 
@@ -116,10 +120,18 @@ def main():
             if param not in sweep_config["parameters"]:
                 sweep_config["parameters"][param] = {"values": [value]}
 
+        # This must be put inside the sweep so that the proper dataset is selected
+        # ds must also be available to wandb.agent(). There must be a better approach. 
+        if TEST:
+            ds = ConnTextULDataset(test=True, which_dataset=config['which_dataset'])
+        else:
+            print("config: ", config)
+            ds = ConnTextULDataset(which_dataset=config['which_dataset'])
+
         sweep_id = wandb.sweep(sweep_config, project=project, entity=entity)
-        wandb.agent(sweep_id, run_code)
+        run_code1 = lambda : run_code(ds)
+        wandb.agent(sweep_id, run_code1)
     else:
-        print("else")
         wandb.set_params(config=config, is_sweep=False, is_wandb_on=is_wandb_enabled)
 
         globals().update({"wandb": wandb})
