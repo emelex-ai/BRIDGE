@@ -161,9 +161,9 @@ class Phonemizer():
       #print("targets = ", targets)
       for i in range(len(targets)):
         tv = targets[i]
-        targets[i] = torch.concat((tv, torch.tensor([[2]*33]*(max_length-1-len(tv)), dtype=torch.long)))
+        targets[i] = torch.cat((tv, torch.tensor([[2]*33]*(max_length-1-len(tv)), dtype=torch.long)))
         #print("len(tv) = ", len(tv))
-        #tv = torch.concat((tv, torch.tensor([[2]*33]*(max_length-len(tv)))))
+        #tv = torch.cat((tv, torch.tensor([[2]*33]*(max_length-len(tv)))))
         #print("tv = ", tv)
         #sys.exit()
     else:
