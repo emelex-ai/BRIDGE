@@ -23,7 +23,6 @@ def main():
     parser.add_argument("--test", action='store_true', default=False, help="Test mode: only run one epoch on a small subset of the data")
     parser.add_argument("--max_nb_steps", type=int, default=-1, help="Hardcode nb steps per epoch for fast testing")
     parser.add_argument("--train_test_split", type=float, default=0.8, help="Fraction of data in the training set")
-    #parser.add_argument("--sweep", action="store_true", default=False, help="Run a sweep with wandb")
     parser.add_argument("--sweep", type=str, required=True, default="", help="Run a wandb sweep from a file")
     
     args = parser.parse_args()
@@ -41,9 +40,6 @@ def main():
     train_test_split = args.train_test_split
     sweep = args.sweep
     assert d_model%nhead == 0, "d_model must be evenly divisible by nhead"
-
-    print(args)
-    raise "error"
 
     if TEST:
         ds = ConnTextULDataset(test=True)
