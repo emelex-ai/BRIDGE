@@ -17,6 +17,7 @@ More complex code structure to accomodate running wandb with and without hypersw
 
 def run_code(ds):
     run = wandb.init()
+    print("*******************")
     run_code_impl(run, ds)
 
 

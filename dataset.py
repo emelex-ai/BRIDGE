@@ -8,6 +8,7 @@ import numpy as np
 import pickle
 import os
 
+
 DATA_PATH = "./data/"
 
 class CUDA_Dict(dict):
@@ -42,7 +43,8 @@ class CharacterTokenizer:
           self.char_2_idx[ch] = i 
           self.idx_2_char[i] = ch
         # Reuse index from previous for loop to save computation
-        self.size = i+1
+        # self.size = i + 1
+        self.size = len(self.vocab)  # more robust
 
 
     def __len__(self): return self.size
@@ -198,13 +200,14 @@ class ConnTextULDataset(Dataset):
   For Matt's Phonoligical Feature Vectors, we will use (31, 32, 33) to represent ('[BOS]', '[EOS]', '[PAD]')
 
   """
-  def __init__(self, test=False, nb_rows=None):
+  def __init__(self, test=False, nb_rows=None, which_dataset=1):
 
       # nrows added by GE to reduced nb rows for code testing 
       if test:
         self.dataset = pd.read_csv(DATA_PATH+'/test.csv')
       else:
-        self.dataset = pd.read_csv(DATA_PATH+'/data.csv', nrows=nb_rows)
+        #self.dataset = pd.read_csv(DATA_PATH+'/data.csv', nrows=nb_rows)
+        self.dataset = pd.read_csv(DATA_PATH+f'/data_test{which_dataset}.csv', nrows=nb_rows)
 
       tmp_words = self.dataset['word_raw'].str.lower() # Series of all lowercased words
       if os.path.exists(DATA_PATH+'/phonology_tokenizer.pkl'):
