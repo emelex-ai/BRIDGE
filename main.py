@@ -102,6 +102,7 @@ def main():
         # Is it possible to update a sweep configuration? I'd like the default sweep
         # configuration to contain the parameters of config.
         # GE: suggestion: load different sweeps from files to keep track. 
+        """
         sweep_config = {
             "method": "grid",
             "name": "sweep_ep100_d64",
@@ -118,6 +119,7 @@ def main():
             },
         }
         """
+        
         sweep_config = {
             "method": "grid",
             "name": "sweep_ep100_d64",
@@ -126,14 +128,14 @@ def main():
                 'name': 'character accuracy',
             },
             "parameters": {
-                "num_epochs": {"values": [100]},
-                "batch_size": {"values": [16, 32, 64]},
+                "num_epochs": {"values": [400]},
+                "batch_size": {"values": [16, 32, 64, 128]},
                 "d_model": {"values": [16, 64]},
-                "common_num_layers": {"values": [1, 4]},
-                "which_dataset": {"values": [1, 20, 50, 100, 250, 500, 1000]},
+                "common_num_layers": {"values": [1, 2, 4]},
+                "which_dataset": {"values": [5, 20, 50, 100, 250, 500, 1000]},
             },
         }
-        """
+        
 
         # Update sweep_config with new_params without overwriting existing parameters:
         for param, value in config.items():
