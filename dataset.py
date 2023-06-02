@@ -8,6 +8,7 @@ import numpy as np
 import pickle
 import os
 
+
 DATA_PATH = "./data/"
 
 class CUDA_Dict(dict):
@@ -42,7 +43,8 @@ class CharacterTokenizer:
           self.char_2_idx[ch] = i 
           self.idx_2_char[i] = ch
         # Reuse index from previous for loop to save computation
-        self.size = i+1
+        # self.size = i + 1
+        self.size = len(self.vocab)  # more robust
 
 
     def __len__(self): return self.size
