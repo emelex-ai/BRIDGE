@@ -1,7 +1,7 @@
 from Traindata import Traindata
 from torch.utils.data import Dataset
 import pandas as pd
-import torch as torch
+import torch
 import nltk
 nltk.download('cmudict')
 import numpy as np

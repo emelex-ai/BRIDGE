@@ -1,3 +1,10 @@
+<<<<<<< HEAD
+*.pth
+*.log
+wandb/*
+*.pkl
+*.pyc
+=======
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -161,3 +168,4 @@ cython_debug/
 
 # wandb
 wandb/
+>>>>>>> 14a45e0c874a42d6137270bdf357f2dfb1d51229

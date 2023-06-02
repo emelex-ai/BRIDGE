@@ -74,7 +74,6 @@ class Decoder(torch.nn.Module):
         )
         return output
 
-
 # ----------------------------------------------------------------------
 class Model(torch.nn.Module):
     def __init__(
@@ -100,15 +99,10 @@ class Model(torch.nn.Module):
         # Initial embeddings for orthography, phonology, and position
         # Emebdding for orthography
         self.orthography_embedding = torch.nn.Embedding(orth_vocab_size, d_model)
-        self.orthography_pos_embedding = torch.nn.Embedding(
-            max_seq_len, d_model
-        )  # GE added, 2023-05-26
+        self.orth_position_embedding = torch.nn.Embedding(max_seq_len, d_model)  # GE  added an independent pos embedding
         # Embedding for phonology
         self.phonology_embedding = torch.nn.Embedding(phon_vocab_size, d_model)
-        # self.position_embedding = torch.nn.Embedding(max_seq_len, d_model)   # GE removed, 2023-05-26
-        self.phonology_pos_embedding = torch.nn.Embedding(
-            max_seq_len, d_model
-        )  # GE added, 2023-05-26
+        self.phon_position_embedding = torch.nn.Embedding(max_seq_len, d_model)  # GE
 
         self.vocab_sizes = {
             "orth_vocab_size": orth_vocab_size,
@@ -178,54 +172,35 @@ class Model(torch.nn.Module):
     def embed_tokens(self, tokens, mode="o"):
         assert mode in ["o", "p"]
 
-        if mode == "o":
-            assert isinstance(
-                tokens, torch.Tensor
-            ), "For orthographic embeddings, tokens must be a pytorch tensor of integers (indices of orthography_embedding)"
-            assert (
-                tokens.dtype == torch.long or tokens.dtype == torch.int
-            ), f"Input tensor to Embedding must be type int or long but is {tokens.dtype}"
-            # learned positional embeddings
-            # GE  return self.orthography_embedding(tokens) + self.position_embedding.weight[None,:tokens.shape[1]] # GE, 2023-05-26
-            return (
-                self.orthography_embedding(tokens)
-                + self.orthography_pos_embedding.weight[None, : tokens.shape[1]]
-            )  # GE, 2023-05-26
+        if mode == 'o':
+           assert isinstance(tokens, torch.Tensor), "For orthographic embeddings, tokens must be a pytorch tensor of integers (indices of orthography_embedding)"
+           assert tokens.dtype == torch.long or tokens.dtype == torch.int, f"Input tensor to Embedding must be type int or long but is {tokens.dtype}"
+           return self.orthography_embedding(tokens) + self.orth_position_embedding.weight[None,:tokens.shape[1]] # GE
         # This is where we need to average the phonological embedding vectors
-        else:  # mode == 'p'
-            try:
-                isinstance(tokens, list)
-            except:
-                raise TypeError(
-                    f"For phonological vectors, tokens must be a list where each element is a pytorch tensor of integers (indices), but is type: {type(tokens)}"
-                )
-            try:
-                all(isinstance(token, torch.Tensor) for token in tokens)
-            except:
-                for token in tokens:
-                    print(f"type(token) = {type(token)}")
-                    print(f"token = {token}")
-                raise TypeError(
-                    "For phonological vectors, each element of the list must be a pytorch tensor of integers (indices)"
-                )
-            # Here we average the embeddings for each feature in a phonological vector
-            # Each row of indices will become of batch once we extract rows from the embedding matrix
-            # So the size of the resulting 'output_embedding' tensor should be (batch_size, max_phon_len, d_model)
-            device = next(self.parameters()).device
-            output_embedding = torch.zeros(
-                (len(tokens), len(tokens[0]), self.d_model), device=device
-            )
-            for batch_num, batch in enumerate(tokens):
-                for indx, tokes in enumerate(batch):
-                    # Here tokens should be a pytorch tensor of integers. It extracts the indicated rows from self.phonology_embedding
-                    avg_embedding = self.phonology_embedding(tokes).mean(axis=0)
-                    # Insert the resulting averaged embedding vector into the output_embedding tensor as a new row
-                    output_embedding[batch_num, indx, :] = avg_embedding
-            # return output_embedding + self.position_embedding.weight[None,:len(tokens[0])]   # GE 2023-05-26
-            return (
-                output_embedding
-                + self.phonology_pos_embedding.weight[None, : len(tokens[0])]
-            )  # GE 2023-05-26
+        else:
+           try:
+             isinstance(tokens, list)
+           except:
+             raise TypeError(f"For phonological vectors, tokens must be a list where each element is a pytorch tensor of integers (indices), but is type: {type(tokens)}")
+           try:
+             all(isinstance(token, torch.Tensor) for token in tokens)
+           except:
+             for token in tokens:
+               print(f"type(token) = {type(token)}")
+               print(f"token = {token}")
+             raise TypeError("For phonological vectors, each element of the list must be a pytorch tensor of integers (indices)")
+           # Here we average the embeddings for each feature in a phonological vector
+           # Each row of indices will become of batch once we extract rows from the embedding matrix
+           # So the size of the resulting 'output_embedding' tensor should be (batch_size, max_phon_len, d_model)
+           device = next(self.parameters()).device
+           output_embedding = torch.zeros((len(tokens), len(tokens[0]), self.d_model), device=device)
+           for batch_num, batch in enumerate(tokens):
+             for indx, tokes in enumerate(batch):
+               # Here tokens should be a pytorch tensor of integers. It extracts the indicated rows from self.phonology_embedding
+               avg_embedding = self.phonology_embedding(tokes).mean(axis=0)
+               # Insert the resulting averaged embedding vector into the output_embedding tensor as a new row
+               output_embedding[batch_num, indx, :] = avg_embedding
+           return output_embedding + self.phon_position_embedding.weight[None,:len(tokens[0])]   # GE: independent positional encodings
 
     def embed(
         self, orthography, orthography_padding_mask, phonology, phonology_padding_mask
@@ -382,20 +357,21 @@ class Model(torch.nn.Module):
         device = next(self.parameters()).device
 
         with torch.no_grad():
-            prompt_encoding = self.embed(
-                orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask
-            )
-        # print(prompt_encoding[0,0,:10])
+            prompt_encoding = self.embed(orth_enc_input, 
+                                         orth_enc_pad_mask, 
+                                         phon_enc_input, 
+                                         phon_enc_pad_mask)
+        #print(prompt_encoding[0,0,:10])
         mask = self.generate_triangular_mask(self.max_seq_len, device)
 
         generated_orth_tokens = torch.tensor([[0]], dtype=torch.long, device=device)
-        generated_orth_embeddings = self.embed_tokens(generated_orth_tokens, "o")
-        # print("generated_orth_embeddings = ", generated_orth_embeddings)
+        generated_orth_embeddings = self.embed_tokens(generated_orth_tokens, 'o')
+        #print("generated_orth_embeddings = ", generated_orth_embeddings)
 
         generated_phon_tokens = [[torch.tensor([31], dtype=torch.long, device=device)]]
-        generated_phon_embeddings = self.embed_tokens(generated_phon_tokens, "p")
-        # print("generated_phon_embeddings = ", generated_phon_embeddings)
-        # print(generated_phon_tokens,generated_phon_embeddings.shape,generated_phon_embeddings[0,0,:10])
+        generated_phon_embeddings = self.embed_tokens(generated_phon_tokens, 'p')
+        #print("generated_phon_embeddings = ", generated_phon_embeddings)
+        #print(generated_phon_tokens,generated_phon_embeddings.shape,generated_phon_embeddings[0,0,:10])
 
         for step in range(self.max_seq_len - 1):
             # print("step = ", step)
@@ -502,6 +478,7 @@ class Model(torch.nn.Module):
             buffer_size += buffer.nelement() * buffer.element_size()
 
         param_num_all = param_num + buffer_num
-        size_all_mb = round((param_size + buffer_size) / 1024**2, 3)
-        result = {"parameters": param_num_all, "size in MB": size_all_mb}
+        size_all_mb = round((param_size + buffer_size) / 1024**2,3)
+        result = {'parameters': param_num_all,
+                  'size in MB': size_all_mb}
         return result
