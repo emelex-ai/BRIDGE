@@ -119,8 +119,10 @@ class Model(torch.nn.Module):
         self.max_seq_len = max_seq_len
 
         # A 1×1×d_model tensor of model parameters, rescaled by √d_model
+        # GE: change self.d_model = 1024, 
         self.global_embedding = torch.nn.Parameter(
-            torch.randn((1, 1, self.d_model)) / self.d_model**0.5, requires_grad=True
+            #torch.randn((1, 1, 1024)) / 1024**0.5, requires_grad=True # Did not work. Incompatible dimension. 
+            torch.randn((1, 1, self.d_model)) / self.d_model**0.5, requires_grad=True # orig
         )
 
         # Initial, encoding segment of our ConnTextUL model:
