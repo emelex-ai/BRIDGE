@@ -185,7 +185,6 @@ def single_epoch(c, model, train_dataset_slices, epoch, single_step_fct):
         nb_steps += 1
         if c.max_nb_steps > 0 and nb_steps >= c.max_nb_steps:
             print("max_nb_steps: ", c.max_nb_steps)  # does not reach this point in test mode
-            raise "should not occur"
             break
         metrics = single_step_fct(batch_slice, step, epoch)   # GE: new
         print_weight_norms(model, f"DEBUG: step: {step}, norm: ")  # GE: debug

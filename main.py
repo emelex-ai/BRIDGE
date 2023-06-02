@@ -3,6 +3,7 @@ from wandb_wrapper import WandbWrapper
 from train import run_code
 from dataset import ConnTextULDataset
 import torch
+import yaml
 
 wandb = WandbWrapper()
 
@@ -23,7 +24,7 @@ def main():
     parser.add_argument("--test", action='store_true', default=False, help="Test mode: only run one epoch on a small subset of the data")
     parser.add_argument("--max_nb_steps", type=int, default=-1, help="Hardcode nb steps per epoch for fast testing")
     parser.add_argument("--train_test_split", type=float, default=0.8, help="Fraction of data in the training set")
-    parser.add_argument("--sweep", type=str, required=True, default="", help="Run a wandb sweep from a file")
+    parser.add_argument("--sweep", type=str, default="", help="Run a wandb sweep from a file")
     
     args = parser.parse_args()
     
@@ -65,7 +66,7 @@ def main():
     #  Three parameters specific to W&B
     entity = "emelex"
     project = "ConnTextUL"
-    is_wandb_enabled = True
+    is_wandb_enabled = False
 
     #  Parameters specific to the main code
 
@@ -97,6 +98,11 @@ def main():
         # Is it possible to update a sweep configuration? I'd like the default sweep
         # configuration to contain the parameters of config.
         # GE: suggestion: load different sweeps from files to keep track. 
+
+        with open(args.sweep, "r") as file:
+            sweep_config = yaml.safe_load(file)
+
+        """
         sweep_config = {
             "method": "grid",
             "name": "sweep_400ep_64d_m_128b",
@@ -110,6 +116,7 @@ def main():
                 "common_num_layers": {"values": [1, 4]},
             },
         }
+        """
 
         # Update sweep_config with new_params without overwriting existing parameters:
         for param, value in config.items():
