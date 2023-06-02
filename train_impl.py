@@ -68,19 +68,19 @@ def single_step(pbar, model, train_dataset_slices, batch_slice, ds, device, exam
         logits["phon"], phonology["targets"]
     )
     loss = orth_loss + phon_loss
-    print("phon_loss: ", phon_loss.item())
-    print("orth_loss: ", orth_loss.item())
-    print("loss: ", loss.item())
+    #print("phon_loss: ", phon_loss.item())
+    #print("orth_loss: ", orth_loss.item())
+    #print("loss: ", loss.item())
 
-    print_weight_norms(model, "before loss.backward")
+    #print_weight_norms(model, "before loss.backward")
     loss.backward()
     opt.step()
-    print_weight_norms(model, "after opt.step")
+    #print_weight_norms(model, "after opt.step")
     opt.zero_grad()
 
     # Suggestion: compute cheap metrics every step, more complex metrics every epoch
     metrics = compute_metrics(logits, orthography, phonology, batch, example_ct, orth_loss, phon_loss, loss, epoch, step, ds, device, model, generated_text_table)
-    print("DEBUG metrics: ", metrics)
+    #print("DEBUG metrics: ", metrics)
     #raise "error, after print metrics"
     return metrics
 
@@ -110,11 +110,11 @@ def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss,
     # Take argmax of phonological logits for accuracy comparison, reshaping to get a square tensor:
     A_phon = pt.argmax(logits["phon"], dim=1)
     A_phon = pt.reshape(A_phon, [newshape_0, newshape_1])
-    print(f"\n{epoch}/{step}: A_phon shape:", A_phon.size())  # GE: changed
+    #print(f"\n{epoch}/{step}: A_phon shape:", A_phon.size())  # GE: changed
     # Reshape phonological targets:
     B_phon = phonology["targets"]
     B_phon = pt.reshape(B_phon, [newshape_0, newshape_1])
-    print(f"{epoch}/{step}: B_phon shape:", B_phon.size(), "\n")  # GE: changed
+    #print(f"{epoch}/{step}: B_phon shape:", B_phon.size(), "\n")  # GE: changed
     # Compute phonoloigcal accuracy:
     phon_accuracy = (
         pt.tensor(pt.where((A_phon == B_phon).all(dim=1))[0].size())
@@ -177,20 +177,20 @@ def single_epoch(c, model, train_dataset_slices, epoch, single_step_fct):
     nb_steps = 0  # GE: added
     start = time.time()
 
-    print("len(train_dataset_slices): ", len(train_dataset_slices))
+    #print("len(train_dataset_slices): ", len(train_dataset_slices))
 
 
     for step, batch_slice in enumerate(train_dataset_slices):
-        print(f"step: {step}, batch_slice: ", batch_slice)
+        #print(f"step: {step}, batch_slice: ", batch_slice)
         nb_steps += 1
         if c.max_nb_steps > 0 and nb_steps >= c.max_nb_steps:
-            print("max_nb_steps: ", c.max_nb_steps)  # does not reach this point in test mode
+            #print("max_nb_steps: ", c.max_nb_steps)  # does not reach this point in test mode
             raise "should not occur"
             break
         metrics = single_step_fct(batch_slice, step, epoch)   # GE: new
         print_weight_norms(model, f"DEBUG: step: {step}, norm: ")  # GE: debug
 
-    print("nb_steps: ", nb_steps)
+    #print("nb_steps: ", nb_steps)
     metrics['time_per_step'] = (time.time() - start) / nb_steps
     metrics['time_per_epoch'] = c.n_steps_per_epoch * metrics['time_per_step']
     return metrics
@@ -224,8 +224,8 @@ def get_starting_model_epoch(path, c):
         # Whatever numbering you are using for model_runs, you should use integers with leading zeros, or else sorted will not work correctly.
         # Sorting on letters is dangerous since different people might have different sorting conventions
         latest_run = sorted(model_runs)[-1].split("/")[-1]
-        print("latest_run: ", latest_run)  # model_checkpoint35.pth
-        print("split: ", latest_run.split("_"))
+        #print("latest_run: ", latest_run)  # model_checkpoint35.pth
+        #print("split: ", latest_run.split("_"))
         model_id, epoch_num = int(latest_run.split("_")[0][5:]), int(
             latest_run.split("_")[-1].split(".")[0][10:]
         )
@@ -260,24 +260,25 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
             len(ds.character_tokenizer),
             len(ds.phonology_tokenizer),
             d_model=c.d_model,
+            d_embedding=c.d_embedding,
             nhead=c.nhead,
             num_layers_dict=num_layers_dict,  # New, GE, 2023-05-27
         )
         opt = pt.optim.AdamW(model.parameters(), c.learning_rate)
-    print("original model weights")
-    print_weight_norms(model, "initial model weights")
-    print(model)
+    #print("original model weights")
+    #print_weight_norms(model, "initial model weights")
+    #print(model)
 
-    print(
-        "char/phon tokenizers len: ",
-        len(ds.character_tokenizer),
-        len(ds.phonology_tokenizer),
-    )
+    #print(
+    #    "char/phon tokenizers len: ",
+    #    len(ds.character_tokenizer),
+    #    len(ds.phonology_tokenizer),
+    #)
     return model, opt
 #----------------------------------------------------------------------
 def create_data_slices(cutpoint, c, ds):
     # GE: question: why does ds[batch_slice] look like a dictionary?
-    print("create_data_slices: cutpoint: ", cutpoint)
+    #print("create_data_slices: cutpoint: ", cutpoint)
     train_dataset_slices = []
     for batch in range(math.ceil(cutpoint / c.batch_size)):
         train_dataset_slices.append(
@@ -319,21 +320,9 @@ def create_data_slices(cutpoint, c, ds):
     """
 
     """ GE: original code """
-    print("len slices: ", len(train_dataset_slices), len(val_dataset_slices))
+    #print("len slices: ", len(train_dataset_slices), len(val_dataset_slices))
     return train_dataset_slices, val_dataset_slices
-#----------------------------------------------------------------------
-# Not used
-class ConnDataset(Dataset):
-    def __init__(self, ds):
-        self.data = ds
 
-    def __len__(self):
-        return len(ds)
-
-    def __get_item(self, i):
-        return ds[i]
-
-#----------------------------------------------------------------------
 def print_weight_norms(model, msg):
     norm = pt.sqrt(sum([pt.norm(w[0], p=2) ** 2 for w in model.parameters()]))
     print(f"==> {msg}, {norm}")

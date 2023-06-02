@@ -24,11 +24,13 @@ def main():
     parser.add_argument("--max_nb_steps", type=int, default=-1, help="Hardcode nb steps per epoch for fast testing")
     parser.add_argument("--train_test_split", type=float, default=0.8, help="Fraction of data in the training set")
     parser.add_argument("--sweep", action="store_true", default=False, help="Run a sweep with wandb")
+    parser.add_argument("--d_embedding", default=1024, help="Dimensionality of the final embedding layer.")
 
     
     args = parser.parse_args()
     
     num_epochs = args.num_epochs
+    d_embedding = args.d_embedding
     batch_size = args.batch_size
     num_layers = args.num_layers
     learning_rate = args.learning_rate
@@ -41,9 +43,15 @@ def main():
     train_test_split = args.train_test_split
     assert d_model%nhead == 0, "d_model must be evenly divisible by nhead"
 
+    #  Three parameters specific to W&B
+    entity = "emelex"
+    project = "ConnTextUL"
+    is_wandb_enabled = True
+
     if TEST:
         ds = ConnTextULDataset(test=True)
         d_model = 16
+        d_embedding = 32
         nhead = 2
         num_layers = 2
         batch_size = 8
@@ -59,13 +67,9 @@ def main():
         #torch.use_deterministic_algorithms(True)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+        is_wandb_enabled = False
     else:
         ds = ConnTextULDataset()
-
-    #  Three parameters specific to W&B
-    entity = "emelex"
-    project = "ConnTextUL"
-    is_wandb_enabled = True
 
     #  Parameters specific to the main code
 
@@ -76,6 +80,7 @@ def main():
         "num_epochs": num_epochs,
         "batch_size": batch_size,
         "d_model": d_model,
+        "d_embedding": d_embedding,
         "nhead": nhead,
         "learning_rate": learning_rate,
         "train_test_split": 0.8,   # <<< SET VIA ARGUMENT? 
@@ -119,7 +124,6 @@ def main():
         sweep_id = wandb.sweep(sweep_config, project=project, entity=entity)
         wandb.agent(sweep_id, run_code)
     else:
-        print("else")
         wandb.set_params(config=config, is_sweep=False, is_wandb_on=is_wandb_enabled)
 
         globals().update({"wandb": wandb})
@@ -133,7 +137,6 @@ def main():
         )
         # When 'disabled', the returned run.config is an empty dictionary {}
         if not is_wandb_enabled:
-            print("wandb is disabled")
             run = wandb.init(config=config)
             # make sure I config is accessible with the dot notation
             run_code(ds)
