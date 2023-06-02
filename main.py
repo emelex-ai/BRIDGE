@@ -20,12 +20,13 @@ def main():
                         and linear layers. Must be evenly divisible by nhead")
     parser.add_argument("--nhead", type=int, default=4, help="Number of attention heads for all attention modules. \
                         Must evenly divide d_model.")
+    parser.add_argument("--disable_wandb", type=bool, default=False, help="Disable wandb")
     parser.add_argument("--test", action='store_true', default=False, help="Test mode: only run one epoch on a small subset of the data")
     parser.add_argument("--max_nb_steps", type=int, default=-1, help="Hardcode nb steps per epoch for fast testing")
     parser.add_argument("--train_test_split", type=float, default=0.8, help="Fraction of data in the training set")
+    parser.add_argument("--which_dataset", type=int, default=20, help="Choose the dataset to load")
     parser.add_argument("--sweep", action="store_true", default=False, help="Run a sweep with wandb")
 
-    
     args = parser.parse_args()
     
     num_epochs = args.num_epochs
@@ -39,10 +40,11 @@ def main():
     MODEL_PATH = './models'
     max_nb_steps = args.max_nb_steps
     train_test_split = args.train_test_split
+    which_dataset = args.which_dataset
     assert d_model%nhead == 0, "d_model must be evenly divisible by nhead"
 
     if TEST:
-        ds = ConnTextULDataset(test=True)
+        #ds = ConnTextULDataset(test=True)
         d_model = 16
         nhead = 2
         num_layers = 2
@@ -52,7 +54,7 @@ def main():
         max_nb_steps = -1
         CONTINUE = False
         seed = 1337
-        train_test_split = 0.8
+        train_test_split = 1.0 # 0.8 (1.0 when using special test datasets)
         # GE: I would prefer ref to torch not be in main.py
         torch.manual_seed(seed)  
         torch.cuda.manual_seed_all(seed)
@@ -60,12 +62,14 @@ def main():
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
     else:
-        ds = ConnTextULDataset()
+        #ds = ConnTextULDataset()
+        pass
 
     #  Three parameters specific to W&B
     entity = "emelex"
     project = "ConnTextUL"
-    is_wandb_enabled = True
+    is_wandb_enabled = not args.disable_wandb
+    print("disable_wandb: ", args.disable_wandb)
 
     #  Parameters specific to the main code
 
@@ -78,11 +82,12 @@ def main():
         "d_model": d_model,
         "nhead": nhead,
         "learning_rate": learning_rate,
-        "train_test_split": 0.8,   # <<< SET VIA ARGUMENT? 
+        "train_test_split": train_test_split,   # <<< SET VIA ARGUMENT? 
         # "id": model_id,  # Add back later once code is debugged
         "common_num_layers": num_layers,
         # Set to -1 if all the steps should be executed
         "max_nb_steps": max_nb_steps,   # to speed up testing. Set to -1 to process full data. 
+        "which_dataset": which_dataset, # select dataset from data/ folder
     }
     print("config: ", config)
 
@@ -97,29 +102,64 @@ def main():
         # Is it possible to update a sweep configuration? I'd like the default sweep
         # configuration to contain the parameters of config.
         # GE: suggestion: load different sweeps from files to keep track. 
+        """
         sweep_config = {
             "method": "grid",
-            "name": "sweep_400ep_64d_m_128b",
+            "name": "sweep_ep100_d64",
             "metric": {
                 'goal': 'minimize', 
-                'name': 'time_per_epoch',
+                'name': 'character accuracy',
             },
             "parameters": {
-                "batch_size": {"values": [128]},
-                "d_model": {"values": [64]},
-                "common_num_layers": {"values": [1, 4]},
+                "num_epochs": {"values": [50]},
+                "batch_size": {"values": [5]},
+                "d_model": {"values": [16, 32, 64, 128]},
+                "common_num_layers": {"values": [1, 2]},
+                "which_dataset": {"values": [20]}
             },
         }
+        """
+        
+        sweep_config = {
+            "method": "grid",
+            "name": "sweep_ep100_d64",
+            "metric": {
+                'goal': 'minimize', 
+                'name': 'character accuracy',
+            },
+            "parameters": {
+                "num_epochs": {"values": [400]},
+                "batch_size": {"values": [16, 32, 64, 128]},
+                "d_model": {"values": [16, 64]},
+                "common_num_layers": {"values": [1, 2, 4]},
+                "which_dataset": {"values": [5, 20, 50, 100, 250, 500, 1000]},
+            },
+        }
+        
 
         # Update sweep_config with new_params without overwriting existing parameters:
         for param, value in config.items():
             if param not in sweep_config["parameters"]:
                 sweep_config["parameters"][param] = {"values": [value]}
 
+        # This must be put inside the sweep so that the proper dataset is selected
+        # ds must also be available to wandb.agent(). There must be a better approach. 
+        if TEST:
+            ds = ConnTextULDataset(test=True, which_dataset=config['which_dataset'])
+        else:
+            print("config: ", config)
+            ds = ConnTextULDataset(which_dataset=config['which_dataset'])
+
         sweep_id = wandb.sweep(sweep_config, project=project, entity=entity)
-        wandb.agent(sweep_id, run_code)
+        run_code1 = lambda : run_code(ds)
+        wandb.agent(sweep_id, run_code1)
     else:
-        print("else")
+        if TEST:
+            ds = ConnTextULDataset(test=True, which_dataset=config['which_dataset'])
+        else:
+            print("config: ", config)
+            ds = ConnTextULDataset(which_dataset=config['which_dataset'])
+
         wandb.set_params(config=config, is_sweep=False, is_wandb_on=is_wandb_enabled)
 
         globals().update({"wandb": wandb})

@@ -45,8 +45,12 @@ def evaluate_model(model, val_dataset_slices, device, opt, ds):
 #----------------------------------------------------------------------
 def single_step(pbar, model, train_dataset_slices, batch_slice, ds, device, example_ct, opt, epoch, step, generated_text_table):
     batch = ds[batch_slice]
-    #print("batch_slice: ", batch_slice)
-    #print("batch = ", batch)
+    """
+    print("type(ds): ", type(ds))
+    print("batch_slice: ", batch_slice)
+    print("batch = ", batch)
+    print("ds: ", ds)
+    """
     orthography, phonology = batch["orthography"].to(device), batch[
         "phonology"
     ].to(device)
@@ -276,8 +280,6 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
     return model, opt
 #----------------------------------------------------------------------
 def create_data_slices(cutpoint, c, ds):
-    # GE: question: why does ds[batch_slice] look like a dictionary?
-    print("create_data_slices: cutpoint: ", cutpoint)
     train_dataset_slices = []
     for batch in range(math.ceil(cutpoint / c.batch_size)):
         train_dataset_slices.append(
@@ -293,33 +295,6 @@ def create_data_slices(cutpoint, c, ds):
             )
         )
 
-    """
-    for slice_ in train_dataset_slices: 
-        print("train slice: ", slice_)
-    for slice_ in val_dataset_slices: 
-        print("valid slice: ", slice_)
-    raise "error slice"
-    """
-
-    """ GE additions """
-    """ NOT USED 
-    from torch.utils.data import DataLoader
-    loader = DataLoader(ds, batch_size=5, shuffle=True)
-    for step in loader: 
-        print("type(step): ", type(step))
-    raise "end"
-    print("end of create_data_slices")
-    dss = ds[train_dataset_slices[0]]
-    print("type(ds[slice[0:3]]): ", type(ds[slice[0:3]]))
-    print("slice: ", train_dataset_slices[0])
-    print("type(dss): ", type(dss))  # dict
-    print("keys(dss): ", list(keys(dss)))
-    print("type(dss[0]): ", type(dss[0]))  # dict
-    raise "end of create_data_slices"
-    """
-
-    """ GE: original code """
-    print("len slices: ", len(train_dataset_slices), len(val_dataset_slices))
     return train_dataset_slices, val_dataset_slices
 #----------------------------------------------------------------------
 # Not used
