@@ -161,9 +161,9 @@ class Phonemizer():
       #print("targets = ", targets)
       for i in range(len(targets)):
         tv = targets[i]
-        targets[i] = torch.concat((tv, torch.tensor([[2]*33]*(max_length-1-len(tv)), dtype=torch.long)))
+        targets[i] = torch.cat((tv, torch.tensor([[2]*33]*(max_length-1-len(tv)), dtype=torch.long)))
         #print("len(tv) = ", len(tv))
-        #tv = torch.concat((tv, torch.tensor([[2]*33]*(max_length-len(tv)))))
+        #tv = torch.cat((tv, torch.tensor([[2]*33]*(max_length-len(tv)))))
         #print("tv = ", tv)
         #sys.exit()
     else:
@@ -198,12 +198,14 @@ class ConnTextULDataset(Dataset):
   For Matt's Phonoligical Feature Vectors, we will use (31, 32, 33) to represent ('[BOS]', '[EOS]', '[PAD]')
 
   """
-  def __init__(self, test=False):
+  def __init__(self, test=False, nb_rows=None):
 
+      # nrows added by GE to reduced nb rows for code testing 
       if test:
         self.dataset = pd.read_csv(DATA_PATH+'/test.csv')
       else:
-        self.dataset = pd.read_csv(DATA_PATH+'/data.csv')
+        self.dataset = pd.read_csv(DATA_PATH+'/data.csv', nrows=nb_rows)
+
       tmp_words = self.dataset['word_raw'].str.lower() # Series of all lowercased words
       if os.path.exists(DATA_PATH+'/phonology_tokenizer.pkl'):
         with open(DATA_PATH+'/phonology_tokenizer.pkl', 'rb') as f:
@@ -218,7 +220,6 @@ class ConnTextULDataset(Dataset):
       # We can use it to tokenize word output of __getitem__ below,
       # although I haven't implemented yet.
       list_of_characters = sorted(set([c for word in tmp_words for c in word]))
-
       self.character_tokenizer = CharacterTokenizer(list_of_characters)
 
       final_words = []

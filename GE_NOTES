@@ -1,0 +1,36 @@
+May 25, 2023
+Need nltk, torch, wandb
+
+conda activate torch (on my Linux box)
+pip install nltk
+pip install wandb
+----------------------------------------------------------------------
+In models: make sure that the model name has the form `models#_checkpoint#.pth` where `#` refers to a numeral that is of the form `0034` for example. Make sure there are leading zeros. 
+----------------------------------------------------------------------
+Installed a .gitignore should be a .gitignore to make sure that `pyc` files are not uploaded to the repo. 
+----------------------------------------------------------------------
+To create a new branch 'gordon': 
+    git branch -b gordon   # creates the branch and checks it out
+To set up tracking of the new branch with the remote repo: 
+    git push -u origin gordon
+From this point on, I can simply type: 
+    git pull
+    git push
+and the correspondance local <-> remote will be established. 
+----------------------------------------------------------------------
+May 26, 2023
+- I would store all parameters in a global dictionary 
+- In the Model, do you use Layer Normalization? 
+- I recommend have smaller functions. Very long functions is a poor programming practice. 
+  Advantage: use "Go Definition" and "Go references" more effectively
+----------------------------------------------------------------------
+May 26, 2023
+- Added separate positional embeddings for orthography and phonology
+- Added fine-grained control over the number of layers of both encoders and decoders
+----------------------------------------------------------------------
+May 30, 2023
+- The code produces the same results on multiple runs in test mode (python main.py --test)
+- Tomorrow, I will run the original code and print out the weights after every step with the same
+  architecture. If the results are the same at all steps, we'll declare the codes the same. 
+  My refactorings should not have changed the order or number of operations. 
+----------------------------------------------------------------------
