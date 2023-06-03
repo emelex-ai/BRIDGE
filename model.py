@@ -81,6 +81,7 @@ class Model(torch.nn.Module):
         orth_vocab_size,
         phon_vocab_size,
         d_model=512,
+        d_embedding=1024,
         nhead=1,
         num_layers_dict={},  # Dictionary
         max_seq_len=20,

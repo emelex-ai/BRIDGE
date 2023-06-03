@@ -128,7 +128,7 @@ def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss,
     # END END END END END END END END END
 
     # Now we generate orthographic tokens and phonological vectors for the input 'elephant'
-    if 1:
+    if 0:
         orth = ds.character_tokenizer.encode(["elephant"])
         orthography = orth["enc_input_ids"].to(device)
         orthography_mask = orth["enc_pad_mask"].to(device)
@@ -253,6 +253,7 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
             len(ds.phonology_tokenizer),
             d_model=chkpt["d_model"],
             nhead=chkpt["nhead"],
+            max_seq_len=ds.max_seq_len,
         )
         model.load_state_dict(chkpt["model"])
         opt = pt.optim.AdamW(model.parameters(), c.learning_rate)
