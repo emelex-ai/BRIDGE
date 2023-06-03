@@ -1,5 +1,5 @@
 from wandb_wrapper import WandbWrapper
-#from dataset import ConnTextULDataset
+from dataset import ConnTextULDataset
 import torch as pt
 import tqdm
 import sys
@@ -15,9 +15,13 @@ More complex code structure to accomodate running wandb with and without hypersw
 """
 
 
-def run_code(ds):
+def run_code():
+    print("run_code")
     run = wandb.init()
-    print("*******************")
+    print("run: ", run)
+    print("run.config: ", run.config)
+    ds = ConnTextULDataset(test=True, which_dataset=run.config.which_dataset)
+    print("after ds")
     run_code_impl(run, ds)
 
 
@@ -28,6 +32,7 @@ def run_code_impl(run, ds):
     # Unless variables are in a type loop, I recommend using the dictionary.
 
     c = run.config
+    print("run.config: ", run.config)
 
     MODEL_PATH = c.model_path
     # GE, May 30, 2024: added nb_rows argument to read a subset
