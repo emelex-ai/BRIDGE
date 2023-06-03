@@ -3,6 +3,7 @@ from wandb_wrapper import WandbWrapper
 from train import run_code
 from dataset import ConnTextULDataset
 import torch
+import yaml
 
 wandb = WandbWrapper()
 
@@ -24,10 +25,10 @@ def main():
     parser.add_argument("--test", action='store_true', default=False, help="Test mode: only run one epoch on a small subset of the data")
     parser.add_argument("--max_nb_steps", type=int, default=-1, help="Hardcode nb steps per epoch for fast testing")
     parser.add_argument("--train_test_split", type=float, default=0.8, help="Fraction of data in the training set")
-    parser.add_argument("--which_dataset", type=int, default=20, help="Choose the dataset to load")
-    parser.add_argument("--sweep", action="store_true", default=False, help="Run a sweep with wandb")
-    parser.add_argument("--d_embedding", default=1024, help="Dimensionality of the final embedding layer.")
 
+    parser.add_argument("--which_dataset", type=int, default=20, help="Choose the dataset to load")
+    parser.add_argument("--sweep",type=str,  default="", help="Run a sweep from a configuration file")
+    parser.add_argument("--d_embedding", default=1024, help="Dimensionality of the final embedding layer.")
 
     args = parser.parse_args()
     
@@ -96,7 +97,7 @@ def main():
     }
     print("config: ", config)
 
-    if args.sweep == True:
+    if args.sweep != "":
         wandb.set_params(
             config=config, is_sweep=True, is_wandb_on=is_wandb_enabled
         )  # GE: new function
@@ -107,40 +108,11 @@ def main():
         # Is it possible to update a sweep configuration? I'd like the default sweep
         # configuration to contain the parameters of config.
         # GE: suggestion: load different sweeps from files to keep track. 
-        """
-        sweep_config = {
-            "method": "grid",
-            "name": "sweep_ep100_d64",
-            "metric": {
-                'goal': 'minimize', 
-                'name': 'character accuracy',
-            },
-            "parameters": {
-                "num_epochs": {"values": [50]},
-                "batch_size": {"values": [5]},
-                "d_model": {"values": [16, 32, 64, 128]},
-                "common_num_layers": {"values": [1, 2]},
-                "which_dataset": {"values": [20]}
-            },
-        }
-        """
-        
-        sweep_config = {
-            "method": "grid",
-            "name": "sweep_ep100_d64",
-            "metric": {
-                'goal': 'minimize', 
-                'name': 'character accuracy',
-            },
-            "parameters": {
-                "num_epochs": {"values": [400]},
-                "batch_size": {"values": [16, 32, 64, 128]},
-                "d_model": {"values": [16, 64]},
-                "common_num_layers": {"values": [1, 2, 4]},
-                "which_dataset": {"values": [5, 20, 50, 100, 250, 500, 1000]},
-            },
-        }
-        
+
+        with open(args.sweep, "r") as file:
+            sweep_config = yaml.safe_load(file)
+
+        print("sweep_config: ", sweep_config)
 
         # Update sweep_config with new_params without overwriting existing parameters:
         for param, value in config.items():
@@ -156,6 +128,7 @@ def main():
             ds = ConnTextULDataset(which_dataset=config['which_dataset'])
 
         sweep_id = wandb.sweep(sweep_config, project=project, entity=entity)
+
         run_code1 = lambda : run_code(ds)
         wandb.agent(sweep_id, run_code1)
     else:

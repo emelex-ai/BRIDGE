@@ -1,0 +1,10 @@
+"method": "grid"
+"name": "sweep1"
+"metric": 
+    'goal': 'minimize' 
+    'name': 'time_per_epoch'
+"parameters": 
+    "batch_size": {"values": [64]}
+    "d_model": {"values": [32]}
+    "common_num_layers": {"values": [1, 4]}
+    "which_data": {"values": [5, 20]}
