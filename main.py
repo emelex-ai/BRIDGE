@@ -21,17 +21,19 @@ def main():
                         and linear layers. Must be evenly divisible by nhead")
     parser.add_argument("--nhead", type=int, default=4, help="Number of attention heads for all attention modules. \
                         Must evenly divide d_model.")
-    parser.add_argument("--disable_wandb", type=bool, default=False, help="Disable wandb")
+    parser.add_argument("--wanda_disabled", type=bool, default=False, help="Disable wandb")
     parser.add_argument("--test", action='store_true', default=False, help="Test mode: only run one epoch on a small subset of the data")
     parser.add_argument("--max_nb_steps", type=int, default=-1, help="Hardcode nb steps per epoch for fast testing")
     parser.add_argument("--train_test_split", type=float, default=0.8, help="Fraction of data in the training set")
 
     parser.add_argument("--which_dataset", type=int, default=20, help="Choose the dataset to load")
     parser.add_argument("--sweep",type=str,  default="", help="Run a sweep from a configuration file")
-    parser.add_argument("--d_embedding", default=1024, help="Dimensionality of the final embedding layer.")
+    parser.add_argument("--d_embedding", type=int, default=1024, help="Dimensionality of the final embedding layer.")
+    parser.add_argument("--seed", type=int, default=1337, help="Random seed for repeatibility.")
 
     args = parser.parse_args()
     
+    disable_wandb = args.disable_wandb
     num_epochs = args.num_epochs
     d_embedding = args.d_embedding
     batch_size = args.batch_size
@@ -45,15 +47,15 @@ def main():
     max_nb_steps = args.max_nb_steps
     train_test_split = args.train_test_split
     which_dataset = args.which_dataset
+    seed = args.seed
     assert d_model%nhead == 0, "d_model must be evenly divisible by nhead"
 
     #  Three parameters specific to W&B
     entity = "emelex"
     project = "ConnTextUL"
-    is_wandb_enabled = True
+    is_wandb_enabled = not args.wanda_disabled
 
     if TEST:
-        #ds = ConnTextULDataset(test=True)
         d_model = 16
         d_embedding = 32
         nhead = 2
@@ -65,16 +67,12 @@ def main():
         CONTINUE = False
         seed = 1337
         train_test_split = 1.0 # 0.8 (1.0 when using special test datasets)
-        # GE: I would prefer ref to torch not be in main.py
         torch.manual_seed(seed)  
         torch.cuda.manual_seed_all(seed)
         #torch.use_deterministic_algorithms(True)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
         is_wandb_enabled = False
-    else:
-        #ds = ConnTextULDataset()
-        pass
 
     #  Parameters specific to the main code
 
@@ -94,20 +92,18 @@ def main():
         # Set to -1 if all the steps should be executed
         "max_nb_steps": max_nb_steps,   # to speed up testing. Set to -1 to process full data. 
         "which_dataset": which_dataset, # select dataset from data/ folder
+        "seed": seed, # select dataset from data/ folder
     }
+
     print("config: ", config)
+    globals().update({"wandb": wandb})
 
     if args.sweep != "":
         wandb.set_params(
             config=config, is_sweep=True, is_wandb_on=is_wandb_enabled
         )  # GE: new function
 
-        # make wandb wrapper accessible globally
-        globals().update({"wandb": wandb})
         wandb.login()
-        # Is it possible to update a sweep configuration? I'd like the default sweep
-        # configuration to contain the parameters of config.
-        # GE: suggestion: load different sweeps from files to keep track. 
 
         with open(args.sweep, "r") as file:
             sweep_config = yaml.safe_load(file)
@@ -119,28 +115,12 @@ def main():
             if param not in sweep_config["parameters"]:
                 sweep_config["parameters"][param] = {"values": [value]}
 
-        # This must be put inside the sweep so that the proper dataset is selected
-        # ds must also be available to wandb.agent(). There must be a better approach. 
-        if TEST:
-            ds = ConnTextULDataset(test=True, which_dataset=config['which_dataset'])
-        else:
-            print("config: ", config)
-            ds = ConnTextULDataset(which_dataset=config['which_dataset'])
-
         sweep_id = wandb.sweep(sweep_config, project=project, entity=entity)
 
-        run_code1 = lambda : run_code(ds)
-        wandb.agent(sweep_id, run_code1)
+        wandb.agent(sweep_id, run_code)
     else:
-        if TEST:
-            ds = ConnTextULDataset(test=True, which_dataset=config['which_dataset'])
-        else:
-            print("config: ", config)
-            ds = ConnTextULDataset(which_dataset=config['which_dataset'])
-
         wandb.set_params(config=config, is_sweep=False, is_wandb_on=is_wandb_enabled)
 
-        globals().update({"wandb": wandb})
         wandb.login()
         # 🐝 initialise a wandb run
         # I created a new project
@@ -152,10 +132,9 @@ def main():
         # When 'disabled', the returned run.config is an empty dictionary {}
         if not is_wandb_enabled:
             run = wandb.init(config=config)
-            # make sure I config is accessible with the dot notation
-            run_code(ds)
+            run_code()
         else:
-            run_code(ds)
+            run_code()
 
 
 if __name__ == "__main__":
