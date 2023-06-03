@@ -24,7 +24,7 @@ def main():
                         Must evenly divide d_model.")
     # Be careful when using bool arguments. Must use action='store_true', which creates an option that defaults to True 
     parser.add_argument("--wandb", action='store_true', help="Enable wandb (default: disabled if argument absent)")
-    parser.add_argument("--test", action='store_false', help="Test mode: only run one epoch on a small subset of the data \
+    parser.add_argument("--test", action='store_true', help="Test mode: only run one epoch on a small subset of the data \
                         (default: no test if argument absent)")
     parser.add_argument("--max_nb_steps", type=int, default=-1, help="Hardcode nb steps per epoch for fast testing")
     parser.add_argument("--train_test_split", type=float, default=0.8, help="Fraction of data in the training set")
@@ -96,7 +96,7 @@ def main():
         "learning_rate": learning_rate,
         "train_test_split": train_test_split,   # <<< SET VIA ARGUMENT? 
         # "id": model_id,  # Add back later once code is debugged
-        "common_num_layers": num_layers,
+        "num_layers": num_layers,
         # Set to -1 if all the steps should be executed
         "max_nb_steps": max_nb_steps,   # to speed up testing. Set to -1 to process full data. 
         "which_dataset": which_dataset, # select dataset from data/ folder
@@ -107,7 +107,6 @@ def main():
     globals().update({"wandb": wandb})
 
     if args.sweep != "":
-        print("if")
         wandb.set_params(
             config=config, is_sweep=True, is_wandb_on=wandb_enabled
         )  
@@ -119,26 +118,23 @@ def main():
 
         print("sweep_config: ", sweep_config)
 
-        """
+        #"""
         # Update sweep_config with new_params without overwriting existing parameters:
+        # Works. However, there are too many useless vertical lines in the hyperparameter parallel chart. 
         for param, value in config.items():
             if param not in sweep_config["parameters"]:
                 sweep_config["parameters"][param] = {"values": [value]}
-        """
         #"""
+        # Does not work
+        """
         for param, value in config.items():
-            #sweep_config[param] = value
             if param not in sweep_config["parameters"]:
                 sweep_config[param] = {"values": [value]}
-        #"""
+        """
 
         sweep_id = wandb.sweep(sweep_config, project=project, entity=entity)
-        print("sweep_id: ", sweep_id)
-        print("wandb.config: ", wandb.config)
-        #raise "error"
         wandb.agent(sweep_id, run_code)
     else:
-        print("else")
         wandb.set_params(config=config, is_sweep=False, is_wandb_on=wandb_enabled)
 
         wandb.login()
@@ -151,11 +147,9 @@ def main():
         )
         # When 'disabled', the returned run.config is an empty dictionary {}
         if wandb_enabled:
-            print("else if: wandb enabled")
             run = wandb.init(config=config)
             run_code()
         else:
-            print("else else: wandb disabled")
             run_code()
 
 
