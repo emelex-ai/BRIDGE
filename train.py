@@ -17,6 +17,7 @@ More complex code structure to accomodate running wandb with and without hypersw
 
 def run_code(ds):
     run = wandb.init()
+    print("*******************")
     run_code_impl(run, ds)
 
 
@@ -37,7 +38,6 @@ def run_code_impl(run, ds):
     # For some reason, Subset does not work. It should. 
     #ds = Subset(ds, indices=range(len(ds)))  # Generates an error. Something wrong. 
     # ds = ds[slice(0, 1000, 1)]  # len(ds) returns 2. Why is that? 
-    print("len(ds): ", len(ds))  # 88,891 
 
     if pt.cuda.is_available():
         device = pt.device("cuda:0")
@@ -58,9 +58,6 @@ def run_code_impl(run, ds):
     assert c.d_model % c.nhead == 0, "d_model must be evenly divisible by nhead"
 
     num_train = int(len(ds) * c.train_test_split)
-    print("type(ds): ", type(ds))
-    print("num_train: ", num_train)
-    print("num_valid: ", len(ds) - num_train)
     #cutpoint = int(c.train_test_split * len(ds))
 
     """ MIGHT ADD LATER. Not sure why you are not using a DataLoader """
@@ -77,9 +74,6 @@ def run_code_impl(run, ds):
     loader_valid = DataLoader(ds, batch_size=1, shuffle=True)
     """
 
-    # Original code. GE replaced cutpoint by num_tarin
-    print("num_train/cutpoint: ", num_train)  # Same value in old and new code?
-
     train_dataset_slices, val_dataset_slices = train_impl.create_data_slices(
         num_train, c, ds
     )
@@ -89,7 +83,6 @@ def run_code_impl(run, ds):
 
     # A number for WandB:
     c.n_steps_per_epoch = len(train_dataset_slices)
-    print("n_steps_per_epoch: ", c.n_steps_per_epoch)
 
     model, opt = train_impl.setup_model(MODEL_PATH, c, ds, num_layers_dict)
 
@@ -128,10 +121,7 @@ def run_code_impl(run, ds):
     )
 
     for epoch in pbar:
-        print("\nTraining Loop...")
         metrics = single_epoch_fct(epoch)
-        print("epoch: ", epoch)
-        print("metrics: ", metrics)
         run.log(metrics)  # GE: only execute once per epoch
         # When experimenting, skip evaluate_model_fct for speedup
         if c.max_nb_steps < 0:

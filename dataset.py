@@ -8,6 +8,7 @@ import numpy as np
 import pickle
 import os
 
+
 DATA_PATH = "./data/"
 
 class CUDA_Dict(dict):
@@ -42,7 +43,8 @@ class CharacterTokenizer:
           self.char_2_idx[ch] = i 
           self.idx_2_char[i] = ch
         # Reuse index from previous for loop to save computation
-        self.size = i+1
+        # self.size = i + 1
+        self.size = len(self.vocab)  # more robust
 
 
     def __len__(self): return self.size
@@ -198,11 +200,11 @@ class ConnTextULDataset(Dataset):
   For Matt's Phonoligical Feature Vectors, we will use (31, 32, 33) to represent ('[BOS]', '[EOS]', '[PAD]')
 
   """
-  def __init__(self, test=False, nb_rows=None):
+  def __init__(self, test=False, nb_rows=None, which_dataset=5):
 
       # nrows added by GE to reduced nb rows for code testing 
       if test:
-        self.dataset = pd.read_csv(DATA_PATH+'/test.csv')
+        self.dataset = pd.read_csv(DATA_PATH+f'/data_test{which_dataset}.csv', nrows=nb_rows)
       else:
         self.dataset = pd.read_csv(DATA_PATH+'/data.csv', nrows=nb_rows)
 
@@ -223,11 +225,16 @@ class ConnTextULDataset(Dataset):
       self.character_tokenizer = CharacterTokenizer(list_of_characters)
 
       final_words = []
+      self.max_seq_length = 0
       for word in tmp_words:
+        phonology = self.phonology_tokenizer.encode([word])
         if word == "" or word == None or word == []:
           continue
-        if self.phonology_tokenizer.encode([word]): #check if in phoneme_dict
+        if phonology: #check if in phoneme_dict
           final_words.append(word)
+          phon_length = len(phonology['enc_pad_mask'][0])
+          orth_length = len(self.character_tokenizer.encode(word)['enc_input_ids'][0]) 
+          self.max_seq_length = max(self.max_seq_length, phon_length, orth_length)
 
       self.words = final_words
 
