@@ -87,7 +87,9 @@ def main():
     }
     print("config: ", config)
 
-    if args.sweep == True:
+    print("=======================================================")
+
+    if args.sweep != "":
         wandb.set_params(
             config=config, is_sweep=True, is_wandb_on=is_wandb_enabled
         )  # GE: new function
@@ -102,21 +104,7 @@ def main():
         with open(args.sweep, "r") as file:
             sweep_config = yaml.safe_load(file)
 
-        """
-        sweep_config = {
-            "method": "grid",
-            "name": "sweep_400ep_64d_m_128b",
-            "metric": {
-                'goal': 'minimize', 
-                'name': 'time_per_epoch',
-            },
-            "parameters": {
-                "batch_size": {"values": [128]},
-                "d_model": {"values": [64]},
-                "common_num_layers": {"values": [1, 4]},
-            },
-        }
-        """
+        print("sweep_config: ", sweep_config)
 
         # Update sweep_config with new_params without overwriting existing parameters:
         for param, value in config.items():
@@ -124,9 +112,9 @@ def main():
                 sweep_config["parameters"][param] = {"values": [value]}
 
         sweep_id = wandb.sweep(sweep_config, project=project, entity=entity)
-        wandb.agent(sweep_id, run_code)
+        run_code1 = lambda: run_code(ds)
+        wandb.agent(sweep_id, run_code1)
     else:
-        print("else")
         wandb.set_params(config=config, is_sweep=False, is_wandb_on=is_wandb_enabled)
 
         globals().update({"wandb": wandb})
