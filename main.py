@@ -87,8 +87,6 @@ def main():
     }
     print("config: ", config)
 
-    print("=======================================================")
-
     if args.sweep != "":
         wandb.set_params(
             config=config, is_sweep=True, is_wandb_on=is_wandb_enabled
