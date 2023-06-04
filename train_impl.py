@@ -42,7 +42,8 @@ def evaluate_model(model, val_dataset_slices, device, opt, ds):
             more_metrics = {"val/loss": orth_loss + phon_loss,
                             "val/orth_loss": orth_loss,
                             "val/phon_loss": phon_loss,}
-            run.log(more_metrics)
+
+    return more_metrics
 
 #----------------------------------------------------------------------
 def single_step(pbar, model, train_dataset_slices, batch_slice, ds, device, example_ct, opt, epoch, step, generated_text_table):
@@ -122,7 +123,7 @@ def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss,
         pt.tensor(pt.where((phon_pred == phon_true).all(dim=1))[0].size())
         / pt.tensor(phon_pred.size())[0]
     )
-    phoneme_wise_accuracy = (phon_pred == phon_true).sum()/pt.tensor(A_orth.shape).prod()
+    phoneme_wise_accuracy = (phon_pred == phon_true).sum()/pt.tensor(phon_pred.shape).prod()
 
     # END END END END END END END END END
 
@@ -189,7 +190,7 @@ def single_epoch(c, model, train_dataset_slices, epoch, single_step_fct):
             #print("max_nb_steps: ", c.max_nb_steps)  # does not reach this point in test mode
             break
         metrics = single_step_fct(batch_slice, step, epoch)   # GE: new
-        print_weight_norms(model, f"DEBUG: step: {step}, norm: ")  # GE: debug
+        #print_weight_norms(model, f"DEBUG: step: {step}, norm: ")  # GE: debug
         nb_steps += 1
 
     #print("nb_steps: ", nb_steps)

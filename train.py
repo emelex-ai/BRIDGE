@@ -17,7 +17,7 @@ More complex code structure to accomodate running wandb with and without hypersw
 
 def run_code():
     run = wandb.init()
-    ds = ConnTextULDataset(test=True, which_dataset=run.config.which_dataset)
+    ds = ConnTextULDataset(test=False, which_dataset=run.config.which_dataset)
     run_code_impl(run, ds)
 
 
@@ -127,8 +127,8 @@ def run_code_impl(run, ds):
         run.log(metrics)  # GE: only execute once per epoch
         # When experimenting, skip evaluate_model_fct for speedup
         if c.max_nb_steps < 0:
-            metrics = evaluate_model_fct()  # GE: 05/28
-            run.log(metrics) 
+            metrics = evaluate_model_fct()
+            run.log(metrics)
         save_fct(epoch)
 
     # 🐝 Close your wandb run
