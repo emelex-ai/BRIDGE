@@ -1,12 +1,14 @@
 program: main.py
 method: grid
-name: test_sweep5
+name: sweep_nathan_40479
 metric: 
     goal: minimize
-    name: time_per_epoch
+    name: val/loss
 parameters: 
-    batch_size: {"values": [1]}
-    d_model: {"values": [32]}
-    d_embedding: {"values": [1]}
-    common_num_layers: {"values": [3]}
-    which_dataset: {"values": [5, 20, 50, 100, 250, 500, 1000]}
+    batch_size: {"values": [16,32,64,128]}
+    d_model: {"values": [32,64,128,256,512,1024]}
+    d_embedding: {"values": [1,2,3]}
+    num_epochs: {'values': [20]}
+    common_num_layers: {"values": [1,2,3]}
+    learning_rate: {"values": [0.0001,0.001]}
+    which_dataset: {"values": [40479]}

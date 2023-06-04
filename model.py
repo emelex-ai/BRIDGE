@@ -301,14 +301,14 @@ class Model(torch.nn.Module):
         )
         #print("mixed_encoding.shape = ", mixed_encoding.shape)
 
-        final_encoding = (
-            self.reduce(mixed_encoding[:, :self.d_embedding]).unsqueeze(-2) + global_embedding
-        )
-        final_encoding = self.reduce_layer_norm(final_encoding)
+        #final_encoding = (self.reduce(mixed_encoding[:, :self.d_embedding]).unsqueeze(-2) + global_embedding)
+        #final_encoding = self.reduce_layer_norm(final_encoding)
         #print("final_encoding.shape = ", final_encoding.shape)
 
-        #return final_encoding
-        return mixed_encoding[:,:self.d_embedding]
+        # Add a residual connection to the final encoding
+        final_encoding = mixed_encoding[:,:self.d_embedding] + global_embedding
+
+        return final_encoding
 
     def forward(
         self,

@@ -66,7 +66,7 @@ def main():
         max_nb_steps = -1
         CONTINUE = False
         seed = 1337
-        train_test_split = 1.0 # 0.8 (1.0 when using special test datasets)
+        train_test_split = 0.9
         torch.manual_seed(seed)  
         torch.cuda.manual_seed_all(seed)
         #torch.use_deterministic_algorithms(True)

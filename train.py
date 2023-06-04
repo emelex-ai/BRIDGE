@@ -77,6 +77,11 @@ def run_code_impl(run, ds):
     train_dataset_slices, val_dataset_slices = train_impl.create_data_slices(
         num_train, c, ds
     )
+    print("c = ", c)
+    #print("train_dataset_slices = ", train_dataset_slices)
+    #print("val_dataset_slices = ", val_dataset_slices)
+    print("len(train_dataset_slices) = ", len(train_dataset_slices))
+    print("len(val_dataset_slices) = ", len(val_dataset_slices))
 
     # Use startup data to determine starting epoch. Update the model_id
     model_id, epoch_num = train_impl.get_starting_model_epoch(MODEL_PATH, c)
@@ -124,11 +129,11 @@ def run_code_impl(run, ds):
     for epoch in pbar:
         #print("epoch = ", epoch)
         metrics = single_epoch_fct(epoch)
-        run.log(metrics)  # GE: only execute once per epoch
         # When experimenting, skip evaluate_model_fct for speedup
         if c.max_nb_steps < 0:
-            metrics = evaluate_model_fct()
-            run.log(metrics)
+            metrics.update(evaluate_model_fct())
+
+        run.log(metrics)
         save_fct(epoch)
 
     # 🐝 Close your wandb run
