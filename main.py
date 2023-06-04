@@ -15,14 +15,17 @@ def main():
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
     parser.add_argument("--num_layers", type=int, default=4, help="Number of layers")
     parser.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate")
-    parser.add_argument("--continue_training", type=bool, default=False, help="Continue training from last checkpoint")
+    parser.add_argument("--continue_training", action='store_true', help="Continue training from last checkpoint \
+                        (default: new run if argument absent)")
     parser.add_argument("--d_model", type=int, default=128, help="Dimensionality of the internal model components \
                         including Embedding layer, transformer layers, \
                         and linear layers. Must be evenly divisible by nhead")
     parser.add_argument("--nhead", type=int, default=4, help="Number of attention heads for all attention modules. \
                         Must evenly divide d_model.")
-    parser.add_argument("--wandb_disabled", type=bool, default=False, help="Disable wandb")
-    parser.add_argument("--test", action='store_true', default=False, help="Test mode: only run one epoch on a small subset of the data")
+    # Be careful when using bool arguments. Must use action='store_true', which creates an option that defaults to True 
+    parser.add_argument("--wandb", action='store_true', help="Enable wandb (default: disabled if argument absent)")
+    parser.add_argument("--test", action='store_true', help="Test mode: only run one epoch on a small subset of the data \
+                        (default: no test if argument absent)")
     parser.add_argument("--max_nb_steps", type=int, default=-1, help="Hardcode nb steps per epoch for fast testing")
     parser.add_argument("--train_test_split", type=float, default=0.8, help="Fraction of data in the training set")
 
@@ -33,6 +36,14 @@ def main():
 
     args = parser.parse_args()
     
+    print("args.wandb: ", args.wandb)
+    if args.wandb:
+        wandb_disabled = False
+        wandb_enabled = True
+    else:
+        wandb_disabled = True
+        wandb_enabled = False
+
     wandb_disabled = args.wandb_disabled
     num_epochs = args.num_epochs
     d_embedding = args.d_embedding
@@ -53,7 +64,6 @@ def main():
     #  Three parameters specific to W&B
     entity = "emelex"
     project = "ConnTextUL"
-    is_wandb_enabled = not wandb_disabled
 
     if TEST:
         d_model = 16
@@ -72,7 +82,6 @@ def main():
         #torch.use_deterministic_algorithms(True)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
-        is_wandb_enabled = False
 
     #  Parameters specific to the main code
 
@@ -88,20 +97,20 @@ def main():
         "learning_rate": learning_rate,
         "train_test_split": train_test_split,   # <<< SET VIA ARGUMENT? 
         # "id": model_id,  # Add back later once code is debugged
-        "common_num_layers": num_layers,
+        "num_layers": num_layers,
         # Set to -1 if all the steps should be executed
         "max_nb_steps": max_nb_steps,   # to speed up testing. Set to -1 to process full data. 
         "which_dataset": which_dataset, # select dataset from data/ folder
         "seed": seed, # select dataset from data/ folder
     }
 
-    #print("config: ", config)
+    print("config: ", config)
     globals().update({"wandb": wandb})
 
     if args.sweep != "":
         wandb.set_params(
-            config=config, is_sweep=True, is_wandb_on=is_wandb_enabled
-        )  # GE: new function
+            config=config, is_sweep=True, is_wandb_on=wandb_enabled
+        )  
 
         wandb.login()
 
@@ -110,17 +119,20 @@ def main():
 
         #print("\n(BEFORE) sweep_config: ", sweep_config)
 
+        #"""
         # Update sweep_config with new_params without overwriting existing parameters:
+        # Works. However, there are too many useless vertical lines in the hyperparameter parallel chart. 
         for param, value in config.items():
             if param not in sweep_config["parameters"]:
                 sweep_config["parameters"][param] = {"values": [value]}
 
-        #print("\n(AFTER) sweep_config: ", sweep_config)
+
         sweep_id = wandb.sweep(sweep_config, project=project, entity=entity)
 
-        wandb.agent(sweep_id, run_code)
+        run_code1 = lambda : run_code(ds)
+        wandb.agent(sweep_id, run_code1)
     else:
-        wandb.set_params(config=config, is_sweep=False, is_wandb_on=is_wandb_enabled)
+        wandb.set_params(config=config, is_sweep=False, is_wandb_on=wandb_enabled)
 
         wandb.login()
         # 🐝 initialise a wandb run
@@ -131,7 +143,7 @@ def main():
             config=config,
         )
         # When 'disabled', the returned run.config is an empty dictionary {}
-        if not is_wandb_enabled:
+        if wandb_enabled:
             run = wandb.init(config=config)
             run_code()
         else:

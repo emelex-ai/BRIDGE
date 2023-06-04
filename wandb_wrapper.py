@@ -53,7 +53,7 @@ class WandbWrapper(Singleton):
     wandb on and off.
     """
 
-    def __init__(self):  # , is_wandb_on=False, is_sweep=False, config=None):
+    def __init__(self):
         self.my_run = MyRun()
         self.my_table = MyTable()
         self.run = None

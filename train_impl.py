@@ -12,9 +12,8 @@ wandb = WandbWrapper()
 run = MyRun()
 
 
-# GE: 2023-05-27: simplify code
 def evaluate_model(model, val_dataset_slices, device, opt, ds):
-    model.eval()  # GE: eval once per epoch
+    model.eval()  
     with pt.no_grad():
         #print("\nValidation Loop...")
         for step, batch_slice in enumerate(val_dataset_slices):
@@ -46,14 +45,9 @@ def evaluate_model(model, val_dataset_slices, device, opt, ds):
     return more_metrics
 
 #----------------------------------------------------------------------
-def single_step(pbar, model, train_dataset_slices, batch_slice, ds, device, example_ct, opt, epoch, step, generated_text_table):
+def single_step(c, pbar, model, train_dataset_slices, batch_slice, ds, device, opt, epoch, step, generated_text_table, example_ct):
+    """ """
     batch = ds[batch_slice]
-    """
-    print("type(ds): ", type(ds))
-    print("batch_slice: ", batch_slice)
-    print("batch = ", batch)
-    print("ds: ", ds)
-    """
     orthography, phonology = batch["orthography"].to(device), batch[
         "phonology"
     ].to(device)
@@ -75,20 +69,13 @@ def single_step(pbar, model, train_dataset_slices, batch_slice, ds, device, exam
         logits["phon"], phonology["targets"]
     )
     loss = orth_loss + phon_loss
-    #print("phon_loss: ", phon_loss.item())
-    #print("orth_loss: ", orth_loss.item())
-    #print("loss: ", loss.item())
 
-    #print_weight_norms(model, "before loss.backward")
     loss.backward()
     opt.step()
-    #print_weight_norms(model, "after opt.step")
     opt.zero_grad()
 
     # Suggestion: compute cheap metrics every step, more complex metrics every epoch
     metrics = compute_metrics(logits, orthography, phonology, batch, example_ct, orth_loss, phon_loss, loss, epoch, step, ds, device, model, generated_text_table)
-    #print("DEBUG metrics: ", metrics)
-    #raise "error, after print metrics"
     return metrics
 
 #----------------------------------------------------------------------
@@ -177,7 +164,6 @@ def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss,
         ]
         phonology_mask = phon["enc_pad_mask"].to(device)
 
-        # GE:  I do not understand
         generation = model.generate(
             orthography, orthography_mask, phonology, phonology_mask
         )
@@ -216,20 +202,16 @@ def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss,
     #print(f"phon_word_accuracy: {phon_word_accuracy}")
 
 
-    # DEBUGGING
-    #for k,v in metrics.items(): 
-        #print(f"metrics[{k}] = {v}")
-    
+
     return metrics
 #----------------------------------------------------------------------
 def single_epoch(c, model, train_dataset_slices, epoch, single_step_fct):
+    example_ct = [0]
+
     model.train()
     nb_steps = 1 
     start = time.time()
 
-    #print("len(train_dataset_slices): ", len(train_dataset_slices))
-
-    #print(f"DEBUG: slice: {train_dataset_slices}, single_epoch: epoch: {epoch}, nb_steps: {nb_steps}, len(train_dataset_slices): {len(train_dataset_slices)}")
     for step, batch_slice in enumerate(train_dataset_slices):
         #print(f"step: {step}, batch_slice: ", batch_slice)
         if c.max_nb_steps > 0 and nb_steps >= c.max_nb_steps:
@@ -239,7 +221,6 @@ def single_epoch(c, model, train_dataset_slices, epoch, single_step_fct):
         #print_weight_norms(model, f"DEBUG: step: {step}, norm: ")  # GE: debug
         nb_steps += 1
 
-    #print("nb_steps: ", nb_steps)
     metrics['time_per_step'] = (time.time() - start) / nb_steps
     metrics['time_per_epoch'] = c.n_steps_per_epoch * metrics['time_per_step']
     return metrics
@@ -306,7 +287,7 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
         opt = pt.optim.AdamW(model.parameters(), c.learning_rate)
         opt.load_state_dict(chkpt["optimizer"])
 
-    # Start a new urn
+    # Start a new run
     else:
         model = Model(
             len(ds.character_tokenizer),
@@ -319,15 +300,7 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
             num_layers_dict=num_layers_dict,  # New, GE, 2023-05-27
         )
         opt = pt.optim.AdamW(model.parameters(), c.learning_rate)
-    #print("original model weights")
-    #print_weight_norms(model, "initial model weights")
-    #print(model)
 
-    #print(
-    #    "char/phon tokenizers len: ",
-    #    len(ds.character_tokenizer),
-    #    len(ds.phonology_tokenizer),
-    #)
     return model, opt
 #----------------------------------------------------------------------
 def create_data_slices(cutpoint, c, ds):
@@ -349,6 +322,7 @@ def create_data_slices(cutpoint, c, ds):
 
     return train_dataset_slices, val_dataset_slices
 
+#----------------------------------------------------------------------
 def print_weight_norms(model, msg):
     norm = pt.sqrt(sum([pt.norm(w[0], p=2) ** 2 for w in model.parameters()]))
     print(f"==> {msg}, {norm}")

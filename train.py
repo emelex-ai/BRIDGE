@@ -22,22 +22,11 @@ def run_code():
 
 
 def run_code_impl(run, ds):
-    # This approach of copying variables from the dictionary is prone to error if additional variables are
-    # added due to violation of the
-    # DRY principle (Don't Repeat Yourself)
-    # Unless variables are in a type loop, I recommend using the dictionary.
-
+    """ """
     c = run.config
+    print("run.config: ", run.config)
 
     MODEL_PATH = c.model_path
-    # GE, May 30, 2024: added nb_rows argument to read a subset
-    #ds = ConnTextULDataset() # first sweep, use all rows
-    #ds = ConnTextULDataset(nb_rows=1000) # first sweep, use `nb_rows` rows
-    #ds = ConnTextULDataset(nb_rows=10000) # first sweep
-    # Extract the top 1000 rows and return a Dataset
-    # For some reason, Subset does not work. It should. 
-    #ds = Subset(ds, indices=range(len(ds)))  # Generates an error. Something wrong. 
-    # ds = ds[slice(0, 1000, 1)]  # len(ds) returns 2. Why is that? 
 
     if pt.cuda.is_available():
         device = pt.device("cuda:0")
@@ -49,30 +38,16 @@ def run_code_impl(run, ds):
 
     # GE 2023-05-27: added fine-grain control over layer structure
     num_layers_dict = {
-        "phon_dec": c.common_num_layers,
-        "phon_enc": c.common_num_layers,
-        "orth_dec": c.common_num_layers,
-        "orth_enc": c.common_num_layers,
-        "mixing_enc": c.common_num_layers,
+        "phon_dec": c.num_layers,
+        "phon_enc": c.num_layers,
+        "orth_dec": c.num_layers,
+        "orth_enc": c.num_layers,
+        "mixing_enc": c.num_layers,
     }
     assert c.d_model % c.nhead == 0, "d_model must be evenly divisible by nhead"
 
     num_train = int(len(ds) * c.train_test_split)
     #cutpoint = int(c.train_test_split * len(ds))
-
-    """ MIGHT ADD LATER. Not sure why you are not using a DataLoader """
-    """
-    # Added by Gordon
-    dataset_train = train_impl.ConnDataset(ds[:num_train])
-    dataset_valid = train_impl.ConnDataset(ds[num_train:])
-    #dataset_train = train_impl.ConnDataset(ds[:num_train])
-    #dataset_valid = train_impl.ConnDataset(ds[num_train:])
-
-    # The advantage of dataloaders is that it is very easy to change batch size from 
-    # epoch to epoch
-    loader_train = DataLoader(ds, batch_size=c.batch_size, shuffle=True)
-    loader_valid = DataLoader(ds, batch_size=1, shuffle=True)
-    """
 
     train_dataset_slices, val_dataset_slices = train_impl.create_data_slices(
         num_train, c, ds
@@ -101,20 +76,20 @@ def run_code_impl(run, ds):
     pbar = tqdm.tqdm(range(epoch_num, epoch_num + c.num_epochs), position=0)
     example_ct = [0]
 
-    # Function closure (GE)
-    # I may have forgotten one or two arguments. Must be checked.
+    # Function closure
     single_step_fct = lambda batch_slice, step, epoch: train_impl.single_step(
+        c,
         pbar,
         model,
         train_dataset_slices,
         batch_slice,
         ds,
         device,
-        example_ct,
         opt,
         epoch,
         step,
         generated_text_table,
+        example_ct,
     )
     single_epoch_fct = lambda epoch: train_impl.single_epoch(
         c, model, train_dataset_slices, epoch, single_step_fct, 
@@ -129,7 +104,12 @@ def run_code_impl(run, ds):
     for epoch in pbar:
         #print("epoch = ", epoch)
         metrics = single_epoch_fct(epoch)
+<<<<<<< HEAD
+        run.log(metrics)  
+=======
+>>>>>>> ac4a6299f3970d6da76f7d4f52bb947bab7a4e0b
         # When experimenting, skip evaluate_model_fct for speedup
+        # if c.max_nb_steps == -1, run all steps and evaluate the model
         if c.max_nb_steps < 0:
             metrics.update(evaluate_model_fct())
 
@@ -141,6 +121,5 @@ def run_code_impl(run, ds):
 
     ##print("time per step (sec); ", time)
     #print("n_steps_per_epoch: ", c.n_steps_per_epoch)
-
 
 # ----------------------------------------------------------------------
