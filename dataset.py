@@ -225,16 +225,17 @@ class ConnTextULDataset(Dataset):
       self.character_tokenizer = CharacterTokenizer(list_of_characters)
 
       final_words = []
-      self.max_seq_length = 0
+      self.max_orth_seq_len = 0
+      self.max_phon_seq_len = 0
       for word in tmp_words:
         phonology = self.phonology_tokenizer.encode([word])
         if word == "" or word == None or word == []:
           continue
         if phonology: #check if in phoneme_dict
           final_words.append(word)
-          phon_length = len(phonology['enc_pad_mask'][0])
-          orth_length = len(self.character_tokenizer.encode(word)['enc_input_ids'][0]) 
-          self.max_seq_length = max(self.max_seq_length, phon_length, orth_length)
+          self.max_phon_seq_len = max(self.max_phon_seq_len, len(phonology['enc_pad_mask'][0]))
+          self.max_orth_seq_len = max(self.max_orth_seq_len, len(self.character_tokenizer.encode(word)['enc_input_ids'][0])) 
+      self.max_seq_len = max(self.max_phon_seq_len, self.max_orth_seq_len)
 
       self.words = final_words
 

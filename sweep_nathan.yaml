@@ -1,0 +1,12 @@
+program: main.py
+method: grid
+name: test_sweep5
+metric: 
+    goal: minimize
+    name: time_per_epoch
+parameters: 
+    batch_size: {"values": [1]}
+    d_model: {"values": [32]}
+    d_embedding: {"values": [1]}
+    common_num_layers: {"values": [3]}
+    which_dataset: {"values": [5, 20, 50, 100, 250, 500, 1000]}

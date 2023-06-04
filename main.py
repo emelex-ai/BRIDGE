@@ -31,7 +31,7 @@ def main():
 
     parser.add_argument("--which_dataset", type=int, default=20, help="Choose the dataset to load")
     parser.add_argument("--sweep",type=str,  default="", help="Run a sweep from a configuration file")
-    parser.add_argument("--d_embedding", type=int, default=1024, help="Dimensionality of the final embedding layer.")
+    parser.add_argument("--d_embedding", type=int, default=1, help="Dimensionality of the final embedding layer.")
     parser.add_argument("--seed", type=int, default=1337, help="Random seed for repeatibility.")
 
     args = parser.parse_args()
@@ -44,6 +44,7 @@ def main():
         wandb_disabled = True
         wandb_enabled = False
 
+    wandb_disabled = args.wandb_disabled
     num_epochs = args.num_epochs
     d_embedding = args.d_embedding
     batch_size = args.batch_size
@@ -66,7 +67,7 @@ def main():
 
     if TEST:
         d_model = 16
-        d_embedding = 32
+        d_embedding = 2
         nhead = 2
         num_layers = 2
         batch_size = 8
@@ -116,7 +117,7 @@ def main():
         with open(args.sweep, "r") as file:
             sweep_config = yaml.safe_load(file)
 
-        print("sweep_config: ", sweep_config)
+        #print("\n(BEFORE) sweep_config: ", sweep_config)
 
         #"""
         # Update sweep_config with new_params without overwriting existing parameters:
@@ -124,16 +125,12 @@ def main():
         for param, value in config.items():
             if param not in sweep_config["parameters"]:
                 sweep_config["parameters"][param] = {"values": [value]}
-        #"""
-        # Does not work
-        """
-        for param, value in config.items():
-            if param not in sweep_config["parameters"]:
-                sweep_config[param] = {"values": [value]}
-        """
+
 
         sweep_id = wandb.sweep(sweep_config, project=project, entity=entity)
-        wandb.agent(sweep_id, run_code)
+
+        run_code1 = lambda : run_code(ds)
+        wandb.agent(sweep_id, run_code1)
     else:
         wandb.set_params(config=config, is_sweep=False, is_wandb_on=wandb_enabled)
 
