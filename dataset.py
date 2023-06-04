@@ -205,6 +205,7 @@ class ConnTextULDataset(Dataset):
       # nrows added by GE to reduced nb rows for code testing 
       if test:
         self.dataset = pd.read_csv(DATA_PATH+f'/data_test{which_dataset}.csv', nrows=nb_rows)
+        print("INSIDE TEST")
       else:
         self.dataset = pd.read_csv(DATA_PATH+'/data.csv', nrows=nb_rows)
 

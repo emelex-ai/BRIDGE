@@ -36,7 +36,6 @@ def main():
 
     args = parser.parse_args()
     
-    print("args.wandb: ", args.wandb)
     if args.wandb:
         wandb_disabled = False
         wandb_enabled = True
@@ -44,7 +43,6 @@ def main():
         wandb_disabled = True
         wandb_enabled = False
 
-    wandb_disabled = args.wandb_disabled
     num_epochs = args.num_epochs
     d_embedding = args.d_embedding
     batch_size = args.batch_size
@@ -65,6 +63,7 @@ def main():
     entity = "emelex"
     project = "ConnTextUL"
 
+    # TEST data cannot be overriden by argument
     if TEST:
         d_model = 16
         d_embedding = 2
@@ -102,6 +101,7 @@ def main():
         "max_nb_steps": max_nb_steps,   # to speed up testing. Set to -1 to process full data. 
         "which_dataset": which_dataset, # select dataset from data/ folder
         "seed": seed, # select dataset from data/ folder
+        "test": TEST, # select dataset from data/ folder
     }
 
     print("config: ", config)
@@ -116,8 +116,6 @@ def main():
 
         with open(args.sweep, "r") as file:
             sweep_config = yaml.safe_load(file)
-
-        #print("\n(BEFORE) sweep_config: ", sweep_config)
 
         #"""
         # Update sweep_config with new_params without overwriting existing parameters:

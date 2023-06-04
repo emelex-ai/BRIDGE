@@ -12,8 +12,9 @@ wandb = WandbWrapper()
 run = MyRun()
 
 
-def evaluate_model(model, val_dataset_slices, device, opt, ds):
+def evaluate_model(model, val_dataset_slices, device, opt, ds, mode):
     model.eval()  
+
     with pt.no_grad():
         #print("\nValidation Loop...")
         for step, batch_slice in enumerate(val_dataset_slices):
@@ -38,15 +39,16 @@ def evaluate_model(model, val_dataset_slices, device, opt, ds):
             phon_loss = pt.nn.CrossEntropyLoss(ignore_index=2)(
                 logits["phon"], phonology["targets"]
             )
-            more_metrics = {"val/loss": orth_loss + phon_loss,
-                            "val/orth_loss": orth_loss,
-                            "val/phon_loss": phon_loss,}
+            more_metrics = {mode+"/loss": orth_loss + phon_loss,
+                            mode+"/orth_loss": orth_loss,
+                            mode+"/phon_loss": phon_loss,}
 
     return more_metrics
 
 #----------------------------------------------------------------------
-def single_step(c, pbar, model, train_dataset_slices, batch_slice, ds, device, opt, epoch, step, generated_text_table, example_ct):
+def single_step(c, pbar, model, train_dataset_slices, batch_slice, ds, device, opt, epoch, step, generated_text_table, example_ct, mode):
     """ """
+    print("enter single step, mode: ", mode)
     batch = ds[batch_slice]
     orthography, phonology = batch["orthography"].to(device), batch[
         "phonology"
@@ -70,17 +72,23 @@ def single_step(c, pbar, model, train_dataset_slices, batch_slice, ds, device, o
     )
     loss = orth_loss + phon_loss
 
-    loss.backward()
-    opt.step()
-    opt.zero_grad()
+    # How to disable backward computational and gradient accumulation in the validation loop?
+    # https://discuss.pytorch.org/t/how-to-disable-backward-computational-and-gradient-accumulation-in-the-validation-loop/120774
+
+    if model.training:
+        loss.backward()
+        opt.step()
+        opt.zero_grad()
 
     # Suggestion: compute cheap metrics every step, more complex metrics every epoch
-    metrics = compute_metrics(logits, orthography, phonology, batch, example_ct, orth_loss, phon_loss, loss, epoch, step, ds, device, model, generated_text_table)
+    metrics = compute_metrics(logits, orthography, phonology, batch, example_ct, orth_loss, phon_loss, loss, epoch, step, ds, device, model, generated_text_table, mode)
+    print("exit single step")
     return metrics
 
 #----------------------------------------------------------------------
-def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss, phon_loss, loss, epoch, step, ds, device, model, generated_text_table):
+def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss, phon_loss, loss, epoch, step, ds, device, model, generated_text_table, mode):
 
+    #print("enter compute metrics")
     # --- Calculte Orthographic Accuracy ---
     # Determine model predictions by taking argmax of orthographic logits
     orth_pred = pt.argmax(logits["orth"], dim=1)
@@ -176,53 +184,73 @@ def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss,
 
     example_ct[0] += len(batch["orthography"])
     metrics = {
-        "train/orth_loss": orth_loss,
-        "train/phon_loss": phon_loss,
-        "train/train_loss": loss,
-        "train/epoch": epoch,
-        "train/example_ct": example_ct[0],  # GE: put in a list so I could use it in a function argument
-        "train/global_embedding_magnitude": pt.norm(
+        mode+"/orth_loss": orth_loss,
+        mode+"/phon_loss": phon_loss,
+        mode+"/train_loss": loss,
+        mode+"/epoch": epoch,
+        mode+"/example_ct": example_ct[0],  # GE: put in a list so I could use it in a function argument
+        mode+"/global_embedding_magnitude": pt.norm(
             model.global_embedding[0], p=2
         ),
-        "train/model_weights_magnitude": pt.sqrt(
+        mode+"/model_weights_magnitude": pt.sqrt(
             sum([pt.norm(w[0], p=2) ** 2 for w in model.parameters()])
         ),
         # "train/lr": opt.state_dict()['param_groups'][0]['lr'],
-        "train/generated_text_table": generated_text_table,
-        "train/letter_wise_accuracy": letter_wise_accuracy,
-        "train/orth_word_accuracy": orth_word_accuracy,
-        "train/phon_segment_accuracy": phon_segment_accuracy,
-        "train/phoneme_wise_accuracy": phoneme_wise_accuracy,
-        "train/phon_word_accuracy": phon_word_accuracy,
+        mode+"/generated_text_table": generated_text_table,
+        mode+"/letter_wise_accuracy": letter_wise_accuracy,
+        mode+"/orth_word_accuracy": orth_word_accuracy,
+        mode+"/phon_segment_accuracy": phon_segment_accuracy,
+        mode+"/phoneme_wise_accuracy": phoneme_wise_accuracy,
+        mode+"/phon_word_accuracy": phon_word_accuracy,
     }
     #print(f"letter_wise_accuracy: {letter_wise_accuracy}")
     #print(f"orth_word_accuracy: {orth_word_accuracy}")
     #print(f"phon_segment_accuracy: {phon_segment_accuracy}")
     #print(f"phoneme_wise_accuracy: {phoneme_wise_accuracy}")
     #print(f"phon_word_accuracy: {phon_word_accuracy}")
-
-
+    #print("exit compute metrics")
 
     return metrics
 #----------------------------------------------------------------------
-def single_epoch(c, model, train_dataset_slices, epoch, single_step_fct):
+def train_single_epoch(c, model, dataset_slices, epoch, single_step_fct):
+    print("enter train_single_epoch")
     example_ct = [0]
 
     model.train()
-    nb_steps = 1 
+    nb_steps = 0 
     start = time.time()
 
-    for step, batch_slice in enumerate(train_dataset_slices):
-        #print(f"step: {step}, batch_slice: ", batch_slice)
+    for step, batch_slice in enumerate(dataset_slices):
         if c.max_nb_steps > 0 and nb_steps >= c.max_nb_steps:
-            #print("max_nb_steps: ", c.max_nb_steps)  # does not reach this point in test mode
             break
-        metrics = single_step_fct(batch_slice, step, epoch)   # GE: new
-        #print_weight_norms(model, f"DEBUG: step: {step}, norm: ")  # GE: debug
+        metrics = single_step_fct(batch_slice, step, epoch, "train") 
         nb_steps += 1
 
-    metrics['time_per_step'] = (time.time() - start) / nb_steps
-    metrics['time_per_epoch'] = c.n_steps_per_epoch * metrics['time_per_step']
+    metrics['time_per_train_step'] = (time.time() - start) / nb_steps
+    metrics['time_per_train_epoch'] = c.n_steps_per_epoch * metrics['time_per_train_step']
+    return metrics
+#----------------------------------------------------------------------
+def validate_single_epoch(c, model, dataset_slices, epoch, single_step_fct):
+    print("enter train_single_epoch")
+    example_ct = [0]
+
+    model.eval()
+    nb_steps = 0 
+    start = time.time()
+
+    # Trick to avoid unbounded variables to protect against future Python changes
+    # where local variables defined inside loops are not defined upon loop exit.
+    # Perform at least one step
+    metrics = [{}]
+    for step, batch_slice in enumerate(dataset_slices):
+        metrics[0] = single_step_fct(batch_slice, step, epoch, "val")
+        if c.max_nb_steps > 0 and nb_steps >= c.max_nb_steps:
+            break
+        nb_steps += 1
+
+    metrics = metrics[0]
+    metrics['time_per_val_step'] = (time.time() - start) / nb_steps
+    metrics['time_per_val_epoch'] = c.n_steps_per_epoch * metrics['time_per_val_step']
     return metrics
 #----------------------------------------------------------------------
 def save(epoch, c, model, opt, MODEL_PATH, model_id, epoch_num):
@@ -311,11 +339,13 @@ def create_data_slices(cutpoint, c, ds):
             slice(batch * c.batch_size, min((batch + 1) * c.batch_size, cutpoint))
         )
     
+    # batch size for the validation set is always 1. 
+    batch_size = 100  # SHOULD BE SET VIA progrma ARGS
     val_dataset_slices = []
-    for batch in range(math.ceil((len(ds) - cutpoint) / c.batch_size)):
+    for batch in range(math.ceil((len(ds) - cutpoint) / batch_size)):
         val_dataset_slices.append(
             slice(
-                cutpoint + batch * c.batch_size,
+                cutpoint + batch * batch_size,
                 min(cutpoint + (batch + 1) * c.batch_size, len(ds)),
             )
         )
