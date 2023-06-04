@@ -253,6 +253,8 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
             d_model=chkpt["d_model"],
             nhead=chkpt["nhead"],
             max_seq_len=ds.max_seq_len,
+            num_layers_dict=num_layers_dict,  # New, GE, 2023-05-27
+            d_embedding=c.d_embedding,
         )
         model.load_state_dict(chkpt["model"])
         opt = pt.optim.AdamW(model.parameters(), c.learning_rate)
@@ -265,6 +267,8 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
             len(ds.phonology_tokenizer),
             d_model=c.d_model,
             d_embedding=c.d_embedding,
+            max_orth_seq_len=ds.max_orth_seq_len,
+            max_phon_seq_len=ds.max_phon_seq_len,
             nhead=c.nhead,
             num_layers_dict=num_layers_dict,  # New, GE, 2023-05-27
         )

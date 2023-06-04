@@ -21,19 +21,19 @@ def main():
                         and linear layers. Must be evenly divisible by nhead")
     parser.add_argument("--nhead", type=int, default=4, help="Number of attention heads for all attention modules. \
                         Must evenly divide d_model.")
-    parser.add_argument("--wanda_disabled", type=bool, default=False, help="Disable wandb")
+    parser.add_argument("--wandb_disabled", type=bool, default=False, help="Disable wandb")
     parser.add_argument("--test", action='store_true', default=False, help="Test mode: only run one epoch on a small subset of the data")
     parser.add_argument("--max_nb_steps", type=int, default=-1, help="Hardcode nb steps per epoch for fast testing")
     parser.add_argument("--train_test_split", type=float, default=0.8, help="Fraction of data in the training set")
 
     parser.add_argument("--which_dataset", type=int, default=20, help="Choose the dataset to load")
     parser.add_argument("--sweep",type=str,  default="", help="Run a sweep from a configuration file")
-    parser.add_argument("--d_embedding", type=int, default=1024, help="Dimensionality of the final embedding layer.")
+    parser.add_argument("--d_embedding", type=int, default=1, help="Dimensionality of the final embedding layer.")
     parser.add_argument("--seed", type=int, default=1337, help="Random seed for repeatibility.")
 
     args = parser.parse_args()
     
-    disable_wandb = args.disable_wandb
+    wandb_disabled = args.wandb_disabled
     num_epochs = args.num_epochs
     d_embedding = args.d_embedding
     batch_size = args.batch_size
@@ -53,11 +53,11 @@ def main():
     #  Three parameters specific to W&B
     entity = "emelex"
     project = "ConnTextUL"
-    is_wandb_enabled = not args.wanda_disabled
+    is_wandb_enabled = not wandb_disabled
 
     if TEST:
         d_model = 16
-        d_embedding = 32
+        d_embedding = 2
         nhead = 2
         num_layers = 2
         batch_size = 8

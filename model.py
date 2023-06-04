@@ -1,4 +1,4 @@
-import torch 
+import torch
 
 
 class Encoder(torch.nn.Module):
@@ -13,15 +13,15 @@ class Encoder(torch.nn.Module):
         )
 
     def forward(self, src, src_mask=None, src_key_padding_mask=None):
-        """ 
+        """
         Pass the input throught the various layers
 
-        Args: 
+        Args:
         src (Tensor) – the sequence to the encoder (required).
         src_mask (Optional[Tensor]) – the mask for the src sequence (optional). Defaults to None.
         src_key_padding_mask (Optional[Tensor]) – the mask for the src keys per batch (optional). Defaults to None.
 
-        Returns: 
+        Returns:
             tensor
         """
         output = self.transformer_encoder(
@@ -60,10 +60,17 @@ class Decoder(torch.nn.Module):
             tgt_key_padding_mask (Optional[Tensor]) – the mask for the tgt keys per batch (optional).
             memory_key_padding_mask (Optional[Tensor]) – the mask for the memory keys per batch
 
-        Returns: 
+        Returns:
             tensor
 
         """
+        print("tgt: ", tgt.shape)
+        print("memory: ", memory.shape)
+        print("tgt_mask: ", tgt_mask.shape)
+        print("tgt_mask: ", tgt_mask)
+        #print("memory_mask: ", memory_mask.shape)
+        #print("tgt_key_padding_mask: ", tgt_key_padding_mask.shape)
+        #print("memory_key_padding_mask: ", memory_key_padding_mask.shape)
         output = self.transformer_decoder(
             tgt,
             memory,
@@ -74,22 +81,24 @@ class Decoder(torch.nn.Module):
         )
         return output
 
+
 # ----------------------------------------------------------------------
 class Model(torch.nn.Module):
     def __init__(
         self,
         orth_vocab_size,
         phon_vocab_size,
-        d_model=512,
-        d_embedding=1024,
-        nhead=1,
-        num_layers_dict={},  # Dictionary
-        max_seq_len=20,
+        d_model,
+        d_embedding,
+        max_orth_seq_len,
+        max_phon_seq_len,
+        nhead,
+        num_layers_dict,
     ):
         super().__init__()
 
-        #print("ortho: vocabulary size: ", orth_vocab_size)  # 49
-        #print("phono: vocabulary size: ", phon_vocab_size)  # 34
+        # print("ortho: vocabulary size: ", orth_vocab_size)  # 49
+        # print("phono: vocabulary size: ", phon_vocab_size)  # 34
 
         nlayers_phon_enc = num_layers_dict["phon_enc"]
         nlayers_phon_dec = num_layers_dict["phon_dec"]
@@ -100,24 +109,26 @@ class Model(torch.nn.Module):
         # Initial embeddings for orthography, phonology, and position
         # Emebdding for orthography
         self.orthography_embedding = torch.nn.Embedding(orth_vocab_size, d_model)
-        self.orth_position_embedding = torch.nn.Embedding(max_seq_len, d_model)  # GE  added an independent pos embedding
+        self.orth_position_embedding = torch.nn.Embedding(
+            max_orth_seq_len, d_model
+        )  # GE  added an independent pos embedding
         # Embedding for phonology
         self.phonology_embedding = torch.nn.Embedding(phon_vocab_size, d_model)
-        self.phon_position_embedding = torch.nn.Embedding(max_seq_len, d_model)  # GE
+        self.phon_position_embedding = torch.nn.Embedding(max_phon_seq_len, d_model)  # GE
 
         self.vocab_sizes = {
             "orth_vocab_size": orth_vocab_size,
             "phon_vocab_size": phon_vocab_size,
         }
-        print("self.vocab_sizes = ", self.vocab_sizes)
         self.d_model = d_model
-        self.max_seq_len = max_seq_len
+        self.d_embedding = d_embedding
+        self.max_orth_seq_len = max_orth_seq_len
+        self.max_phon_seq_len = max_phon_seq_len
 
         # A 1×1×d_model tensor of model parameters, rescaled by √d_model
-        # GE: change self.d_model = 1024, 
         self.global_embedding = torch.nn.Parameter(
-            #torch.randn((1, 1, 1024)) / 1024**0.5, requires_grad=True # Did not work. Incompatible dimension. 
-            torch.randn((1, 1, self.d_model)) / self.d_model**0.5, requires_grad=True # orig
+            torch.randn((1, self.d_embedding, self.d_model)) / self.d_model**0.5,
+            requires_grad=True,
         )
 
         # Initial, encoding segment of our ConnTextUL model:
@@ -142,10 +153,12 @@ class Model(torch.nn.Module):
 
         # Segment of ConnTextUL model that mixes orthography/phonology representation
         self.transformer_mixer = Encoder(
-            d_model=self.d_model, nhead=nhead, num_layers=nlayers_mixing_enc
+            d_model=self.d_model,
+            nhead=nhead,
+            num_layers=nlayers_mixing_enc,
         )
         self.reduce = torch.nn.Linear(self.d_model, self.d_model)
-        self.reduce_layer_norm = torch.nn.LayerNorm(d_model)
+        self.reduce_layer_norm = torch.nn.LayerNorm(self.d_model)
 
         # Decoder segment of ConnTextUL model
         # Orthography component of Decoder segment
@@ -173,35 +186,51 @@ class Model(torch.nn.Module):
     def embed_tokens(self, tokens, mode="o"):
         assert mode in ["o", "p"]
 
-        if mode == 'o':
-           assert isinstance(tokens, torch.Tensor), "For orthographic embeddings, tokens must be a pytorch tensor of integers (indices of orthography_embedding)"
-           assert tokens.dtype == torch.long or tokens.dtype == torch.int, f"Input tensor to Embedding must be type int or long but is {tokens.dtype}"
-           return self.orthography_embedding(tokens) + self.orth_position_embedding.weight[None,:tokens.shape[1]] # GE
+        if mode == "o":
+            assert isinstance(
+                tokens, torch.Tensor
+            ), "For orthographic embeddings, tokens must be a pytorch tensor of integers (indices of orthography_embedding)"
+            assert (
+                tokens.dtype == torch.long or tokens.dtype == torch.int
+            ), f"Input tensor to Embedding must be type int or long but is {tokens.dtype}"
+            return (
+                self.orthography_embedding(tokens)
+                + self.orth_position_embedding.weight[None, : tokens.shape[1]]
+            )  # GE
         # This is where we need to average the phonological embedding vectors
         else:
-           try:
-             isinstance(tokens, list)
-           except:
-             raise TypeError(f"For phonological vectors, tokens must be a list where each element is a pytorch tensor of integers (indices), but is type: {type(tokens)}")
-           try:
-             all(isinstance(token, torch.Tensor) for token in tokens)
-           except:
-             for token in tokens:
-               print(f"type(token) = {type(token)}")
-               print(f"token = {token}")
-             raise TypeError("For phonological vectors, each element of the list must be a pytorch tensor of integers (indices)")
-           # Here we average the embeddings for each feature in a phonological vector
-           # Each row of indices will become of batch once we extract rows from the embedding matrix
-           # So the size of the resulting 'output_embedding' tensor should be (batch_size, max_phon_len, d_model)
-           device = next(self.parameters()).device
-           output_embedding = torch.zeros((len(tokens), len(tokens[0]), self.d_model), device=device)
-           for batch_num, batch in enumerate(tokens):
-             for indx, tokes in enumerate(batch):
-               # Here tokens should be a pytorch tensor of integers. It extracts the indicated rows from self.phonology_embedding
-               avg_embedding = self.phonology_embedding(tokes).mean(axis=0)
-               # Insert the resulting averaged embedding vector into the output_embedding tensor as a new row
-               output_embedding[batch_num, indx, :] = avg_embedding
-           return output_embedding + self.phon_position_embedding.weight[None,:len(tokens[0])]   # GE: independent positional encodings
+            try:
+                isinstance(tokens, list)
+            except:
+                raise TypeError(
+                    f"For phonological vectors, tokens must be a list where each element is a pytorch tensor of integers (indices), but is type: {type(tokens)}"
+                )
+            try:
+                all(isinstance(token, torch.Tensor) for token in tokens)
+            except:
+                for token in tokens:
+                    print(f"type(token) = {type(token)}")
+                    print(f"token = {token}")
+                raise TypeError(
+                    "For phonological vectors, each element of the list must be a pytorch tensor of integers (indices)"
+                )
+            # Here we average the embeddings for each feature in a phonological vector
+            # Each row of indices will become of batch once we extract rows from the embedding matrix
+            # So the size of the resulting 'output_embedding' tensor should be (batch_size, max_phon_len, d_model)
+            device = next(self.parameters()).device
+            output_embedding = torch.zeros(
+                (len(tokens), len(tokens[0]), self.d_model), device=device
+            )
+            for batch_num, batch in enumerate(tokens):
+                for indx, tokes in enumerate(batch):
+                    # Here tokens should be a pytorch tensor of integers. It extracts the indicated rows from self.phonology_embedding
+                    avg_embedding = self.phonology_embedding(tokes).mean(axis=0)
+                    # Insert the resulting averaged embedding vector into the output_embedding tensor as a new row
+                    output_embedding[batch_num, indx, :] = avg_embedding
+            return (
+                output_embedding
+                + self.phon_position_embedding.weight[None, : len(tokens[0])]
+            )  # GE: independent positional encodings
 
     def embed(
         self, orthography, orthography_padding_mask, phonology, phonology_padding_mask
@@ -213,10 +242,11 @@ class Model(torch.nn.Module):
         orthography_encoding = self.orthography_encoder(
             orthography, src_key_padding_mask=orthography_padding_mask
         )
+        print(f"orthography_encoding.shape = {orthography_encoding.shape}")
         phonology_encoding = self.phonology_encoder(
             phonology, src_key_padding_mask=phonology_padding_mask
         )
-
+        print(f"phonology_encoding.shape = {phonology_encoding.shape}")
         # Query = orthography_encoding, Key = phonology_encoding
         gp_encoding = (
             self.gp_multihead_attention(
@@ -228,6 +258,7 @@ class Model(torch.nn.Module):
             + orthography_encoding
         )
         gp_encoding = self.gp_layer_norm(gp_encoding)
+        print(f"gp_encoding.shape = {gp_encoding.shape}")
         # Query = phonology_encoding, Key = orthography_encoding
         pg_encoding = (
             self.pg_multihead_attention(
@@ -239,49 +270,45 @@ class Model(torch.nn.Module):
             + phonology_encoding
         )
         pg_encoding = self.pg_layer_norm(pg_encoding)
+        print(f"pg_encoding.shape = {pg_encoding.shape}")
 
-        # Concatenate outputs of cross-attention modules
+        # Concatenate outputs of cross-attention modules and add residual connection
         gp_pg = torch.cat((gp_encoding, pg_encoding), dim=1) + torch.cat(
             (orthography_encoding, phonology_encoding), dim=1
         )
-        # print("gp_pg.shape = ", gp_pg.shape)
+        print("gp_pg.shape = ", gp_pg.shape)
         # Concatenate padding masks
         gp_pg_padding_mask = torch.cat(
             (orthography_padding_mask, phonology_padding_mask), dim=-1
         )
-        # print("gp_pg_padding_mask.shape = ", gp_pg_padding_mask.shape)
+        print("gp_pg_padding_mask.shape = ", gp_pg_padding_mask.shape)
 
-        # Here `global_embedding` is just a torch Parameter tensor.
-        # If I'm not mistaken, the `repeat` method is dictating that the same
-        # parameter tensor be applied to every entry in the batch.
-        # print("self.global_embedding.shape = ", self.global_embedding.shape)
-        # print("self.global_embedding.repeat(gp_pg.shape[0], 1, 1).shape = ", self.global_embedding.repeat(gp_pg.shape[0], 1, 1).shape)
         global_embedding = self.global_embedding.repeat(gp_pg.shape[0], 1, 1)
+        print("global_embedding.shape = ", global_embedding.shape)
         gp_pg = torch.cat((global_embedding, gp_pg), dim=1)
-        # print("gp_pg.shape = ", gp_pg.shape)
+        print("gp_pg.shape = ", gp_pg.shape)
         gp_pg_padding_mask = torch.cat(
             (
-                torch.zeros((gp_pg.shape[0], 1), device=gp_pg.device, dtype=torch.bool),
+                torch.zeros((gp_pg.shape[0], self.d_embedding), device=gp_pg.device, dtype=torch.bool),
                 gp_pg_padding_mask,
             ),
             dim=-1,
         )
-        # print("gp_pg_padding_mask.shape = ", gp_pg_padding_mask.shape)
+        print("gp_pg_padding_mask.shape = ", gp_pg_padding_mask.shape)
 
         mixed_encoding = self.transformer_mixer(
             gp_pg, src_key_padding_mask=gp_pg_padding_mask
         )
-        # print("mized_encoding.shape = ", mixed_encoding.shape)
-        # print("mixed_encoding[:,0].shape = ", mixed_encoding[:,0].shape)
+        print("mixed_encoding.shape = ", mixed_encoding.shape)
 
         final_encoding = (
-            self.reduce(mixed_encoding[:, 0]).unsqueeze(-2) + global_embedding
+            self.reduce(mixed_encoding[:, :self.d_embedding]).unsqueeze(-2) + global_embedding
         )
         final_encoding = self.reduce_layer_norm(final_encoding)
-        # print("final_encoding.shape = ", final_encoding.shape)
-        # sys.exit()
+        print("final_encoding.shape = ", final_encoding.shape)
 
-        return final_encoding
+        #return final_encoding
+        return mixed_encoding[:,:self.d_embedding]
 
     def forward(
         self,
@@ -358,21 +385,20 @@ class Model(torch.nn.Module):
         device = next(self.parameters()).device
 
         with torch.no_grad():
-            prompt_encoding = self.embed(orth_enc_input, 
-                                         orth_enc_pad_mask, 
-                                         phon_enc_input, 
-                                         phon_enc_pad_mask)
-        #print(prompt_encoding[0,0,:10])
+            prompt_encoding = self.embed(
+                orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask
+            )
+        # print(prompt_encoding[0,0,:10])
         mask = self.generate_triangular_mask(self.max_seq_len, device)
 
         generated_orth_tokens = torch.tensor([[0]], dtype=torch.long, device=device)
-        generated_orth_embeddings = self.embed_tokens(generated_orth_tokens, 'o')
-        #print("generated_orth_embeddings = ", generated_orth_embeddings)
+        generated_orth_embeddings = self.embed_tokens(generated_orth_tokens, "o")
+        # print("generated_orth_embeddings = ", generated_orth_embeddings)
 
         generated_phon_tokens = [[torch.tensor([31], dtype=torch.long, device=device)]]
-        generated_phon_embeddings = self.embed_tokens(generated_phon_tokens, 'p')
-        #print("generated_phon_embeddings = ", generated_phon_embeddings)
-        #print(generated_phon_tokens,generated_phon_embeddings.shape,generated_phon_embeddings[0,0,:10])
+        generated_phon_embeddings = self.embed_tokens(generated_phon_tokens, "p")
+        # print("generated_phon_embeddings = ", generated_phon_embeddings)
+        # print(generated_phon_tokens,generated_phon_embeddings.shape,generated_phon_embeddings[0,0,:10])
 
         for step in range(self.max_seq_len - 1):
             # print("step = ", step)
@@ -479,7 +505,6 @@ class Model(torch.nn.Module):
             buffer_size += buffer.nelement() * buffer.element_size()
 
         param_num_all = param_num + buffer_num
-        size_all_mb = round((param_size + buffer_size) / 1024**2,3)
-        result = {'parameters': param_num_all,
-                  'size in MB': size_all_mb}
+        size_all_mb = round((param_size + buffer_size) / 1024**2, 3)
+        result = {"parameters": param_num_all, "size in MB": size_all_mb}
         return result
