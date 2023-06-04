@@ -64,10 +64,10 @@ class Decoder(torch.nn.Module):
             tensor
 
         """
-        print("tgt: ", tgt.shape)
-        print("memory: ", memory.shape)
-        print("tgt_mask: ", tgt_mask.shape)
-        print("tgt_mask: ", tgt_mask)
+        #print("tgt: ", tgt.shape)
+        #print("memory: ", memory.shape)
+        #print("tgt_mask: ", tgt_mask.shape)
+        #print("tgt_mask: ", tgt_mask)
         #print("memory_mask: ", memory_mask.shape)
         #print("tgt_key_padding_mask: ", tgt_key_padding_mask.shape)
         #print("memory_key_padding_mask: ", memory_key_padding_mask.shape)
