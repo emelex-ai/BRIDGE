@@ -17,7 +17,7 @@ More complex code structure to accomodate running wandb with and without hypersw
 
 def run_code():
     run = wandb.init()
-    ds = ConnTextULDataset(test=True, which_dataset=run.config.which_dataset)
+    ds = ConnTextULDataset(test=False, which_dataset=run.config.which_dataset)
     run_code_impl(run, ds)
 
 
@@ -52,6 +52,11 @@ def run_code_impl(run, ds):
     train_dataset_slices, val_dataset_slices = train_impl.create_data_slices(
         num_train, c, ds
     )
+    print("c = ", c)
+    #print("train_dataset_slices = ", train_dataset_slices)
+    #print("val_dataset_slices = ", val_dataset_slices)
+    print("len(train_dataset_slices) = ", len(train_dataset_slices))
+    print("len(val_dataset_slices) = ", len(val_dataset_slices))
 
     # Use startup data to determine starting epoch. Update the model_id
     model_id, epoch_num = train_impl.get_starting_model_epoch(MODEL_PATH, c)
@@ -99,12 +104,16 @@ def run_code_impl(run, ds):
     for epoch in pbar:
         #print("epoch = ", epoch)
         metrics = single_epoch_fct(epoch)
+<<<<<<< HEAD
         run.log(metrics)  
+=======
+>>>>>>> ac4a6299f3970d6da76f7d4f52bb947bab7a4e0b
         # When experimenting, skip evaluate_model_fct for speedup
         # if c.max_nb_steps == -1, run all steps and evaluate the model
         if c.max_nb_steps < 0:
-            metrics = evaluate_model_fct()  # GE: 05/28
-            run.log(metrics) 
+            metrics.update(evaluate_model_fct())
+
+        run.log(metrics)
         save_fct(epoch)
 
     # 🐝 Close your wandb run
