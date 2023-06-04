@@ -95,7 +95,7 @@ def main():
         "seed": seed, # select dataset from data/ folder
     }
 
-    print("config: ", config)
+    #print("config: ", config)
     globals().update({"wandb": wandb})
 
     if args.sweep != "":
@@ -108,14 +108,14 @@ def main():
         with open(args.sweep, "r") as file:
             sweep_config = yaml.safe_load(file)
 
-        print("\n(BEFORE) sweep_config: ", sweep_config)
+        #print("\n(BEFORE) sweep_config: ", sweep_config)
 
         # Update sweep_config with new_params without overwriting existing parameters:
         for param, value in config.items():
             if param not in sweep_config["parameters"]:
                 sweep_config["parameters"][param] = {"values": [value]}
 
-        print("\n(AFTER) sweep_config: ", sweep_config)
+        #print("\n(AFTER) sweep_config: ", sweep_config)
         sweep_id = wandb.sweep(sweep_config, project=project, entity=entity)
 
         wandb.agent(sweep_id, run_code)

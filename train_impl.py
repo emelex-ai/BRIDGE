@@ -16,7 +16,7 @@ run = MyRun()
 def evaluate_model(model, val_dataset_slices, device, opt, ds):
     model.eval()  # GE: eval once per epoch
     with pt.no_grad():
-        print("\nValidation Loop...")
+        #print("\nValidation Loop...")
         for step, batch_slice in enumerate(val_dataset_slices):
             batch = ds[batch_slice]
             orthography, phonology = batch["orthography"].to(device), batch[
@@ -33,13 +33,15 @@ def evaluate_model(model, val_dataset_slices, device, opt, ds):
                 phonology["dec_pad_mask"],
             )
 
-            val_loss = pt.nn.CrossEntropyLoss(ignore_index=4)(
+            orth_loss = pt.nn.CrossEntropyLoss(ignore_index=4)(
                 logits["orth"], orthography["enc_input_ids"][:, 1:]
             )
-            val_loss = val_loss + pt.nn.CrossEntropyLoss(ignore_index=2)(
+            phon_loss = pt.nn.CrossEntropyLoss(ignore_index=2)(
                 logits["phon"], phonology["targets"]
             )
-            more_metrics = {"val/val_loss": val_loss}
+            more_metrics = {"val/loss": orth_loss + phon_loss,
+                            "val/orth_loss": orth_loss,
+                            "val/phon_loss": phon_loss,}
             run.log(more_metrics)
 
 #----------------------------------------------------------------------
@@ -90,21 +92,17 @@ def single_step(pbar, model, train_dataset_slices, batch_slice, ds, device, exam
 
 #----------------------------------------------------------------------
 def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss, phon_loss, loss, epoch, step, ds, device, model, generated_text_table):
-    # NEW NEW NEW NEW NEW NEW NEW NEW NEW
 
     # Accuracy function for orthography.
-    # Take argmax of orthographic logits for accuracy comparison:
-    A_orth = pt.argmax(logits["orth"], dim=1)
-    # Keep orthographic encoder input ids unchanged:
-    B_orth = orthography["enc_input_ids"][:, 1:]
+    # Determine model preditcions by taking argmax of orthographic logits
+    orth_pred = pt.argmax(logits["orth"], dim=1)
+    # Keep orthographic encoder input ids unchanged as labels
+    # notice we slice from 1: onwards to remove the start token
+    orth_true = orthography["enc_input_ids"][:, 1:]
     # Compute orthographic accuracy:
-    word_accuracy = pt.tensor(pt.where((A_orth == B_orth).all(dim=1))[0].size())/pt.tensor(A_orth.size())[0]
-    char_accuracy = (A_orth == B_orth).sum()/pt.tensor(A_orth.shape).prod()
-
-    #orth_accuracy = 
-        #pt.tensor(pt.where((A_orth == B_orth).all(dim=1))[0].size())
-        #/ pt.tensor(A_orth.size())[0]
-    #)
+    #orth_word_accuracy = pt.tensor(pt.where((A_orth == B_orth).all(dim=1))[0].size())/pt.tensor(A_orth.size())[0]
+    orth_word_accuracy = (orth_pred == orth_true).all(dim=1).sum()/orth_pred.shape[0]
+    letter_wise_accuracy = (orth_pred == orth_true).sum()/pt.tensor(orth_pred.shape).prod()
 
     # Accuracy function for phonology.
     # Compute dimensions for phonological logit and target reshaping:
@@ -112,18 +110,19 @@ def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss,
     newshape_0 = oldshape[0] * oldshape[2]
     newshape_1 = oldshape[3]
     # Take argmax of phonological logits for accuracy comparison, reshaping to get a square tensor:
-    A_phon = pt.argmax(logits["phon"], dim=1)
-    A_phon = pt.reshape(A_phon, [newshape_0, newshape_1])
-    #print(f"\n{epoch}/{step}: A_phon shape:", A_phon.size())  # GE: changed
+    phon_pred = pt.argmax(logits["phon"], dim=1)
+    phon_pred = pt.reshape(phon_pred, [newshape_0, newshape_1])
+    #print(f"\n{epoch}/{step}: phon_pred shape:", phon_pred.size())  # GE: changed
     # Reshape phonological targets:
-    B_phon = phonology["targets"]
-    B_phon = pt.reshape(B_phon, [newshape_0, newshape_1])
-    #print(f"{epoch}/{step}: B_phon shape:", B_phon.size(), "\n")  # GE: changed
+    phon_true = phonology["targets"]
+    phon_true = pt.reshape(phon_true, [newshape_0, newshape_1])
+    #print(f"{epoch}/{step}: phon_true shape:", phon_true.size(), "\n")  # GE: changed
     # Compute phonoloigcal accuracy:
-    phon_accuracy = (
-        pt.tensor(pt.where((A_phon == B_phon).all(dim=1))[0].size())
-        / pt.tensor(A_phon.size())[0]
+    phon_word_accuracy = (
+        pt.tensor(pt.where((phon_pred == phon_true).all(dim=1))[0].size())
+        / pt.tensor(phon_pred.size())[0]
     )
+    phoneme_wise_accuracy = (phon_pred == phon_true).sum()/pt.tensor(A_orth.shape).prod()
 
     # END END END END END END END END END
 
@@ -164,15 +163,15 @@ def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss,
         ),
         # "train/lr": opt.state_dict()['param_groups'][0]['lr'],
         "train/generated_text_table": generated_text_table,
-        "word accuracy": word_accuracy,
-        "phonological accuracy": phon_accuracy,
-        "character accuracy": char_accuracy,
+        "train/letter_wise_accuracy": letter_wise_accuracy,
+        "train/orth_word_accuracy": orth_word_accuracy,
+        "train/phoneme_wise_accuracy": phoneme_wise_accuracy,
+        "train/phon_word_accuracy": phon_word_accuracy,
     }
 
     # DEBUGGING
     #for k,v in metrics.items(): 
         #print(f"metrics[{k}] = {v}")
-
     
     return metrics
 #----------------------------------------------------------------------
@@ -183,11 +182,11 @@ def single_epoch(c, model, train_dataset_slices, epoch, single_step_fct):
 
     #print("len(train_dataset_slices): ", len(train_dataset_slices))
 
-
+    #print(f"DEBUG: slice: {train_dataset_slices}, single_epoch: epoch: {epoch}, nb_steps: {nb_steps}, len(train_dataset_slices): {len(train_dataset_slices)}")
     for step, batch_slice in enumerate(train_dataset_slices):
         #print(f"step: {step}, batch_slice: ", batch_slice)
         if c.max_nb_steps > 0 and nb_steps >= c.max_nb_steps:
-            print("max_nb_steps: ", c.max_nb_steps)  # does not reach this point in test mode
+            #print("max_nb_steps: ", c.max_nb_steps)  # does not reach this point in test mode
             break
         metrics = single_step_fct(batch_slice, step, epoch)   # GE: new
         print_weight_norms(model, f"DEBUG: step: {step}, norm: ")  # GE: debug
@@ -285,6 +284,7 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
     return model, opt
 #----------------------------------------------------------------------
 def create_data_slices(cutpoint, c, ds):
+    #print(f"DEBUG: cutpoint: {cutpoint}, c.batch_size: {c.batch_size}, len(ds): {len(ds)}")
     train_dataset_slices = []
     for batch in range(math.ceil(cutpoint / c.batch_size)):
         train_dataset_slices.append(

@@ -92,6 +92,7 @@ def run_code_impl(run, ds):
     # ----------------------------------------------------------------------
 
     model.to(device)
+    #print(f"DEBUG: epoch_num = {epoch_num}, c.epoch_nums = {c.num_epochs}")
     pbar = tqdm.tqdm(range(epoch_num, epoch_num + c.num_epochs), position=0)
     example_ct = [0]
 
@@ -121,18 +122,20 @@ def run_code_impl(run, ds):
     )
 
     for epoch in pbar:
+        #print("epoch = ", epoch)
         metrics = single_epoch_fct(epoch)
         run.log(metrics)  # GE: only execute once per epoch
         # When experimenting, skip evaluate_model_fct for speedup
         if c.max_nb_steps < 0:
-            evaluate_model_fct()  # GE: 05/28
+            metrics = evaluate_model_fct()  # GE: 05/28
+            run.log(metrics) 
         save_fct(epoch)
 
     # 🐝 Close your wandb run
     run.finish()
 
-    print("time per step (sec); ", time)
-    print("n_steps_per_epoch: ", c.n_steps_per_epoch)
+    ##print("time per step (sec); ", time)
+    #print("n_steps_per_epoch: ", c.n_steps_per_epoch)
 
 
 # ----------------------------------------------------------------------

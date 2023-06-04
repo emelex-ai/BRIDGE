@@ -242,11 +242,11 @@ class Model(torch.nn.Module):
         orthography_encoding = self.orthography_encoder(
             orthography, src_key_padding_mask=orthography_padding_mask
         )
-        print(f"orthography_encoding.shape = {orthography_encoding.shape}")
+        #print(f"orthography_encoding.shape = {orthography_encoding.shape}")
         phonology_encoding = self.phonology_encoder(
             phonology, src_key_padding_mask=phonology_padding_mask
         )
-        print(f"phonology_encoding.shape = {phonology_encoding.shape}")
+        #print(f"phonology_encoding.shape = {phonology_encoding.shape}")
         # Query = orthography_encoding, Key = phonology_encoding
         gp_encoding = (
             self.gp_multihead_attention(
@@ -258,7 +258,7 @@ class Model(torch.nn.Module):
             + orthography_encoding
         )
         gp_encoding = self.gp_layer_norm(gp_encoding)
-        print(f"gp_encoding.shape = {gp_encoding.shape}")
+        #print(f"gp_encoding.shape = {gp_encoding.shape}")
         # Query = phonology_encoding, Key = orthography_encoding
         pg_encoding = (
             self.pg_multihead_attention(
@@ -270,23 +270,23 @@ class Model(torch.nn.Module):
             + phonology_encoding
         )
         pg_encoding = self.pg_layer_norm(pg_encoding)
-        print(f"pg_encoding.shape = {pg_encoding.shape}")
+        #print(f"pg_encoding.shape = {pg_encoding.shape}")
 
         # Concatenate outputs of cross-attention modules and add residual connection
         gp_pg = torch.cat((gp_encoding, pg_encoding), dim=1) + torch.cat(
             (orthography_encoding, phonology_encoding), dim=1
         )
-        print("gp_pg.shape = ", gp_pg.shape)
+        #print("gp_pg.shape = ", gp_pg.shape)
         # Concatenate padding masks
         gp_pg_padding_mask = torch.cat(
             (orthography_padding_mask, phonology_padding_mask), dim=-1
         )
-        print("gp_pg_padding_mask.shape = ", gp_pg_padding_mask.shape)
+        #print("gp_pg_padding_mask.shape = ", gp_pg_padding_mask.shape)
 
         global_embedding = self.global_embedding.repeat(gp_pg.shape[0], 1, 1)
-        print("global_embedding.shape = ", global_embedding.shape)
+        #print("global_embedding.shape = ", global_embedding.shape)
         gp_pg = torch.cat((global_embedding, gp_pg), dim=1)
-        print("gp_pg.shape = ", gp_pg.shape)
+        #print("gp_pg.shape = ", gp_pg.shape)
         gp_pg_padding_mask = torch.cat(
             (
                 torch.zeros((gp_pg.shape[0], self.d_embedding), device=gp_pg.device, dtype=torch.bool),
@@ -294,18 +294,18 @@ class Model(torch.nn.Module):
             ),
             dim=-1,
         )
-        print("gp_pg_padding_mask.shape = ", gp_pg_padding_mask.shape)
+        #print("gp_pg_padding_mask.shape = ", gp_pg_padding_mask.shape)
 
         mixed_encoding = self.transformer_mixer(
             gp_pg, src_key_padding_mask=gp_pg_padding_mask
         )
-        print("mixed_encoding.shape = ", mixed_encoding.shape)
+        #print("mixed_encoding.shape = ", mixed_encoding.shape)
 
         final_encoding = (
             self.reduce(mixed_encoding[:, :self.d_embedding]).unsqueeze(-2) + global_embedding
         )
         final_encoding = self.reduce_layer_norm(final_encoding)
-        print("final_encoding.shape = ", final_encoding.shape)
+        #print("final_encoding.shape = ", final_encoding.shape)
 
         #return final_encoding
         return mixed_encoding[:,:self.d_embedding]
