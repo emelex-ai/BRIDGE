@@ -178,7 +178,7 @@ def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss,
 #----------------------------------------------------------------------
 def single_epoch(c, model, train_dataset_slices, epoch, single_step_fct):
     model.train()
-    nb_steps = 0  # GE: added
+    nb_steps = 1 
     start = time.time()
 
     #print("len(train_dataset_slices): ", len(train_dataset_slices))
@@ -186,12 +186,12 @@ def single_epoch(c, model, train_dataset_slices, epoch, single_step_fct):
 
     for step, batch_slice in enumerate(train_dataset_slices):
         #print(f"step: {step}, batch_slice: ", batch_slice)
-        nb_steps += 1
         if c.max_nb_steps > 0 and nb_steps >= c.max_nb_steps:
             print("max_nb_steps: ", c.max_nb_steps)  # does not reach this point in test mode
             break
         metrics = single_step_fct(batch_slice, step, epoch)   # GE: new
         print_weight_norms(model, f"DEBUG: step: {step}, norm: ")  # GE: debug
+        nb_steps += 1
 
     #print("nb_steps: ", nb_steps)
     metrics['time_per_step'] = (time.time() - start) / nb_steps
