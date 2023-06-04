@@ -48,7 +48,6 @@ def evaluate_model(model, val_dataset_slices, device, opt, ds, mode):
 #----------------------------------------------------------------------
 def single_step(c, pbar, model, train_dataset_slices, batch_slice, ds, device, opt, epoch, step, generated_text_table, example_ct, mode):
     """ """
-    print("enter single step, mode: ", mode)
     batch = ds[batch_slice]
     orthography, phonology = batch["orthography"].to(device), batch[
         "phonology"
@@ -82,13 +81,11 @@ def single_step(c, pbar, model, train_dataset_slices, batch_slice, ds, device, o
 
     # Suggestion: compute cheap metrics every step, more complex metrics every epoch
     metrics = compute_metrics(logits, orthography, phonology, batch, example_ct, orth_loss, phon_loss, loss, epoch, step, ds, device, model, generated_text_table, mode)
-    print("exit single step")
     return metrics
 
 #----------------------------------------------------------------------
 def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss, phon_loss, loss, epoch, step, ds, device, model, generated_text_table, mode):
 
-    #print("enter compute metrics")
     # --- Calculte Orthographic Accuracy ---
     # Determine model predictions by taking argmax of orthographic logits
     orth_pred = pt.argmax(logits["orth"], dim=1)
@@ -208,41 +205,45 @@ def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss,
     #print(f"phon_segment_accuracy: {phon_segment_accuracy}")
     #print(f"phoneme_wise_accuracy: {phoneme_wise_accuracy}")
     #print(f"phon_word_accuracy: {phon_word_accuracy}")
-    #print("exit compute metrics")
 
     return metrics
 #----------------------------------------------------------------------
 def train_single_epoch(c, model, dataset_slices, epoch, single_step_fct):
-    print("enter train_single_epoch")
     example_ct = [0]
 
     model.train()
     nb_steps = 0 
     start = time.time()
 
+    print("==> train_single_epoch: nb steps: ", len(list(dataset_slices)))
+
+    metrics = [{}]
     for step, batch_slice in enumerate(dataset_slices):
+        print("step: ", step)
         if c.max_nb_steps > 0 and nb_steps >= c.max_nb_steps:
             break
-        metrics = single_step_fct(batch_slice, step, epoch, "train") 
+        metrics[0] = single_step_fct(batch_slice, step, epoch, "train") 
         nb_steps += 1
 
+    metrics = metrics[0]
     metrics['time_per_train_step'] = (time.time() - start) / nb_steps
     metrics['time_per_train_epoch'] = c.n_steps_per_epoch * metrics['time_per_train_step']
     return metrics
 #----------------------------------------------------------------------
 def validate_single_epoch(c, model, dataset_slices, epoch, single_step_fct):
-    print("enter train_single_epoch")
     example_ct = [0]
 
     model.eval()
     nb_steps = 0 
     start = time.time()
+    print("==> validation: nb steps: ", len(list(dataset_slices)))
 
     # Trick to avoid unbounded variables to protect against future Python changes
     # where local variables defined inside loops are not defined upon loop exit.
     # Perform at least one step
     metrics = [{}]
     for step, batch_slice in enumerate(dataset_slices):
+        print("valid step: ", step)
         metrics[0] = single_step_fct(batch_slice, step, epoch, "val")
         if c.max_nb_steps > 0 and nb_steps >= c.max_nb_steps:
             break
@@ -254,10 +255,12 @@ def validate_single_epoch(c, model, dataset_slices, epoch, single_step_fct):
     return metrics
 #----------------------------------------------------------------------
 def save(epoch, c, model, opt, MODEL_PATH, model_id, epoch_num):
+    # Has to be fixed to reflect the additional parameters in the configuration (June 4, 2023)
     pt.save(
         {
             "epoch": epoch,
-            "batch_size": c.batch_size,
+            "batch_size_train": c.batch_size_train,
+            "batch_size_val": c.batch_size_val,
             "d_model": c.d_model,
             "nhead": c.nhead,
             "model": model.state_dict(),
@@ -332,24 +335,25 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
     return model, opt
 #----------------------------------------------------------------------
 def create_data_slices(cutpoint, c, ds):
-    print(f"DEBUG: cutpoint: {cutpoint}, c.batch_size: {c.batch_size}, len(ds): {len(ds)}")
+    print("==> len ds: ", len(ds))
+    print("batch_sizes: ", c.batch_size_train, c.batch_size_val)
     train_dataset_slices = []
-    for batch in range(math.ceil(cutpoint / c.batch_size)):
+    for batch in range(math.ceil(cutpoint / c.batch_size_train)):
         train_dataset_slices.append(
-            slice(batch * c.batch_size, min((batch + 1) * c.batch_size, cutpoint))
+            slice(batch * c.batch_size_train, min((batch + 1) * c.batch_size_train, cutpoint))
         )
     
     # batch size for the validation set is always 1. 
-    batch_size = 100  # SHOULD BE SET VIA progrma ARGS
     val_dataset_slices = []
-    for batch in range(math.ceil((len(ds) - cutpoint) / batch_size)):
+    for batch in range(math.ceil((len(ds) - cutpoint) / c.batch_size_val)):
         val_dataset_slices.append(
             slice(
-                cutpoint + batch * batch_size,
-                min(cutpoint + (batch + 1) * c.batch_size, len(ds)),
+                cutpoint + batch * c.batch_size_val,
+                min(cutpoint + (batch + 1) * c.batch_size_val, len(ds)),
             )
         )
 
+    print("datasets: ", len(list(train_dataset_slices)), len(list(val_dataset_slices)))
     return train_dataset_slices, val_dataset_slices
 
 #----------------------------------------------------------------------

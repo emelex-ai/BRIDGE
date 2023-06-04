@@ -17,7 +17,8 @@ More complex code structure to accomodate running wandb with and without hypersw
 
 def run_code():
     run = wandb.init()
-    ds = ConnTextULDataset(test=run.config.test, which_dataset=run.config.which_dataset, nb_rows=1000)
+    c = run.config
+    ds = ConnTextULDataset(test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples)
     run_code_impl(run, ds)
 
 
@@ -93,7 +94,9 @@ def run_code_impl(run, ds):
         epoch, c, model, opt, MODEL_PATH, model_id, epoch_num
     )
 
+    # ==== OUTER TRAINING LOOP =====
     for epoch in pbar:
+        print("************* epoch: ", epoch, " *******************88")
         metrics = train_single_epoch_fct(epoch)
         more_metrics = validate_single_epoch_fct(epoch)
         if c.max_nb_steps < 0:

@@ -12,7 +12,8 @@ def main():
     parser = argparse.ArgumentParser(description='Train a ConnTextUL model')
     
     parser.add_argument("--num_epochs", type=int, default=100, help="Number of epochs")
-    parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
+    parser.add_argument("--batch_size_train", type=int, default=32, help="Train batch size")
+    parser.add_argument("--batch_size_val", type=int, default=32, help="Validation batch size")
     parser.add_argument("--num_layers", type=int, default=4, help="Number of layers")
     parser.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate")
     parser.add_argument("--continue_training", action='store_true', help="Continue training from last checkpoint \
@@ -33,6 +34,7 @@ def main():
     parser.add_argument("--sweep",type=str,  default="", help="Run a sweep from a configuration file")
     parser.add_argument("--d_embedding", type=int, default=1, help="Dimensionality of the final embedding layer.")
     parser.add_argument("--seed", type=int, default=1337, help="Random seed for repeatibility.")
+    parser.add_argument("--nb_samples", type=int, default=1000, help="Number of total samples from dataset.")
 
     args = parser.parse_args()
     
@@ -45,7 +47,8 @@ def main():
 
     num_epochs = args.num_epochs
     d_embedding = args.d_embedding
-    batch_size = args.batch_size
+    batch_size_train = args.batch_size_train
+    batch_size_val = args.batch_size_val
     num_layers = args.num_layers
     learning_rate = args.learning_rate
     CONTINUE = args.continue_training
@@ -57,6 +60,7 @@ def main():
     train_test_split = args.train_test_split
     which_dataset = args.which_dataset
     seed = args.seed
+    nb_samples = args.nb_samples
     assert d_model%nhead == 0, "d_model must be evenly divisible by nhead"
 
     #  Three parameters specific to W&B
@@ -69,12 +73,14 @@ def main():
         d_embedding = 2
         nhead = 2
         num_layers = 2
-        batch_size = 8
+        batch_size_train = 8
+        batch_size_val = 8
         learning_rate = 0.001
         num_epochs = 2
         max_nb_steps = -1
         CONTINUE = False
         seed = 1337
+        nb_samples = 1000
         train_test_split = 0.9
         torch.manual_seed(seed)  
         torch.cuda.manual_seed_all(seed)
@@ -89,7 +95,8 @@ def main():
         "model_path": MODEL_PATH,
         "CONTINUE": CONTINUE,
         "num_epochs": num_epochs,
-        "batch_size": batch_size,
+        "batch_size_train": batch_size_train,
+        "batch_size_val": batch_size_val,
         "d_model": d_model,
         "d_embedding": d_embedding,
         "nhead": nhead,
@@ -102,6 +109,7 @@ def main():
         "which_dataset": which_dataset, # select dataset from data/ folder
         "seed": seed, # select dataset from data/ folder
         "test": TEST, # select dataset from data/ folder
+        "nb_samples": nb_samples,
     }
 
     print("config: ", config)
@@ -127,8 +135,7 @@ def main():
 
         sweep_id = wandb.sweep(sweep_config, project=project, entity=entity)
 
-        run_code1 = lambda : run_code(ds)
-        wandb.agent(sweep_id, run_code1)
+        wandb.agent(sweep_id, run_code)
     else:
         wandb.set_params(config=config, is_sweep=False, is_wandb_on=wandb_enabled)
 
