@@ -202,11 +202,15 @@ class ConnTextULDataset(Dataset):
   """
   def __init__(self, test=False, nb_rows=None, which_dataset=5):
 
+      print("ConnText..., nb_rows: ", nb_rows)
+      print("ConnText..., which_dataset: ", which_dataset)
       # nrows added by GE to reduced nb rows for code testing 
       if test:
         self.dataset = pd.read_csv(DATA_PATH+f'/data_test{which_dataset}.csv', nrows=nb_rows)
+        print("INSIDE TEST")
       else:
         self.dataset = pd.read_csv(DATA_PATH+'/data.csv', nrows=nb_rows)
+        print("len(self.dataset): ", self.dataset.shape)
 
       tmp_words = self.dataset['word_raw'].str.lower() # Series of all lowercased words
       if os.path.exists(DATA_PATH+'/phonology_tokenizer.pkl'):

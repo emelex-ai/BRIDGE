@@ -4,7 +4,7 @@
     "goal": "maximize" 
     "name": "phonological accuracy"
 "parameters": 
-    "batch_size": {"values": [16]}
+    "batch_size_train": {"values": [100]}
     "d_model": {"values": [128]}
     "num_layers": {"values": [1,4]}
     "num_epochs": {"values": [100]}
