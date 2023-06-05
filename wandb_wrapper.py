@@ -89,6 +89,12 @@ class WandbWrapper(Singleton):
             return wandb.Table(*kargs, **kwargs)  # Recursion. Why?
         else:
             return self.my_table
+        
+    def Histogram(self, *kargs, **kwargs):
+        if self.is_wandb_on and self.run:
+            return wandb.Histogram(*kargs, **kwargs)  # Recursion. Why?
+        else:
+            return self.my_table  # empty proxy
 
     def sweep(self, *kargs, **kwargs):
         if len(kargs) > 0:
