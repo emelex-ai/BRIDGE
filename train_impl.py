@@ -83,6 +83,7 @@ def single_step(c, pbar, model, train_dataset_slices, batch_slice, ds, device, o
     metrics = compute_metrics(logits, orthography, phonology, batch, example_ct, orth_loss, phon_loss, loss, epoch, step, ds, device, model, generated_text_table, mode)
     return metrics
 
+#--------------------------------------------------------------------
 def calculate_accuracies(logits, orthography, phonology):
 
     # --- Calculate Orthographic Accuracy ---
@@ -188,6 +189,25 @@ def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss,
 
     return metrics
 #----------------------------------------------------------------------
+def average_metrics_over_epoch(all_metrics):
+    # Calculate metric averages over one epoch
+    metrics = all_metrics[0]
+    # Average each key over all metrics in all_metrics
+    for m in all_metrics[1:]:
+        for k in m:
+            try:
+                metrics[k] += m[k]
+            except:
+                pass
+    for k in metrics:
+        try:
+            metrics[k] /= len(all_metrics)
+        except:
+            pass
+
+    return metrics
+
+# ----------------------------------------------------------------------
 def train_single_epoch(c, model, dataset_slices, epoch, single_step_fct):
     example_ct = [0]
 
@@ -233,6 +253,7 @@ def validate_single_epoch(c, model, dataset_slices, epoch, single_step_fct):
     metrics['time_per_val_step'] = (time.time() - start) / nb_steps
     metrics['time_per_val_epoch'] = c.n_steps_per_epoch * metrics['time_per_val_step']
     return metrics
+
 #----------------------------------------------------------------------
 def save(epoch, c, model, opt, MODEL_PATH, model_id, epoch_num):
     # Has to be fixed to reflect the additional parameters in the configuration (June 4, 2023)
