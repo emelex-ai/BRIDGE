@@ -274,9 +274,18 @@ def average_metrics_over_epoch(all_metrics):
     # Average each key over all metrics in all_metrics
     for m in all_metrics[1:]:
         for k in m:
-            metrics[k] += m[k]
+            # Needed since operation does not work with 
+            # mode + "/generated_text_table": generated_text_table,
+            try: 
+                metrics[k] += m[k]
+            except:
+                pass
     for k in metrics:
-        metrics[k] /= len(all_metrics)
+        # Same issue as for previous try/except
+        try:
+            metrics[k] /= len(all_metrics)
+        except:
+            pass
 
     return metrics
 
