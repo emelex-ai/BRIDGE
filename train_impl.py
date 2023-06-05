@@ -190,7 +190,7 @@ def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss,
             model.global_embedding[0], p=2
         ),
         mode+"/model_weights_magnitude": pt.sqrt(
-            sum([pt.norm(w[0], p=2) ** 2 for w in model.parameters()])
+            sum([pt.norm(w[0], p=2) ** 2 for w in model.parameters()])            
         ),
         # "train/lr": opt.state_dict()['param_groups'][0]['lr'],
         mode+"/generated_text_table": generated_text_table,
