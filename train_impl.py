@@ -219,11 +219,11 @@ def train_single_epoch(c, model, dataset_slices, epoch, single_step_fct):
 
     metrics = [{}]
     for step, batch_slice in enumerate(dataset_slices):
-        print("step: ", step)
         if c.max_nb_steps > 0 and nb_steps >= c.max_nb_steps:
             break
         metrics[0] = single_step_fct(batch_slice, step, epoch, "train") 
         nb_steps += 1
+        print("train: nb_steps: ", nb_steps)
 
     metrics = metrics[0]
     metrics['time_per_train_step'] = (time.time() - start) / nb_steps
@@ -243,11 +243,11 @@ def validate_single_epoch(c, model, dataset_slices, epoch, single_step_fct):
     # Perform at least one step
     metrics = [{}]
     for step, batch_slice in enumerate(dataset_slices):
-        print("valid step: ", step)
         metrics[0] = single_step_fct(batch_slice, step, epoch, "val")
         if c.max_nb_steps > 0 and nb_steps >= c.max_nb_steps:
             break
         nb_steps += 1
+        print("valid: nb_steps: ", nb_steps)
 
     metrics = metrics[0]
     metrics['time_per_val_step'] = (time.time() - start) / nb_steps

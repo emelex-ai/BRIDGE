@@ -34,3 +34,6 @@ May 30, 2023
   architecture. If the results are the same at all steps, we'll declare the codes the same. 
   My refactorings should not have changed the order or number of operations. 
 ----------------------------------------------------------------------
+2023-06-04
+ --wandb (no sweep) works
+ --wandb --sweep sweep5.yaml works.
