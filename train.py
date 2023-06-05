@@ -94,6 +94,8 @@ def run_code_impl(run, ds):
         epoch, c, model, opt, MODEL_PATH, model_id, epoch_num
     )
 
+
+
     # ==== OUTER TRAINING LOOP =====
     for epoch in pbar:
         print("************* epoch: ", epoch, " *******************88")
@@ -102,6 +104,8 @@ def run_code_impl(run, ds):
         if c.max_nb_steps < 0:
             metrics.update(more_metrics)
         run.log(metrics)
+        # Log the embeddings
+        train_impl.log_embeddings(model, ds)
         save_fct(epoch)
 
     # 🐝 Close wandb 

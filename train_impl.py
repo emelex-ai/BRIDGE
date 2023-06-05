@@ -361,4 +361,32 @@ def create_data_slices(cutpoint, c, ds):
 def print_weight_norms(model, msg):
     norm = pt.sqrt(sum([pt.norm(w[0], p=2) ** 2 for w in model.parameters()]))
     print(f"==> {msg}, {norm}")
+
+#----------------------------------------------------------------------
+def log_embeddings(model, ds):
+    """
+    Extract the embedding layer from the model: one for orthography, one for phonology. 
+    This is used to visualize the embeddings in wandb
+    """
+
+    orth_embedding_layer = model.orthography_embedding
+    phon_embedding_layer = model.phonology_embedding
+    orth_embed_weights = orth_embedding_layer.weight.detach().data
+    phon_embed_weights = phon_embedding_layer.weight.detach().data
+    print("orth_embed_weights shape: ", orth_embed_weights.shape)
+    print("phon_embed_weights shape: ", phon_embed_weights.shape)
+    print("phon_embed_weights type: ", type(phon_embed_weights))
+    #wandb.log({"hist_embeddings": [wandb.Histogram(orth_embed_weights), wandb.Histogram(phon_embed_weights)]})
+    # log the embeddings as two tables: one for orthography, one for phonology
+
+    def fill_table(A):
+        n, m = A.numpy().shape
+        columns = ['col'+str(i) for i in range(m)]
+        return wandb.Table(data=A.numpy().tolist(), columns=columns)
+
+    orth_embed_table = fill_table(orth_embed_weights)
+    phon_embed_table = fill_table(orth_embed_weights)
+
+    wandb.log({"orth_embed_table": orth_embed_table, "phon_embed_table": phon_embed_table})
+
 #----------------------------------------------------------------------
