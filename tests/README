@@ -1,0 +1,6 @@
+An empty __init__.py is necessary inside tests/. Otherwise the code does not run. 
+  Inside tests/test_module.py, `import unit_test_example as ut`
+
+A non-empty __init__.py is necessary in unit_test_example/ . Inside __init__.py, 
+   `from .my_code import *`
+----------------------------------------------------------------------

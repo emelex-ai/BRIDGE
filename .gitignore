@@ -4,3 +4,4 @@ wandb/*
 *.pkl
 *.pyc
 explore.ipynb
+*/__pycache__

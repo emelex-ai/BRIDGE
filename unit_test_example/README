@@ -1,0 +1,5 @@
+In this folder, we create a simple code that will be tested, using a random seed. . 
+The code will compute the L2 norm of a matrix. 
+
+1) Created a function to create a norm
+
