@@ -17,7 +17,7 @@ def compute_L2_norm(mat):
     norm = np.linalg.norm(mat)
     return norm
 
-if __name__ == '__main__':
+if __name__ == '__main__':   # pragma: no cover
     mat = np.random.rand(4, 5)
     norm = compute_L2_norm(mat)
     print(norm)

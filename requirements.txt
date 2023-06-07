@@ -1,1 +1,4 @@
 numpy
+pytest-cov
+coverage
+pytest-html
