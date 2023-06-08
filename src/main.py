@@ -32,7 +32,8 @@ def read_args():
     parser.add_argument("--max_nb_steps", type=int, default=-1, help="Hardcode nb steps per epoch for fast testing")
     parser.add_argument("--train_test_split", type=float, default=0.8, help="Fraction of data in the training set")
 
-    parser.add_argument("--which_dataset", type=int, default=20, help="Choose the dataset to load")
+    # which_dataset should only be used for testing
+    parser.add_argument("--which_dataset", type=int, default=0, help="Choose the dataset to load")
     parser.add_argument("--sweep",type=str,  default="", help="Run a sweep from a configuration file")
     parser.add_argument("--d_embedding", type=int, default=1, help="Dimensionality of the final embedding layer.")
     parser.add_argument("--seed", type=int, default=1337, help="Random seed for repeatibility.")
@@ -42,8 +43,9 @@ def read_args():
     args = parser.parse_args()
     return args
 #----------------------------------------------------------------------
-def test_args():
+def hardcoded_args():
     # Overide progmra args with test dictionary
+    # Do not include "test" in function names to avoid interference with pytest. 
     dct = AttrDict({})
     dct.d_model = 16
     dct.d_embedding = 2
@@ -59,7 +61,8 @@ def test_args():
     dct.nb_samples = 1000
     dct.train_test_split = 0.9
     dct.model_path = './models'
-    dct.TEST = True
+    dct.which_dataset = 100
+    dct.test = True
 
     torch.manual_seed(dct.seed)  
     torch.cuda.manual_seed_all(dct.seed)
@@ -71,14 +74,12 @@ def test_args():
 def main(args: Dict):
     """ """
 
-
-    print("args: ", type(args))
     if args.wandb:
         wandb_enabled = True
     else:
         wandb_enabled = False
 
-    config = AttrDict(args_dct)
+    config = AttrDict(args)
     assert config.d_model % config.nhead == 0, "d_model must be evenly divisible by nhead"
 
     #  Parameters specific to W&B
@@ -91,7 +92,6 @@ def main(args: Dict):
         wandb.set_params(
             config=config, is_sweep=True, is_wandb_on=wandb_enabled
         )  
-
         wandb.login()
 
         with open(args.sweep, "r") as file:
@@ -104,13 +104,10 @@ def main(args: Dict):
             if param not in sweep_config["parameters"]:
                 sweep_config["parameters"][param] = {"values": [value]}
 
-
         sweep_id = wandb.sweep(sweep_config, project=project, entity=entity)
-
         wandb.agent(sweep_id, run_code)
     else:
         wandb.set_params(config=config, is_sweep=False, is_wandb_on=wandb_enabled)
-
         wandb.login()
         # 🐝 initialise a wandb run
         # I created a new project
@@ -126,36 +123,29 @@ def main(args: Dict):
         else:
             metrics = run_code()
 
-    return metrics
-
     # Return data useful for testing. I would like the metrics at the last epoch
+    return_dct = AttrDict({
+        'metrics': metrics,
+        'config': config,
+    })
+
+    return return_dct
 
 
+#----------------------------------------------------------------------
 if __name__ == "__main__":
     args_dct = AttrDict(vars(read_args()))
-    if args_dct.test:
-        print("test is true")
-    else:
-        print("test is false")
-
-    test_dct = test_args()
-
-    def overide_dct(orig_dct, add_dct):
-        args_dct = vars(orig_args)
-        args_dct.update(add_dct)
-        combined_args = argparse.Namespace(**args_dct)
-        return AttrDict(vars(combined_args))
-
-    # Overwrite program arguments with test values
+    test_dct = hardcoded_args()
 
     if args_dct.test:
         args_dct.update(test_dct)
 
-    print("merged arguments: ", args_dct)
-
     # I can now mock up the arguments for testing purposes
-    metrics = main(args_dct)
+    return_dict = main(args_dct)
+    metrics = return_dict.metrics
     print("\n==========================================")
     print("final metrics")
     for k, v in metrics.items():
         print(k, v)
+
+#----------------------------------------------------------------------

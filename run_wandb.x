@@ -1,4 +1,4 @@
-python main.py \
+python -m mainy \
     --nb_samples 96 \
     --num_epochs 10 \
     --num_layers 1 \
