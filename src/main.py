@@ -1,9 +1,12 @@
+
 from src.wandb_wrapper import WandbWrapper
 from src.train import run_code
 from src.dataset import ConnTextULDataset
 import argparse 
 import torch
 import yaml
+from attrdict import AttrDict
+from typing import List, Tuple, Dict, Any, Union
 
 wandb = WandbWrapper()
 
@@ -21,7 +24,7 @@ def read_args():
                         including Embedding layer, transformer layers, \
                         and linear layers. Must be evenly divisible by nhead")
     parser.add_argument("--nhead", type=int, default=4, help="Number of attention heads for all attention modules. \
-                        Must evenly divide d_model.")
+                        Must evenly divided d_model.")
     # Be careful when using bool arguments. Must use action='store_true', which creates an option that defaults to True 
     parser.add_argument("--wandb", action='store_true', help="Enable wandb (default: disabled if argument absent)")
     parser.add_argument("--test", action='store_true', help="Test mode: only run one epoch on a small subset of the data \
@@ -34,86 +37,54 @@ def read_args():
     parser.add_argument("--d_embedding", type=int, default=1, help="Dimensionality of the final embedding layer.")
     parser.add_argument("--seed", type=int, default=1337, help="Random seed for repeatibility.")
     parser.add_argument("--nb_samples", type=int, default=1000, help="Number of total samples from dataset.")
+    parser.add_argument("--model_path", type=str, default="./models", help="Path to model checkpoint files.")
+
     args = parser.parse_args()
     return args
+#----------------------------------------------------------------------
+def test_args():
+    # Overide progmra args with test dictionary
+    dct = AttrDict({})
+    dct.d_model = 16
+    dct.d_embedding = 2
+    dct.nhead = 2
+    dct.num_layers = 2
+    dct.batch_size_train = 8
+    dct.batch_size_val = 8
+    dct.learning_rate = 0.001
+    dct.num_epochs = 2
+    dct.max_nb_steps = -1
+    dct.continue_training = False
+    dct.seed = 1337
+    dct.nb_samples = 1000
+    dct.train_test_split = 0.9
+    dct.model_path = './models'
+    dct.TEST = True
+
+    torch.manual_seed(dct.seed)  
+    torch.cuda.manual_seed_all(dct.seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    return dct
 
 #----------------------------------------------------------------------
-def main(args):
+def main(args: Dict):
     """ """
 
+
+    print("args: ", type(args))
     if args.wandb:
         wandb_enabled = True
     else:
         wandb_enabled = False
 
-    num_epochs = args.num_epochs
-    d_embedding = args.d_embedding
-    batch_size_train = args.batch_size_train
-    batch_size_val = args.batch_size_val
-    num_layers = args.num_layers
-    learning_rate = args.learning_rate
-    CONTINUE = args.continue_training
-    TEST = args.test
-    nhead = args.nhead
-    d_model = args.d_model
-    MODEL_PATH = './models'
-    max_nb_steps = args.max_nb_steps
-    train_test_split = args.train_test_split
-    which_dataset = args.which_dataset
-    seed = args.seed
-    nb_samples = args.nb_samples
-    assert d_model%nhead == 0, "d_model must be evenly divisible by nhead"
+    config = AttrDict(args_dct)
+    assert config.d_model % config.nhead == 0, "d_model must be evenly divisible by nhead"
 
-    #  Three parameters specific to W&B
+    #  Parameters specific to W&B
     entity = "emelex"
     project = "ConnTextUL"
 
-    # TEST data cannot be overriden by argument
-    if TEST:
-        d_model = 16
-        d_embedding = 2
-        nhead = 2
-        num_layers = 2
-        batch_size_train = 8
-        batch_size_val = 8
-        learning_rate = 0.001
-        num_epochs = 2
-        max_nb_steps = -1
-        CONTINUE = False
-        seed = 1337
-        nb_samples = 1000
-        train_test_split = 0.9
-        torch.manual_seed(seed)  
-        torch.cuda.manual_seed_all(seed)
-        #torch.use_deterministic_algorithms(True)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-
-    #  Parameters specific to the main code
-
-    config = {
-        # "starting_epoch": epoch_num,   # Add it back later once code is debugged
-        "model_path": MODEL_PATH,
-        "CONTINUE": CONTINUE,
-        "num_epochs": num_epochs,
-        "batch_size_train": batch_size_train,
-        "batch_size_val": batch_size_val,
-        "d_model": d_model,
-        "d_embedding": d_embedding,
-        "nhead": nhead,
-        "learning_rate": learning_rate,
-        "train_test_split": train_test_split,   # <<< SET VIA ARGUMENT? 
-        # "id": model_id,  # Add back later once code is debugged
-        "num_layers": num_layers,
-        # Set to -1 if all the steps should be executed
-        "max_nb_steps": max_nb_steps,   # to speed up testing. Set to -1 to process full data. 
-        "which_dataset": which_dataset, # select dataset from data/ folder
-        "seed": seed, # select dataset from data/ folder
-        "test": TEST, # select dataset from data/ folder
-        "nb_samples": nb_samples,
-    }
-
-    print("config: ", config)
     globals().update({"wandb": wandb})
 
     if args.sweep != "":
@@ -161,10 +132,29 @@ def main(args):
 
 
 if __name__ == "__main__":
-    args = read_args()
+    args_dct = AttrDict(vars(read_args()))
+    if args_dct.test:
+        print("test is true")
+    else:
+        print("test is false")
+
+    test_dct = test_args()
+
+    def overide_dct(orig_dct, add_dct):
+        args_dct = vars(orig_args)
+        args_dct.update(add_dct)
+        combined_args = argparse.Namespace(**args_dct)
+        return AttrDict(vars(combined_args))
+
+    # Overwrite program arguments with test values
+
+    if args_dct.test:
+        args_dct.update(test_dct)
+
+    print("merged arguments: ", args_dct)
 
     # I can now mock up the arguments for testing purposes
-    metrics = main(args)
+    metrics = main(args_dct)
     print("\n==========================================")
     print("final metrics")
     for k, v in metrics.items():

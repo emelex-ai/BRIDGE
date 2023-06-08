@@ -26,6 +26,7 @@ def run_code():
 def run_code_impl(run, ds):
     """ """
     c = run.config
+    print("run.config: ", run.config)
 
     MODEL_PATH = c.model_path
 

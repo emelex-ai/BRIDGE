@@ -291,7 +291,7 @@ def get_starting_model_epoch(path, c):
         model_id, epoch_num = int(latest_run.split("_")[0][5:]), int(
             latest_run.split("_")[-1].split(".")[0][10:]
         )
-        if not c.CONTINUE:
+        if not c.continue_training:
             model_id += 1
             epoch_num = 0
     else:
@@ -301,7 +301,7 @@ def get_starting_model_epoch(path, c):
 #----------------------------------------------------------------------
 def setup_model(MODEL_PATH, c, ds, num_layers_dict):
     # Continuation run
-    if c.CONTINUE:
+    if c.continue_training:
         # GE 2023-05-27: fix checkpoint to allow for more general layer structure
         # The code will not work as is. 
         chkpt = pt.load(MODEL_PATH + f"/model{model_id}_checkpoint{epoch_num}.pth")
