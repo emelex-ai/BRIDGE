@@ -1,12 +1,15 @@
 name: Python package
 
 on: 
+  schedule:
+    - cron: '0 0 * * *'
+# Activate the action at every push
   push:
     branches: 
       - main
 
 jobs:
-  build:
+build:
 
     runs-on: ubuntu-latest
 

@@ -1,11 +1,10 @@
-
 from src.wandb_wrapper import WandbWrapper, MyRun
+from torch.utils.data import Dataset
 from src.model import Model
 import torch as pt
 import time
 import math
 import glob
-from torch.utils.data import Dataset
 
 # WandbWrapper is a singleton
 wandb = WandbWrapper()
