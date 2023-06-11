@@ -107,7 +107,7 @@ class Model(torch.nn.Module):
         nlayers_mixing_enc = num_layers_dict["mixing_enc"]
 
         # Initial embeddings for orthography, phonology, and position
-        # Emebdding for orthography
+        # Embedding for orthography
         self.orthography_embedding = torch.nn.Embedding(orth_vocab_size, d_model)
         self.orth_position_embedding = torch.nn.Embedding(
             max_orth_seq_len, d_model
@@ -184,6 +184,7 @@ class Model(torch.nn.Module):
 
     # Returns embeddings
     def embed_tokens(self, tokens, mode="o"):
+        print("enter embed_tokens")
         assert mode in ["o", "p"]
 
         if mode == "o":
@@ -193,8 +194,16 @@ class Model(torch.nn.Module):
             assert (
                 tokens.dtype == torch.long or tokens.dtype == torch.int
             ), f"Input tensor to Embedding must be type int or long but is {tokens.dtype}"
-            return (
-                self.orthography_embedding(tokens)
+            # self.orthography_embedding = torch.nn.Embedding(orth_vocab_size, d_model)
+            print("tokens shape: ", tokens.shape)  # 5, 5  (batch = 5, max word size: 5)
+            print("tokens: ", tokens)  # 5 x 5
+            # 5,5,64
+            print("=shape self.orthography_embedding(tokens): ", self.orthography_embedding(tokens).shape)
+            # 1, 2, 64
+            print("=shape self.orth_position_embedding.weight[None, :tokens.shape[1]]: ", self.orth_position_embedding.weight[None, :tokens.shape[1]].shape)
+            return (   # ERROR L197
+                # ERROR: The size of tensor a (5) must match the size of tensor b (2) at non-singleton dimension 1
+                self.orthography_embedding(tokens)   # ERROR
                 + self.orth_position_embedding.weight[None, : tokens.shape[1]]
             )  # GE
         # This is where we need to average the phonological embedding vectors
@@ -321,9 +330,11 @@ class Model(torch.nn.Module):
         phon_dec_input,
         phon_dec_pad_mask,
     ):
+        print("before mixed_encoding")
         mixed_encoding = self.embed(
             orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask
         )
+        print("after mixed_encoding")
         # print(mixed_encoding[0,0,:10])
         orth_dec_input = self.embed_tokens(orth_dec_input, "o")
         orth_ar_mask = self.generate_triangular_mask(

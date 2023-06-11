@@ -48,9 +48,11 @@ def evaluate_model(model, val_dataset_slices, device, opt, ds, mode):
 def single_step(c, pbar, model, train_dataset_slices, batch_slice, ds, device, opt, epoch, step, generated_text_table, example_ct, mode):
     """ """
     batch = ds[batch_slice]
-    orthography, phonology = batch["orthography"].to(device), batch[
-        "phonology"
-    ].to(device)
+    orthography = batch["orthography"].to(device)
+    phonology   = batch["phonology"].to(device)
+    # In an ideal world, a DataLoader should be used: 
+    # then the call to the model could be: model(dataloader.next())  (pseudocode)
+    # GE: I do not understand why one inputs decoder input ids into the model
     logits = model(
         orthography["enc_input_ids"],
         orthography["enc_pad_mask"],
@@ -143,7 +145,6 @@ def calculate_accuracies(logits, orthography, phonology):
 
 #----------------------------------------------------------------------
 def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss, phon_loss, loss, epoch, step, ds, device, model, generated_text_table, mode):
-
 
     if 0:
         orth = ds.character_tokenizer.encode(["elephant"])
