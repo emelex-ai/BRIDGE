@@ -37,10 +37,21 @@ def read_args():
     parser.add_argument("--sweep",type=str,  default="", help="Run a sweep from a configuration file")
     parser.add_argument("--d_embedding", type=int, default=1, help="Dimensionality of the final embedding layer.")
     parser.add_argument("--seed", type=int, default=1337, help="Random seed for repeatibility.")
-    parser.add_argument("--nb_samples", type=int, default=1000, help="Number of total samples from dataset.")
+    parser.add_argument("--nb_samples", type=int, default=0, help="Number of total samples from dataset. All samples if <=0")
     parser.add_argument("--model_path", type=str, default="./models", help="Path to model checkpoint files.")
 
     args = parser.parse_args()
+    if args.nb_samples <= 0:
+        args.nb_samples = None
+
+    if args.which_dataset <= 0:
+        args.which_dataset = 'all'  # read all data
+
+    if args.test == False:
+        args.which_dataset = 'all'
+    else:
+        assert isinstance(args.which_dataset, int)
+
     return args
 #----------------------------------------------------------------------
 def hardcoded_args():
