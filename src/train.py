@@ -73,7 +73,7 @@ def run_code_impl(run, ds):
     example_ct = [0]
 
     # Function closure
-    single_step_fct = lambda batch_slice, step, epoch, mode: train_impl.single_step(
+    def single_step_fct(batch_slice, step, epoch, mode): return train_impl.single_step(
         c,
         pbar,
         model,
@@ -88,21 +88,24 @@ def run_code_impl(run, ds):
         example_ct,
         mode,
     )
-    train_single_epoch_fct = lambda epoch: train_impl.train_single_epoch(
+
+    def train_single_epoch_fct(epoch): return train_impl.train_single_epoch(
         c,
         model,
         train_dataset_slices,
         epoch,
         single_step_fct,
     )
-    validate_single_epoch_fct = lambda epoch: train_impl.validate_single_epoch(
+
+    def validate_single_epoch_fct(epoch): return train_impl.validate_single_epoch(
         c,
         model,
         val_dataset_slices,
         epoch,
         single_step_fct,
     )
-    save_fct = lambda epoch: train_impl.save(
+
+    def save_fct(epoch): return train_impl.save(
         epoch, c, model, opt, MODEL_PATH, model_id, epoch_num
     )
 
@@ -121,8 +124,8 @@ def run_code_impl(run, ds):
         run.log(metrics[0])
         # Log the embeddings
         train_impl.log_embeddings(model, ds)
-        print("generate")
-        #train_impl.generate(model, ds, device)
+        # # print("generate")
+        # train_impl.generate(model, ds, device)
         save_fct(epoch)
 
     # 🐝 Close wandb

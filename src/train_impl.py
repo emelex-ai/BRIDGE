@@ -205,14 +205,10 @@ def generate(model, ds, device):
     phon = ds.phonology_tokenizer.encode(
         [word]
     )  # None was because phonology.pkl file was incomplete
-    # print("phon: ", phon)
 
     print("phon: ", phon["enc_input_ids"])
     for tokens in phon["enc_input_ids"]:
         print("tokens: ", tokens)
-        # for t in tokens:
-        #print("  t: ", t)
-        # t.to(device)
 
     phonology = [[t.to(device) for t in tokens]
                  for tokens in phon["enc_input_ids"]]
@@ -407,13 +403,14 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
         chkpt = pt.load(
             MODEL_PATH + f"/model{model_id}_checkpoint{epoch_num}.pth")
         # GE: TODO:  Construct a layer dictionary from the chekpointed data
+
         model = Model(
             len(ds.character_tokenizer),
             len(ds.phonology_tokenizer),
             d_model=chkpt["d_model"],
             nhead=chkpt["nhead"],
-            max_orth_seq_len=ds.max_orth_seq_len,  # GE
-            max_phon_seq_len=ds.max_phon_seq_len,  # GE
+            max_orth_seq_len=ds.max_orth_seq_len,
+            max_phon_seq_len=ds.max_phon_seq_len,
             num_layers_dict=num_layers_dict,  # New, GE, 2023-05-27
             d_embedding=c.d_embedding,
         )
