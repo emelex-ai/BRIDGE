@@ -112,6 +112,7 @@ class Model(torch.nn.Module):
         self.orth_position_embedding = torch.nn.Embedding(
             max_orth_seq_len, d_model
         )  # GE  added an independent pos embedding
+        print("orth position embedding: max_orth_seq_len: ", max_orth_seq_len)
         # Embedding for phonology
         self.phonology_embedding = torch.nn.Embedding(phon_vocab_size, d_model)
         self.phon_position_embedding = torch.nn.Embedding(max_phon_seq_len, d_model)  # GE
@@ -184,7 +185,6 @@ class Model(torch.nn.Module):
 
     # Returns embeddings
     def embed_tokens(self, tokens, mode="o"):
-        print("enter embed_tokens")
         assert mode in ["o", "p"]
 
         if mode == "o":
@@ -195,12 +195,12 @@ class Model(torch.nn.Module):
                 tokens.dtype == torch.long or tokens.dtype == torch.int
             ), f"Input tensor to Embedding must be type int or long but is {tokens.dtype}"
             # self.orthography_embedding = torch.nn.Embedding(orth_vocab_size, d_model)
-            print("tokens shape: ", tokens.shape)  # 5, 5  (batch = 5, max word size: 5)
-            print("tokens: ", tokens)  # 5 x 5
-            # 5,5,64
-            print("=shape self.orthography_embedding(tokens): ", self.orthography_embedding(tokens).shape)
-            # 1, 2, 64
-            print("=shape self.orth_position_embedding.weight[None, :tokens.shape[1]]: ", self.orth_position_embedding.weight[None, :tokens.shape[1]].shape)
+            #print("tokens shape: ", tokens.shape)  # 5, 5  (batch = 5, max word size: 5) | 8, 7 (batch_size, num_tokens)
+            # 5,5,64  |  8,7,16
+            #print("=shape self.orthography_embedding(tokens): ", self.orthography_embedding(tokens).shape)
+            # 1, 2, 64 | 1, 7, 16   # So in scratch pad error is 2nd dimension of position
+            #print("tokens.shape[1]: ", tokens.shape[1])  # 7 (nb words)
+            #print("=shape self.orth_position_embedding.weight[None, :tokens.shape[1]]: ", self.orth_position_embedding.weight[None, :tokens.shape[1]].shape)
             return (   # ERROR L197
                 # ERROR: The size of tensor a (5) must match the size of tensor b (2) at non-singleton dimension 1
                 self.orthography_embedding(tokens)   # ERROR
@@ -330,11 +330,9 @@ class Model(torch.nn.Module):
         phon_dec_input,
         phon_dec_pad_mask,
     ):
-        print("before mixed_encoding")
         mixed_encoding = self.embed(
             orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask
         )
-        print("after mixed_encoding")
         # print(mixed_encoding[0,0,:10])
         orth_dec_input = self.embed_tokens(orth_dec_input, "o")
         orth_ar_mask = self.generate_triangular_mask(
