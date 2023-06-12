@@ -125,6 +125,7 @@ class Model(torch.nn.Module):
         self.d_embedding = d_embedding
         self.max_orth_seq_len = max_orth_seq_len
         self.max_phon_seq_len = max_phon_seq_len
+        self.max_seq_len = max(max_orth_seq_len, max_phon_seq_len) # GE
 
         # A 1×1×d_model tensor of model parameters, rescaled by √d_model
         self.global_embedding = torch.nn.Parameter(

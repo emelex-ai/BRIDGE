@@ -11,6 +11,9 @@ import os
 
 
 DATA_PATH = "./data/"
+# The user can remove the contents of the cache at any time. 
+# The user can remove the cache folder, which will auto-generate
+CACHE_PATH = "./.data_cache/"
 
 class CUDA_Dict(dict):
 
@@ -106,6 +109,7 @@ class Phonemizer():
 
     self.PAD = 33
 
+    # GE: Why are there more than 34 lines in phonreps.csv?
     self.traindata = Traindata(wordlist, 
                           phonpath='raw/phonreps.csv',  
                           terminals=True,
@@ -194,47 +198,37 @@ class Phonemizer():
     return output
   
 class ConnTextULDataset(Dataset):
-  """ConnTextULDataset
+  """
+  ConnTextULDataset
 
   Dataset of 
-
-  For Matt's Phonoligical Feature Vectors, we will use (31, 32, 33) to represent ('[BOS]', '[EOS]', '[PAD]')
-
+  For Matt's Phonological Feature Vectors, we will use (31, 32, 33) to represent ('[BOS]', '[EOS]', '[PAD]')
   """
-  def __init__(self, test=False, nb_rows=None, which_dataset=5):
+  """
+  GE: only read smaller datasets in --test mode. But then, how can I make arguments override my test parameters? 
+  """
+  #----------------------------------------------------------------------
+  def __init__(self, config, test=False, nb_rows=None, which_dataset=5):
+      # Check cache folder. Perform this check in test suite. 
 
-      print("ConnText..., nb_rows: ", nb_rows)
-      print("ConnText..., which_dataset: ", which_dataset)
-      # nrows added by GE to reduced nb rows for code testing 
-      import os
-      print("CURRENT FOLDER: ", os.getcwd())
-      if test:
-        self.dataset = pd.read_csv(DATA_PATH+f'/data_test{which_dataset}.csv', nrows=nb_rows)
-        print("INSIDE TEST")
-      else:
-        self.dataset = pd.read_csv(DATA_PATH+'/data.csv', nrows=nb_rows)
-        print("len(self.dataset): ", self.dataset.shape)
+      self.config = config
+      self.which_dataset = which_dataset
+      self.nb_rows = nb_rows
+      self.read_orthographic_data()
+      self.read_phonology_data()
 
-      tmp_words = self.dataset['word_raw'].str.lower() # Series of all lowercased words
-      if os.path.exists(DATA_PATH+'phonology_tokenizer.pkl'):
-        with open(DATA_PATH+'phonology_tokenizer.pkl', 'rb') as f:
-           self.phonology_tokenizer = pickle.load(f)
-      else:
-        self.phonology_tokenizer = Phonemizer(tmp_words)
-        with open(DATA_PATH+'phonology_tokenizer.pkl', 'wb') as f:
-            pickle.dump(self.phonology_tokenizer, f)
       # self.listed_words = [word for word in self.words]
 
       # Notice I created a tokenizer in this class.
       # We can use it to tokenize word output of __getitem__ below,
       # although I haven't implemented yet.
-      list_of_characters = sorted(set([c for word in tmp_words for c in word]))
+      list_of_characters = sorted(set([c for word in self.tmp_words for c in word]))
       self.character_tokenizer = CharacterTokenizer(list_of_characters)
 
       final_words = []
       self.max_orth_seq_len = 0
       self.max_phon_seq_len = 0
-      for word in tmp_words:
+      for word in self.tmp_words:
         phonology = self.phonology_tokenizer.encode([word])
         if word == "" or word == None or word == []:
           continue
@@ -246,7 +240,58 @@ class ConnTextULDataset(Dataset):
 
       self.words = final_words
 
-          
+  #----------------------------------------------------------------------
+  def read_orthographic_data(self):
+      if not os.path.exists(CACHE_PATH):
+          os.makedirs(CACHE_PATH)
+          print("Create Cache folder: %s", CACHE_PATH)
+      else: 
+          print("Cache folder: %s already exists", CACHE_PATH)
+
+      if self.which_dataset == 'all':
+        file_path = CACHE_PATH+"/" + "data.csv"
+      else:
+        file_path = CACHE_PATH+"/" + "data_test%05d.csv" % self.which_dataset
+
+      if not os.path.exists(file_path):
+            # Create the file 
+            print(f"File {file_path} does not exist")
+            dataset = pd.read_csv(DATA_PATH+'/data.csv', nrows=self.nb_rows)
+            if self.which_dataset != 'all':
+                dataset = dataset.sample(n=self.which_dataset)
+            dataset.to_csv(file_path, index=0)
+            print("path 1")
+      else: 
+            # File exists
+            print(f"File {file_path} exists")
+            dataset = pd.read_csv(file_path)
+            print("path 2")
+
+      # Do not remove duplicate words since we are performing curriculum training
+      self.tmp_words = dataset['word_raw'].str.lower() # Series of all lowercased words
+      print("tmp_words: ", self.tmp_words.shape)
+
+  #----------------------------------------------------------------------
+  def read_phonology_data(self):
+      """
+      Read pkl file if it exists, else create it
+      """
+      if self.which_dataset == 'all':
+        pkl_file_path = CACHE_PATH+"/" + "phonology_tokenizer.pkl"
+      else:
+        pkl_file_path = CACHE_PATH+"/" + "phonology_tokenizer%05d.pkl" % self.which_dataset
+
+      if os.path.exists(pkl_file_path):
+        # pkl file exists
+        with open(pkl_file_path, 'rb') as f:
+          self.phonology_tokenizer = pickle.load(f)
+      else:
+        # pkl file does not exist
+        self.phonology_tokenizer = Phonemizer(self.tmp_words)
+        with open(pkl_file_path, 'wb') as f:
+            pickle.dump(self.phonology_tokenizer, f)
+
+  #----------------------------------------------------------------------
   def __len__(self):
       length = len(self.words)  
       return length  

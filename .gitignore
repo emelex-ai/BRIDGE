@@ -5,3 +5,4 @@ wandb/*
 *.pyc
 explore.ipynb
 */__pycache__
+.data_cache

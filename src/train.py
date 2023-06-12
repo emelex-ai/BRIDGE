@@ -19,7 +19,9 @@ More complex code structure to accomodate running wandb with and without hypersw
 def run_code():
     run = wandb.init()
     c = run.config
-    ds = ConnTextULDataset(test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples)
+    ds = ConnTextULDataset(
+        test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples
+    )
     return run_code_impl(run, ds)
 
 
@@ -35,7 +37,7 @@ def run_code_impl(run, ds):
     else:
         device = pt.device("cpu")
 
-    device = 'cpu'
+    device = "cpu"
 
     num_layers_dict = {
         "phon_dec": c.num_layers,
@@ -61,12 +63,12 @@ def run_code_impl(run, ds):
     model, opt = train_impl.setup_model(MODEL_PATH, c, ds, num_layers_dict)
 
     generated_text_table = wandb.Table(columns=["Step", "Generated Output"])
-    run.watch(model, log="all", log_freq=100)  
+    run.watch(model, log="all", log_freq=100)
 
     # ----------------------------------------------------------------------
 
     model.to(device)
-    #print(f"DEBUG: epoch_num = {epoch_num}, c.epoch_nums = {c.num_epochs}")
+    # print(f"DEBUG: epoch_num = {epoch_num}, c.epoch_nums = {c.num_epochs}")
     pbar = tqdm.tqdm(range(epoch_num, epoch_num + c.num_epochs), position=0)
     example_ct = [0]
 
@@ -87,16 +89,24 @@ def run_code_impl(run, ds):
         mode,
     )
     train_single_epoch_fct = lambda epoch: train_impl.train_single_epoch(
-        c, model, train_dataset_slices, epoch, single_step_fct, 
+        c,
+        model,
+        train_dataset_slices,
+        epoch,
+        single_step_fct,
     )
     validate_single_epoch_fct = lambda epoch: train_impl.validate_single_epoch(
-        c, model, val_dataset_slices, epoch, single_step_fct,
+        c,
+        model,
+        val_dataset_slices,
+        epoch,
+        single_step_fct,
     )
     save_fct = lambda epoch: train_impl.save(
         epoch, c, model, opt, MODEL_PATH, model_id, epoch_num
     )
 
-# generate a type hint for list of dict
+    # generate a type hint for list of dict
 
     metrics: List[Dict] = [{}]
 
@@ -112,11 +122,12 @@ def run_code_impl(run, ds):
         # Log the embeddings
         train_impl.log_embeddings(model, ds)
         print("generate")
-        train_impl.generate(ds, device)
+        train_impl.generate(model, ds, device)
         save_fct(epoch)
 
-    # 🐝 Close wandb 
+    # 🐝 Close wandb
     run.finish()
     return metrics[0]
+
 
 # ----------------------------------------------------------------------
