@@ -1,6 +1,7 @@
 from src.wandb_wrapper import WandbWrapper, MyRun
 from torch.utils.data import Dataset
 from src.model import Model
+import random
 import torch as pt
 import time
 import math
@@ -196,31 +197,35 @@ def generate(model, ds, device):
     orthography = orth["enc_input_ids"].to(device)
     print("orthography: ", orthography)
     orthography_mask = orth["enc_pad_mask"].to(device)
-    print(ds.words)
-    quit()
-    # Choose a word in the orthography  list
+    print("ds.words: ", ds.words)
+
+    # Choose a word in the orthography list (ds.words)
+    word = random.choice(ds.words)
+    print("word: ", word)
     phon = ds.phonology_tokenizer.encode(
-        ["elephant"]
+        [word]
     )  # None was because phonology.pkl file was incomplete
     # print("phon: ", phon)
 
-    # """
-    # print("device= ", device)
     print("phon: ", phon["enc_input_ids"])
     for tokens in phon["enc_input_ids"]:
         print("tokens: ", tokens)
-        for t in tokens:
-            print("  t: ", t)
-            t.to(device)
-    # """
+        # for t in tokens:
+        #print("  t: ", t)
+        # t.to(device)
 
     phonology = [[t.to(device) for t in tokens]
                  for tokens in phon["enc_input_ids"]]
     phonology_mask = phon["enc_pad_mask"].to(device)
 
+    print("before model")
+
     generation = model.generate(
         orthography, orthography_mask, phonology, phonology_mask
     )
+
+    print("after model")
+    quit()
 
     generated_text = ds.character_tokenizer.decode(
         generation["orth"].tolist())[0]

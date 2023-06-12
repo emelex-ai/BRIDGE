@@ -41,6 +41,9 @@ def read_args():
     parser.add_argument("--model_path", type=str, default="./models", help="Path to model checkpoint files.")
 
     args = parser.parse_args()
+    # Arguments on the command line
+    used_arguments = {arg: value for arg, value in vars(args).items() if getattr(args, arg) != parser.get_default(arg)}
+
     if args.nb_samples <= 0:
         args.nb_samples = None
 
@@ -52,7 +55,7 @@ def read_args():
     else:
         assert isinstance(args.which_dataset, int)
 
-    return args
+    return args, used_arguments
 #----------------------------------------------------------------------
 def hardcoded_args():
     # Overide progmra args with test dictionary
@@ -145,11 +148,13 @@ def main(args: Dict):
 
 #----------------------------------------------------------------------
 if __name__ == "__main__":
-    args_dct = AttrDict(vars(read_args()))
+    args, used_args_dct = read_args()
+    args_dct = AttrDict(vars(args))
     test_dct = hardcoded_args()
 
     if args_dct.test:
         args_dct.update(test_dct)
+        args_dct.update(used_args_dct)
 
     # I can now mock up the arguments for testing purposes
     return_dict = main(args_dct)
