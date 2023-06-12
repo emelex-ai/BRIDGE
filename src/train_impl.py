@@ -144,27 +144,47 @@ def calculate_accuracies(logits, orthography, phonology):
 
 
 #----------------------------------------------------------------------
+def generate(ds, device):
+    """
+    Generative model: Given the first character, generate the following ones 
+    Question: do we also feed the first phoneme?
+    """
+    orth = ds.character_tokenizer.encode(["elephant"])
+    print("orth: ", orth)
+    orthography = orth["enc_input_ids"].to(device)
+    print("orthography: ", orthography)
+    orthography_mask = orth["enc_pad_mask"].to(device)
+    phon = ds.phonology_tokenizer.encode(["elephant"])  # None. WHY? 
+    print("phon: ", phon)
+
+    #"""
+    print("device= ", device)
+    print("phon: ", phon["enc_input_ids"])
+    for tokens in phon["enc_input_ids"]:
+        print("tokens: ", tokens)
+        for t in tokens:
+            print("  t: ", t)
+            t.to(device)
+    #"""
+
+
+    phonology = [
+        [t.to(device) for t in tokens] for tokens in phon["enc_input_ids"]
+    ]
+    phonology_mask = phon["enc_pad_mask"].to(device)
+
+    generation = model.generate(
+        orthography, orthography_mask, phonology, phonology_mask
+    )
+
+    generated_text = ds.character_tokenizer.decode(
+        generation["orth"].tolist()
+    )[0]
+    # Log the text in the WandB table
+    generated_text_table.add_data(step, generated_text)
+
+#----------------------------------------------------------------------
 def compute_metrics(logits,orthography, phonology, batch, example_ct, orth_loss, phon_loss, loss, epoch, step, ds, device, model, generated_text_table, mode):
-
-    if 0:
-        orth = ds.character_tokenizer.encode(["elephant"])
-        orthography = orth["enc_input_ids"].to(device)
-        orthography_mask = orth["enc_pad_mask"].to(device)
-        phon = ds.phonology_tokenizer.encode(["elephant"])
-        phonology = [
-            [t.to(device) for t in tokens] for tokens in phon["enc_input_ids"]
-        ]
-        phonology_mask = phon["enc_pad_mask"].to(device)
-
-        generation = model.generate(
-            orthography, orthography_mask, phonology, phonology_mask
-        )
-
-        generated_text = ds.character_tokenizer.decode(
-            generation["orth"].tolist()
-        )[0]
-        # Log the text in the WandB table
-        generated_text_table.add_data(step, generated_text)
 
     example_ct[0] += len(batch["orthography"])
     metrics = {
