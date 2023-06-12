@@ -20,7 +20,7 @@ def run_code():
     run = wandb.init()
     c = run.config
     ds = ConnTextULDataset(
-        test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples
+        c, test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples
     )
     return run_code_impl(run, ds)
 
@@ -122,7 +122,7 @@ def run_code_impl(run, ds):
         # Log the embeddings
         train_impl.log_embeddings(model, ds)
         print("generate")
-        train_impl.generate(model, ds, device)
+        #train_impl.generate(model, ds, device)
         save_fct(epoch)
 
     # 🐝 Close wandb

@@ -318,25 +318,25 @@ class ConnTextULDataset(Dataset):
         if self.which_dataset == "all":
             file_path = CACHE_PATH + "/" + "data.csv"
         else:
-            file_path = CACHE_PATH + "/" + "data_test%05d.csv" % str(self.which_dataset)
+            file_path = CACHE_PATH + "/" + "data_test%05d.csv" % self.which_dataset
 
-    if not os.path.exists(file_path):
-        # Create the file
-        print(f"File {file_path} does not exist")
-        dataset = pd.read_csv(DATA_PATH + "/data.csv", nrows=self.nb_rows)
-        if self.which_dataset != "all":
-            dataset = dataset.sample(n=self.which_dataset)
-        dataset.to_csv(file_path, index=False)
-        print("path 1")
-    else:
-        # File exists
-        print(f"File {file_path} exists")
-        dataset = pd.read_csv(file_path)
-        print("path 2")
+        if not os.path.exists(file_path):
+            # Create the file
+            print(f"File {file_path} does not exist")
+            dataset = pd.read_csv(DATA_PATH + "/data.csv", nrows=self.nb_rows)
+            if self.which_dataset != "all":
+                dataset = dataset.sample(n=self.which_dataset)
+            dataset.to_csv(file_path, index=False)
+            print("path 1")
+        else:
+            # File exists
+            print(f"File {file_path} exists")
+            dataset = pd.read_csv(file_path)
+            print("path 2")
 
-    # Do not remove duplicate words since we are performing curriculum training
-    # Series of all lowercased words
-    self.tmp_words = dataset["word_raw"].str.lower()
+        # Do not remove duplicate words since we are performing curriculum training
+        # Series of all lowercased words
+        self.tmp_words = dataset["word_raw"].str.lower()
 
     # ----------------------------------------------------------------------
     def read_phonology_data(self):
