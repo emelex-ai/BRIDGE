@@ -196,6 +196,9 @@ def generate(model, ds, device):
     orthography = orth["enc_input_ids"].to(device)
     print("orthography: ", orthography)
     orthography_mask = orth["enc_pad_mask"].to(device)
+    print(ds.words)
+    quit()
+    # Choose a word in the orthography  list
     phon = ds.phonology_tokenizer.encode(
         ["elephant"]
     )  # None was because phonology.pkl file was incomplete
@@ -211,14 +214,16 @@ def generate(model, ds, device):
             t.to(device)
     # """
 
-    phonology = [[t.to(device) for t in tokens] for tokens in phon["enc_input_ids"]]
+    phonology = [[t.to(device) for t in tokens]
+                 for tokens in phon["enc_input_ids"]]
     phonology_mask = phon["enc_pad_mask"].to(device)
 
     generation = model.generate(
         orthography, orthography_mask, phonology, phonology_mask
     )
 
-    generated_text = ds.character_tokenizer.decode(generation["orth"].tolist())[0]
+    generated_text = ds.character_tokenizer.decode(
+        generation["orth"].tolist())[0]
     # Log the text in the WandB table
     generated_text_table.add_data(step, generated_text)
 
@@ -335,7 +340,8 @@ def validate_single_epoch(c, model, dataset_slices, epoch, single_step_fct):
 
     metrics = metrics[0]
     metrics["time_per_val_step"] = (time.time() - start) / nb_steps
-    metrics["time_per_val_epoch"] = c.n_steps_per_epoch * metrics["time_per_val_step"]
+    metrics["time_per_val_epoch"] = c.n_steps_per_epoch * \
+        metrics["time_per_val_step"]
     return metrics
 
 
@@ -393,7 +399,8 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
     if c.continue_training:
         # GE 2023-05-27: fix checkpoint to allow for more general layer structure
         # The code will not work as is.
-        chkpt = pt.load(MODEL_PATH + f"/model{model_id}_checkpoint{epoch_num}.pth")
+        chkpt = pt.load(
+            MODEL_PATH + f"/model{model_id}_checkpoint{epoch_num}.pth")
         # GE: TODO:  Construct a layer dictionary from the chekpointed data
         model = Model(
             len(ds.character_tokenizer),
@@ -449,7 +456,8 @@ def create_data_slices(cutpoint, c, ds):
             )
         )
 
-    print("datasets: ", len(list(train_dataset_slices)), len(list(val_dataset_slices)))
+    print("datasets: ", len(list(train_dataset_slices)),
+          len(list(val_dataset_slices)))
     return train_dataset_slices, val_dataset_slices
 
 
@@ -485,7 +493,8 @@ def log_embeddings(model, ds):
     phon_embed_table = fill_table(orth_embed_weights)
 
     wandb.log(
-        {"orth_embed_table": orth_embed_table, "phon_embed_table": phon_embed_table}
+        {"orth_embed_table": orth_embed_table,
+            "phon_embed_table": phon_embed_table}
     )
 
 

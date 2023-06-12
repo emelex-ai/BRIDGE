@@ -20,7 +20,7 @@ def run_code():
     run = wandb.init()
     c = run.config
     ds = ConnTextULDataset(
-        test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples
+        c, test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples
     )
     return run_code_impl(run, ds)
 
