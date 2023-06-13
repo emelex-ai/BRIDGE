@@ -5,6 +5,7 @@ from src.dataset import ConnTextULDataset
 import argparse 
 import torch
 import yaml
+import sys
 from attrdict import AttrDict
 from typing import List, Tuple, Dict, Any, Union
 
@@ -39,7 +40,6 @@ def read_args():
     parser.add_argument("--seed", type=int, default=1337, help="Random seed for repeatibility.")
     parser.add_argument("--nb_samples", type=int, default=0, help="Number of total samples from dataset. All samples if <=0")
     parser.add_argument("--model_path", type=str, default="./models", help="Path to model checkpoint files.")
-    parser.add_argument("--pathway", type=str, default="op2op", help="Specify the particular pathway to use: o2p, p2o, op2op")
 
     args = parser.parse_args()
     # Arguments on the command line
@@ -53,15 +53,16 @@ def read_args():
 
     if args.test == False:
         args.which_dataset = 'all'
-    else:
-        assert isinstance(args.which_dataset, int)
-    
-    assert args.pathway in ['o2p', 'p2o', 'op2op'], "Invalid pathway argument: must be 'o2p', 'p2o', or 'op2op'"
 
+    assert args.which_dataset == 'all' or isinstance(args.which_dataset, int)
+    print("args: ", args)
+    print("read_args: BEFORE RETURN")
     return args, used_arguments
 #----------------------------------------------------------------------
 def hardcoded_args():
-    # Overide program args with test dictionary
+    # Parameter values used with test. Should override default arguments, 
+    # but should be overwritten by the arguments used when invoking the code. 
+    # Overide progrma args with test dictionary
     # Do not include "test" in function names to avoid interference with pytest. 
     dct = AttrDict({})
     dct.d_model = 16
@@ -150,20 +151,31 @@ def main(args: Dict):
 
 
 #----------------------------------------------------------------------
-if __name__ == "__main__":
+def handle_arguments():
+    print("sys.argv: ", sys.argv)
     args, used_args_dct = read_args()
     args_dct = AttrDict(vars(args))
     test_dct = hardcoded_args()
 
     if args_dct.test:
+        print("=> test is True")
         args_dct.update(test_dct)
         args_dct.update(used_args_dct)
 
-    # I can now mock up the arguments for testing purposes
+    print(f"==> test is {args_dct.test}")
+    print("handle_arguments: BEFORE RETURN")
+    return args_dct
+#----------------------------------------------------------------------
+if __name__ == "__main__":
+    args_dct = handle_arguments()
+    for k,v in args_dct.items():
+        print(f"{k} ==> {v}")
+
     return_dict = main(args_dct)
     metrics = return_dict.metrics
     print("\n==========================================")
     print("final metrics")
+
     for k, v in metrics.items():
         print("==> ", k, v)
 
