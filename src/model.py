@@ -64,13 +64,13 @@ class Decoder(torch.nn.Module):
             tensor
 
         """
-        #print("tgt: ", tgt.shape)
-        #print("memory: ", memory.shape)
-        #print("tgt_mask: ", tgt_mask.shape)
-        #print("tgt_mask: ", tgt_mask)
-        #print("memory_mask: ", memory_mask.shape)
-        #print("tgt_key_padding_mask: ", tgt_key_padding_mask.shape)
-        #print("memory_key_padding_mask: ", memory_key_padding_mask.shape)
+        # print("tgt: ", tgt.shape)
+        # print("memory: ", memory.shape)
+        # print("tgt_mask: ", tgt_mask.shape)
+        # print("tgt_mask: ", tgt_mask)
+        # print("memory_mask: ", memory_mask.shape)
+        # print("tgt_key_padding_mask: ", tgt_key_padding_mask.shape)
+        # print("memory_key_padding_mask: ", memory_key_padding_mask.shape)
         output = self.transformer_decoder(
             tgt,
             memory,
@@ -203,10 +203,10 @@ class Model(torch.nn.Module):
             # self.orthography_embedding = torch.nn.Embedding(orth_vocab_size, d_model)
             # print("tokens shape: ", tokens.shape)  # 5, 5  (batch = 5, max word size: 5) | 8, 7 (batch_size, num_tokens)
             # 5,5,64  |  8,7,16
-            #print("=shape self.orthography_embedding(tokens): ", self.orthography_embedding(tokens).shape)
+            # print("=shape self.orthography_embedding(tokens): ", self.orthography_embedding(tokens).shape)
             # 1, 2, 64 | 1, 7, 16   # So in scratch pad error is 2nd dimension of position
             # print("tokens.shape[1]: ", tokens.shape[1])  # 7 (nb words)
-            #print("=shape self.orth_position_embedding.weight[None, :tokens.shape[1]]: ", self.orth_position_embedding.weight[None, :tokens.shape[1]].shape)
+            # print("=shape self.orth_position_embedding.weight[None, :tokens.shape[1]]: ", self.orth_position_embedding.weight[None, :tokens.shape[1]].shape)
             return (   # ERROR L197
                 # ERROR: The size of tensor a (5) must match the size of tensor b (2) at non-singleton dimension 1
                 self.orthography_embedding(tokens)   # ERROR
@@ -246,8 +246,9 @@ class Model(torch.nn.Module):
             print("output_embedding: ", output_embedding.shape)
             print("tokens: ", tokens)
             print("len tokens[0]: ", len(tokens[0]))
-            print("shape phon_position_embedding: ", self.phon_position_embedding.weight[None, :len(tokens[0])].shape)
-            #print("tokens.shape: ", tokens.shape)
+            print("shape phon_position_embedding: ",
+                  self.phon_position_embedding.weight[None, :len(tokens[0])].shape)
+            # print("tokens.shape: ", tokens.shape)
             return (
                 output_embedding
                 + self.phon_position_embedding.weight[None, : len(tokens[0])]
@@ -258,11 +259,14 @@ class Model(torch.nn.Module):
         orthography_encoding = self.orthography_encoder(
             orthography, src_key_padding_mask=orthography_padding_mask
         )
-        global_embedding = self.global_embedding.repeat(orthography_encoding.shape[0], 1, 1)
-        orthography_encoding = torch.cat((global_embedding, orthography_encoding), dim=1)
+        global_embedding = self.global_embedding.repeat(
+            orthography_encoding.shape[0], 1, 1)
+        orthography_encoding = torch.cat(
+            (global_embedding, orthography_encoding), dim=1)
         orthography_encoding_padding_mask = torch.cat(
             (
-                torch.zeros((orthography_encoding.shape[0], self.d_embedding), device=orthography_encoding.device, dtype=torch.bool),
+                torch.zeros((orthography_encoding.shape[0], self.d_embedding),
+                            device=orthography_encoding.device, dtype=torch.bool),
                 orthography_padding_mask,
             ),
             dim=-1,
@@ -272,21 +276,24 @@ class Model(torch.nn.Module):
             orthography_encoding, src_key_padding_mask=orthography_encoding_padding_mask
         )
 
-        final_encoding = mixed_encoding[:,:self.d_embedding] + global_embedding
+        final_encoding = mixed_encoding[:,
+                                        :self.d_embedding] + global_embedding
 
         return final_encoding
 
-    
     def embed_p2o(self, phonology, phonology_padding_mask):
         phonology = self.embed_tokens(phonology, "p")
         phonology_encoding = self.phonology_encoder(
             phonology, src_key_padding_mask=phonology_padding_mask
         )
-        global_embedding = self.global_embedding.repeat(phonology_encoding.shape[0], 1, 1)
-        phonology_encoding = torch.cat((global_embedding, phonology_encoding), dim=1)
+        global_embedding = self.global_embedding.repeat(
+            phonology_encoding.shape[0], 1, 1)
+        phonology_encoding = torch.cat(
+            (global_embedding, phonology_encoding), dim=1)
         phonology_encoding_padding_mask = torch.cat(
             (
-                torch.zeros((phonology_encoding.shape[0], self.d_embedding), device=phonology_encoding.device, dtype=torch.bool),
+                torch.zeros((phonology_encoding.shape[0], self.d_embedding),
+                            device=phonology_encoding.device, dtype=torch.bool),
                 phonology_padding_mask,
             ),
             dim=-1,
@@ -296,10 +303,10 @@ class Model(torch.nn.Module):
             phonology_encoding, src_key_padding_mask=phonology_encoding_padding_mask
         )
 
-        final_encoding = mixed_encoding[:,:self.d_embedding] + global_embedding
+        final_encoding = mixed_encoding[:,
+                                        :self.d_embedding] + global_embedding
 
         return final_encoding
-
 
     def embed_op2op(
         self, orthography, orthography_padding_mask, phonology, phonology_padding_mask
@@ -311,11 +318,11 @@ class Model(torch.nn.Module):
         orthography_encoding = self.orthography_encoder(
             orthography, src_key_padding_mask=orthography_padding_mask
         )
-        #print(f"orthography_encoding.shape = {orthography_encoding.shape}")
+        # print(f"orthography_encoding.shape = {orthography_encoding.shape}")
         phonology_encoding = self.phonology_encoder(
             phonology, src_key_padding_mask=phonology_padding_mask
         )
-        #print(f"phonology_encoding.shape = {phonology_encoding.shape}")
+        # print(f"phonology_encoding.shape = {phonology_encoding.shape}")
         # Query = orthography_encoding, Key = phonology_encoding
         gp_encoding = (
             self.gp_multihead_attention(
@@ -327,7 +334,7 @@ class Model(torch.nn.Module):
             + orthography_encoding
         )
         gp_encoding = self.gp_layer_norm(gp_encoding)
-        #print(f"gp_encoding.shape = {gp_encoding.shape}")
+        # print(f"gp_encoding.shape = {gp_encoding.shape}")
         # Query = phonology_encoding, Key = orthography_encoding
         pg_encoding = (
             self.pg_multihead_attention(
@@ -339,23 +346,23 @@ class Model(torch.nn.Module):
             + phonology_encoding
         )
         pg_encoding = self.pg_layer_norm(pg_encoding)
-        #print(f"pg_encoding.shape = {pg_encoding.shape}")
+        # print(f"pg_encoding.shape = {pg_encoding.shape}")
 
         # Concatenate outputs of cross-attention modules and add residual connection
         gp_pg = torch.cat((gp_encoding, pg_encoding), dim=1) + torch.cat(
             (orthography_encoding, phonology_encoding), dim=1
         )
-        #print("gp_pg.shape = ", gp_pg.shape)
+        # print("gp_pg.shape = ", gp_pg.shape)
         # Concatenate padding masks
         gp_pg_padding_mask = torch.cat(
             (orthography_padding_mask, phonology_padding_mask), dim=-1
         )
-        #print("gp_pg_padding_mask.shape = ", gp_pg_padding_mask.shape)
+        # print("gp_pg_padding_mask.shape = ", gp_pg_padding_mask.shape)
 
         global_embedding = self.global_embedding.repeat(gp_pg.shape[0], 1, 1)
-        #print("global_embedding.shape = ", global_embedding.shape)
+        # print("global_embedding.shape = ", global_embedding.shape)
         gp_pg = torch.cat((global_embedding, gp_pg), dim=1)
-        #print("gp_pg.shape = ", gp_pg.shape)
+        # print("gp_pg.shape = ", gp_pg.shape)
         gp_pg_padding_mask = torch.cat(
             (
                 torch.zeros((gp_pg.shape[0], self.d_embedding),
@@ -364,20 +371,20 @@ class Model(torch.nn.Module):
             ),
             dim=-1,
         )
-        #print("gp_pg_padding_mask.shape = ", gp_pg_padding_mask.shape)
+        # print("gp_pg_padding_mask.shape = ", gp_pg_padding_mask.shape)
 
         mixed_encoding = self.transformer_mixer(
             gp_pg, src_key_padding_mask=gp_pg_padding_mask
         )
-        #print("0 mixed_encoding.shape = ", mixed_encoding.shape)
+        # print("0 mixed_encoding.shape = ", mixed_encoding.shape)
 
-        #final_encoding = (self.reduce(mixed_encoding[:, :self.d_embedding]).unsqueeze(-2) + global_embedding)
-        #final_encoding = self.reduce_layer_norm(final_encoding)
+        # final_encoding = (self.reduce(mixed_encoding[:, :self.d_embedding]).unsqueeze(-2) + global_embedding)
+        # final_encoding = self.reduce_layer_norm(final_encoding)
 
         # Add a residual connection to the final encoding
         final_encoding = mixed_encoding[:,
                                         :self.d_embedding] + global_embedding
-        #print("1 final_encoding.shape = ", final_encoding.shape)
+        # print("1 final_encoding.shape = ", final_encoding.shape)
 
         return final_encoding
 
@@ -421,7 +428,8 @@ class Model(torch.nn.Module):
             orth_token_logits = self.linear_orthography_decoder(orth_output)
             phon_token_logits = self.linear_phonology_decoder(phon_output)
             orth_token_logits = orth_token_logits.transpose(1, 2)
-            phon_token_logits = phon_token_logits.view(B, PC, 2, -1).transpose(1, 2)
+            phon_token_logits = phon_token_logits.view(
+                B, PC, 2, -1).transpose(1, 2)
             return {"orth": orth_token_logits, "phon": phon_token_logits}
         elif pathway == "o2p":
             mixed_encoding = self.embed_o2p(
@@ -439,7 +447,8 @@ class Model(torch.nn.Module):
             )
             B, PC, E = phon_output.shape
             phon_token_logits = self.linear_phonology_decoder(phon_output)
-            phon_token_logits = phon_token_logits.view(B, PC, 2, -1).transpose(1, 2)
+            phon_token_logits = phon_token_logits.view(
+                B, PC, 2, -1).transpose(1, 2)
             return {"phon": phon_token_logits}
         elif pathway == "p2o":
             mixed_encoding = self.embed_p2o(
@@ -458,7 +467,32 @@ class Model(torch.nn.Module):
             orth_token_logits = self.linear_orthography_decoder(orth_output)
             orth_token_logits = orth_token_logits.transpose(1, 2)
             return {"orth": orth_token_logits}
- 
+
+    def deterministic_sample(self, last_token_probs):
+        new_orthography_token = last_token_probs[0].argmax(
+            dim=1, keepdim=True
+        )
+        new_phonology_vec = last_token_probs[1][:, 1] > 0.5
+        new_phonology_tokens = torch.where(new_phonology_vec)[1]
+        return new_orthography_token, new_phonology_tokens
+
+    def stochastic_sample(self, last_token_probs):
+        new_orthography_token = torch.multinomial(
+            last_token_probs[0], num_samples=1
+        )
+        # print("last_token_probs[1].shape = ", last_token_probs[1].shape)
+        # print("last_token_probs[1] = ", last_token_probs[1])
+        new_phonology_vec = torch.bernoulli(
+            last_token_probs[1][:, 1])
+        if new_phonology_vec.eq(0).all():
+            new_phonology_vec[0, 32] = 1
+        # print("new_phonology_vec.shape = ", new_phonology_vec.shape)
+        new_phonology_tokens = torch.where(new_phonology_vec)[
+            1
+        ]  # What happens if this returns all zeros?
+        # print("new_phonology_tokens.shape = ", new_phonology_tokens.shape)
+        return new_orthography_token, new_phonology_tokens
+
     def generate(
         self,
         orth_enc_input,
@@ -472,7 +506,7 @@ class Model(torch.nn.Module):
 
         with torch.no_grad():
             # Output is mixed mode
-            prompt_encoding = self.embed(
+            prompt_encoding = self.embed_op2op(
                 orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask
             )
         # print(prompt_encoding[0,0,:10])
@@ -499,7 +533,7 @@ class Model(torch.nn.Module):
 
         # Iterate through the decoder only
         for step in range(self.max_seq_len - 1):
-            # print("step = ", step)
+            print("====> step = ", step)
             step_mask = mask[: step + 1, : step + 1]
             # print("step_mask = ", step_mask)
 
@@ -553,27 +587,11 @@ class Model(torch.nn.Module):
                 # print("last_token_probs[1].sum(dim=1) = ", last_token_probs[1].sum(dim=1))
 
                 if deterministic:
-                    new_orthography_token = last_token_probs[0].argmax(
-                        dim=1, keepdim=True
-                    )
-
-                    new_phonology_vec = last_token_probs[1][:, 1] > 0.5
-                    new_phonology_tokens = torch.where(new_phonology_vec)[1]
+                    new_orthography_token, new_phonology_tokens =  \
+                        self.deterministic_sample(last_token_probs)
                 else:
-                    new_orthography_token = torch.multinomial(
-                        last_token_probs[0], num_samples=1
-                    )
-                    # print("last_token_probs[1].shape = ", last_token_probs[1].shape)
-                    # print("last_token_probs[1] = ", last_token_probs[1])
-                    new_phonology_vec = torch.bernoulli(
-                        last_token_probs[1][:, 1])
-                    if new_phonology_vec.eq(0).all():
-                        new_phonology_vec[0, 32] = 1
-                    # print("new_phonology_vec.shape = ", new_phonology_vec.shape)
-                    new_phonology_tokens = torch.where(new_phonology_vec)[
-                        1
-                    ]  # What happens if this returns all zeros?
-                    # print("new_phonology_tokens.shape = ", new_phonology_tokens.shape)
+                    new_orthography_token, new_phonology_tokens =  \
+                        self.stochastic_sample(last_token_probs)
 
                 generated_orth_tokens = torch.cat(
                     (generated_orth_tokens, new_orthography_token), dim=-1
