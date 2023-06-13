@@ -12,7 +12,7 @@ wandb = WandbWrapper()
 run = MyRun()
 
 
-def evaluate_model(model, val_dataset_slices, device, opt, ds, mode):
+def evaluate_model(pathway, model, val_dataset_slices, device, opt, ds, mode):
     model.eval()
 
     with pt.no_grad():
@@ -23,6 +23,7 @@ def evaluate_model(model, val_dataset_slices, device, opt, ds, mode):
                 "phonology"
             ].to(device)
             logits = model(
+                pathway,
                 orthography["enc_input_ids"],
                 orthography["enc_pad_mask"],
                 orthography["dec_input_ids"],
@@ -33,17 +34,26 @@ def evaluate_model(model, val_dataset_slices, device, opt, ds, mode):
                 phonology["dec_pad_mask"],
             )
 
-            orth_loss = pt.nn.CrossEntropyLoss(ignore_index=4)(
-                logits["orth"], orthography["enc_input_ids"][:, 1:]
-            )
-            phon_loss = pt.nn.CrossEntropyLoss(ignore_index=2)(
-                logits["phon"], phonology["targets"]
-            )
+            loss = 0
+            orth_loss = None
+            phon_loss = None
+            if pathway == 'op2op' or pathway == 'p2o':
+                orth_loss = pt.nn.CrossEntropyLoss(ignore_index=4)(
+                    logits["orth"], orthography["enc_input_ids"][:, 1:]
+                )
+                loss += orth_loss
+            if pathway == 'op2op' or pathway == 'o2p':
+                phon_loss = pt.nn.CrossEntropyLoss(ignore_index=2)(
+                    logits["phon"], phonology["targets"]
+                )
+                loss += phon_loss
+
             more_metrics = {
-                mode + "/loss": orth_loss + phon_loss,
-                mode + "/orth_loss": orth_loss,
-                mode + "/phon_loss": phon_loss,
+                mode + "/loss": loss
             }
+            if pathway == 'op2op':
+                more_metrics[mode + "/orth_loss"] = orth_loss
+                more_metrics[mode + "/phon_loss"] = phon_loss
 
     return more_metrics
 
@@ -72,6 +82,7 @@ def single_step(
     # then the call to the model could be: model(dataloader.next())  (pseudocode)
     # GE: I do not understand why one inputs decoder input ids into the model
     logits = model(
+        c.pathway,
         orthography["enc_input_ids"],
         orthography["enc_pad_mask"],
         orthography["dec_input_ids"],
@@ -82,13 +93,19 @@ def single_step(
         phonology["dec_pad_mask"],
     )
 
-    orth_loss = pt.nn.CrossEntropyLoss(ignore_index=4)(
-        logits["orth"], orthography["enc_input_ids"][:, 1:]
-    )
-    phon_loss = pt.nn.CrossEntropyLoss(ignore_index=2)(
-        logits["phon"], phonology["targets"]
-    )
-    loss = orth_loss + phon_loss
+    loss = 0
+    orth_loss = None
+    phon_loss = None
+    if c.pathway == 'op2op' or c.pathway == 'p2o':
+        orth_loss = pt.nn.CrossEntropyLoss(ignore_index=4)(
+            logits["orth"], orthography["enc_input_ids"][:, 1:]
+        )
+        loss += orth_loss
+    if c.pathway == 'op2op' or c.pathway == 'o2p':
+        phon_loss = pt.nn.CrossEntropyLoss(ignore_index=2)(
+            logits["phon"], phonology["targets"]
+        )
+        loss += phon_loss
 
     # How to disable backward computational and gradient accumulation in the validation loop?
     # https://discuss.pytorch.org/t/how-to-disable-backward-computational-and-gradient-accumulation-in-the-validation-loop/120774
@@ -100,6 +117,7 @@ def single_step(
 
     # Suggestion: compute cheap metrics every step, more complex metrics every epoch
     metrics = compute_metrics(
+        c.pathway,
         logits,
         orthography,
         phonology,
@@ -120,68 +138,71 @@ def single_step(
 
 
 # --------------------------------------------------------------------
-def calculate_accuracies(logits, orthography, phonology):
+def calculate_accuracies(pathway, logits, orthography, phonology):
     # --- Calculate Orthographic Accuracy ---
     # Determine model predictions by taking argmax of orthographic logits
-    orth_pred = pt.argmax(logits["orth"], dim=1)
-    # Use the orthographic encoder input ids as labels
-    # notice we slice from 1: onwards to remove the start token (not predicted)
-    orth_true = orthography["enc_input_ids"][:, 1:]
 
-    # Create a mask for valid positions (not padding)
-    orth_valid_mask = orth_true != 4
+    output = {}
 
-    # Apply the mask to true and predicted values
-    masked_orth_true = orth_true[orth_valid_mask]
-    masked_orth_pred = orth_pred[orth_valid_mask]
+    if pathway == 'op2op' or pathway == 'p2o':
+        orth_pred = pt.argmax(logits["orth"], dim=1)
+        # Use the orthographic encoder input ids as labels
+        # notice we slice from 1: onwards to remove the start token (not predicted)
+        orth_true = orthography["enc_input_ids"][:, 1:]
 
-    # Calculate letter-wise accuracy
-    correct_matches = (masked_orth_pred == masked_orth_true).sum()
-    letter_wise_accuracy = correct_matches.float() / orth_valid_mask.sum().float()
+        # Create a mask for valid positions (not padding)
+        orth_valid_mask = orth_true != 4
 
-    # To calculate word-wise accuracy, we need to check if all letters in a single word are correct
-    orth_pred[~orth_valid_mask] = 4
-    word_wise_mask = orth_pred == orth_true
-    orth_word_accuracy = word_wise_mask.all(dim=1).float().mean()
+        # Apply the mask to true and predicted values
+        masked_orth_true = orth_true[orth_valid_mask]
+        masked_orth_pred = orth_pred[orth_valid_mask]
 
-    # --- Calculate Phonological Accuracy ---
-    phon_pred = pt.argmax(logits["phon"], dim=1)
-    phon_true = phonology["targets"]
+        # Calculate letter-wise accuracy
+        correct_matches = (masked_orth_pred == masked_orth_true).sum()
+        letter_wise_accuracy = correct_matches.float() / orth_valid_mask.sum().float()
 
-    # Create a mask for valid positions (not padding)
-    phon_valid_mask = phon_true != 2
+        # To calculate word-wise accuracy, we need to check if all letters in a single word are correct
+        orth_pred[~orth_valid_mask] = 4
+        word_wise_mask = orth_pred == orth_true
+        orth_word_accuracy = word_wise_mask.all(dim=1).float().mean()
+        output["letter_wise_accuracy"] = letter_wise_accuracy
+        output["word_wise_accuracy"] = orth_word_accuracy
 
-    # Apply the mask to true and predicted values
-    masked_phon_true = phon_true[phon_valid_mask]
-    masked_phon_pred = phon_pred[phon_valid_mask]
+    if pathway == 'op2op' or pathway == 'o2p':
+        # --- Calculate Phonological Accuracy ---
+        phon_pred = pt.argmax(logits["phon"], dim=1)
+        phon_true = phonology["targets"]
 
-    # Phoneme segment accuracy
-    correct_phoneme_segments = (masked_phon_pred == masked_phon_true).sum()
-    phon_segment_accuracy = (
-        correct_phoneme_segments.float() / phon_valid_mask.sum().float()
-    )
+        # Create a mask for valid positions (not padding)
+        phon_valid_mask = phon_true != 2
 
-    # Phoneme-wise accuracy
-    phoneme_wise_mask = phon_pred == phon_true
-    phoneme_wise_accuracy = phoneme_wise_mask.all(dim=-1).sum() / (
-        masked_phon_true.shape[0] / phon_true.shape[-1]
-    )
+        # Apply the mask to true and predicted values
+        masked_phon_true = phon_true[phon_valid_mask]
+        masked_phon_pred = phon_pred[phon_valid_mask]
 
-    # Phoneme word accuracy
-    word_accuracies = [
-        word[target != 2].all().int()
-        for word, target in zip(phoneme_wise_mask, phon_true)
-    ]
-    # phon_word_accuracy = phoneme_wise_mask.all(dim=-1).all(dim=-1).sum()/phon_true.shape[0]
-    phon_word_accuracy = sum(word_accuracies) / len(word_accuracies)
+        # Phoneme segment accuracy
+        correct_phoneme_segments = (masked_phon_pred == masked_phon_true).sum()
+        phon_segment_accuracy = (
+            correct_phoneme_segments.float() / phon_valid_mask.sum().float()
+        )
 
-    output = {
-        "letter_wise_accuracy": letter_wise_accuracy,
-        "word_wise_accuracy": orth_word_accuracy,
-        "phon_segment_accuracy": phon_segment_accuracy,
-        "phoneme_wise_accuracy": phoneme_wise_accuracy,
-        "phon_word_accuracy": phon_word_accuracy,
-    }
+        # Phoneme-wise accuracy
+        phoneme_wise_mask = phon_pred == phon_true
+        phoneme_wise_accuracy = phoneme_wise_mask.all(dim=-1).sum() / (
+            masked_phon_true.shape[0] / phon_true.shape[-1]
+        )
+
+        # Phoneme word accuracy
+        word_accuracies = [
+            word[target != 2].all().int()
+            for word, target in zip(phoneme_wise_mask, phon_true)
+        ]
+        # phon_word_accuracy = phoneme_wise_mask.all(dim=-1).all(dim=-1).sum()/phon_true.shape[0]
+        phon_word_accuracy = sum(word_accuracies) / len(word_accuracies)
+        output["phon_segment_accuracy"] = phon_segment_accuracy
+        output["phoneme_wise_accuracy"] = phoneme_wise_accuracy
+        output["phon_word_accuracy"] = phon_word_accuracy
+
 
     return output
 
@@ -227,6 +248,7 @@ def generate(model, ds, device):
 
 # ----------------------------------------------------------------------
 def compute_metrics(
+    pathway,
     logits,
     orthography,
     phonology,
@@ -245,9 +267,7 @@ def compute_metrics(
 ):
     example_ct[0] += len(batch["orthography"])
     metrics = {
-        mode + "/orth_loss": orth_loss,
-        mode + "/phon_loss": phon_loss,
-        mode + "/train_loss": loss,
+        mode + "/loss": loss,
         mode + "/epoch": epoch,
         mode
         + "/example_ct": example_ct[
@@ -261,8 +281,11 @@ def compute_metrics(
         # "train/lr": opt.state_dict()['param_groups'][0]['lr'],
         mode + "/generated_text_table": generated_text_table,
     }
+    if pathway == 'op2op':
+        metrics[mode + "/orth_loss"] = orth_loss
+        metrics[mode + "/phon_loss"] = phon_loss
 
-    accuracies = calculate_accuracies(logits, orthography, phonology)
+    accuracies = calculate_accuracies(pathway, logits, orthography, phonology)
     for accuracy in accuracies:
         metrics[mode + "/" + accuracy] = accuracies[accuracy]
 

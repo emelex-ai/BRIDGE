@@ -15,7 +15,7 @@ nltk.download("cmudict")
 DATA_PATH = "./data/"
 # The user can remove the contents of the cache at any time.
 # The user can remove the cache folder, which will auto-generate
-CACHE_PATH = "./.data_cache/"
+CACHE_PATH = os.path.join(DATA_PATH, ".cache")
 
 
 class CUDA_Dict(dict):
@@ -316,14 +316,14 @@ class ConnTextULDataset(Dataset):
             print("Cache folder: %s already exists", CACHE_PATH)
 
         if self.which_dataset == "all":
-            file_path = CACHE_PATH + "/" + "data.csv"
+            file_path = os.path.join(DATA_PATH, "data.csv")
         else:
-            file_path = CACHE_PATH + "/" + "data_test%05d.csv" % self.which_dataset
+            file_path = os.path.join(CACHE_PATH, "data_test%05d.csv" % self.which_dataset)
 
         if not os.path.exists(file_path):
             # Create the file
             print(f"File {file_path} does not exist")
-            dataset = pd.read_csv(DATA_PATH + "/data.csv", nrows=self.nb_rows)
+            dataset = pd.read_csv(os.path.join(DATA_PATH, "data.csv"), nrows=self.nb_rows)
             if self.which_dataset != "all":
                 dataset = dataset.sample(n=self.which_dataset)
             dataset.to_csv(file_path, index=False)
@@ -344,10 +344,10 @@ class ConnTextULDataset(Dataset):
         Read pkl file if it exists, else create it
         """
         if self.which_dataset == "all":
-            pkl_file_path = CACHE_PATH + "/" + "phonology_tokenizer.pkl"
+            pkl_file_path = os.path.join(CACHE_PATH, "phonology_tokenizer.pkl")
         else:
-            pkl_file_path = (
-                CACHE_PATH + "/" + "phonology_tokenizer%05d.pkl" % self.which_dataset
+            pkl_file_path = os.path.join(
+                CACHE_PATH, "phonology_tokenizer%05d.pkl" % self.which_dataset
             )
 
         if os.path.exists(pkl_file_path):
