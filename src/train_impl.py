@@ -212,19 +212,24 @@ def generate(model, ds, device):
     Generative model: Given the first character, generate the following ones
     Question: do we also feed the first phoneme?
     """
-    orth = ds.character_tokenizer.encode(["elephant"])
+    word = random.choice(ds.words)
+    print("\n\nGENERATE word: ", word)
+    orth = ds.character_tokenizer.encode([word])
     orthography = orth["enc_input_ids"].to(device)
     orthography_mask = orth["enc_pad_mask"].to(device)
 
     # Choose a word in the orthography list (ds.words)
-    word = random.choice(ds.words)
     phon = ds.phonology_tokenizer.encode(
         [word]
     )
 
-    print("phon: ", phon["enc_input_ids"])
-    for tokens in phon["enc_input_ids"]:
-        print("tokens: ", tokens)
+    print("\n\n--------------------------------------------")
+    print("INPUT TOKENS for GENERATIVE")
+    print("orth: ", orth["enc_input_ids"])    # tensor([[0, tok2, ..., 1]])
+    print("phon: ", phon["enc_input_ids"])    # [[tensor([31]), tensor([phon2,phon3]), ..., tensor([32])]] # Strange format
+    for i, tokens in enumerate(phon["enc_input_ids"][0]):
+        print(f"token[{i}]: ", tokens)
+    print("--------------------------------------------")
 
     phonology = [[t.to(device) for t in tokens]
                  for tokens in phon["enc_input_ids"]]
@@ -237,7 +242,7 @@ def generate(model, ds, device):
         deterministic=True
     )
 
-    print("after model")
+    print("quite after call to generator")
     quit()
 
     generated_text = ds.character_tokenizer.decode(
