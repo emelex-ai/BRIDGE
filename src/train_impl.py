@@ -203,7 +203,6 @@ def calculate_accuracies(pathway, logits, orthography, phonology):
         output["phoneme_wise_accuracy"] = phoneme_wise_accuracy
         output["phon_word_accuracy"] = phon_word_accuracy
 
-
     return output
 
 
@@ -221,7 +220,7 @@ def generate(model, ds, device):
     word = random.choice(ds.words)
     phon = ds.phonology_tokenizer.encode(
         [word]
-    ) 
+    )
 
     print("phon: ", phon["enc_input_ids"])
     for tokens in phon["enc_input_ids"]:
@@ -234,7 +233,8 @@ def generate(model, ds, device):
     print("before model")
 
     generation = model.generate(
-        orthography, orthography_mask, phonology, phonology_mask
+        orthography, orthography_mask, phonology, phonology_mask,
+        deterministic=True
     )
 
     print("after model")
@@ -396,7 +396,7 @@ def get_starting_model_epoch(path, c):
 
     if model_runs:
         # GE comments
-        # Whatever numbering you are using for model_runs, you should use 
+        # Whatever numbering you are using for model_runs, you should use
         # integers with leading zeros, or else sorted will not work correctly.
         # Sorting on letters is dangerous since different people might have different sorting conventions
         latest_run = sorted(model_runs)[-1].split("/")[-1]
@@ -413,6 +413,8 @@ def get_starting_model_epoch(path, c):
     return model_id, epoch_num
 
 # ----------------------------------------------------------------------
+
+
 def setup_model(MODEL_PATH, c, ds, num_layers_dict):
     # Continuation run
     if c.continue_training:
@@ -429,7 +431,7 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
             nhead=chkpt["nhead"],
             max_orth_seq_len=ds.max_orth_seq_len,
             max_phon_seq_len=ds.max_phon_seq_len,
-            num_layers_dict=num_layers_dict,  
+            num_layers_dict=num_layers_dict,
             d_embedding=c.d_embedding,
         )
         model.load_state_dict(chkpt["model"])
