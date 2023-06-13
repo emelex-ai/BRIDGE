@@ -27,7 +27,6 @@ def run_code():
     # c is no longer needed except for possible testing. So no harm done 
     # by the next two lines
     c.metrics, c.config = results
-    c.config= config
 
 
 def run_code_impl(run, ds):
@@ -74,6 +73,7 @@ def run_code_impl(run, ds):
 
     model.to(device)
     # print(f"DEBUG: epoch_num = {epoch_num}, c.epoch_nums = {c.num_epochs}")
+    print("c.num_epochs: ", c.num_epochs)
     pbar = tqdm.tqdm(range(epoch_num, epoch_num + c.num_epochs), position=0)
     example_ct = [0]
 

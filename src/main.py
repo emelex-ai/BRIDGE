@@ -143,6 +143,8 @@ def main(args: Dict):
 
         sweep_id = wandb.sweep(sweep_config, project=project, entity=entity)
         wandb.agent(sweep_id, run_code)
+        run = wandb.init()
+        print("run.config: ", run.config)
     else:
         wandb.set_params(config=config, is_sweep=False, is_wandb_on=wandb_enabled)
         wandb.login()
@@ -161,12 +163,12 @@ def main(args: Dict):
             metrics = run_code()
 
     # Return data useful for testing. I would like the metrics at the last epoch
-    return_dct = AttrDict({
-        'metrics': metrics,
-        'config': config,
-    })
+    #return_dct = AttrDict({
+        #'config': run.config
+    #})
 
-    return return_dct
+    #return return_dct
+    return 0
 
 
 #----------------------------------------------------------------------
@@ -190,12 +192,16 @@ if __name__ == "__main__":
     for k,v in args_dct.items():
         print(f"{k} ==> {v}")
 
-    return_dict = main(args_dct)
-    metrics = return_dict.metrics
-    print("\n==========================================")
-    print("final metrics")
+    status = main(args_dct)
+    if status == 0:
+        print("Return from main: No errors")
 
-    for k, v in metrics.items():
-        print("==> ", k, v)
+    #return_dict = main(args_dct)
+    #metrics = return_dict.metrics
+    #print("\n==========================================")
+    #print("final metrics")
+
+    #for k, v in metrics.items():
+        #print("==> ", k, v)
 
 #----------------------------------------------------------------------
