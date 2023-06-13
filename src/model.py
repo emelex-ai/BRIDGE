@@ -243,6 +243,11 @@ class Model(torch.nn.Module):
                         tokes).mean(axis=0)
                     # Insert the resulting averaged embedding vector into the output_embedding tensor as a new row
                     output_embedding[batch_num, indx, :] = avg_embedding
+            print("output_embedding: ", output_embedding.shape)
+            print("tokens: ", tokens)
+            print("len tokens[0]: ", len(tokens[0]))
+            print("shape phon_position_embedding: ", self.phon_position_embedding.weight[None, :len(tokens[0])].shape)
+            #print("tokens.shape: ", tokens.shape)
             return (
                 output_embedding
                 + self.phon_position_embedding.weight[None, : len(tokens[0])]

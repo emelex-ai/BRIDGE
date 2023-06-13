@@ -5,6 +5,7 @@ from src.dataset import ConnTextULDataset
 import argparse 
 import torch
 import yaml
+import sys
 from attrdict import AttrDict
 from typing import List, Tuple, Dict, Any, Union
 
@@ -54,6 +55,8 @@ def read_args():
         args.which_dataset = 'all'
 
     assert args.which_dataset == 'all' or isinstance(args.which_dataset, int)
+    print("args: ", args)
+    print("read_args: BEFORE RETURN")
     return args, used_arguments
 #----------------------------------------------------------------------
 def hardcoded_args():
@@ -149,24 +152,24 @@ def main(args: Dict):
 
 #----------------------------------------------------------------------
 def handle_arguments():
+    print("sys.argv: ", sys.argv)
     args, used_args_dct = read_args()
     args_dct = AttrDict(vars(args))
     test_dct = hardcoded_args()
 
     if args_dct.test:
-        print("test is True")
+        print("=> test is True")
         args_dct.update(test_dct)
         args_dct.update(used_args_dct)
 
+    print(f"==> test is {args_dct.test}")
+    print("handle_arguments: BEFORE RETURN")
     return args_dct
 #----------------------------------------------------------------------
 if __name__ == "__main__":
-    print("1")
     args_dct = handle_arguments()
-    print("2")
     for k,v in args_dct.items():
         print(f"{k} ==> {v}")
-    quit()
 
     return_dict = main(args_dct)
     metrics = return_dict.metrics

@@ -193,18 +193,14 @@ def generate(model, ds, device):
     Question: do we also feed the first phoneme?
     """
     orth = ds.character_tokenizer.encode(["elephant"])
-    print("orth: ", orth)
     orthography = orth["enc_input_ids"].to(device)
-    print("orthography: ", orthography)
     orthography_mask = orth["enc_pad_mask"].to(device)
-    print("ds.words: ", ds.words)
 
     # Choose a word in the orthography list (ds.words)
     word = random.choice(ds.words)
-    print("word: ", word)
     phon = ds.phonology_tokenizer.encode(
         [word]
-    )  # None was because phonology.pkl file was incomplete
+    ) 
 
     print("phon: ", phon["enc_input_ids"])
     for tokens in phon["enc_input_ids"]:
@@ -377,22 +373,21 @@ def get_starting_model_epoch(path, c):
 
     if model_runs:
         # GE comments
-        # Whatever numbering you are using for model_runs, you should use integers with leading zeros, or else sorted will not work correctly.
+        # Whatever numbering you are using for model_runs, you should use 
+        # integers with leading zeros, or else sorted will not work correctly.
         # Sorting on letters is dangerous since different people might have different sorting conventions
         latest_run = sorted(model_runs)[-1].split("/")[-1]
-        # print("latest_run: ", latest_run)  # model_checkpoint35.pth
-        # print("split: ", latest_run.split("_"))
-        model_id, epoch_num = int(latest_run.split("_")[0][5:]), int(
-            latest_run.split("_")[-1].split(".")[0][10:]
-        )
+        epoch_num = latest_run.split("_")[-1].split(".")[0][10:]
+        model_id = int(latest_run.split("_")[0][5:])
+
         if not c.continue_training:
             model_id += 1
             epoch_num = 0
     else:
-        model_id, epoch_num = 0, 0
+        model_id = 0
+        epoch_num = 0
 
     return model_id, epoch_num
-
 
 # ----------------------------------------------------------------------
 def setup_model(MODEL_PATH, c, ds, num_layers_dict):
@@ -411,7 +406,7 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
             nhead=chkpt["nhead"],
             max_orth_seq_len=ds.max_orth_seq_len,
             max_phon_seq_len=ds.max_phon_seq_len,
-            num_layers_dict=num_layers_dict,  # New, GE, 2023-05-27
+            num_layers_dict=num_layers_dict,  
             d_embedding=c.d_embedding,
         )
         model.load_state_dict(chkpt["model"])

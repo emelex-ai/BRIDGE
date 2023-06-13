@@ -124,8 +124,8 @@ def run_code_impl(run, ds):
         run.log(metrics[0])
         # Log the embeddings
         train_impl.log_embeddings(model, ds)
-        # # print("generate")
-        # train_impl.generate(model, ds, device)
+        print("Call generate")
+        train_impl.generate(model, ds, device)
         save_fct(epoch)
 
     # 🐝 Close wandb
