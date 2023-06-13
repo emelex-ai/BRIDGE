@@ -60,6 +60,12 @@ def read_args():
     if args.test == False:
         args.which_dataset = 'all'
 
+    if args.sweep != "":
+        args.wandb = True
+
+    # Adding --wandb fixes error. 
+    # Perhaps add --wandb if sweep is set
+
     assert args.which_dataset == 'all' or isinstance(args.which_dataset, int)
 
     assert args.pathway in [

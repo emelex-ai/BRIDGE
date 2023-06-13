@@ -22,7 +22,12 @@ def run_code():
     ds = ConnTextULDataset(
         c, test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples
     )
-    return run_code_impl(run, ds)
+    results = run_code_impl(run, ds)
+
+    # c is no longer needed except for possible testing. So no harm done 
+    # by the next two lines
+    c.metrics, c.config = results
+    c.config= config
 
 
 def run_code_impl(run, ds):
