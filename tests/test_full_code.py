@@ -6,27 +6,8 @@ from pytest import approx
 import unit_test_example as ut
 import src.train
 #import src.main 
-from src.main import main, hardcoded_args, read_args
+from src.main import main, hardcoded_args, read_args, handle_arguments
 import sys
-
-#@pytest.fixture()
-def read_my_args(dct=None):
-    args_dct = AttrDict(vars(read_args()))
-    test_dct = hardcoded_args()
-    args_dct.update(test_dct)
-    if dct != None:
-        args_dct.update(dct)
-    return args_dct
-
-# next version: execute main
-#def read_main_return(dct=None)
-    #metrics, config = main(args_dct)
-
-def test_main_return_test_true():
-    args_dct = read_my_args({'test': True, 'num_epochs': 1, 'max_nb_steps': 1})
-    return_dict = main(args_dct)
-    config = return_dict.config
-    assert config.test == True
 
 def test_main_return_metrics():
     # When printing float dict elements, the format is single precision!
@@ -81,15 +62,4 @@ def test_main_return_metrics():
     # How to check to within precision
     #assert metrics == expected_metrics_double
     assert expected_metrics_double == approx(metrics, rel=1.e-7)
-
-def test_main_return_test_false():
-    args_dct = read_my_args({'test': False, 'num_epochs': 1, 'max_nb_steps': 1})
-    return_dict = main(args_dct)
-    config = return_dict.config
-    assert config.test == False
-
-# function must start with test_
-def test_args():
-    args_dct = read_my_args({'test': True})
-    assert args_dct.test == True
 

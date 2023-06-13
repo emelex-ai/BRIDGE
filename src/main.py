@@ -52,13 +52,14 @@ def read_args():
 
     if args.test == False:
         args.which_dataset = 'all'
-    else:
-        assert isinstance(args.which_dataset, int)
 
+    assert args.which_dataset == 'all' or isinstance(args.which_dataset, int)
     return args, used_arguments
 #----------------------------------------------------------------------
 def hardcoded_args():
-    # Overide progmra args with test dictionary
+    # Parameter values used with test. Should override default arguments, 
+    # but should be overwritten by the arguments used when invoking the code. 
+    # Overide progrma args with test dictionary
     # Do not include "test" in function names to avoid interference with pytest. 
     dct = AttrDict({})
     dct.d_model = 16
@@ -147,20 +148,31 @@ def main(args: Dict):
 
 
 #----------------------------------------------------------------------
-if __name__ == "__main__":
+def handle_arguments():
     args, used_args_dct = read_args()
     args_dct = AttrDict(vars(args))
     test_dct = hardcoded_args()
 
     if args_dct.test:
+        print("test is True")
         args_dct.update(test_dct)
         args_dct.update(used_args_dct)
 
-    # I can now mock up the arguments for testing purposes
+    return args_dct
+#----------------------------------------------------------------------
+if __name__ == "__main__":
+    print("1")
+    args_dct = handle_arguments()
+    print("2")
+    for k,v in args_dct.items():
+        print(f"{k} ==> {v}")
+    quit()
+
     return_dict = main(args_dct)
     metrics = return_dict.metrics
     print("\n==========================================")
     print("final metrics")
+
     for k, v in metrics.items():
         print("==> ", k, v)
 
