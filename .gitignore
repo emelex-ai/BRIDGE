@@ -7,3 +7,4 @@ explore.ipynb
 */__pycache__
 .data_cache
 scratchpad_*.ipynb
+settings.json

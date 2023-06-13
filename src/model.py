@@ -242,7 +242,55 @@ class Model(torch.nn.Module):
                 + self.phon_position_embedding.weight[None, : len(tokens[0])]
             )  # GE: independent positional encodings
 
-    def embed(
+    def embed_o2p(self, orthography, orthography_padding_mask):
+        orthography = self.embed_tokens(orthography, "o")
+        orthography_encoding = self.orthography_encoder(
+            orthography, src_key_padding_mask=orthography_padding_mask
+        )
+        global_embedding = self.global_embedding.repeat(orthography_encoding.shape[0], 1, 1)
+        orthography_encoding = torch.cat((global_embedding, orthography_encoding), dim=1)
+        orthography_encoding_padding_mask = torch.cat(
+            (
+                torch.zeros((orthography_encoding.shape[0], self.d_embedding), device=orthography_encoding.device, dtype=torch.bool),
+                orthography_padding_mask,
+            ),
+            dim=-1,
+        )
+
+        mixed_encoding = self.transformer_mixer(
+            orthography_encoding, src_key_padding_mask=orthography_encoding_padding_mask
+        )
+
+        final_encoding = mixed_encoding[:,:self.d_embedding] + global_embedding
+
+        return final_encoding
+
+    
+    def embed_p2o(self, phonology, phonology_padding_mask):
+        phonology = self.embed_tokens(phonology, "p")
+        phonology_encoding = self.phonology_encoder(
+            phonology, src_key_padding_mask=phonology_padding_mask
+        )
+        global_embedding = self.global_embedding.repeat(phonology_encoding.shape[0], 1, 1)
+        phonology_encoding = torch.cat((global_embedding, phonology_encoding), dim=1)
+        phonology_encoding_padding_mask = torch.cat(
+            (
+                torch.zeros((phonology_encoding.shape[0], self.d_embedding), device=phonology_encoding.device, dtype=torch.bool),
+                phonology_padding_mask,
+            ),
+            dim=-1,
+        )
+
+        mixed_encoding = self.transformer_mixer(
+            phonology_encoding, src_key_padding_mask=phonology_encoding_padding_mask
+        )
+
+        final_encoding = mixed_encoding[:,:self.d_embedding] + global_embedding
+
+        return final_encoding
+
+
+    def embed_op2op(
         self, orthography, orthography_padding_mask, phonology, phonology_padding_mask
     ):
         orthography, phonology = self.embed_tokens(orthography, "o"), self.embed_tokens(
@@ -322,6 +370,7 @@ class Model(torch.nn.Module):
 
     def forward(
         self,
+        pathway,
         orth_enc_input,
         orth_enc_pad_mask,
         orth_dec_input,
@@ -331,58 +380,72 @@ class Model(torch.nn.Module):
         phon_dec_input,
         phon_dec_pad_mask,
     ):
-        mixed_encoding = self.embed(
-            orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask
-        )
-        # print(mixed_encoding[0,0,:10])
-        orth_dec_input = self.embed_tokens(orth_dec_input, "o")
-        orth_ar_mask = self.generate_triangular_mask(
-            orth_dec_input.shape[1], orth_dec_input.device
-        )
-
-        # print("Type of orth_dec_input = ", orth_dec_input.dtype)
-        # print("Type of orth_ar_mask = ", orth_ar_mask.dtype)
-        # print("Type of orth_pec_pad_mask = ", orth_dec_pad_mask.dtype)
-        # print("Type of mixed_encoding = ", mixed_encoding.dtype)
-
-        orth_output = self.orthography_decoder(
-            tgt=orth_dec_input,
-            tgt_mask=orth_ar_mask,
-            tgt_key_padding_mask=orth_dec_pad_mask,
-            memory=mixed_encoding,
-        )
-
-        phon_dec_input = self.embed_tokens(phon_dec_input, "p")
-        phon_ar_mask = self.generate_triangular_mask(
-            phon_dec_input.shape[1], phon_dec_input.device
-        )
-
-        # print("Type of phon_dec_input = ", phon_dec_input.dtype)
-        # print("Type of phon_ar_mask = ", phon_ar_mask.dtype)
-        # print("Type of phon_pec_pad_mask = ", phon_dec_pad_mask.dtype)
-        phon_output = self.phonology_decoder(
-            tgt=phon_dec_input,
-            tgt_mask=phon_ar_mask,
-            tgt_key_padding_mask=phon_dec_pad_mask,
-            memory=mixed_encoding,
-        )
-        # print(phon_output.shape,phon_output[0,0,:10],mixed_encoding[0,0,:10])
-        B, OC, E = orth_output.shape
-        # orth_output = orth_output.view(B*OC, E)
-        orth_token_logits = self.linear_orthography_decoder(orth_output)
-        B, PC, E = phon_output.shape
-        # phon_output = phon_output.view(B*PC, E)
-        phon_token_logits = self.linear_phonology_decoder(phon_output)
-        # print("(B, C))
-        # print("orth_token_logits.shape = ", orth_token_logits.shape)
-        # print("phon_token_logits.shape = ", phon_token_logits.shape)
-
-        orth_token_logits = orth_token_logits.transpose(1, 2)
-        phon_token_logits = phon_token_logits.view(B, PC, 2, -1).transpose(1, 2)
-        return {"orth": orth_token_logits, "phon": phon_token_logits}
-        # return {'orth': orth_token_logits.view(B, self.vocab_sizes['orth_vocab_size'], OC),
-        #        'phon': phon_token_logits.view(B, 2, PC, self.vocab_sizes['phon_vocab_size'] - 1)} # -1 because targets do not contain PAD
-
+        if pathway == "op2op":
+            mixed_encoding = self.embed_op2op(
+                orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask
+            )
+            orth_dec_input = self.embed_tokens(orth_dec_input, "o")
+            orth_ar_mask = self.generate_triangular_mask(
+                orth_dec_input.shape[1], orth_dec_input.device
+            )
+            orth_output = self.orthography_decoder(
+                tgt=orth_dec_input,
+                tgt_mask=orth_ar_mask,
+                tgt_key_padding_mask=orth_dec_pad_mask,
+                memory=mixed_encoding,
+            )
+            phon_dec_input = self.embed_tokens(phon_dec_input, "p")
+            phon_ar_mask = self.generate_triangular_mask(
+                phon_dec_input.shape[1], phon_dec_input.device
+            )
+            phon_output = self.phonology_decoder(
+                tgt=phon_dec_input,
+                tgt_mask=phon_ar_mask,
+                tgt_key_padding_mask=phon_dec_pad_mask,
+                memory=mixed_encoding,
+            )
+            B, PC, E = phon_output.shape
+            orth_token_logits = self.linear_orthography_decoder(orth_output)
+            phon_token_logits = self.linear_phonology_decoder(phon_output)
+            orth_token_logits = orth_token_logits.transpose(1, 2)
+            phon_token_logits = phon_token_logits.view(B, PC, 2, -1).transpose(1, 2)
+            return {"orth": orth_token_logits, "phon": phon_token_logits}
+        elif pathway == "o2p":
+            mixed_encoding = self.embed_o2p(
+                orth_enc_input, orth_enc_pad_mask
+            )
+            phon_dec_input = self.embed_tokens(phon_dec_input, "p")
+            phon_ar_mask = self.generate_triangular_mask(
+                phon_dec_input.shape[1], phon_dec_input.device
+            )
+            phon_output = self.phonology_decoder(
+                tgt=phon_dec_input,
+                tgt_mask=phon_ar_mask,
+                tgt_key_padding_mask=phon_dec_pad_mask,
+                memory=mixed_encoding,
+            )
+            B, PC, E = phon_output.shape
+            phon_token_logits = self.linear_phonology_decoder(phon_output)
+            phon_token_logits = phon_token_logits.view(B, PC, 2, -1).transpose(1, 2)
+            return {"phon": phon_token_logits}
+        elif pathway == "p2o":
+            mixed_encoding = self.embed_p2o(
+                phon_enc_input, phon_enc_pad_mask
+            )
+            orth_dec_input = self.embed_tokens(orth_dec_input, "o")
+            orth_ar_mask = self.generate_triangular_mask(
+                orth_dec_input.shape[1], orth_dec_input.device
+            )
+            orth_output = self.orthography_decoder(
+                tgt=orth_dec_input,
+                tgt_mask=orth_ar_mask,
+                tgt_key_padding_mask=orth_dec_pad_mask,
+                memory=mixed_encoding,
+            )
+            orth_token_logits = self.linear_orthography_decoder(orth_output)
+            orth_token_logits = orth_token_logits.transpose(1, 2)
+            return {"orth": orth_token_logits}
+ 
     def generate(
         self,
         orth_enc_input,

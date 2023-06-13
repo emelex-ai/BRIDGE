@@ -39,6 +39,7 @@ def read_args():
     parser.add_argument("--seed", type=int, default=1337, help="Random seed for repeatibility.")
     parser.add_argument("--nb_samples", type=int, default=0, help="Number of total samples from dataset. All samples if <=0")
     parser.add_argument("--model_path", type=str, default="./models", help="Path to model checkpoint files.")
+    parser.add_argument("--pathway", type=str, default="op2op", help="Specify the particular pathway to use: o2p, p2o, op2op")
 
     args = parser.parse_args()
     # Arguments on the command line
@@ -54,11 +55,13 @@ def read_args():
         args.which_dataset = 'all'
     else:
         assert isinstance(args.which_dataset, int)
+    
+    assert args.pathway in ['o2p', 'p2o', 'op2op'], "Invalid pathway argument: must be 'o2p', 'p2o', or 'op2op'"
 
     return args, used_arguments
 #----------------------------------------------------------------------
 def hardcoded_args():
-    # Overide progmra args with test dictionary
+    # Overide program args with test dictionary
     # Do not include "test" in function names to avoid interference with pytest. 
     dct = AttrDict({})
     dct.d_model = 16
