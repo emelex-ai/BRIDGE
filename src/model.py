@@ -485,15 +485,15 @@ class Model(torch.nn.Module):
         return token
 
     def phono_sample(self, last_token_probs, deterministic):
-        print("last_token_probs: ", last_token_probs)
-        print("last_token_probs.shape: ", last_token_probs.shape)
+        print("phono sample: last_token_probs: ", last_token_probs)
+        print("phono sample: last_token_probs.shape: ", last_token_probs.shape)
         if deterministic:
             vec = last_token_probs[:, 1] > 0.5
             print("vec: ", vec)
             tokens = torch.where(vec)[1]  # Why [1]?
             # WHY [1]?  Array size goes from 2 to 1
-            print("tokens: ", tokens)
-            print("len tokens: ", len(tokens))
+            print("deterministic phono sample: tokens: ", tokens)
+            print("deterministic phono sample:  len tokens: ", len(tokens))
         else:  # non-deterministic
             vec = torch.bernoulli(last_token_probs[:, 1])
             if vec.eq(0).all():
@@ -501,7 +501,8 @@ class Model(torch.nn.Module):
             # What happens if this returns all zeros?
             tokens = torch.where(vec)[1]
             # GE: WhY index 1 (token[1])? Only keeps 2nd token
-            print("==> phono_sample, tokens: ", tokens)
+            print("phono_sample, torch.where: ", torch.where(vec)[1])
+            print("phono_sample, tokens: ", tokens)
         return tokens
 
     # ----------------------------------------------------------------------
@@ -560,7 +561,11 @@ class Model(torch.nn.Module):
         # LOOP THROUGH PHONOLOGY DECODER.
         for step in range(self.max_seq_len - 1):
             print("phono step: ", step)
+
             step_mask = mask[: step + 1, : step + 1]
+
+            print("memory prompt_encoding: ", prompt_encoding)
+            print("len memory prompt_encoding: ", prompt_encoding.shape)
 
             with torch.no_grad():
                 phon_output = self.phonology_decoder(
@@ -568,16 +573,21 @@ class Model(torch.nn.Module):
                     memory=prompt_encoding,
                     tgt_mask=step_mask,
                 )
-                print("phon_output: ", phon_output)
+
+                print("decoder output: phon_output: ", phon_output)
+
                 B, PC, E = phon_output.shape
                 phonology_token_logits = self.linear_phonology_decoder(
                     phon_output)
+
                 # print("shape phonology_token_logits: ",
                 #       phonology_token_logits.shape)
                 # print("phonology_token_logits: ", phonology_token_logits)
+
                 phonology_token_logits = phonology_token_logits.view(
                     B, PC, 2, -1
                 ).transpose(1, 2)
+
                 # print("shape phonology_token_logits after transpose: ",
                 #       phonology_token_logits.shape)
                 # print("phonology_token_logits after transpose: ",
@@ -675,12 +685,11 @@ class Model(torch.nn.Module):
         # mask, generated_phon_embeddings_copy,
         # prompt_encoding, deterministic)
 
-        # """
         return {"orth": generated_orth_tokens, "phon": generated_phon_tokens}
-        # """
 
         # =================================================================
 
+        """
         for step in range(self.max_seq_len - 1):
             print("\n==> step: ", step)
             step_mask = mask[: step + 1, : step + 1]
@@ -758,14 +767,13 @@ class Model(torch.nn.Module):
                 # print("last_token_probs[0].sum() = ", last_token_probs[0].sum())
                 # print("last_token_probs[1].sum(dim=1) = ", last_token_probs[1].sum(dim=1))
 
-                """
-                if deterministic:
-                    new_orthography_token, new_phonology_tokens =  \
-                        self.deterministic_sample(last_token_probs)
-                else:
-                    new_orthography_token, new_phonology_tokens =  \
-                        self.stochastic_sample(last_token_probs)
-                """
+                #if deterministic:
+                    #new_orthography_token, new_phonology_tokens =  \
+                            #self.deterministic_sample(last_token_probs)
+                #else:
+                    #new_orthography_token, new_phonology_tokens =  \
+                            #self.stochastic_sample(last_token_probs)
+                
                 if deterministic:
                     new_orthography_token = last_token_probs[0].argmax(
                         dim=1, keepdim=True
@@ -811,6 +819,7 @@ class Model(torch.nn.Module):
                 # print("generated_phon_embeddings = ", generated_phon_embeddings)
 
         return {"orth": generated_orth_tokens, "phon": generated_phon_tokens}
+        """
 
     def size(self):
         param_num = 0
