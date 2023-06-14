@@ -234,8 +234,9 @@ class Model(torch.nn.Module):
             for indx, tokes in enumerate(batch):
                 # Here tokens should be a pytorch tensor of integers.
                 # It extracts the indicated rows from self.phonology_embedding
-                print("tokes: ", tokes) # tokes: tensor([3,5,7,9])
-                avg_embedding = self.phonology_embedding(tokes).mean(axis=0)    ### ERROR tokes is empty. SOMETHING WRONG. 
+                print("tokes: ", tokes)  # tokes: tensor([3,5,7,9])
+                # ERROR tokes is empty. SOMETHING WRONG.
+                avg_embedding = self.phonology_embedding(tokes).mean(axis=0)
                 # Insert the resulting averaged embedding vector into the
                 # output_embedding tensor as a new row
                 output_embedding[batch_num, indx, :] = avg_embedding
@@ -465,12 +466,13 @@ class Model(torch.nn.Module):
                     new_phonology_vec = last_token_probs[1][:, 1] > 0.5
                     new_phonology_tokens = torch.where(new_phonology_vec)[1]
                 else:
-                    new_phonology_vec = torch.bernoulli(last_token_probs[1][:, 1])
+                    new_phonology_vec = torch.bernoulli(
+                        last_token_probs[1][:, 1])
                     if new_phonology_vec.eq(0).all():
                         new_phonology_vec[0, 32] = 1
                     new_phonology_tokens = torch.where(new_phonology_vec)[
                         1
-                    ]  
+                    ]
 
         ======================
         """
@@ -486,22 +488,25 @@ class Model(torch.nn.Module):
         print("last_token_probs: ", last_token_probs)
         print("last_token_probs.shape: ", last_token_probs.shape)
         if deterministic:
-            vec = last_token_probs[:, 1] > 0.5  
+            vec = last_token_probs[:, 1] > 0.5
             print("vec: ", vec)
-            tokens = torch.where(vec)
+            tokens = torch.where(vec)[1]  # Why [1]?
+            # WHY [1]?  Array size goes from 2 to 1
             print("tokens: ", tokens)
             print("len tokens: ", len(tokens))
-        else:
+        else:  # non-deterministic
             vec = torch.bernoulli(last_token_probs[:, 1])
             if vec.eq(0).all():
                 vec[0, 32] = 1
-            tokens = torch.where(vec)[1]  # What happens if this returns all zeros?
-            print("phono_sample, tokens: ", tokens)
+            # What happens if this returns all zeros?
+            tokens = torch.where(vec)[1]
+            # GE: WhY index 1 (token[1])? Only keeps 2nd token
+            print("==> phono_sample, tokens: ", tokens)
         return tokens
 
-    #----------------------------------------------------------------------
-    def orthography_decoder_loop(self, mask, generated_orth_embeddings, 
-                                 prompt_encoding, step_mask):
+    # ----------------------------------------------------------------------
+    def orthography_decoder_loop(self, mask, generated_orth_embeddings,
+                                 generated_orth_tokens, prompt_encoding, deterministic):
         # LOOP THROUGH ORTHOGRAPHY DECODER
         for step in range(self.max_seq_len - 1):
             print("ortho step: ", step)
@@ -535,20 +540,24 @@ class Model(torch.nn.Module):
 
                 last_token_logits = orthography_token_logits[:, :, -1]
 
-                print("shape: ", last_token_logits.shape) 
+                # print("shape: ", last_token_logits.shape)
                 last_token_probs = torch.softmax(last_token_logits, dim=1)
 
-                new_orthography_token  = self.ortho_sample(last_token_probs, deterministic)
+                new_orthography_token = self.ortho_sample(
+                    last_token_probs, deterministic)
 
                 generated_orth_tokens = torch.cat(
                     (generated_orth_tokens, new_orthography_token), dim=-1
                 )
-                generated_orth_embeddings = self.embed_orth_tokens(generated_orth_tokens)
+                generated_orth_embeddings = self.embed_orth_tokens(
+                    generated_orth_tokens)
 
-    #----------------------------------------------------------------------
-    def phonology_decoder_loop(self, mask, generated_phon_embeddings, 
-                               prompt_encoding, step_mask):
-        # LOOP THROUGH PHONOLOGY DECODER. 
+        return generated_orth_tokens
+
+    # ----------------------------------------------------------------------
+    def phonology_decoder_loop(self, mask, generated_phon_embeddings,
+                               generated_phon_tokens, prompt_encoding, deterministic):
+        # LOOP THROUGH PHONOLOGY DECODER.
         for step in range(self.max_seq_len - 1):
             print("phono step: ", step)
             step_mask = mask[: step + 1, : step + 1]
@@ -559,24 +568,47 @@ class Model(torch.nn.Module):
                     memory=prompt_encoding,
                     tgt_mask=step_mask,
                 )
+                print("phon_output: ", phon_output)
                 B, PC, E = phon_output.shape
-                phonology_token_logits = self.linear_phonology_decoder(phon_output)
+                phonology_token_logits = self.linear_phonology_decoder(
+                    phon_output)
+                # print("shape phonology_token_logits: ",
+                #       phonology_token_logits.shape)
+                # print("phonology_token_logits: ", phonology_token_logits)
                 phonology_token_logits = phonology_token_logits.view(
                     B, PC, 2, -1
                 ).transpose(1, 2)
+                # print("shape phonology_token_logits after transpose: ",
+                #       phonology_token_logits.shape)
+                # print("phonology_token_logits after transpose: ",
+                #       phonology_token_logits)
 
                 last_token_logits = (
-                        phonology_token_logits[:, :, -1, :]
+                    phonology_token_logits[:, :, -1, :]
                 )  # <<< DIFFERENT THAN ORTHOGRAPHY
 
-                last_token_probs = torch.softmax(last_token_logits[0], dim=1)
+                # print("before probs, last_token_logits: ",
+                #       last_token_logits.shape)
+                # print(
+                #     "before probs, last_token_logits[0]: ", last_token_logits[0].shape)
+                # print("bef probs, last_token_logits: ", last_token_logits)
+                # print(
+                #     "bef probs, last_token_logits[0]: ", last_token_logits[0])
+                last_token_probs = torch.softmax(last_token_logits, dim=1)
+                # print("last_token_probs.shape: ", last_token_probs.shape)
+                # print("last_token_probs: ", last_token_probs)
 
-                new_phonology_tokens = self.phono_sample(last_token_probs, deterministic)
+                new_phonology_tokens = self.phono_sample(
+                    last_token_probs, deterministic)
+                # print("new_phonology_tokens: ", new_phonology_tokens)
 
                 generated_phon_tokens[0].append(new_phonology_tokens)
-                generated_phon_embeddings = self.embed_phon_tokens(generated_phon_tokens)  
+                generated_phon_embeddings = self.embed_phon_tokens(
+                    generated_phon_tokens)
 
-    #----------------------------------------------------------------------
+        return generated_phon_tokens
+
+    # ----------------------------------------------------------------------
     def generate(
         self,
         orth_enc_input,
@@ -598,18 +630,21 @@ class Model(torch.nn.Module):
         print("orth_enc_input = ", orth_enc_input)
         print("phon_enc_input = ", phon_enc_input)
 
-        generated_orth_tokens = torch.tensor( [[0]], dtype=torch.long, device=device)
-        generated_orth_embeddings = self.embed_orth_tokens(generated_orth_tokens)
+        generated_orth_tokens = torch.tensor(
+            [[0]], dtype=torch.long, device=device)
+        generated_orth_embeddings = self.embed_orth_tokens(
+            generated_orth_tokens)
 
         print("generated_orth_embeddings = ", generated_orth_embeddings)
         print("generated_orth_embeddings = ", generated_orth_embeddings.shape)
 
-        generated_phon_tokens = [ [torch.tensor([31], dtype=torch.long, device=device)]]
-        generated_phon_embeddings = self.embed_phon_tokens( generated_phon_tokens)
+        generated_phon_tokens = [
+            [torch.tensor([31], dtype=torch.long, device=device)]]
+        generated_phon_embeddings = self.embed_phon_tokens(
+            generated_phon_tokens)
 
         print("generated_phon_embeddings = ", generated_orth_embeddings)
         print("generated_phon_embeddings = ", generated_orth_embeddings.shape)
-
 
         # print("generated_phon_embeddings = ", generated_phon_embeddings)
         # print(generated_phon_tokens, generated_phon_embeddings.shape,
@@ -618,25 +653,36 @@ class Model(torch.nn.Module):
         # Iterate through the decoder only
         print("self.max_seq_len: ", self.max_seq_len)
 
-        # This could be done in separate threads? 
-        # To speed it up, you'd do a batch. 
+        # This could be done in separate threads?
+        # To speed it up, you'd do a batch.
 
-        """
+        # """
         generated_orth_tokens = self.orthography_decoder_loop(
-                mask, generated_orth_embeddings, 
-                prompt_encoding, step_mask)
+            mask, generated_orth_embeddings, generated_orth_tokens,
+            prompt_encoding, deterministic)
+        # """
 
+        # """
+        # generated_phon_embeddings_copy = generated_phon_embeddings.clone()
+        # """
+        print("=> generated_phon_embeddings: ", generated_phon_embeddings)  #
         generated_phon_tokens = self.phonology_decoder_loop(
-                mask, generated_phon_embeddings, 
-                prompt_encoding, step_mask)
+            mask, generated_phon_embeddings, generated_phon_tokens,
+            prompt_encoding, deterministic)
 
+        # generated_phon_embeddings_copy = generated_phon_embeddings.clone()
+        # generated_phon_tokens = self.phonology_decoder_loop(
+        # mask, generated_phon_embeddings_copy,
+        # prompt_encoding, deterministic)
+
+        # """
         return {"orth": generated_orth_tokens, "phon": generated_phon_tokens}
-        """
+        # """
 
-        #=================================================================
-
+        # =================================================================
 
         for step in range(self.max_seq_len - 1):
+            print("\n==> step: ", step)
             step_mask = mask[: step + 1, : step + 1]
 
             with torch.no_grad():
@@ -655,13 +701,14 @@ class Model(torch.nn.Module):
                 # print("orthography_token_logits.shape = ", orthography_token_logits.shape)
                 # orthography_token_logits = orthography_token_logits.view(B, self.vocab_sizes['orth_vocab_size'], OC)
                 # print("orthography_token_logits = ", orthography_token_logits)
-                #-----------------------------------
+                # -----------------------------------
 
                 phon_output = self.phonology_decoder(
                     generated_phon_embeddings,
                     memory=prompt_encoding,
                     tgt_mask=step_mask,
                 )
+                print("phon_output: ", phon_output)
                 # print("phon_output.shape = ", phon_output.shape)
                 # print(phon_output.shape,phon_output[0,0,:10],prompt_encoding[0,0,:10])
                 B, PC, E = phon_output.shape
@@ -669,13 +716,16 @@ class Model(torch.nn.Module):
                 # phon_output = phon_output.view(B*PC, E)
                 phonology_token_logits = self.linear_phonology_decoder(
                     phon_output)
-                print("phonology_token_logits: ", phonology_token_logits.shape)
+                # print("phonology_token_logits: ", phonology_token_logits.shape)
+                # print("phonology_token_logits.shape: ", phonology_token_logits)
                 # print("phonology_token_logits.shape = ", phonology_token_logits.shape)
                 phonology_token_logits = phonology_token_logits.view(
                     B, PC, 2, -1
                 ).transpose(1, 2)
-                print("phonology_token_logits after transpose: ",
-                      phonology_token_logits.shape)
+                # print("phonology_token_logits after transpose shape: ",
+                #       phonology_token_logits.shape)
+                # print("phonology_token_logits after transpose: ",
+                #       phonology_token_logits)
                 # print("phonology_token_logits.shape = ", phonology_token_logits.shape)
                 # print("phonology_token_logits.shape = ", phonology_token_logits.shape)
                 # print("phonology_token_logits = ", phonology_token_logits)
@@ -684,6 +734,15 @@ class Model(torch.nn.Module):
                     orthography_token_logits[:, :, -1],
                     phonology_token_logits[:, :, -1, :],
                 )
+                # print("orthograpy_token_logits.shape: ",
+                #       orthography_token_logits.shape)
+                # print("phonology_token_logits.shape: ",
+                #       phonology_token_logits.shape)
+                # print("last_token_logits[0].shape: ", last_token_logits[0].shape)
+                # print("last_token_logits[1].shape: ",
+                #       last_token_logits[1].shape)
+
+                # print("last_token_logits[1]: ", last_token_logits[1])
                 # print(last_token_logits[1][:,1])
 
                 # print("last_token_logits = ", last_token_logits)
@@ -691,26 +750,61 @@ class Model(torch.nn.Module):
                     torch.softmax(last_token_logits[0], dim=1),
                     torch.softmax(last_token_logits[1], dim=1),
                 )
+                # print("last_token_probs[0].shape: ", last_token_probs[0].shape)
+                print("last_token_probs[1].shape: ", last_token_probs[1].shape)
+                # print("last_token_probs[0]: ", last_token_probs[0])
+                print("last_token_probs[1]: ", last_token_probs[1])
                 # print("last_token_probs = ", last_token_probs)
                 # print("last_token_probs[0].sum() = ", last_token_probs[0].sum())
                 # print("last_token_probs[1].sum(dim=1) = ", last_token_probs[1].sum(dim=1))
 
+                """
                 if deterministic:
                     new_orthography_token, new_phonology_tokens =  \
                         self.deterministic_sample(last_token_probs)
                 else:
                     new_orthography_token, new_phonology_tokens =  \
                         self.stochastic_sample(last_token_probs)
+                """
+                if deterministic:
+                    new_orthography_token = last_token_probs[0].argmax(
+                        dim=1, keepdim=True
+                    )
+                    print("new_orthography_token: ", new_orthography_token)
+                    print("new_orthography_token.shape: ",
+                          new_orthography_token.shape)
+
+                    new_phonology_vec = last_token_probs[1][:, 1] > 0.5
+                    print("new_phonology_vec: ", new_phonology_vec)
+                    new_phonology_tokens = torch.where(new_phonology_vec)[1]
+                    print("new_phonology_tokens: ", new_phonology_tokens)
+                else:
+                    new_orthography_token = torch.multinomial(
+                        last_token_probs[0], num_samples=1
+                    )
+                    # print("last_token_probs[1].shape = ", last_token_probs[1].shape)
+                    # print("last_token_probs[1] = ", last_token_probs[1])
+                    new_phonology_vec = torch.bernoulli(
+                        last_token_probs[1][:, 1])
+                    if new_phonology_vec.eq(0).all():
+                        new_phonology_vec[0, 32] = 1
+                    # print("new_phonology_vec.shape = ", new_phonology_vec.shape)
+                    new_phonology_tokens = torch.where(new_phonology_vec)[
+                        1
+                    ]  # What happens if this returns all zeros?
+                    print("==> new_phonology_tokens.shape = ",
+                          new_phonology_tokens.shape)
 
                 generated_orth_tokens = torch.cat(
                     (generated_orth_tokens, new_orthography_token), dim=-1
                 )
-                print("generated_orth_tokens = ", generated_orth_tokens)
+                # print("generated_orth_tokens = ", generated_orth_tokens)
                 generated_orth_embeddings = self.embed_orth_tokens(
                     generated_orth_tokens)
                 # print("generated_orth_embeddings = ", generated_orth_embeddings)
 
-                generated_phon_tokens[0].append(new_phonology_tokens)
+                generated_phon_tokens[0].append(
+                    new_phonology_tokens)  # DEFINED WHERE? BUG!
                 print("generated_phon_tokens = ", generated_phon_tokens)
                 generated_phon_embeddings = self.embed_phon_tokens(
                     generated_phon_tokens)  # , "p" ERROR
