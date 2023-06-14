@@ -458,6 +458,22 @@ class Model(torch.nn.Module):
             orth_token_logits = self.linear_orthography_decoder(orth_output)
             orth_token_logits = orth_token_logits.transpose(1, 2)
             return {"orth": orth_token_logits}
+        """
+        ======================
+
+                if deterministic:
+                    new_phonology_vec = last_token_probs[1][:, 1] > 0.5
+                    new_phonology_tokens = torch.where(new_phonology_vec)[1]
+                else:
+                    new_phonology_vec = torch.bernoulli(last_token_probs[1][:, 1])
+                    if new_phonology_vec.eq(0).all():
+                        new_phonology_vec[0, 32] = 1
+                    new_phonology_tokens = torch.where(new_phonology_vec)[
+                        1
+                    ]  
+
+        ======================
+        """
 
     def ortho_sample(self, last_token_probs, deterministic):
         if deterministic:
@@ -468,18 +484,99 @@ class Model(torch.nn.Module):
 
     def phono_sample(self, last_token_probs, deterministic):
         print("last_token_probs: ", last_token_probs)
+        print("last_token_probs.shape: ", last_token_probs.shape)
         if deterministic:
             vec = last_token_probs[:, 1] > 0.5  
+            print("vec: ", vec)
             tokens = torch.where(vec)
+            print("tokens: ", tokens)
+            print("len tokens: ", len(tokens))
         else:
             vec = torch.bernoulli(last_token_probs[:, 1])
             if vec.eq(0).all():
                 vec[0, 32] = 1
-            tokens = torch.where(vec)  # What happens if this returns all zeros?
+            tokens = torch.where(vec)[1]  # What happens if this returns all zeros?
             print("phono_sample, tokens: ", tokens)
         return tokens
 
+    #----------------------------------------------------------------------
+    def orthography_decoder_loop(self, mask, generated_orth_embeddings, 
+                                 prompt_encoding, step_mask):
+        # LOOP THROUGH ORTHOGRAPHY DECODER
+        for step in range(self.max_seq_len - 1):
+            print("ortho step: ", step)
+            step_mask = mask[: step + 1, : step + 1]
 
+            with torch.no_grad():
+                orth_output = self.orthography_decoder(
+                    generated_orth_embeddings,
+                    memory=prompt_encoding,
+                    tgt_mask=step_mask,
+                )
+                B, OC, E = orth_output.shape
+                linear_output = self.linear_orthography_decoder(orth_output)
+                orthography_token_logits = linear_output.transpose(1, 2)
+
+                """
+                =================
+                last_token_logits = (
+                    orthography_token_logits[:, :, -1],
+                    phonology_token_logits[:, :, -1, :],
+                )
+                # print(last_token_logits[1][:,1])
+
+                # print("last_token_logits = ", last_token_logits)
+                last_token_probs = (
+                    torch.softmax(last_token_logits[0], dim=1),
+                    torch.softmax(last_token_logits[1], dim=1),
+                )
+                =================
+                """
+
+                last_token_logits = orthography_token_logits[:, :, -1]
+
+                print("shape: ", last_token_logits.shape) 
+                last_token_probs = torch.softmax(last_token_logits, dim=1)
+
+                new_orthography_token  = self.ortho_sample(last_token_probs, deterministic)
+
+                generated_orth_tokens = torch.cat(
+                    (generated_orth_tokens, new_orthography_token), dim=-1
+                )
+                generated_orth_embeddings = self.embed_orth_tokens(generated_orth_tokens)
+
+    #----------------------------------------------------------------------
+    def phonology_decoder_loop(self, mask, generated_phon_embeddings, 
+                               prompt_encoding, step_mask):
+        # LOOP THROUGH PHONOLOGY DECODER. 
+        for step in range(self.max_seq_len - 1):
+            print("phono step: ", step)
+            step_mask = mask[: step + 1, : step + 1]
+
+            with torch.no_grad():
+                phon_output = self.phonology_decoder(
+                    generated_phon_embeddings,
+                    memory=prompt_encoding,
+                    tgt_mask=step_mask,
+                )
+                B, PC, E = phon_output.shape
+                phonology_token_logits = self.linear_phonology_decoder(phon_output)
+                phonology_token_logits = phonology_token_logits.view(
+                    B, PC, 2, -1
+                ).transpose(1, 2)
+
+                last_token_logits = (
+                        phonology_token_logits[:, :, -1, :]
+                )  # <<< DIFFERENT THAN ORTHOGRAPHY
+
+                last_token_probs = torch.softmax(last_token_logits[0], dim=1)
+
+                new_phonology_tokens = self.phono_sample(last_token_probs, deterministic)
+
+                generated_phon_tokens[0].append(new_phonology_tokens)
+                generated_phon_embeddings = self.embed_phon_tokens(generated_phon_tokens)  
+
+    #----------------------------------------------------------------------
     def generate(
         self,
         orth_enc_input,
@@ -524,79 +621,17 @@ class Model(torch.nn.Module):
         # This could be done in separate threads? 
         # To speed it up, you'd do a batch. 
 
-        # LOOP THROUGH ORTHOGRAPHY DECODER
-        for step in range(self.max_seq_len - 1):
-            print("ortho step: ", step)
-            step_mask = mask[: step + 1, : step + 1]
+        """
+        generated_orth_tokens = self.orthography_decoder_loop(
+                mask, generated_orth_embeddings, 
+                prompt_encoding, step_mask)
 
-            with torch.no_grad():
-                orth_output = self.orthography_decoder(
-                    generated_orth_embeddings,
-                    memory=prompt_encoding,
-                    tgt_mask=step_mask,
-                )
-                B, OC, E = orth_output.shape
-                linear_output = self.linear_orthography_decoder(orth_output)
-                orthography_token_logits = linear_output.transpose(1, 2)
-
-                """
-                =================
-                last_token_logits = (
-                    orthography_token_logits[:, :, -1],
-                    phonology_token_logits[:, :, -1, :],
-                )
-                # print(last_token_logits[1][:,1])
-
-                # print("last_token_logits = ", last_token_logits)
-                last_token_probs = (
-                    torch.softmax(last_token_logits[0], dim=1),
-                    torch.softmax(last_token_logits[1], dim=1),
-                )
-                =================
-                """
-
-                last_token_logits = orthography_token_logits[:, :, -1]
-
-                print("shape: ", last_token_logits.shape) 
-                last_token_probs = torch.softmax(last_token_logits, dim=1)
-
-                new_orthography_token  = self.ortho_sample(last_token_probs, deterministic)
-
-                generated_orth_tokens = torch.cat(
-                    (generated_orth_tokens, new_orthography_token), dim=-1
-                )
-                generated_orth_embeddings = self.embed_orth_tokens(generated_orth_tokens)
-
-
-        # LOOP THROUGH PHONOLOGY DECODER. 
-        for step in range(self.max_seq_len - 1):
-            print("phono step: ", step)
-            step_mask = mask[: step + 1, : step + 1]
-
-            with torch.no_grad():
-                phon_output = self.phonology_decoder(
-                    generated_phon_embeddings,
-                    memory=prompt_encoding,
-                    tgt_mask=step_mask,
-                )
-                B, PC, E = phon_output.shape
-                phonology_token_logits = self.linear_phonology_decoder(phon_output)
-                phonology_token_logits = phonology_token_logits.view(
-                    B, PC, 2, -1
-                ).transpose(1, 2)
-
-                last_token_logits = (
-                        phonology_token_logits[:, :, -1, :]
-                )  # <<< DIFFERENT THAN ORTHOGRAPHY
-
-                last_token_probs = torch.softmax(last_token_logits[0], dim=1)
-
-                new_phonology_tokens = self.phono_sample(last_token_probs, deterministic)
-
-                generated_phon_tokens[0].append(new_phonology_tokens)
-                generated_phon_embeddings = self.embed_phon_tokens(generated_phon_tokens)  
+        generated_phon_tokens = self.phonology_decoder_loop(
+                mask, generated_phon_embeddings, 
+                prompt_encoding, step_mask)
 
         return {"orth": generated_orth_tokens, "phon": generated_phon_tokens}
+        """
 
         #=================================================================
 
