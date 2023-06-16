@@ -466,8 +466,6 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
 
 # ----------------------------------------------------------------------
 def create_data_slices(cutpoint, c, ds):
-    print("==> len ds: ", len(ds))
-    print("batch_sizes: ", c.batch_size_train, c.batch_size_val)
     train_dataset_slices = []
     for batch in range(math.ceil(cutpoint / c.batch_size_train)):
         train_dataset_slices.append(
@@ -487,8 +485,6 @@ def create_data_slices(cutpoint, c, ds):
             )
         )
 
-    print("datasets: ", len(list(train_dataset_slices)),
-          len(list(val_dataset_slices)))
     return train_dataset_slices, val_dataset_slices
 
 
