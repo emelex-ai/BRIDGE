@@ -303,7 +303,6 @@ class ConnTextULDataset(Dataset):
                     self.max_orth_seq_len,
                     len(self.character_tokenizer.encode(word)["enc_input_ids"][0]),
                 )
-        self.max_seq_len = max(self.max_phon_seq_len, self.max_orth_seq_len)
 
         self.words = final_words
 
@@ -327,12 +326,10 @@ class ConnTextULDataset(Dataset):
             if self.which_dataset != "all":
                 dataset = dataset.sample(n=self.which_dataset)
             dataset.to_csv(file_path, index=False)
-            print("path 1")
         else:
             # File exists
             print(f"File {file_path} exists")
             dataset = pd.read_csv(file_path)
-            print("path 2")
 
         # Do not remove duplicate words since we are performing curriculum training
         # Series of all lowercased words

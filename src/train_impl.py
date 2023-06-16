@@ -203,7 +203,6 @@ def calculate_accuracies(pathway, logits, orthography, phonology):
         output["phoneme_wise_accuracy"] = phoneme_wise_accuracy
         output["phon_word_accuracy"] = phon_word_accuracy
 
-
     return output
 
 
@@ -213,27 +212,28 @@ def generate(model, ds, device):
     Generative model: Given the first character, generate the following ones
     Question: do we also feed the first phoneme?
     """
-    orth = ds.character_tokenizer.encode(["elephant"])
-    print("orth: ", orth)
+    #word = random.choice(ds.words)
+    word = 'animals'
+    assert word in ds.words, f"word {word} is not in ds.words"
+    print("\n\nGENERATE word: ", word)
+
+    orth = ds.character_tokenizer.encode([word])
     orthography = orth["enc_input_ids"].to(device)
-    print("orthography: ", orthography)
     orthography_mask = orth["enc_pad_mask"].to(device)
-    print("ds.words: ", ds.words)
 
     # Choose a word in the orthography list (ds.words)
-    word = random.choice(ds.words)
-    print("word: ", word)
     phon = ds.phonology_tokenizer.encode(
         [word]
-    )  # None was because phonology.pkl file was incomplete
-    # print("phon: ", phon)
+    )
 
+    print("\n\n--------------------------------------------")
+    print("INPUT TOKENS for GENERATIVE")
+    print("orth: ", orth["enc_input_ids"])    # tensor([[0, tok2, ..., 1]])
+    # [[tensor([31]), tensor([phon2,phon3]), ..., tensor([32])]] # Strange format
     print("phon: ", phon["enc_input_ids"])
-    for tokens in phon["enc_input_ids"]:
-        print("tokens: ", tokens)
-        # for t in tokens:
-        #print("  t: ", t)
-        # t.to(device)
+    for i, tokens in enumerate(phon["enc_input_ids"][0]):
+        print(f"token[{i}]: ", tokens)
+    print("--------------------------------------------")
 
     phonology = [[t.to(device) for t in tokens]
                  for tokens in phon["enc_input_ids"]]
@@ -242,10 +242,11 @@ def generate(model, ds, device):
     print("before model")
 
     generation = model.generate(
-        orthography, orthography_mask, phonology, phonology_mask
+        orthography, orthography_mask, phonology, phonology_mask,
+        deterministic=True
     )
 
-    print("after model")
+    print("quite after call to generator")
     quit()
 
     generated_text = ds.character_tokenizer.decode(
@@ -404,24 +405,25 @@ def get_starting_model_epoch(path, c):
 
     if model_runs:
         # GE comments
-        # Whatever numbering you are using for model_runs, you should use integers with leading zeros, or else sorted will not work correctly.
+        # Whatever numbering you are using for model_runs, you should use
+        # integers with leading zeros, or else sorted will not work correctly.
         # Sorting on letters is dangerous since different people might have different sorting conventions
         latest_run = sorted(model_runs)[-1].split("/")[-1]
-        # print("latest_run: ", latest_run)  # model_checkpoint35.pth
-        # print("split: ", latest_run.split("_"))
-        model_id, epoch_num = int(latest_run.split("_")[0][5:]), int(
-            latest_run.split("_")[-1].split(".")[0][10:]
-        )
+        epoch_num = latest_run.split("_")[-1].split(".")[0][10:]
+        model_id = int(latest_run.split("_")[0][5:])
+
         if not c.continue_training:
             model_id += 1
             epoch_num = 0
     else:
-        model_id, epoch_num = 0, 0
+        model_id = 0
+        epoch_num = 0
 
     return model_id, epoch_num
 
-
 # ----------------------------------------------------------------------
+
+
 def setup_model(MODEL_PATH, c, ds, num_layers_dict):
     # Continuation run
     if c.continue_training:
@@ -430,14 +432,15 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
         chkpt = pt.load(
             MODEL_PATH + f"/model{model_id}_checkpoint{epoch_num}.pth")
         # GE: TODO:  Construct a layer dictionary from the chekpointed data
+
         model = Model(
             len(ds.character_tokenizer),
             len(ds.phonology_tokenizer),
             d_model=chkpt["d_model"],
             nhead=chkpt["nhead"],
-            max_orth_seq_len=ds.max_orth_seq_len,  # GE
-            max_phon_seq_len=ds.max_phon_seq_len,  # GE
-            num_layers_dict=num_layers_dict,  # New, GE, 2023-05-27
+            max_orth_seq_len=ds.max_orth_seq_len,
+            max_phon_seq_len=ds.max_phon_seq_len,
+            num_layers_dict=num_layers_dict,
             d_embedding=c.d_embedding,
         )
         model.load_state_dict(chkpt["model"])
@@ -463,8 +466,6 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
 
 # ----------------------------------------------------------------------
 def create_data_slices(cutpoint, c, ds):
-    print("==> len ds: ", len(ds))
-    print("batch_sizes: ", c.batch_size_train, c.batch_size_val)
     train_dataset_slices = []
     for batch in range(math.ceil(cutpoint / c.batch_size_train)):
         train_dataset_slices.append(
@@ -484,8 +485,6 @@ def create_data_slices(cutpoint, c, ds):
             )
         )
 
-    print("datasets: ", len(list(train_dataset_slices)),
-          len(list(val_dataset_slices)))
     return train_dataset_slices, val_dataset_slices
 
 
