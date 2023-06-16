@@ -22,7 +22,11 @@ def run_code():
     ds = ConnTextULDataset(
         c, test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples
     )
-    return run_code_impl(run, ds)
+    results = run_code_impl(run, ds)
+
+    # c is no longer needed except for possible testing. So no harm done 
+    # by the next two lines
+    c.metrics, c.config = results
 
 
 def run_code_impl(run, ds):
@@ -69,6 +73,7 @@ def run_code_impl(run, ds):
 
     model.to(device)
     # print(f"DEBUG: epoch_num = {epoch_num}, c.epoch_nums = {c.num_epochs}")
+    print("c.num_epochs: ", c.num_epochs)
     pbar = tqdm.tqdm(range(epoch_num, epoch_num + c.num_epochs), position=0)
     example_ct = [0]
 
