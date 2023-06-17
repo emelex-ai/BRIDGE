@@ -7,6 +7,7 @@ import sys
 import time
 from torch.utils.data import DataLoader, Subset
 from typing import List, Tuple, Dict, Any, Union
+from src.train_impl import get_starting_model_epoch
 
 wandb = WandbWrapper()
 
@@ -16,20 +17,27 @@ More complex code structure to accomodate running wandb with and without hypersw
 """
 
 
-def run_code():
-    run = wandb.init()
+def run_code(args_dct: Dict):
+    print("run_code args_dct: ", args_dct)
+    # Use startup data to determine starting epoch. Update the model_id
+    model_id, epoch_num = get_starting_model_epoch(args_dct.model_path, args_dct.continue_training)
+    wandb_name = f"model{model_id}_checkpoint{epoch_num}"
+    run = wandb.init(name=wandb_name, config=args_dct)  # Why is run empty?
+
+    print("run: ", run)
     c = run.config
+    print("run_code: c: ", c)
     ds = ConnTextULDataset(
         c, test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples
     )
-    results = run_code_impl(run, ds)
+    results = run_code_impl(run, ds, epoch_num)
 
-    # c is no longer needed except for possible testing. So no harm done 
+    # c is no longer needed except for possible testing. So no harm done
     # by the next two lines
     c.metrics, c.config = results
 
 
-def run_code_impl(run, ds):
+def run_code_impl(run, ds, epoch_num):
     """ """
     c = run.config
     print("run.config: ", run.config)
@@ -59,7 +67,11 @@ def run_code_impl(run, ds):
     )
 
     # Use startup data to determine starting epoch. Update the model_id
-    model_id, epoch_num = train_impl.get_starting_model_epoch(MODEL_PATH, c)
+    # TODO: call this function from within Main. Use to name the run in wandb.
+    # TODO: Store the model name in the config dictionary?
+
+    # Now called from main
+    #model_id, epoch_num = train_impl.get_starting_model_epoch(MODEL_PATH, c.continue_training)
 
     # A number for WandB:
     c.n_steps_per_epoch = len(train_dataset_slices)
@@ -78,41 +90,43 @@ def run_code_impl(run, ds):
     example_ct = [0]
 
     # Function closure
-    def single_step_fct(batch_slice, step, epoch, mode): return train_impl.single_step(
-        c,
-        pbar,
-        model,
-        train_dataset_slices,
-        batch_slice,
-        ds,
-        device,
-        opt,
-        epoch,
-        step,
-        generated_text_table,
-        example_ct,
-        mode,
-    )
+    def single_step_fct(batch_slice, step, epoch, mode):
+        return train_impl.single_step(
+            c,
+            pbar,
+            model,
+            train_dataset_slices,
+            batch_slice,
+            ds,
+            device,
+            opt,
+            epoch,
+            step,
+            generated_text_table,
+            example_ct,
+            mode,
+        )
 
-    def train_single_epoch_fct(epoch): return train_impl.train_single_epoch(
-        c,
-        model,
-        train_dataset_slices,
-        epoch,
-        single_step_fct,
-    )
+    def train_single_epoch_fct(epoch):
+        return train_impl.train_single_epoch(
+            c,
+            model,
+            train_dataset_slices,
+            epoch,
+            single_step_fct,
+        )
 
-    def validate_single_epoch_fct(epoch): return train_impl.validate_single_epoch(
-        c,
-        model,
-        val_dataset_slices,
-        epoch,
-        single_step_fct,
-    )
+    def validate_single_epoch_fct(epoch):
+        return train_impl.validate_single_epoch(
+            c,
+            model,
+            val_dataset_slices,
+            epoch,
+            single_step_fct,
+        )
 
-    def save_fct(epoch): return train_impl.save(
-        epoch, c, model, opt, MODEL_PATH, model_id, epoch_num
-    )
+    def save_fct(epoch):
+        return train_impl.save(epoch, c, model, opt, MODEL_PATH, model_id, epoch_num)
 
     # generate a type hint for list of dict
 
