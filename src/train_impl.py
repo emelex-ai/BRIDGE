@@ -205,13 +205,14 @@ def calculate_accuracies(pathway, logits, orthography, phonology):
 
 
 # ----------------------------------------------------------------------
-def generate(model, ds, device):
+def generate(model, ds, pathway, device):
     """
     Generative model: Given the first character, generate the following ones
     Question: do we also feed the first phoneme?
     """
-    # word = random.choice(ds.words)
-    word = "the"
+    word = random.choice(ds.words)
+    #word = "animal"
+
     assert word in ds.words, f"word {word} is not in ds.words"
     print("\n\nGENERATE word: ", word)
 
@@ -236,16 +237,16 @@ def generate(model, ds, device):
 
     print("before model")
 
-    generation = model.generate(
-        orthography, orthography_mask, phonology, phonology_mask, deterministic=True
+    generation = model.generate(pathway,
+        orthography, orthography_mask, phonology, phonology_mask,
+        deterministic=True
     )
 
-    print("quite after call to generator")
-    quit()
+    generated_text = ds.character_tokenizer.decode(
+        generation["orth"].tolist())[0]
 
-    generated_text = ds.character_tokenizer.decode(generation["orth"].tolist())[0]
     # Log the text in the WandB table
-    generated_text_table.add_data(step, generated_text)
+    #generated_text_table.add_data(step, generated_text)
 
 
 # ----------------------------------------------------------------------

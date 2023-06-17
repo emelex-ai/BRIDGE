@@ -34,7 +34,8 @@ def run_code(args_dct: Dict):
 
     # c is no longer needed except for possible testing. So no harm done
     # by the next two lines
-    c.metrics, c.config = results
+    print("resuts: ", results)
+    c.metrics = results
 
 
 def run_code_impl(run, ds, epoch_num):
@@ -144,7 +145,7 @@ def run_code_impl(run, ds, epoch_num):
         # Log the embeddings
         train_impl.log_embeddings(model, ds)
         print("Call generate")
-        train_impl.generate(model, ds, device)
+        train_impl.generate(model, ds, c.pathway, device)
         save_fct(epoch)
 
     # 🐝 Close wandb
