@@ -48,8 +48,14 @@ def read_args():
     )
 
     args = parser.parse_args()
+    #print("args: ", args)
+    #quit()
     # Arguments on the command line
+    # Works when test==False. When test==True, used_arguments should be tested against the
+    #  hard-coded arguments
+    
     used_arguments = {arg: value for arg, value in vars(args).items() if getattr(args, arg) != parser.get_default(arg)}
+    print("used_arguments: ", used_arguments)
 
     if args.nb_samples <= 0:
         args.nb_samples = None
@@ -100,6 +106,9 @@ def hardcoded_args():
     dct.model_path = './models'
     dct.which_dataset = 100
     dct.test = True
+    dct.pathway = 'op2op'
+    dct.wandb = False
+    dct.sweep = ""
 
     torch.manual_seed(dct.seed)  
     torch.cuda.manual_seed_all(dct.seed)
@@ -170,24 +179,32 @@ def main(args: Dict):
     #return return_dct
     return 0
 
-
 #----------------------------------------------------------------------
 def handle_arguments():
-    print("sys.argv: ", sys.argv)
+    if '--test' in sys.argv:
+        test_mode = True
+    else:
+        test_mode = False
+
     args, used_args_dct = read_args()
     args_dct = AttrDict(vars(args))
     test_dct = hardcoded_args()
 
-    if args_dct.test:
-        print("=> test is True")
-        args_dct.update(test_dct)
-        args_dct.update(used_args_dct)
+    # Compute used args by comparing arguments against sys.argv
+    # Assumes that all arguments are prepended with '--'
+    used_test_keys = [k for k in vars(args).keys() if '--'+k in sys.argv]
+    used_test_dct = {k: args_dct[k] for k in used_test_keys}
 
-    print(f"==> test is {args_dct.test}")
-    print("handle_arguments: BEFORE RETURN")
+    if test_mode == True:
+        # overwrite arg dict with hardcoded test values
+        args_dct.update(test_dct)
+        # overwrite arg dict with actual arguments used
+        args_dct.update(used_test_dct)
+
     return args_dct
 #----------------------------------------------------------------------
 if __name__ == "__main__":
+
     args_dct = handle_arguments()
     for k,v in args_dct.items():
         print(f"{k} ==> {v}")
@@ -195,13 +212,5 @@ if __name__ == "__main__":
     status = main(args_dct)
     if status == 0:
         print("Return from main: No errors")
-
-    #return_dict = main(args_dct)
-    #metrics = return_dict.metrics
-    #print("\n==========================================")
-    #print("final metrics")
-
-    #for k, v in metrics.items():
-        #print("==> ", k, v)
 
 #----------------------------------------------------------------------

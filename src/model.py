@@ -533,6 +533,7 @@ class Model(torch.nn.Module):
                     memory=prompt_encoding,
                     tgt_mask=step_mask,
                 )
+                print("phon decoder loop: prompt encoding: ", prompt_encoding.shape)
 
                 B, PC, E = phon_output.shape
                 phonology_token_logits = self.linear_phonology_decoder(
