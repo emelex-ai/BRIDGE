@@ -16,8 +16,7 @@ wandb = WandbWrapper()
 More complex code structure to accomodate running wandb with and without hypersweeps
 """
 
-
-def run_code(args_dct: Dict):
+def run_code_sweep(args_dct: Dict):
     print("run_code args_dct: ", args_dct)
     # Use startup data to determine starting epoch. Update the model_id
     model_id, epoch_num = get_starting_model_epoch(args_dct.model_path, args_dct.continue_training)
@@ -30,15 +29,29 @@ def run_code(args_dct: Dict):
     ds = ConnTextULDataset(
         c, test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples
     )
-    results = run_code_impl(run, ds, epoch_num)
+    results = run_code_impl(run, ds, epoch_num, model_id)
 
     # c is no longer needed except for possible testing. So no harm done
     # by the next two lines
     print("resuts: ", results)
     c.metrics = results
 
+#----------------------------------------------------------------------
+def run_code(run, epoch_num, model_id):
+    c = run.config
+    print("run_code(): c: ", c)
+    ds = ConnTextULDataset(
+        c, test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples
+    )
+    results = run_code_impl(run, ds, epoch_num, model_id)
 
-def run_code_impl(run, ds, epoch_num):
+    c.metrics = results
+    wandb.finish()
+    print("resuts: ", results)
+    return c.metrics
+
+#----------------------------------------------------------------------
+def run_code_impl(run, ds, epoch_num, model_id):
     """ """
     c = run.config
     print("run.config: ", run.config)
@@ -81,6 +94,7 @@ def run_code_impl(run, ds, epoch_num):
 
     generated_text_table = wandb.Table(columns=["Step", "Generated Output"])
     run.watch(model, log="all", log_freq=100)
+    #run.finish()  # Call not needed for sweeps. SHould be use for non-sweeps. 
 
     # ----------------------------------------------------------------------
 
@@ -137,20 +151,16 @@ def run_code_impl(run, ds, epoch_num):
     for epoch in pbar:
         print("************* epoch: ", epoch, " *******************88")
         metrics[0] = train_single_epoch_fct(epoch)
-        print("type(metrics): ", type(metrics))
         more_metrics = validate_single_epoch_fct(epoch)
         if c.max_nb_steps < 0:
             metrics[0].update(more_metrics)
         run.log(metrics[0])
         # Log the embeddings
         train_impl.log_embeddings(model, ds)
-        print("Call generate")
-        train_impl.generate(model, ds, c.pathway, device)
+        #train_impl.generate(model, ds, c.pathway, device)
         save_fct(epoch)
 
     # 🐝 Close wandb
-    run.finish()
     return metrics[0]
-
 
 # ----------------------------------------------------------------------

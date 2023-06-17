@@ -7,6 +7,7 @@ import yaml
 import sys
 from attrdict import AttrDict
 from typing import List, Tuple, Dict, Any, Union
+from src.train_impl import get_starting_model_epoch
 
 wandb = WandbWrapper()
 
@@ -166,7 +167,7 @@ def hardcoded_args():
     dct.which_dataset = 100
     dct.test = True
     dct.pathway = 'op2op'
-    dct.wandb = False
+    # wandb should always be set through the command line. False by default. 
     dct.sweep = ""
 
     torch.manual_seed(dct.seed)
@@ -196,7 +197,10 @@ def main(args: Dict):
 
     globals().update({"wandb": wandb})
 
+    print("args.sweep: ", args.sweep)
+    # Perform parameter sweep
     if args.sweep != "":
+        print("wandb_enabled: ", wandb_enabled)
         wandb.set_params(config=config, is_sweep=True, is_wandb_on=wandb_enabled)
         wandb.login()
 
@@ -210,28 +214,31 @@ def main(args: Dict):
                 sweep_config["parameters"][param] = {"values": [value]}
 
         sweep_id = wandb.sweep(sweep_config, project=project, entity=entity)
-        run_code1 = run_code(args)
+        run_code1 = run_code_sweep(args)
         wandb.agent(sweep_id, run_code1)
-        run = wandb.init()
-        print("run.config: ", run.config)
     else:
         wandb.set_params(config=config, is_sweep=False, is_wandb_on=wandb_enabled)
         wandb.login()
         # 🐝 initialise a wandb run
         # I created a new project
+        # I need a run_code_wandb, run_code_sweep, and run_code to handle all cases properly
+        model_id, epoch_num = get_starting_model_epoch(args_dct.model_path, args_dct.continue_training)
+        wandb_name = f"model{model_id}_checkpoint{epoch_num}"
         run = wandb.init(
             name=wandb_name, # Name of run that reflects model and run number
             entity=entity,  # Necessary because I am in multiple teams
             project=project,
             config=config,
         )
-        # When 'disabled', the returned run.config is an empty dictionary {}
+        metrics = run_code(run, epoch_num, model_id)
+        """
         if wandb_enabled:
             # Add name argument which should be the same as the model file
-            run = wandb.init(config=config, name=wandb_name)
+            #run = wandb.init(config=config, name=wandb_name)
             metrics = run_code(args)
         else:
             metrics = run_code(args)
+        """
 
     # Return data useful for testing. I would like the metrics at the last epoch
     # return_dct = AttrDict({
