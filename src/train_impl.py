@@ -6,6 +6,8 @@ import torch as pt
 import time
 import math
 import glob
+import getpass
+import re
 
 # WandbWrapper is a singleton
 wandb = WandbWrapper()
@@ -37,21 +39,19 @@ def evaluate_model(pathway, model, val_dataset_slices, device, opt, ds, mode):
             loss = 0
             orth_loss = None
             phon_loss = None
-            if pathway == 'op2op' or pathway == 'p2o':
+            if pathway == "op2op" or pathway == "p2o":
                 orth_loss = pt.nn.CrossEntropyLoss(ignore_index=4)(
                     logits["orth"], orthography["enc_input_ids"][:, 1:]
                 )
                 loss += orth_loss
-            if pathway == 'op2op' or pathway == 'o2p':
+            if pathway == "op2op" or pathway == "o2p":
                 phon_loss = pt.nn.CrossEntropyLoss(ignore_index=2)(
                     logits["phon"], phonology["targets"]
                 )
                 loss += phon_loss
 
-            more_metrics = {
-                mode + "/loss": loss
-            }
-            if pathway == 'op2op':
+            more_metrics = {mode + "/loss": loss}
+            if pathway == "op2op":
                 more_metrics[mode + "/orth_loss"] = orth_loss
                 more_metrics[mode + "/phon_loss"] = phon_loss
 
@@ -96,12 +96,12 @@ def single_step(
     loss = 0
     orth_loss = None
     phon_loss = None
-    if c.pathway == 'op2op' or c.pathway == 'p2o':
+    if c.pathway == "op2op" or c.pathway == "p2o":
         orth_loss = pt.nn.CrossEntropyLoss(ignore_index=4)(
             logits["orth"], orthography["enc_input_ids"][:, 1:]
         )
         loss += orth_loss
-    if c.pathway == 'op2op' or c.pathway == 'o2p':
+    if c.pathway == "op2op" or c.pathway == "o2p":
         phon_loss = pt.nn.CrossEntropyLoss(ignore_index=2)(
             logits["phon"], phonology["targets"]
         )
@@ -144,7 +144,7 @@ def calculate_accuracies(pathway, logits, orthography, phonology):
 
     output = {}
 
-    if pathway == 'op2op' or pathway == 'p2o':
+    if pathway == "op2op" or pathway == "p2o":
         orth_pred = pt.argmax(logits["orth"], dim=1)
         # Use the orthographic encoder input ids as labels
         # notice we slice from 1: onwards to remove the start token (not predicted)
@@ -168,7 +168,7 @@ def calculate_accuracies(pathway, logits, orthography, phonology):
         output["letter_wise_accuracy"] = letter_wise_accuracy
         output["word_wise_accuracy"] = orth_word_accuracy
 
-    if pathway == 'op2op' or pathway == 'o2p':
+    if pathway == "op2op" or pathway == "o2p":
         # --- Calculate Phonological Accuracy ---
         phon_pred = pt.argmax(logits["phon"], dim=1)
         phon_true = phonology["targets"]
@@ -212,8 +212,9 @@ def generate(model, ds, pathway, device):
     Generative model: Given the first character, generate the following ones
     Question: do we also feed the first phoneme?
     """
-    #word = random.choice(ds.words)  
-    word = 'animals'
+    word = random.choice(ds.words)
+    #word = "animal"
+
     assert word in ds.words, f"word {word} is not in ds.words"
     print("\n\nGENERATE word: ", word)
 
@@ -222,21 +223,18 @@ def generate(model, ds, pathway, device):
     orthography_mask = orth["enc_pad_mask"].to(device)
 
     # Choose a word in the orthography list (ds.words)
-    phon = ds.phonology_tokenizer.encode(
-        [word]
-    )
+    phon = ds.phonology_tokenizer.encode([word])
 
     print("\n\n--------------------------------------------")
     print("INPUT TOKENS for GENERATIVE")
-    print("orth: ", orth["enc_input_ids"])    # tensor([[0, tok2, ..., 1]])
+    print("orth: ", orth["enc_input_ids"])  # tensor([[0, tok2, ..., 1]])
     # [[tensor([31]), tensor([phon2,phon3]), ..., tensor([32])]] # Strange format
     print("phon: ", phon["enc_input_ids"])
     for i, tokens in enumerate(phon["enc_input_ids"][0]):
         print(f"token[{i}]: ", tokens)
     print("--------------------------------------------")
 
-    phonology = [[t.to(device) for t in tokens]
-                 for tokens in phon["enc_input_ids"]]
+    phonology = [[t.to(device) for t in tokens] for tokens in phon["enc_input_ids"]]
     phonology_mask = phon["enc_pad_mask"].to(device)
 
     print("before model")
@@ -248,6 +246,7 @@ def generate(model, ds, pathway, device):
 
     generated_text = ds.character_tokenizer.decode(
         generation["orth"].tolist())[0]
+
     # Log the text in the WandB table
     #generated_text_table.add_data(step, generated_text)
 
@@ -287,7 +286,7 @@ def compute_metrics(
         # "train/lr": opt.state_dict()['param_groups'][0]['lr'],
         mode + "/generated_text_table": generated_text_table,
     }
-    if pathway == 'op2op':
+    if pathway == "op2op":
         metrics[mode + "/orth_loss"] = orth_loss
         metrics[mode + "/phon_loss"] = phon_loss
 
@@ -366,14 +365,14 @@ def validate_single_epoch(c, model, dataset_slices, epoch, single_step_fct):
 
     metrics = metrics[0]
     metrics["time_per_val_step"] = (time.time() - start) / nb_steps
-    metrics["time_per_val_epoch"] = c.n_steps_per_epoch * \
-        metrics["time_per_val_step"]
+    metrics["time_per_val_epoch"] = c.n_steps_per_epoch * metrics["time_per_val_step"]
     return metrics
 
 
 # ----------------------------------------------------------------------
 def save(epoch, c, model, opt, MODEL_PATH, model_id, epoch_num):
-    # Has to be fixed to reflect the additional parameters in the configuration (June 4, 2023)
+    model_file_name = get_model_file_name(model_id, epoch_num)
+
     pt.save(
         {
             "epoch": epoch,
@@ -387,18 +386,21 @@ def save(epoch, c, model, opt, MODEL_PATH, model_id, epoch_num):
             # Good for self-consistency check.
         },
         # GE: pay attention: I replaced epoch by c.epoch (c is configuration)
-        MODEL_PATH + f"/model{model_id}_checkpoint{epoch}.pth",  # HARDCODED
+        MODEL_PATH + "/" + model_file_name,
     )
 
-
 # ----------------------------------------------------------------------
-def get_starting_model_epoch(path, c):
+def get_starting_model_epoch(path, continue_training):
     # Get latest model run information
     # GE: what if model_runs is True and CONTINUE is False? Shouldn't one go to the else branch?
     # What if you want to  start a new run? Must you empty the folder?
     # c.continue: if True, continuation run.
     #             if False, start a new run and update the model_id
-    model_runs = glob.glob(path + "/model[0-9]*")  # GE added model[0-9]
+    user = getpass.getuser()
+    user = re.sub(r'[^a-zA-Z]', '', user)
+    model_runs = glob.glob(path + f"/{user}[0-9]*")  # GE added model[0-9]
+    print("model_runs: ", model_runs)
+    print("sorted model_runs: ", sorted(model_runs))
 
     if model_runs:
         # GE comments
@@ -406,28 +408,36 @@ def get_starting_model_epoch(path, c):
         # integers with leading zeros, or else sorted will not work correctly.
         # Sorting on letters is dangerous since different people might have different sorting conventions
         latest_run = sorted(model_runs)[-1].split("/")[-1]
-        epoch_num = latest_run.split("_")[-1].split(".")[0][10:]
-        model_id = int(latest_run.split("_")[0][5:])
+        print("latest_run: ", latest_run)
+        pattern = r"[a-zA-Z](\d{3})_chkpt(\d{3}).pth"
+        match = re.search(pattern, latest_run)
+        model_id = int(match.group(1)) 
+        epoch_num = int(match.group(2))
+        #epoch_num = latest_run.split("_")[-1].split(".")[0][10:]
+        #model_id = int(latest_run.split("_")[0][5:])
+        print("model_id: ", model_id);
+        print("epoch_num: ", epoch_num);
 
-        if not c.continue_training:
+        if not continue_training:
             model_id += 1
             epoch_num = 0
+            print("NOT CONTINUE TRAINING, new model_id: ", model_id)
     else:
         model_id = 0
         epoch_num = 0
 
+    print("starting point: model_id, epoch_num: ", model_id, epoch_num)
+    print("continue_training: ", continue_training)
     return model_id, epoch_num
 
 # ----------------------------------------------------------------------
-
-
 def setup_model(MODEL_PATH, c, ds, num_layers_dict):
     # Continuation run
     if c.continue_training:
         # GE 2023-05-27: fix checkpoint to allow for more general layer structure
         # The code will not work as is.
-        chkpt = pt.load(
-            MODEL_PATH + f"/model{model_id}_checkpoint{epoch_num}.pth")
+        chkpt = pt.load(MODEL_PATH + f"/model{model_id}_chkpt{epoch_num}.pth")
+        #chkpt = pt.load(MODEL_PATH + f"/model{model_id}_checkpoint{epoch_num}.pth")
         # GE: TODO:  Construct a layer dictionary from the chekpointed data
 
         model = Model(
@@ -517,9 +527,12 @@ def log_embeddings(model, ds):
     phon_embed_table = fill_table(orth_embed_weights)
 
     wandb.log(
-        {"orth_embed_table": orth_embed_table,
-            "phon_embed_table": phon_embed_table}
+        {"orth_embed_table": orth_embed_table, "phon_embed_table": phon_embed_table}
     )
 
+# ----------------------------------------------------------------------
+def get_model_file_name(model_id, epoch_num):
+    user = getpass.getuser()
+    return f"{user}{model_id:03d}_chkpt{epoch_num:03d}.pth"
 
 # ----------------------------------------------------------------------
