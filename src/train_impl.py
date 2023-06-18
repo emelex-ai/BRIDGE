@@ -241,7 +241,7 @@ def generate(model, ds, device):
 
     print("before model")
 
-    generation = model.generate(
+    generation = model.generate("op2op",
         orthography, orthography_mask, phonology, phonology_mask,
         deterministic=True
     )
