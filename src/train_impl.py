@@ -371,12 +371,8 @@ def validate_single_epoch(c, model, dataset_slices, epoch, single_step_fct):
 
 # ----------------------------------------------------------------------
 def save(epoch, c, model, opt, MODEL_PATH, model_id, epoch_num):
-    # Has to be fixed to reflect the additional parameters in the configuration (June 4, 2023)
-    # This file should be defined elsewhere
-    #model_file_name = f"model{model_id:05d}_checkpoint{epoch:05d}.pth"
-    user = getpass.getuser()
-    model_file_name = f"{user}{model_id:03d}_chkpt{epoch:03d}.pth"
-    print("model_file_name: ", model_file_name)
+    model_file_name = get_model_file_name(model_id, epoch_num)
+
     pt.save(
         {
             "epoch": epoch,
@@ -392,7 +388,6 @@ def save(epoch, c, model, opt, MODEL_PATH, model_id, epoch_num):
         # GE: pay attention: I replaced epoch by c.epoch (c is configuration)
         MODEL_PATH + "/" + model_file_name,
     )
-
 
 # ----------------------------------------------------------------------
 def get_starting_model_epoch(path, continue_training):
@@ -414,7 +409,7 @@ def get_starting_model_epoch(path, continue_training):
         # Sorting on letters is dangerous since different people might have different sorting conventions
         latest_run = sorted(model_runs)[-1].split("/")[-1]
         print("latest_run: ", latest_run)
-        pattern = r"\w(\d{3})_chkpt(\d{3}).pth"
+        pattern = r"[a-zA-Z](\d{3})_chkpt(\d{3}).pth"
         match = re.search(pattern, latest_run)
         model_id = int(match.group(1)) 
         epoch_num = int(match.group(2))
@@ -535,5 +530,9 @@ def log_embeddings(model, ds):
         {"orth_embed_table": orth_embed_table, "phon_embed_table": phon_embed_table}
     )
 
+# ----------------------------------------------------------------------
+def get_model_file_name(model_id, epoch_num):
+    user = getpass.getuser()
+    return f"{user}{model_id:03d}_chkpt{epoch_num:03d}.pth"
 
 # ----------------------------------------------------------------------

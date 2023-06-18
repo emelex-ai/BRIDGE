@@ -1,5 +1,6 @@
 from src.wandb_wrapper import WandbWrapper
 from src.train import run_code, run_code_sweep
+import src.train_impl as train_impl
 from src.dataset import ConnTextULDataset
 import argparse
 import torch
@@ -7,9 +8,7 @@ import yaml
 import sys
 from attrdict import AttrDict
 from typing import List, Tuple, Dict, Any, Union
-from src.train_impl import get_starting_model_epoch
 # used to get the user name in a portable manner
-import getpass
 
 wandb = WandbWrapper()
 
@@ -111,12 +110,6 @@ def read_args():
 
     args = parser.parse_args()
 
-    # Arguments on the command line
-    # Works when test==False. When test==True, used_arguments should be tested against the
-    #  hard-coded arguments
-    
-    used_arguments = {arg: value for arg, value in vars(args).items() if getattr(args, arg) != parser.get_default(arg)}
-
     if args.nb_samples <= 0:
         args.nb_samples = None
 
@@ -129,9 +122,6 @@ def read_args():
     if args.sweep != "":
         args.wandb = True
 
-    # Adding --wandb fixes error.
-    # Perhaps add --wandb if sweep is set
-
     assert args.which_dataset == "all" or isinstance(args.which_dataset, int)
 
     assert args.pathway in [
@@ -140,9 +130,7 @@ def read_args():
         "op2op",
     ], "Invalid pathway argument: must be 'o2p', 'p2o', or 'op2op'"
 
-    print("args: ", args)
-    print("read_args: BEFORE RETURN")
-    return args, used_arguments
+    return args
 
 
 # ----------------------------------------------------------------------
@@ -199,7 +187,6 @@ def main(args: Dict):
 
     globals().update({"wandb": wandb})
 
-    print("args.sweep: ", args.sweep)
     if args.sweep != "":
         # Perform parameter sweep
         wandb.set_params(config=config, is_sweep=True, is_wandb_on=True)
@@ -230,13 +217,11 @@ def main(args: Dict):
     else:
         wandb.set_params(config=config, is_sweep=False, is_wandb_on=wandb_enabled)
         wandb.login()
-        # 🐝 initialise a wandb run
-        # I created a new project
-        # I need a run_code_wandb, run_code_sweep, and run_code to handle all cases properly
-        model_id, epoch_num = get_starting_model_epoch(args_dct.model_path, args_dct.continue_training)
-        user = getpass.getuser()
-        wandb_name = f"{user}{model_id:03d}_chkpt{epoch_num:03d}"  
-        # Either initialize wandb or use the wandb wrapper 
+        model_id, epoch_num = train_impl.get_starting_model_epoch(
+                args_dct.model_path, args_dct.continue_training
+        )
+        wandb_name = train_impl.get_model_file_name(model_id, epoch_num)
+
         run = wandb.init(
             name=wandb_name, # Name of run that reflects model and run number
             entity=entity,  # Necessary because I am in multiple teams
@@ -254,9 +239,12 @@ def handle_arguments():
     else:
         test_mode = False
 
-    args, used_args_dct = read_args()
+    args = read_args()
     args_dct = AttrDict(vars(args))
     test_dct = hardcoded_args()
+
+    # When not in test mode, arguments overwrite the default values
+    # When in test mode, arguments overwrite the values in hardcoded_args
 
     # Compute used args by comparing arguments against sys.argv
     # Assumes that all arguments are prepended with '--'

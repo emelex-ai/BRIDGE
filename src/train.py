@@ -1,14 +1,11 @@
 from src.wandb_wrapper import WandbWrapper
 from src.dataset import ConnTextULDataset
+from src.train_impl import get_starting_model_epoch
+from torch.utils.data import DataLoader, Subset
+from typing import List, Tuple, Dict, Any, Union
 import src.train_impl as train_impl
 import torch as pt
 import tqdm
-import sys
-import time
-from torch.utils.data import DataLoader, Subset
-from typing import List, Tuple, Dict, Any, Union
-from src.train_impl import get_starting_model_epoch
-import getpass
 
 wandb = WandbWrapper()
 
@@ -21,8 +18,7 @@ def run_code_sweep(args_dct: Dict):
     print("ENTER run_code_sweep")
     # Use startup data to determine starting epoch. Update the model_id
     model_id, epoch_num = get_starting_model_epoch(args_dct.model_path, args_dct.continue_training)
-    user = getpass.getuser()
-    wandb_name = f"{user}{model_id:03d}_chkpt{epoch_num:03d}"
+    wandb_name = train_impl.get_model_file_name(model_id, epoch_num)
     run = wandb.init(name=wandb_name, config=args_dct)  
 
     c = run.config
