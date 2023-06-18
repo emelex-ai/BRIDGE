@@ -8,6 +8,7 @@ import time
 from torch.utils.data import DataLoader, Subset
 from typing import List, Tuple, Dict, Any, Union
 from src.train_impl import get_starting_model_epoch
+import getpass
 
 wandb = WandbWrapper()
 
@@ -17,15 +18,15 @@ More complex code structure to accomodate running wandb with and without hypersw
 """
 
 def run_code_sweep(args_dct: Dict):
-    print("run_code args_dct: ", args_dct)
+    print("ENTER run_code_sweep")
     # Use startup data to determine starting epoch. Update the model_id
     model_id, epoch_num = get_starting_model_epoch(args_dct.model_path, args_dct.continue_training)
-    wandb_name = f"model{model_id}_checkpoint{epoch_num}"
-    run = wandb.init(name=wandb_name, config=args_dct)  # Why is run empty?
+    user = getpass.getuser()
+    wandb_name = f"{user}{model_id:03d}_chkpt{epoch_num:03d}"
+    run = wandb.init(name=wandb_name, config=args_dct)  
 
-    print("run: ", run)
     c = run.config
-    print("run_code: c: ", c)
+    print("==>> c: ", c)
     ds = ConnTextULDataset(
         c, test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples
     )
@@ -33,8 +34,8 @@ def run_code_sweep(args_dct: Dict):
 
     # c is no longer needed except for possible testing. So no harm done
     # by the next two lines
-    print("resuts: ", results)
     c.metrics = results
+    print("==>>>> after c.metrics = results")
 
 #----------------------------------------------------------------------
 def run_code(run, epoch_num, model_id):
@@ -53,6 +54,7 @@ def run_code(run, epoch_num, model_id):
 #----------------------------------------------------------------------
 def run_code_impl(run, ds, epoch_num, model_id):
     """ """
+    print("ENTER run_code_impl")
     c = run.config
     print("run.config: ", run.config)
 

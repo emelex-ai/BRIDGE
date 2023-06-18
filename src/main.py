@@ -1,5 +1,5 @@
 from src.wandb_wrapper import WandbWrapper
-from src.train import run_code
+from src.train import run_code, run_code_sweep
 from src.dataset import ConnTextULDataset
 import argparse
 import torch
@@ -8,6 +8,8 @@ import sys
 from attrdict import AttrDict
 from typing import List, Tuple, Dict, Any, Union
 from src.train_impl import get_starting_model_epoch
+# used to get the user name in a portable manner
+import getpass
 
 wandb = WandbWrapper()
 
@@ -193,29 +195,38 @@ def main(args: Dict):
 
     #  Parameters specific to W&B
     entity = "emelex"
-    project = "ConnTextUL"
+    project = "GE_ConnTextUL"
 
     globals().update({"wandb": wandb})
 
     print("args.sweep: ", args.sweep)
-    # Perform parameter sweep
     if args.sweep != "":
-        print("wandb_enabled: ", wandb_enabled)
-        wandb.set_params(config=config, is_sweep=True, is_wandb_on=wandb_enabled)
+        # Perform parameter sweep
+        wandb.set_params(config=config, is_sweep=True, is_wandb_on=True)
         wandb.login()
 
         with open(args.sweep, "r") as file:
             sweep_config = yaml.safe_load(file)
 
+        # parameters in sweep with more than a single value
+        keys = []   # List of keys with more than one value in sweep file
+        for k,v in sweep_config["parameters"].items():
+            try:
+                if len(v["values"]) > 1:
+                    keys.append(k)
+            except:
+                # no "values" key
+                pass
+        print("Sweep parameter keys with more than on value: ", keys)
+
         # Update sweep_config with new_params without overwriting existing parameters:
-        # Works. However, there are too many useless vertical lines in the hyperparameter parallel chart.
+        # There are now too many useless vertical lines in the hyperparameter parallel chart.
         for param, value in config.items():
             if param not in sweep_config["parameters"]:
                 sweep_config["parameters"][param] = {"values": [value]}
 
         sweep_id = wandb.sweep(sweep_config, project=project, entity=entity)
-        run_code1 = run_code_sweep(args)
-        wandb.agent(sweep_id, run_code1)
+        wandb.agent(sweep_id, function=lambda: run_code_sweep(args))
     else:
         wandb.set_params(config=config, is_sweep=False, is_wandb_on=wandb_enabled)
         wandb.login()
@@ -223,7 +234,9 @@ def main(args: Dict):
         # I created a new project
         # I need a run_code_wandb, run_code_sweep, and run_code to handle all cases properly
         model_id, epoch_num = get_starting_model_epoch(args_dct.model_path, args_dct.continue_training)
-        wandb_name = f"model{model_id}_checkpoint{epoch_num}"
+        user = getpass.getuser()
+        wandb_name = f"{user}{model_id:03d}_chkpt{epoch_num:03d}"  
+        # Either initialize wandb or use the wandb wrapper 
         run = wandb.init(
             name=wandb_name, # Name of run that reflects model and run number
             entity=entity,  # Necessary because I am in multiple teams
@@ -231,21 +244,7 @@ def main(args: Dict):
             config=config,
         )
         metrics = run_code(run, epoch_num, model_id)
-        """
-        if wandb_enabled:
-            # Add name argument which should be the same as the model file
-            #run = wandb.init(config=config, name=wandb_name)
-            metrics = run_code(args)
-        else:
-            metrics = run_code(args)
-        """
 
-    # Return data useful for testing. I would like the metrics at the last epoch
-    # return_dct = AttrDict({
-    #'config': run.config
-    # })
-
-    # return return_dct
     return 0
 
 #----------------------------------------------------------------------
@@ -271,7 +270,6 @@ def handle_arguments():
         args_dct.update(used_test_dct)
 
     return args_dct
-
 
 # ----------------------------------------------------------------------
 if __name__ == "__main__":

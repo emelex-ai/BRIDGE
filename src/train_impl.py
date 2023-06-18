@@ -6,6 +6,8 @@ import torch as pt
 import time
 import math
 import glob
+import getpass
+import re
 
 # WandbWrapper is a singleton
 wandb = WandbWrapper()
@@ -371,7 +373,10 @@ def validate_single_epoch(c, model, dataset_slices, epoch, single_step_fct):
 def save(epoch, c, model, opt, MODEL_PATH, model_id, epoch_num):
     # Has to be fixed to reflect the additional parameters in the configuration (June 4, 2023)
     # This file should be defined elsewhere
-    model_file_name = f"model{model_id}_checkpoint{epoch}.pth"
+    #model_file_name = f"model{model_id:05d}_checkpoint{epoch:05d}.pth"
+    user = getpass.getuser()
+    model_file_name = f"{user}{model_id:03d}_chkpt{epoch:03d}.pth"
+    print("model_file_name: ", model_file_name)
     pt.save(
         {
             "epoch": epoch,
@@ -396,7 +401,11 @@ def get_starting_model_epoch(path, continue_training):
     # What if you want to  start a new run? Must you empty the folder?
     # c.continue: if True, continuation run.
     #             if False, start a new run and update the model_id
-    model_runs = glob.glob(path + "/model[0-9]*")  # GE added model[0-9]
+    user = getpass.getuser()
+    user = re.sub(r'[^a-zA-Z]', '', user)
+    model_runs = glob.glob(path + f"/{user}[0-9]*")  # GE added model[0-9]
+    print("model_runs: ", model_runs)
+    print("sorted model_runs: ", sorted(model_runs))
 
     if model_runs:
         # GE comments
@@ -404,28 +413,36 @@ def get_starting_model_epoch(path, continue_training):
         # integers with leading zeros, or else sorted will not work correctly.
         # Sorting on letters is dangerous since different people might have different sorting conventions
         latest_run = sorted(model_runs)[-1].split("/")[-1]
-        epoch_num = latest_run.split("_")[-1].split(".")[0][10:]
-        model_id = int(latest_run.split("_")[0][5:])
+        print("latest_run: ", latest_run)
+        pattern = r"\w(\d{3})_chkpt(\d{3}).pth"
+        match = re.search(pattern, latest_run)
+        model_id = int(match.group(1)) 
+        epoch_num = int(match.group(2))
+        #epoch_num = latest_run.split("_")[-1].split(".")[0][10:]
+        #model_id = int(latest_run.split("_")[0][5:])
+        print("model_id: ", model_id);
+        print("epoch_num: ", epoch_num);
 
         if not continue_training:
             model_id += 1
             epoch_num = 0
+            print("NOT CONTINUE TRAINING, new model_id: ", model_id)
     else:
         model_id = 0
         epoch_num = 0
 
+    print("starting point: model_id, epoch_num: ", model_id, epoch_num)
+    print("continue_training: ", continue_training)
     return model_id, epoch_num
 
-
 # ----------------------------------------------------------------------
-
-
 def setup_model(MODEL_PATH, c, ds, num_layers_dict):
     # Continuation run
     if c.continue_training:
         # GE 2023-05-27: fix checkpoint to allow for more general layer structure
         # The code will not work as is.
-        chkpt = pt.load(MODEL_PATH + f"/model{model_id}_checkpoint{epoch_num}.pth")
+        chkpt = pt.load(MODEL_PATH + f"/model{model_id}_chkpt{epoch_num}.pth")
+        #chkpt = pt.load(MODEL_PATH + f"/model{model_id}_checkpoint{epoch_num}.pth")
         # GE: TODO:  Construct a layer dictionary from the chekpointed data
 
         model = Model(

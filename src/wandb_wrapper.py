@@ -70,6 +70,7 @@ class WandbWrapper(Singleton):
         if "config" in kwargs:
             self.config = AttrDict(kwargs["config"])
         if self.is_wandb_on:
+            print("WRAPPER, about to call init()")
             self.run = wandb.init(*kargs, **kwargs)
             return self.run
         else:  # wandb is disabled
