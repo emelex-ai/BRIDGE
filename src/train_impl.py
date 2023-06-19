@@ -37,21 +37,19 @@ def evaluate_model(pathway, model, val_dataset_slices, device, opt, ds, mode):
             loss = 0
             orth_loss = None
             phon_loss = None
-            if pathway == 'op2op' or pathway == 'p2o':
+            if pathway == "op2op" or pathway == "p2o":
                 orth_loss = pt.nn.CrossEntropyLoss(ignore_index=4)(
                     logits["orth"], orthography["enc_input_ids"][:, 1:]
                 )
                 loss += orth_loss
-            if pathway == 'op2op' or pathway == 'o2p':
+            if pathway == "op2op" or pathway == "o2p":
                 phon_loss = pt.nn.CrossEntropyLoss(ignore_index=2)(
                     logits["phon"], phonology["targets"]
                 )
                 loss += phon_loss
 
-            more_metrics = {
-                mode + "/loss": loss
-            }
-            if pathway == 'op2op':
+            more_metrics = {mode + "/loss": loss}
+            if pathway == "op2op":
                 more_metrics[mode + "/orth_loss"] = orth_loss
                 more_metrics[mode + "/phon_loss"] = phon_loss
 
@@ -96,12 +94,12 @@ def single_step(
     loss = 0
     orth_loss = None
     phon_loss = None
-    if c.pathway == 'op2op' or c.pathway == 'p2o':
+    if c.pathway == "op2op" or c.pathway == "p2o":
         orth_loss = pt.nn.CrossEntropyLoss(ignore_index=4)(
             logits["orth"], orthography["enc_input_ids"][:, 1:]
         )
         loss += orth_loss
-    if c.pathway == 'op2op' or c.pathway == 'o2p':
+    if c.pathway == "op2op" or c.pathway == "o2p":
         phon_loss = pt.nn.CrossEntropyLoss(ignore_index=2)(
             logits["phon"], phonology["targets"]
         )
@@ -144,7 +142,7 @@ def calculate_accuracies(pathway, logits, orthography, phonology):
 
     output = {}
 
-    if pathway == 'op2op' or pathway == 'p2o':
+    if pathway == "op2op" or pathway == "p2o":
         orth_pred = pt.argmax(logits["orth"], dim=1)
         # Use the orthographic encoder input ids as labels
         # notice we slice from 1: onwards to remove the start token (not predicted)
@@ -168,7 +166,7 @@ def calculate_accuracies(pathway, logits, orthography, phonology):
         output["letter_wise_accuracy"] = letter_wise_accuracy
         output["word_wise_accuracy"] = orth_word_accuracy
 
-    if pathway == 'op2op' or pathway == 'o2p':
+    if pathway == "op2op" or pathway == "o2p":
         # --- Calculate Phonological Accuracy ---
         phon_pred = pt.argmax(logits["phon"], dim=1)
         phon_true = phonology["targets"]
@@ -206,53 +204,6 @@ def calculate_accuracies(pathway, logits, orthography, phonology):
     return output
 
 
-# ----------------------------------------------------------------------
-def generate(model, ds, pathway, device):
-    """
-    Generative model: Given the first character, generate the following ones
-    Question: do we also feed the first phoneme?
-    """
-    #word = random.choice(ds.words)  
-    word = 'animals'
-    assert word in ds.words, f"word {word} is not in ds.words"
-    print("\n\nGENERATE word: ", word)
-
-    orth = ds.character_tokenizer.encode([word])
-    orthography = orth["enc_input_ids"].to(device)
-    orthography_mask = orth["enc_pad_mask"].to(device)
-
-    # Choose a word in the orthography list (ds.words)
-    phon = ds.phonology_tokenizer.encode(
-        [word]
-    )
-
-    print("\n\n--------------------------------------------")
-    print("INPUT TOKENS for GENERATIVE")
-    print("orth: ", orth["enc_input_ids"])    # tensor([[0, tok2, ..., 1]])
-    # [[tensor([31]), tensor([phon2,phon3]), ..., tensor([32])]] # Strange format
-    print("phon: ", phon["enc_input_ids"])
-    for i, tokens in enumerate(phon["enc_input_ids"][0]):
-        print(f"token[{i}]: ", tokens)
-    print("--------------------------------------------")
-
-    phonology = [[t.to(device) for t in tokens]
-                 for tokens in phon["enc_input_ids"]]
-    phonology_mask = phon["enc_pad_mask"].to(device)
-
-    print("before model")
-
-    generation = model.generate(pathway,
-        orthography, orthography_mask, phonology, phonology_mask,
-        deterministic=True
-    )
-
-    generated_text = ds.character_tokenizer.decode(
-        generation["orth"].tolist())[0]
-    # Log the text in the WandB table
-    #generated_text_table.add_data(step, generated_text)
-
-
-# ----------------------------------------------------------------------
 def compute_metrics(
     pathway,
     logits,
@@ -287,7 +238,7 @@ def compute_metrics(
         # "train/lr": opt.state_dict()['param_groups'][0]['lr'],
         mode + "/generated_text_table": generated_text_table,
     }
-    if pathway == 'op2op':
+    if pathway == "op2op":
         metrics[mode + "/orth_loss"] = orth_loss
         metrics[mode + "/phon_loss"] = phon_loss
 
@@ -366,8 +317,7 @@ def validate_single_epoch(c, model, dataset_slices, epoch, single_step_fct):
 
     metrics = metrics[0]
     metrics["time_per_val_step"] = (time.time() - start) / nb_steps
-    metrics["time_per_val_epoch"] = c.n_steps_per_epoch * \
-        metrics["time_per_val_step"]
+    metrics["time_per_val_epoch"] = c.n_steps_per_epoch * metrics["time_per_val_step"]
     return metrics
 
 
@@ -418,6 +368,7 @@ def get_starting_model_epoch(path, c):
 
     return model_id, epoch_num
 
+
 # ----------------------------------------------------------------------
 
 
@@ -426,8 +377,7 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
     if c.continue_training:
         # GE 2023-05-27: fix checkpoint to allow for more general layer structure
         # The code will not work as is.
-        chkpt = pt.load(
-            MODEL_PATH + f"/model{model_id}_checkpoint{epoch_num}.pth")
+        chkpt = pt.load(MODEL_PATH + f"/model{model_id}_checkpoint{epoch_num}.pth")
         # GE: TODO:  Construct a layer dictionary from the chekpointed data
 
         model = Model(
@@ -517,8 +467,7 @@ def log_embeddings(model, ds):
     phon_embed_table = fill_table(orth_embed_weights)
 
     wandb.log(
-        {"orth_embed_table": orth_embed_table,
-            "phon_embed_table": phon_embed_table}
+        {"orth_embed_table": orth_embed_table, "phon_embed_table": phon_embed_table}
     )
 
 

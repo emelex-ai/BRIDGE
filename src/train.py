@@ -131,7 +131,13 @@ def run_code_impl(run, ds):
         # Log the embeddings
         train_impl.log_embeddings(model, ds)
         print("Call generate")
-        train_impl.generate(model, ds, c.pathway, device)
+        datum = ds[:1]
+        model.generate(c.pathway, 
+                       datum['orthography']['enc_input_ids'],
+                       datum['orthography']['enc_pad_mask'],
+                       datum['phonology']['enc_input_ids'],
+                       datum['phonology']['enc_pad_mask'],
+                       deterministic=True)
         save_fct(epoch)
 
     # 🐝 Close wandb

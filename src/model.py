@@ -2,7 +2,7 @@ import torch
 
 
 class Encoder(torch.nn.Module):
-    def __init__(self, d_model=512, nhead=1, num_layers=1):
+    def __init__(self, d_model, nhead, num_layers):
         super(Encoder, self).__init__()
         # Set FF layer to 4*d_model
         encoder_layer = torch.nn.TransformerEncoderLayer(
@@ -31,7 +31,7 @@ class Encoder(torch.nn.Module):
 
 
 class Decoder(torch.nn.Module):
-    def __init__(self, d_model=512, nhead=1, num_layers=1):
+    def __init__(self, d_model, nhead, num_layers):
         super().__init__()
         decoder_layer = torch.nn.TransformerDecoderLayer(
             d_model=d_model, nhead=nhead, batch_first=True, dim_feedforward=4 * d_model
@@ -106,15 +106,10 @@ class Model(torch.nn.Module):
         # Initial embeddings for orthography, phonology, and position
         # Embedding for orthography
         self.orthography_embedding = torch.nn.Embedding(orth_vocab_size, d_model)
-        self.orth_position_embedding = torch.nn.Embedding(
-            max_orth_seq_len, d_model
-        )  # GE  added an independent pos embedding
+        self.orth_position_embedding = torch.nn.Embedding(max_orth_seq_len, d_model)
         # Embedding for phonology
         self.phonology_embedding = torch.nn.Embedding(phon_vocab_size, d_model)
-        self.phon_position_embedding = torch.nn.Embedding(
-            max_phon_seq_len, d_model
-        )  # GE
-
+        self.phon_position_embedding = torch.nn.Embedding(max_phon_seq_len, d_model)
         self.vocab_sizes = {
             "orth_vocab_size": orth_vocab_size,
             "phon_vocab_size": phon_vocab_size,
@@ -124,7 +119,7 @@ class Model(torch.nn.Module):
         self.max_orth_seq_len = max_orth_seq_len
         self.max_phon_seq_len = max_phon_seq_len
 
-        # A 1×1×d_model tensor of model parameters, rescaled by √d_model
+        # A 1 × d_embedding × d_model tensor of model parameters, rescaled by √d_model
         self.global_embedding = torch.nn.Parameter(
             torch.randn((1, self.d_embedding, self.d_model)) / self.d_model**0.5,
             requires_grad=True,
@@ -442,23 +437,6 @@ class Model(torch.nn.Module):
             orth_token_logits = self.linear_orthography_decoder(orth_output)
             orth_token_logits = orth_token_logits.transpose(1, 2)
             return {"orth": orth_token_logits}
-        """
-        ======================
-
-                if deterministic:
-                    new_phonology_vec = last_token_probs[1][:, 1] > 0.5
-                    new_phonology_tokens = torch.where(new_phonology_vec)[1]
-                else:
-                    new_phonology_vec = torch.bernoulli(
-                        last_token_probs[1][:, 1])
-                    if new_phonology_vec.eq(0).all():
-                        new_phonology_vec[0, 32] = 1
-                    new_phonology_tokens = torch.where(new_phonology_vec)[
-                        1
-                    ]
-
-        ======================
-        """
 
     def ortho_sample(self, last_token_probs, deterministic):
         if deterministic:
