@@ -37,3 +37,13 @@ May 30, 2023
 2023-06-04
  --wandb (no sweep) works
  --wandb --sweep sweep5.yaml works.
+----------------------------------------------------------------------
+2023-06-17
+Model names are user[0-9]{3}_chkpt[0-9]{3} where user is a user names with all '0-9_' removed. 
+The removal is to prevent any issues with separating the name from the model_id. 
+
+Currently, I am not able to restart a simulation. 
+
+The model names are correct for --wandb and without wandb. 
+Next: work on sweeps. 
+----------------------------------------------------------------------
