@@ -162,13 +162,14 @@ def run_code_impl(run, ds, epoch_num, model_id):
     # 2) I could log the table every epoch, and then I have multiple tables. 
     # Let us do both
     """
-
+    """
     fields = {"x": "iii", "y": "height", "color": "line_id" }
     data_single = []
     table_single = wandb.Table(data=[], columns=["myepoch", "random", "line_id"])
     # Not sure how this works. Is this the only way to define fields?
     my_custom_line_chart = wandb.plot_table(vega_spec_name="erlebacher/GE_multi_line_plot",
         data_table=table_single, fields=fields)
+    """
 
     metrics: List[Dict] = [{}]
 
@@ -184,14 +185,6 @@ def run_code_impl(run, ds, epoch_num, model_id):
         train_impl.log_embeddings(model, ds)
         print("Call generate")
         datum = ds[:1]
-        model.generate(
-            c.pathway,
-            datum["orthography"]["enc_input_ids"],
-            datum["orthography"]["enc_pad_mask"],
-            datum["phonology"]["enc_input_ids"],
-            datum["phonology"]["enc_pad_mask"],
-            deterministic=True,
-        )
         save_fct(epoch)
 
         # Preparation for enhanced plotting on wandb
