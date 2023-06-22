@@ -51,13 +51,13 @@ class MyPlot:
         self.config = config
 
     def histogram(self, *kargs, **kwargs):
-        pass
+        return 0
 
     def line(self, *kargs, **kwargs):
-        pass
+        return 0
 
     def scatter(self, *kargs, **kwargs):
-        pass
+        return 0
 
 
 class WandbWrapper(Singleton):
@@ -74,6 +74,7 @@ class WandbWrapper(Singleton):
         self.my_run = MyRun()
         self.my_table = MyTable()
         self.my_plot = MyPlot()
+        self.plot = self.my_plot
         self.run = None
 
     def set_params(self, is_wandb_on=False, is_sweep=False, config=None):
@@ -85,6 +86,10 @@ class WandbWrapper(Singleton):
         return self
 
     def get_real_wandb(self):
+        """ 
+        Return the "real" wandb reference 
+        Only use if wandb is enabled
+        """
         return wandb
 
     def init(self, *kargs, **kwargs):
@@ -111,19 +116,29 @@ class WandbWrapper(Singleton):
         else:
             return self.my_table
 
-    """
-    def plot(self, *kargs, **kwargs):
+    def plot_table(self, *kargs, **kwargs):
         if self.is_wandb_on and self.run:
-            return wandb.Plot(*kargs, **kwargs)  
+            return wandb.plot_table(*kargs, **kwargs)  
         else:
-            return self.my_table
-    """
-        
-    def Histogram(self, *kargs, **kwargs):
+            return self.my_plot  # could return anything I think
+
+    def finish(self):
         if self.is_wandb_on and self.run:
-            return wandb.Histogram(*kargs, **kwargs) 
+            self.run.finish()
         else:
-            return self.my_table  # empty proxy
+            return self.my_run.finish()
+
+    def login(self):
+        if self.is_wandb_on and self.run:
+            wandb.login()
+
+    def save(self):
+        if self.is_wandb_on and self.run:
+            self.run.save()
+
+    """
+    # Not required  since only called if --sweep is set, 
+    # in which case wandb is activated
 
     def sweep(self, *kargs, **kwargs):
         if len(kargs) > 0:
@@ -138,17 +153,4 @@ class WandbWrapper(Singleton):
     def agent(self, *kargs, **kwargs):
         if self.is_wandb_on and self.run and self.is_sweep:
             return wandb.agent(*kargs, **kwargs)
-
-    def finish(self):
-        if self.is_wandb_on and self.run:
-            self.run.finish()
-        else:
-            return self.my_run.finish()
-
-    def save(self):
-        if self.is_wandb_on and self.run:
-            self.run.save()
-
-    def login(self):
-        if self.is_wandb_on and self.run:
-            wandb.login()
+    """
