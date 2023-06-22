@@ -42,6 +42,23 @@ class MyTable:
     def add_data(self, *kargs, **kwargs):
         pass
 
+class MyPlot:
+    """
+    An object to return when calling wandb.Table()
+    """
+
+    def __init__(self, config=None):
+        self.config = config
+
+    def histogram(self, *kargs, **kwargs):
+        pass
+
+    def line(self, *kargs, **kwargs):
+        pass
+
+    def scatter(self, *kargs, **kwargs):
+        pass
+
 
 class WandbWrapper(Singleton):
     """
@@ -56,6 +73,7 @@ class WandbWrapper(Singleton):
     def __init__(self):
         self.my_run = MyRun()
         self.my_table = MyTable()
+        self.my_plot = MyPlot()
         self.run = None
 
     def set_params(self, is_wandb_on=False, is_sweep=False, config=None):
@@ -65,6 +83,9 @@ class WandbWrapper(Singleton):
 
     def get_wandb(self):
         return self
+
+    def get_real_wandb(self):
+        return wandb
 
     def init(self, *kargs, **kwargs):
         if "config" in kwargs:
@@ -86,13 +107,21 @@ class WandbWrapper(Singleton):
 
     def Table(self, *kargs, **kwargs):
         if self.is_wandb_on and self.run:
-            return wandb.Table(*kargs, **kwargs)  # Recursion. Why?
+            return wandb.Table(*kargs, **kwargs) 
         else:
             return self.my_table
+
+    """
+    def plot(self, *kargs, **kwargs):
+        if self.is_wandb_on and self.run:
+            return wandb.Plot(*kargs, **kwargs)  
+        else:
+            return self.my_table
+    """
         
     def Histogram(self, *kargs, **kwargs):
         if self.is_wandb_on and self.run:
-            return wandb.Histogram(*kargs, **kwargs)  # Recursion. Why?
+            return wandb.Histogram(*kargs, **kwargs) 
         else:
             return self.my_table  # empty proxy
 
