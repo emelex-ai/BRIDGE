@@ -8,6 +8,7 @@ import yaml
 import sys
 from attrdict import AttrDict
 from typing import List, Tuple, Dict, Any, Union
+
 # used to get the user name in a portable manner
 
 wandb = WandbWrapper()
@@ -16,6 +17,9 @@ wandb = WandbWrapper()
 def read_args():
     parser = argparse.ArgumentParser(description="Train a ConnTextUL model")
 
+    parser.add_argument(
+        "--project", type=str, required=True, help="Project name (no default)"
+    )
     parser.add_argument("--num_epochs", type=int, default=100, help="Number of epochs")
     parser.add_argument(
         "--batch_size_train", type=int, default=32, help="Train batch size"
@@ -156,8 +160,8 @@ def hardcoded_args():
     dct.model_path = "./models"
     dct.which_dataset = 100
     dct.test = True
-    dct.pathway = 'op2op'
-    # wandb should always be set through the command line. False by default. 
+    dct.pathway = "op2op"
+    # wandb should always be set through the command line. False by default.
     dct.sweep = ""
 
     torch.manual_seed(dct.seed)
@@ -183,7 +187,7 @@ def main(args: Dict):
 
     #  Parameters specific to W&B
     entity = "emelex"
-    project = "GE_ConnTextUL"
+    project = args.project  # "GE_ConnTextUL"
 
     globals().update({"wandb": wandb})
 
@@ -196,8 +200,8 @@ def main(args: Dict):
             sweep_config = yaml.safe_load(file)
 
         # parameters in sweep with more than a single value
-        keys = []   # List of keys with more than one value in sweep file
-        for k,v in sweep_config["parameters"].items():
+        keys = []  # List of keys with more than one value in sweep file
+        for k, v in sweep_config["parameters"].items():
             try:
                 if len(v["values"]) > 1:
                     keys.append(k)
@@ -218,12 +222,12 @@ def main(args: Dict):
         wandb.set_params(config=config, is_sweep=False, is_wandb_on=wandb_enabled)
         wandb.login()
         model_id, epoch_num = train_impl.get_starting_model_epoch(
-                args_dct.model_path, args_dct.continue_training
+            args_dct.model_path, args_dct.continue_training
         )
         wandb_name = train_impl.get_model_file_name(model_id, epoch_num)
 
         run = wandb.init(
-            name=wandb_name, # Name of run that reflects model and run number
+            name=wandb_name,  # Name of run that reflects model and run number
             entity=entity,  # Necessary because I am in multiple teams
             project=project,
             config=config,
@@ -232,9 +236,10 @@ def main(args: Dict):
 
     return 0
 
-#----------------------------------------------------------------------
+
+# ----------------------------------------------------------------------
 def handle_arguments():
-    if '--test' in sys.argv:
+    if "--test" in sys.argv:
         test_mode = True
     else:
         test_mode = False
@@ -248,7 +253,7 @@ def handle_arguments():
 
     # Compute used args by comparing arguments against sys.argv
     # Assumes that all arguments are prepended with '--'
-    used_test_keys = [k for k in vars(args).keys() if '--'+k in sys.argv]
+    used_test_keys = [k for k in vars(args).keys() if "--" + k in sys.argv]
     used_test_dct = {k: args_dct[k] for k in used_test_keys}
 
     if test_mode == True:
@@ -259,9 +264,9 @@ def handle_arguments():
 
     return args_dct
 
+
 # ----------------------------------------------------------------------
 if __name__ == "__main__":
-
     args_dct = handle_arguments()
     for k, v in args_dct.items():
         print(f"{k} ==> {v}")
@@ -269,4 +274,3 @@ if __name__ == "__main__":
     status = main(args_dct)
     if status == 0:
         print("Return from main: No errors")
-
