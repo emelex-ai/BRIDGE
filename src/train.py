@@ -185,6 +185,16 @@ def run_code_impl(run, ds, epoch_num, model_id):
         train_impl.log_embeddings(model, ds)
         print("Call generate")
         datum = ds[:1]
+
+        model.generate(
+            c.pathway,
+            datum["orthography"]["enc_input_ids"],
+            datum["orthography"]["enc_pad_mask"],
+            datum["phonology"]["enc_input_ids"],
+            datum["phonology"]["enc_pad_mask"],
+            deterministic=True,
+        )
+
         save_fct(epoch)
 
         # Preparation for enhanced plotting on wandb
