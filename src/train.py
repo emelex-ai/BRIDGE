@@ -4,8 +4,11 @@ from src.train_impl import get_starting_model_epoch
 from torch.utils.data import DataLoader, Subset
 from typing import List, Tuple, Dict, Any, Union
 import src.train_impl as train_impl
+import src.plot_impl as plot_impl
 import torch as pt
 import tqdm
+import random
+import math
 
 wandb = WandbWrapper()
 
@@ -14,15 +17,16 @@ wandb = WandbWrapper()
 More complex code structure to accomodate running wandb with and without hypersweeps
 """
 
+
 def run_code_sweep(args_dct: Dict):
-    print("ENTER run_code_sweep")
     # Use startup data to determine starting epoch. Update the model_id
-    model_id, epoch_num = get_starting_model_epoch(args_dct.model_path, args_dct.continue_training)
+    model_id, epoch_num = get_starting_model_epoch(
+        args_dct.model_path, args_dct.continue_training
+    )
     wandb_name = train_impl.get_model_file_name(model_id, epoch_num)
-    run = wandb.init(name=wandb_name, config=args_dct)  
+    run = wandb.init(name=wandb_name, config=args_dct)
 
     c = run.config
-    print("==>> c: ", c)
     ds = ConnTextULDataset(
         c, test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples
     )
@@ -31,12 +35,11 @@ def run_code_sweep(args_dct: Dict):
     # c is no longer needed except for possible testing. So no harm done
     # by the next two lines
     c.metrics = results
-    print("==>>>> after c.metrics = results")
 
-#----------------------------------------------------------------------
+
+# ----------------------------------------------------------------------
 def run_code(run, epoch_num, model_id):
     c = run.config
-    print("run_code(): c: ", c)
     ds = ConnTextULDataset(
         c, test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples
     )
@@ -47,7 +50,8 @@ def run_code(run, epoch_num, model_id):
     print("resuts: ", results)
     return c.metrics
 
-#----------------------------------------------------------------------
+
+# ----------------------------------------------------------------------
 def run_code_impl(run, ds, epoch_num, model_id):
     """ """
     print("ENTER run_code_impl")
@@ -83,7 +87,7 @@ def run_code_impl(run, ds, epoch_num, model_id):
     # TODO: Store the model name in the config dictionary?
 
     # Now called from main
-    #model_id, epoch_num = train_impl.get_starting_model_epoch(MODEL_PATH, c.continue_training)
+    # model_id, epoch_num = train_impl.get_starting_model_epoch(MODEL_PATH, c.continue_training)
 
     # A number for WandB:
     c.n_steps_per_epoch = len(train_dataset_slices)
@@ -92,7 +96,7 @@ def run_code_impl(run, ds, epoch_num, model_id):
 
     generated_text_table = wandb.Table(columns=["Step", "Generated Output"])
     run.watch(model, log="all", log_freq=100)
-    #run.finish()  # Call not needed for sweeps. SHould be use for non-sweeps. 
+    # run.finish()  # Call not needed for sweeps. SHould be use for non-sweeps.
 
     # ----------------------------------------------------------------------
 
@@ -143,11 +147,29 @@ def run_code_impl(run, ds, epoch_num, model_id):
 
     # generate a type hint for list of dict
 
+    """
+    #Preparation for enhanced plotting on wandb
+
+    # Map from the table's columns to the chart's fields
+    if c.wandb:
+        real_wandb = wandb.get_real_wandb()
+        fields = {"x": "iii", "y": "height", "color": "line_id" }
+        data_single = []
+        table_single = real_wandb.Table(data=[], columns=["myepoch", "random", "line_id"])
+        # Not sure how this works. Is this the only way to define fields?
+        my_custom_line_chart = real_wandb.plot_table(vega_spec_name="erlebacher/GE_multi_line_plot",
+            data_table=table_single, fields=fields)
+
+    # 1) I could create a single table after collecting all the data. 
+    # 2) I could log the table every epoch, and then I have multiple tables. 
+    # Let us do both
+    """
+
     metrics: List[Dict] = [{}]
 
     # ==== OUTER TRAINING LOOP =====
     for epoch in pbar:
-        print("************* epoch: ", epoch, " *******************88")
+        #print("************* epoch: ", epoch, " *******************88")
         metrics[0] = train_single_epoch_fct(epoch)
         more_metrics = validate_single_epoch_fct(epoch)
         if c.max_nb_steps < 0:
@@ -155,10 +177,27 @@ def run_code_impl(run, ds, epoch_num, model_id):
         run.log(metrics[0])
         # Log the embeddings
         train_impl.log_embeddings(model, ds)
-        #train_impl.generate(model, ds, c.pathway, device)
         save_fct(epoch)
+
+        """
+        # Preparation for enhanced plotting on wandb
+
+        # Test Vegalite custom charts
+        plot_impl.update_multi_tables(c, epoch, data_single) 
+
+        if c.wandb:  # wandb wrapper cannot handl wandb.plot.line yet.
+            line_plot = real_wandb.plot.line(
+                table_single, x="myepoch", y="random", title="my Line Plot"
+            )
+            histogram = real_wandb.plot.histogram(
+                table_single, value="loss", title="my Histogram"
+            )
+            table_single = wandb.Table(data=data_single, columns=["myepoch", "random", "line_id"])
+            real_wandb.log({"table_single": table_single})
+        """
 
     # 🐝 Close wandb
     return metrics[0]
+
 
 # ----------------------------------------------------------------------
