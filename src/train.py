@@ -151,25 +151,30 @@ def run_code_impl(run, ds, epoch_num, model_id):
     #Preparation for enhanced plotting on wandb
 
     # Map from the table's columns to the chart's fields
-    if c.wandb:
-        real_wandb = wandb.get_real_wandb()
-        fields = {"x": "iii", "y": "height", "color": "line_id" }
-        data_single = []
-        table_single = real_wandb.Table(data=[], columns=["myepoch", "random", "line_id"])
-        # Not sure how this works. Is this the only way to define fields?
-        my_custom_line_chart = real_wandb.plot_table(vega_spec_name="erlebacher/GE_multi_line_plot",
-            data_table=table_single, fields=fields)
+    fields = {"x": "iii", "y": "height", "color": "line_id" }
+    data_single = []
+    table_single = wandb.Table(data=[], columns=["myepoch", "random", "line_id"])
+    # Not sure how this works. Is this the only way to define fields?
+    my_custom_line_chart = wandb.plot_table(vega_spec_name="erlebacher/GE_multi_line_plot",
+        data_table=table_single, fields=fields)
 
     # 1) I could create a single table after collecting all the data. 
     # 2) I could log the table every epoch, and then I have multiple tables. 
     # Let us do both
     """
 
+    fields = {"x": "iii", "y": "height", "color": "line_id" }
+    data_single = []
+    table_single = wandb.Table(data=[], columns=["myepoch", "random", "line_id"])
+    # Not sure how this works. Is this the only way to define fields?
+    my_custom_line_chart = wandb.plot_table(vega_spec_name="erlebacher/GE_multi_line_plot",
+        data_table=table_single, fields=fields)
+
     metrics: List[Dict] = [{}]
 
     # ==== OUTER TRAINING LOOP =====
     for epoch in pbar:
-        #print("************* epoch: ", epoch, " *******************88")
+        # print("************* epoch: ", epoch, " *******************88")
         metrics[0] = train_single_epoch_fct(epoch)
         more_metrics = validate_single_epoch_fct(epoch)
         if c.max_nb_steps < 0:
@@ -179,29 +184,30 @@ def run_code_impl(run, ds, epoch_num, model_id):
         train_impl.log_embeddings(model, ds)
         print("Call generate")
         datum = ds[:1]
-        model.generate(c.pathway, 
-                       datum['orthography']['enc_input_ids'],
-                       datum['orthography']['enc_pad_mask'],
-                       datum['phonology']['enc_input_ids'],
-                       datum['phonology']['enc_pad_mask'],
-                       deterministic=True)
+        model.generate(
+            c.pathway,
+            datum["orthography"]["enc_input_ids"],
+            datum["orthography"]["enc_pad_mask"],
+            datum["phonology"]["enc_input_ids"],
+            datum["phonology"]["enc_pad_mask"],
+            deterministic=True,
+        )
         save_fct(epoch)
 
-        """
         # Preparation for enhanced plotting on wandb
 
+        """
         # Test Vegalite custom charts
-        plot_impl.update_multi_tables(c, epoch, data_single) 
+        plot_impl.update_multi_tables(c, epoch, data_single)
 
-        if c.wandb:  # wandb wrapper cannot handl wandb.plot.line yet.
-            line_plot = real_wandb.plot.line(
-                table_single, x="myepoch", y="random", title="my Line Plot"
-            )
-            histogram = real_wandb.plot.histogram(
-                table_single, value="loss", title="my Histogram"
-            )
-            table_single = wandb.Table(data=data_single, columns=["myepoch", "random", "line_id"])
-            real_wandb.log({"table_single": table_single})
+        line_plot = wandb.plot.line(
+            table_single, x="myepoch", y="random", title="my Line Plot"
+        )
+        histogram = wandb.plot.histogram(
+            table_single, value="loss", title="my Histogram"
+        )
+        table_single = wandb.Table(data=data_single, columns=["myepoch", "random", "line_id"])
+        wandb.log({"table_single": table_single})
         """
 
     # 🐝 Close wandb
