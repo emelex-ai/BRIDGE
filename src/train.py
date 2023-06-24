@@ -186,7 +186,7 @@ def run_code_impl(run, ds, epoch_num, model_id):
         print("Call generate")
         datum = ds[:1]
 
-        model.generate(
+        output = model.generate(
             c.pathway,
             datum["orthography"]["enc_input_ids"],
             datum["orthography"]["enc_pad_mask"],
@@ -194,6 +194,13 @@ def run_code_impl(run, ds, epoch_num, model_id):
             datum["phonology"]["enc_pad_mask"],
             deterministic=True,
         )
+
+        print(len(output['orth_probs']))
+        print(len(output['orth_tokens']))
+        print(len(output['phon_probs']))
+        print(len(output['phon_vecs']))
+        print(len(output['phon_tokens']))
+        print(len(output['global_encoding']))
 
         save_fct(epoch)
 
