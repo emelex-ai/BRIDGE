@@ -143,7 +143,7 @@ def run_code_impl(run, ds, epoch_num, model_id):
         )
 
     def save_fct(epoch):
-        return train_impl.save(epoch, c, model, opt, MODEL_PATH, model_id, epoch_num)
+        return train_impl.save(epoch, c, model, opt, MODEL_PATH, model_id, epoch_num, device)
 
     # generate a type hint for list of dict
 

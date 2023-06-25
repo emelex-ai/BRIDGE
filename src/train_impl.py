@@ -1,6 +1,7 @@
 from src.wandb_wrapper import WandbWrapper, MyRun
 from torch.utils.data import Dataset
 from src.model import Model
+from attrdict import AttrDict  # DEBUGGING
 import random
 import torch as pt
 import time
@@ -8,6 +9,7 @@ import math
 import glob
 import getpass
 import re
+import os
 
 # WandbWrapper is a singleton
 wandb = WandbWrapper()
@@ -75,6 +77,8 @@ def single_step(
     mode,
 ):
     """ """
+    print("Learning rate: ", opt.param_groups[0]["lr"])
+
     batch = ds[batch_slice]
     orthography = batch["orthography"].to(device)
     phonology = batch["phonology"].to(device)
@@ -106,6 +110,9 @@ def single_step(
             logits["phon"], phonology["targets"]
         )
         loss += phon_loss
+    print("phon_loss: ", phon_loss)
+    print("orth_loss: ", orth_loss)
+    print("loss: ", loss)
 
     # How to disable backward computational and gradient accumulation in the validation loop?
     # https://discuss.pytorch.org/t/how-to-disable-backward-computational-and-gradient-accumulation-in-the-validation-loop/120774
@@ -114,6 +121,8 @@ def single_step(
         loss.backward()
         opt.step()
         opt.zero_grad()
+
+    print_weight_norms(model, "weight norms: ")  # Disable when debugging done
 
     # Suggestion: compute cheap metrics every step, more complex metrics every epoch
     metrics = compute_metrics(
@@ -134,6 +143,7 @@ def single_step(
         generated_text_table,
         mode,
     )
+    #metrics = AttrDict({})  # For debugging. Remove. Reinstate about comment later. 
     return metrics
 
 
@@ -280,8 +290,6 @@ def train_single_epoch(c, model, dataset_slices, epoch, single_step_fct):
     nb_steps = 0
     start = time.time()
 
-    print("==> train_single_epoch: nb steps: ", len(list(dataset_slices)))
-
     metrics = [{}]
     for step, batch_slice in enumerate(dataset_slices):
         if c.max_nb_steps > 0 and nb_steps >= c.max_nb_steps:
@@ -325,24 +333,85 @@ def validate_single_epoch(c, model, dataset_slices, epoch, single_step_fct):
 
 
 # ----------------------------------------------------------------------
-def save(epoch, c, model, opt, MODEL_PATH, model_id, epoch_num):
+def load_model(model_path, model_id, epoch_num, device='cpu'):
+    """
+    Load a model from storage.
+    """
+    print("==> enter load_model: ", model_path)
     model_file_name = get_model_file_name(model_id, epoch_num)
+    model_path = os.path.join(model_path, model_file_name)
 
+    chkpt = pt.load(model_path)
+
+    c = chkpt["config"]
+    model = chkpt["model"]
+    model.to(device)  # IS THIS NEEDED if on 'cpu'? 
+
+    # for k, v in model.__dict__.items():
+    # print("load k,v= ", k, v)
+
+    epoch = chkpt["epoch"]  # needed?
+    model_path_load = chkpt["model_path"]  # needed?
+    assert model_path == model_path_load
+
+    # Reconstruct optimizer
+    # opt_type = chkpt["optimizer_type"]
+    # print("load, opt_type: ", opt_type)
+    # opt = opt_type(model.parameters())   # <<< ERROR
+    opt = chkpt["optimizer"]
+
+    # for k, v in opt.__dict__.items():
+    #     print("==> load k,v opt: ", k, v)
+    #for k, v in opt.state_dict().items():
+        #print("==> load k,v opt.state_dict(): ", k, v)
+
+    # Update optimizer parameters
+    # opt_state_dict = chkpt["optimizer_state_dict"]
+    # opt.load_state_dict(opt_state_dict)
+
+    # Import to return the model to the device. Make sure this happens after loading
+    # the optimizer. 
+    #model.to(device)  # Perhaps this should be controlled via an input parameter
+
+    return model, opt, c
+
+
+# ----------------------------------------------------------------------
+def save(epoch, c, model, opt, MODEL_PATH, model_id, epoch_num):
+    """
+    Save a model to storage.
+    """
+    # Moving the model to the cpu first increases portability. Otherwise, the model must
+    # be reloaded to save GPU it was saved from.  Note that there is an additional transfer cost. 
+    #model.to('cpu')  # Perhaps this should be controlled via an input parameter
+
+    model_file_name = get_model_file_name(model_id, epoch_num)
+    model_path = os.path.join(MODEL_PATH, model_file_name)
+    # print("model_path: ", model_path)
+
+    # for k, v in opt.__dict__.items():
+    #     print("==> save k,v opt: ", k, v)
+    #for k, v in opt.state_dict().items():
+        #print("==> save k,v opt.state_dict(): ", k, v)
+
+    # for k, v in model.__dict__.items():
+    # print("save k,v= ", k, v)
+
+    # print("save: ", model_path)
     pt.save(
         {
+            "model_path": model_path,  # ideally, a full path
+            "config": c,
             "epoch": epoch,
-            "batch_size_train": c.batch_size_train,
-            "batch_size_val": c.batch_size_val,
-            "d_model": c.d_model,
-            "nhead": c.nhead,
-            "model": model.state_dict(),
-            "optimizer": opt.state_dict(),
-            # "epoch_num": epoch_num,   # GE: added (recommended): starting epoch.
-            # Good for self-consistency check.
+            # No need for model.state_dict
+            "model": model,  # save all parameters (frozen or not)
+            # "optimizer_state_dict": opt.state_dict(),
+            # "optimizer_type": type(opt),
+            "optimizer": opt,
         },
-        # GE: pay attention: I replaced epoch by c.epoch (c is configuration)
-        MODEL_PATH + "/" + model_file_name,
+        model_path,
     )
+    print("==> return from save")
 
 
 # ----------------------------------------------------------------------
@@ -417,7 +486,8 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
             nhead=c.nhead,
             num_layers_dict=num_layers_dict,  # New, GE, 2023-05-27
         )
-        opt = pt.optim.AdamW(model.parameters(), c.learning_rate)
+        # opt = pt.optim.AdamW(model.parameters(), c.learning_rate)
+        opt = pt.optim.SGD(model.parameters(), c.learning_rate)
 
     return model, opt
 
@@ -489,3 +559,15 @@ def get_model_file_name(model_id, epoch_num):
 
 
 # ----------------------------------------------------------------------
+def compare_state_dicts(state_dict1, state_dict2):
+    # First, compare if they have the same keys
+    if state_dict1.keys() != state_dict2.keys():
+        return False
+
+    # Then, compare the values (tensors) for each key
+    for key in state_dict1.keys():
+        if not pt.allclose(state_dict1[key], state_dict2[key]):
+            return False
+
+    # If all keys and values match, the state_dicts are the same
+    return True
