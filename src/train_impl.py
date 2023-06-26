@@ -77,7 +77,13 @@ def single_step(
     mode,
 ):
     """ """
-    print("Learning rate: ", opt.param_groups[0]["lr"])
+    #print("=================>")
+    #print("Learning rate: ", opt.param_groups[0]["lr"])
+
+    #for m in model.parameters():
+        #print(f"single step, model: {m.requires_grad=}")  # it is True
+        #break
+
 
     batch = ds[batch_slice]
     orthography = batch["orthography"].to(device)
@@ -110,15 +116,26 @@ def single_step(
             logits["phon"], phonology["targets"]
         )
         loss += phon_loss
-    print("phon_loss: ", phon_loss)
-    print("orth_loss: ", orth_loss)
-    print("loss: ", loss)
+    #print("phon_loss: ", phon_loss)
+    #print("orth_loss: ", orth_loss)
+    #print("loss: ", loss)
 
     # How to disable backward computational and gradient accumulation in the validation loop?
     # https://discuss.pytorch.org/t/how-to-disable-backward-computational-and-gradient-accumulation-in-the-validation-loop/120774
 
     if model.training:
+        #print("TRAIN, global embedding: ", model.state_dict()['global_embedding'])
         loss.backward()
+        """
+        for k,v in model.state_dict().items():
+            print(f"=> state_dict: {k=}: {v.requires_grad= }")
+            print(f"=> state_dict: {k=}: {v.grad= }")
+            break
+        for m in model.parameters():
+            print(f"=> param: {m.requires_grad= }")
+            print(f"=> param: {m.grad= }")
+            break
+        """
         opt.step()
         opt.zero_grad()
 
@@ -345,7 +362,10 @@ def load_model(model_path, model_id, epoch_num, device='cpu'):
 
     c = chkpt["config"]
     model = chkpt["model"]
-    model.to(device)  # IS THIS NEEDED if on 'cpu'? 
+
+    print("==> load state_dict.keys: ", (model.state_dict().keys()))
+    print("load, global embedding: ", type(model.state_dict()['global_embedding']))
+    print("load, global embedding.requires_grad: ", model.state_dict()['global_embedding'].requires_grad)
 
     # for k, v in model.__dict__.items():
     # print("load k,v= ", k, v)
@@ -387,6 +407,10 @@ def save(epoch, c, model, opt, MODEL_PATH, model_id, epoch_num):
 
     model_file_name = get_model_file_name(model_id, epoch_num)
     model_path = os.path.join(MODEL_PATH, model_file_name)
+    print("==> save state_dict.keys: ", (model.state_dict().keys()))
+    print("save, global embedding: ", type(model.state_dict()['global_embedding']))
+    print("save, attn: ", type(model.state_dict()['orthography_encoder.transformer_encoder.layers.0.self_attn.in_proj_weight']))
+    print("load, global embedding.requires_grad: ", model.state_dict()['global_embedding'].requires_grad)
     # print("model_path: ", model_path)
 
     # for k, v in opt.__dict__.items():
@@ -476,6 +500,7 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
 
     # Start a new run
     else:
+        print("NEW RUN")
         model = Model(
             len(ds.character_tokenizer),
             len(ds.phonology_tokenizer),
@@ -487,6 +512,10 @@ def setup_model(MODEL_PATH, c, ds, num_layers_dict):
             num_layers_dict=num_layers_dict,  # New, GE, 2023-05-27
         )
         # opt = pt.optim.AdamW(model.parameters(), c.learning_rate)
+        print("model.parameters: ", model.parameters())
+        for m in model.parameters(): 
+            print(m)
+            break
         opt = pt.optim.SGD(model.parameters(), c.learning_rate)
 
     return model, opt
