@@ -1,3 +1,4 @@
+from src.wandb_wrapper import WandbWrapper
 import os
 import shutil
 import pytest
@@ -5,7 +6,11 @@ import getpass
 from attrdict import AttrDict
 from src.train_impl import get_starting_model_epoch, get_model_file_name
 import src.train_impl as train_impl
+from src.train import run_code_impl
 from pathlib import Path
+from pprint import pprint
+from src.main import handle_arguments
+from src.dataset import ConnTextULDataset
 
 """
 Six tests: continue_training == True/False && model_id == None/int/int
@@ -16,7 +21,7 @@ def get_starting_model_epoch(model_path, model_id=None, continue_training=False)
 @pytest.fixture(scope='function')
 def model_path(monkeypatch):
     print("==> enter fixture")
-    def mock_file_name(model_id, epoch_num):
+    def mock_file_name(model_id, epoch_nb):
         """ Same user regardless of actual user """
         return f"erlebach{model_id:05d}_chkpt{epoch_nb:03d}"
 
@@ -71,3 +76,31 @@ def test_restart5(model_path):
     assert epochs_completed == -1  # since continue_training == None
 
 
+def test_runcodes(monkeypatch, model_path):
+    args = "script --num_epochs 5 --test --which_dataset 100 --project proj"
+    monkeypatch.setattr("sys.argv", args.split(" "))
+    c = handle_arguments()
+    c.model_path = model_path
+    pprint(c)
+
+    wandb = WandbWrapper()
+    wandb.set_params(config=c, is_sweep=False, is_wandb_on=False)
+    wandb.login()
+
+    run = wandb.init(
+        name="fake_run", 
+        entity="my_entity",  
+        project=c.project,
+        config=c,
+    )
+
+    ds = ConnTextULDataset(
+        c, test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples
+    )
+    model_id, epoch_num = get_starting_model_epoch(
+        c.model_path, model_id=None, continue_training=c.continue_training
+    )
+    print(f"{model_id=}, {epoch_num=}")
+    metrics, gm = run_code_impl(run, ds, epoch_num, model_id)
+
+#----------------------------------------------------------------------

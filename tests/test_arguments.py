@@ -10,6 +10,7 @@ import sys
 
 def test_arguments_from_cli_1(monkeypatch):
     """Test whether arguments from the command line are set up correctly."""
+    # Script is a dummy variable
     monkeypatch.setattr("sys.argv", ["script", "--num_epochs", "5", "--test", "--project", "proj"])
     arg_dct = handle_arguments()
     print(arg_dct)

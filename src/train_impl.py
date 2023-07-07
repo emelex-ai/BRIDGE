@@ -393,7 +393,7 @@ def save(gm):  # c, model, opt, model_id):
 
     c = gm.c
     assert "epochs_completed" in c, "'epochs_completed' not in c"
-
+    print("gm.model_id: ", gm.model_id)
     model_file_name = get_model_file_name(gm.model_id, c.epochs_completed)
     model_path = os.path.join(c.model_path, model_file_name)
 

@@ -69,10 +69,9 @@ def run_code_impl(run, ds, epoch_num, model_id):
     print(f"ENTER run_code_impl: {model_id=}")
     print(f"ENTER run_code_impl: {epoch_num=}")
     print(f"ENTER {c.model_path=}")
-    raise "error"
 
     # Choose automatically if no argument
-    device = train_impl.get_device('cpu')
+    device = train_impl.get_device("cpu")
 
     num_train = int(len(ds) * c.train_test_split)
 
@@ -106,7 +105,7 @@ def run_code_impl(run, ds, epoch_num, model_id):
     gm.opt = opt
     gm.ds = ds
     gm.model_id = model_id
-    gm.run = run  # Necessary when using wandb 
+    gm.run = run  # Necessary when using wandb
     gm.c = c
     # Attributes specific to this model
     gm.train_dataset_slices = train_dataset_slices
@@ -121,6 +120,7 @@ def run_code_impl(run, ds, epoch_num, model_id):
     # plot_impl.post_plotting_wandb()  # not debugged
 
     # 🐝 Close wandb
-    return metrics[0]
+    return metrics[0], gm
+
 
 # ----------------------------------------------------------------------
