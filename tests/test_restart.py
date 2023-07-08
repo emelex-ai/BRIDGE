@@ -3,8 +3,8 @@ import os
 import shutil
 import pytest
 import getpass
-from attrdict import AttrDict
-from src.train_impl import get_starting_model_epoch, get_model_file_name
+from addict import Dict as AttrDict
+from src.train_impl import get_starting_model_epoch, get_model_file_name, set_seed
 import src.train_impl as train_impl
 from src.train import run_code_impl
 from pathlib import Path
@@ -42,7 +42,8 @@ def model_path(monkeypatch):
     yield  "./models_mock/"
 
     # Tear down the fixture
-    shutil.rmtree("./models_mock")
+    #shutil.rmtree("./models_mock")
+
 #--------------------------------------------------------
 
 def test_restart0(model_path):
@@ -76,11 +77,18 @@ def test_restart5(model_path):
     assert epochs_completed == -1  # since continue_training == None
 
 
+# How can I have arguments on my fixture? 
+# Parametrized fixtures
+#@pytest.fixture(scope='function')
+#def metrics_gm(monkeypatch):
+        #return metrics, gm
+
 def test_runcodes(monkeypatch, model_path):
-    args = "script --num_epochs 5 --test --which_dataset 100 --project proj"
+    args = "script --num_epochs 2 --test --which_dataset 100 --project proj"
     monkeypatch.setattr("sys.argv", args.split(" "))
     c = handle_arguments()
     c.model_path = model_path
+    seed = c.seed
     pprint(c)
 
     wandb = WandbWrapper()
@@ -97,10 +105,32 @@ def test_runcodes(monkeypatch, model_path):
     ds = ConnTextULDataset(
         c, test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples
     )
-    model_id, epoch_num = get_starting_model_epoch(
+    # continue_training == False : create new model_id and set last_epoch_completed to 0
+    # continue_training == True : 
+    #  model_id == None: find highest model_id already run and extract last_epoch_completed 
+    #  model_id is int > 0: find the specified model_id and extract last_epoch_completed
+    model_id, last_epoch_completed = get_starting_model_epoch(
         c.model_path, model_id=None, continue_training=c.continue_training
     )
-    print(f"{model_id=}, {epoch_num=}")
-    metrics, gm = run_code_impl(run, ds, epoch_num, model_id)
+    # last_epoch_completed == 0 since continue_training is False
+    # model_id == 6 since the highest model_id in models_mock is 5. 
+    assert c.continue_training == False
+    assert model_id == 6 and last_epoch_completed == 0
+
+    print(f"==> {model_id=}, {last_epoch_completed=}")
+    """
+    print("==> run.config")
+    pprint(run.config)
+    print("==> c")
+    pprint(c)
+    raise "error"
+    """
+
+    set_seed(c)
+    metrics, gm = run_code_impl(run, ds, last_epoch_completed, model_id)
+
+    # Check that a new file is created in the models_mock/ folder
+    print(f"{model_path=}")
+    assert os.path.exists(c.model_path + "erlebach00006_chkpt002.pth")
 
 #----------------------------------------------------------------------

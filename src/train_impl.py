@@ -1,7 +1,7 @@
 from src.wandb_wrapper import WandbWrapper, MyRun
 from torch.utils.data import Dataset
 from src.model import Model
-from attrdict import AttrDict  # DEBUGGING
+from addict import Dict as AttrDict
 from typing import List, Tuple, Dict, Any, Union
 import random
 from pprint import pprint
@@ -13,6 +13,7 @@ import getpass
 import re
 import os
 import tqdm
+import torch
 
 # WandbWrapper is a singleton
 wandb = WandbWrapper()
@@ -31,12 +32,12 @@ def single_step(
     """
     Docs
     """
-    c = gm.c
+    # c = gm.cc
     ds = gm.ds
     generated_text_table = gm.generated_text_table
 
     model = gm.model
-    device = c.device
+    device = gm.cc.device
     opt = gm.opt
 
     # print("=================>")
@@ -55,7 +56,7 @@ def single_step(
     # then the call to the model could be: model(dataloader.next())  (pseudocode)
     # GE: I do not understand why one inputs decoder input ids into the model
     logits = model(
-        c.pathway,
+        gm.cc.pathway,
         orthography["enc_input_ids"],
         orthography["enc_pad_mask"],
         orthography["dec_input_ids"],
@@ -69,12 +70,12 @@ def single_step(
     loss = 0
     orth_loss = None
     phon_loss = None
-    if c.pathway in ["op2op", "p2o"]:
+    if gm.cc.pathway in ["op2op", "p2o"]:
         orth_loss = pt.nn.CrossEntropyLoss(ignore_index=4)(
             logits["orth"], orthography["enc_input_ids"][:, 1:]
         )
         loss += orth_loss
-    if c.pathway in ["op2op", "o2p"]:
+    if gm.cc.pathway in ["op2op", "o2p"]:
         phon_loss = pt.nn.CrossEntropyLoss(ignore_index=2)(
             logits["phon"], phonology["targets"]
         )
@@ -89,16 +90,6 @@ def single_step(
     if model.training:
         # print("TRAIN, global embedding: ", model.state_dict()['global_embedding'])
         loss.backward()
-        """
-        for k,v in model.state_dict().items():
-            print(f"=> state_dict: {k=}: {v.requires_grad= }")
-            print(f"=> state_dict: {k=}: {v.grad= }")
-            break
-        for m in model.parameters():
-            print(f"=> param: {m.requires_grad= }")
-            print(f"=> param: {m.grad= }")
-            break
-        """
         opt.step()
         opt.zero_grad()
 
@@ -107,7 +98,7 @@ def single_step(
     # Suggestion: compute cheap metrics every step, more complex metrics every epoch
     metrics = compute_metrics(
         gm,
-        c.pathway,
+        gm.cc.pathway,
         logits,
         orthography,
         phonology,
@@ -264,7 +255,7 @@ def average_metrics_over_epoch(all_metrics):
 
 # ----------------------------------------------------------------------
 def train_single_epoch(gm, dataset_slices, epoch):  # , single_step_fct):
-    c = gm.c
+    # c = gm.c
     model = gm.model
     example_ct = [0]
     generated_text_table = gm.generated_text_table
@@ -277,7 +268,7 @@ def train_single_epoch(gm, dataset_slices, epoch):  # , single_step_fct):
 
     metrics = [{}]
     for step, batch_slice in enumerate(dataset_slices):
-        if c.max_nb_steps > 0 and nb_steps >= c.max_nb_steps:
+        if gm.cc.max_nb_steps > 0 and nb_steps >= gm.cc.max_nb_steps:
             break
         metrics[0] = single_step(
             gm, dataset_slices, batch_slice, epoch, step, example_ct
@@ -290,14 +281,14 @@ def train_single_epoch(gm, dataset_slices, epoch):  # , single_step_fct):
     metrics = metrics[0]
     metrics["time_per_train_step"] = (time.time() - start) / nb_steps
     metrics["time_per_train_epoch"] = (
-        c.n_steps_per_epoch * metrics["time_per_train_step"]
+        gm.cc.n_steps_per_epoch * metrics["time_per_train_step"]
     )
     return metrics
 
 
 # ----------------------------------------------------------------------
 def validate_single_epoch(gm, dataset_slices, epoch):  # , single_step_fct):
-    c = gm.c
+    # c = gm.c
     model = gm.model
     example_ct = [0]
 
@@ -315,14 +306,16 @@ def validate_single_epoch(gm, dataset_slices, epoch):  # , single_step_fct):
         metrics[0] = single_step(
             gm, dataset_slices, batch_slice, epoch, step, example_ct
         )
-        if c.max_nb_steps > 0 and nb_steps >= c.max_nb_steps:
+        if gm.cc.max_nb_steps > 0 and nb_steps >= gm.cc.max_nb_steps:
             break
         nb_steps += 1
         print("valid: nb_steps: ", nb_steps)
 
     metrics = metrics[0]
     metrics["time_per_val_step"] = (time.time() - start) / nb_steps
-    metrics["time_per_val_epoch"] = c.n_steps_per_epoch * metrics["time_per_val_step"]
+    metrics["time_per_val_epoch"] = (
+        gm.cc.n_steps_per_epoch * metrics["time_per_val_step"]
+    )
     return metrics
 
 
@@ -366,7 +359,7 @@ def load_model(
     pprint(c)
 
     gm = AttrDict({})
-    gm.c = c
+    gm.cc = c
     gm.opt = opt
     gm.model = model
     gm.model_id = model.id
@@ -381,9 +374,7 @@ def load_model(
 
 
 # ----------------------------------------------------------------------
-# Removed epoch and epoch_num
-# def save(c, model, opt, model_id):
-def save(gm):  # c, model, opt, model_id):
+def save(gm):
     """
     Save a model to storage.
     """
@@ -391,18 +382,24 @@ def save(gm):  # c, model, opt, model_id):
     # be reloaded to save GPU it was saved from.  Note that there is an additional transfer cost.
     # model.to('cpu')  # Perhaps this should be controlled via an input parameter
 
-    c = gm.c
-    assert "epochs_completed" in c, "'epochs_completed' not in c"
+    assert "epochs_completed" in gm.cc, "'epochs_completed' not in c"
+    print("ENTER SAVE")
+    print("dictionary c: ")
+    pprint(gm.cc)
     print("gm.model_id: ", gm.model_id)
-    model_file_name = get_model_file_name(gm.model_id, c.epochs_completed)
-    model_path = os.path.join(c.model_path, model_file_name)
+    print("save <<<<<<")
+    print("nb epochs completed: ", gm.cc.epochs_completed)  # <<< 0
+    model_file_name = get_model_file_name(gm.model_id, gm.cc.epochs_completed)
+    print("model_file_name: ", model_file_name)
+    model_path = os.path.join(gm.cc.model_path, model_file_name)
+    print("model_path: ", model_path)
 
     # c contains epochs_completed
     pt.save(
         {
             # If model_path is a full path, the model cannot be ported elsewhere
             "model_path": model_path,  # ideally, a full path
-            "config": c,
+            "config": gm.cc,
             # No need for model.state_dict if model is saved
             "model": gm.model,  # save all parameters (frozen or not)
             "optimizer": gm.opt,
@@ -458,6 +455,7 @@ def get_starting_model_epoch(model_path, model_id=None, continue_training=False)
         return epochs_completed
 
     if model_id == None:
+        print("1 get_starting_model_epoch, (model_id==None), model_id: ", model_id)
         print(f"==> most_recent_model_id_epoch, {continue_training=}")
         model_id, epochs_completed = most_recent_model_id_epoch()
         print(f"{model_id=}, {epochs_completed=}")
@@ -585,6 +583,8 @@ def log_embeddings(model, ds):
 # ----------------------------------------------------------------------
 def get_model_file_name(model_id, epoch_num):
     user = getpass.getuser()
+    file_name = f"{user}{model_id:05d}_chkpt{epoch_num:03d}.pth"
+    print("before return from model_file_name, file_name: ", file_name)
     return f"{user}{model_id:05d}_chkpt{epoch_num:03d}.pth"
 
 
@@ -639,33 +639,50 @@ def print_model_parameters(model, verbose=False):
 
 # ----------------------------------------------------------------------
 def run_train_val_loop(gm):
-    c = gm.c
+    # c = gm.cc
+
+    print("ENTER run_train_val_loop")
     run = gm.run
     train_dataset_slices = gm.train_dataset_slices
     val_dataset_slices = gm.val_dataset_slices
-    gm.model.to(c.device)
+    gm.model.to(gm.cc.device)
+    pprint(gm)
 
     metrics: List[Dict] = [{}]
-    pbar = create_pbar(c.epochs_completed, c.num_epochs)
+    #print(f"==> run_train_val_loop: {gm.cc.epochs_completed=}, {gm.cc.num_epochs=}")  # 5, 2
+    #print(f"==> run_train_val_loop: {gm.epochs_completed=}, {gm.model_id=}")  # 0, 6
+    # Why is gm.cc.epochs_completed == 5?
+    pbar = create_pbar(gm.epochs_completed, gm.epochs_completed + gm.cc.num_epochs)
+    ##print("\n\npbar: ", pbar)
+    #raise "error"
 
     for epoch in pbar:
+        print(f"****** {epoch=} *******")
         metrics[0] = train_single_epoch(
             gm,
             train_dataset_slices,
             epoch,
         )
+
         more_metrics = validate_single_epoch(
             gm,
             val_dataset_slices,
             epoch,
         )
-        if c.max_nb_steps < 0:
+
+        if gm.cc.max_nb_steps < 0:
             metrics[0].update(more_metrics)
         run.log(metrics[0])
+
         # Log the embeddings
         log_embeddings(gm.model, gm.ds)
         datum = gm.ds[:1]
-        c.epochs_completed = epoch + 1
+        gm.cc.epochs_completed = epoch + 1
+        #print(f"{gm.cc.epochs_completed=}, {epoch=}")
+        #print(f"END epoch loop: {gm.cc.epochs_completed=}")  # = 0. WHY? 
+
+    #pprint(gm.cc)
+    print("SIMULATED 2 epochs!!!")
     save(gm)
 
     return metrics
@@ -688,3 +705,9 @@ def get_device(device=None):
 
 
 # ----------------------------------------------------------------------
+def set_seed(c):
+    """Set the seed for reproducibility"""
+    torch.manual_seed(c.seed)
+
+
+# ----------------------------------------------------------------------\n",

@@ -6,7 +6,7 @@ from typing import List, Tuple, Dict, Any, Union
 import src.train_impl as train_impl
 import src.plot_impl as plot_impl
 import torch as pt
-from attrdict import AttrDict
+from addict import Dict as AttrDict
 from pprint import pprint
 
 # import tqdm
@@ -57,7 +57,8 @@ def run_code(run, epoch_num, model_id):
 
 
 # ----------------------------------------------------------------------
-def run_code_impl(run, ds, epoch_num, model_id):
+#def run_code_impl(run, ds, epoch_num, model_id):
+def run_code_impl(run, ds, epochs_completed, model_id):
     """ """
 
     c = run.config
@@ -66,9 +67,9 @@ def run_code_impl(run, ds, epoch_num, model_id):
     # WHY? model_id 3 and 4 exist. So a new run should have model_id == 5
     #                              A continuation should either be highest model_id or s specified model_id
     #                              If the specified model_id does not exist, the program shoudl not do anything.
-    print(f"ENTER run_code_impl: {model_id=}")
-    print(f"ENTER run_code_impl: {epoch_num=}")
-    print(f"ENTER {c.model_path=}")
+    #print(f"ENTER run_code_impl: {model_id=}")
+    #print(f"ENTER run_code_impl: {epoch_num=}")
+    #print(f"ENTER {c.model_path=}")
 
     # Choose automatically if no argument
     device = train_impl.get_device("cpu")
@@ -100,20 +101,26 @@ def run_code_impl(run, ds, epoch_num, model_id):
 
     # Dictionary to store elements of a model that are generic. This could become a class in the future.
     # This dictionary could eventually become a class
-    gm = general_model = AttrDict({})
+    gm = AttrDict({})
+    gm.cc = c  # Temporary. gm.c = c has issues. 
+
     gm.model = model
     gm.opt = opt
     gm.ds = ds
+    # next two lines based on last file saved and continue_training
     gm.model_id = model_id
+    gm.epochs_completed = epochs_completed 
+
     gm.run = run  # Necessary when using wandb
-    gm.c = c
     # Attributes specific to this model
     gm.train_dataset_slices = train_dataset_slices
     gm.val_dataset_slices = val_dataset_slices
     # Separate table for train and validation data?
     gm.generated_text_table = generated_text_table
 
+
     # plot_impl.pre_plotting_wandb()  # not debugged
+
 
     metrics = train_impl.run_train_val_loop(gm)
 

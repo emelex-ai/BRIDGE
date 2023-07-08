@@ -6,7 +6,7 @@ import argparse
 import torch
 import yaml
 import sys
-from attrdict import AttrDict
+from addict import Dict as AttrDict
 from typing import List, Tuple, Dict, Any, Union
 
 # used to get the user name in a portable manner
@@ -195,9 +195,11 @@ def main(args: Dict):
     project = args.project  # "GE_ConnTextUL"
 
     globals().update({"wandb": wandb})
+    print("==> main, after globals")
 
     if args.sweep != "":
         # Perform parameter sweep
+        print("==> Perform parameter sweep")
         wandb.set_params(config=config, is_sweep=True, is_wandb_on=True)
         wandb.login()
 
@@ -224,13 +226,13 @@ def main(args: Dict):
         sweep_id = wandb.sweep(sweep_config, project=project, entity=entity)
         wandb.agent(sweep_id, function=lambda: run_code_sweep(args))
     else:
+        print("main: do NOT perform parameter sweep")
         wandb.set_params(config=config, is_sweep=False, is_wandb_on=wandb_enabled)
         wandb.login()
         print(f"==> {args_dct.model_path=}")
         model_id, epoch_num = train_impl.get_starting_model_epoch(
             args_dct.model_path, continue_training=args_dct.continue_training
         )
-        raise "error"
         wandb_name = train_impl.get_model_file_name(model_id, epoch_num)
 
         run = wandb.init(
