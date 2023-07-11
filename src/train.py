@@ -57,19 +57,10 @@ def run_code(run, epoch_num, model_id):
 
 
 # ----------------------------------------------------------------------
-#def run_code_impl(run, ds, epoch_num, model_id):
 def run_code_impl(run, ds, epochs_completed, model_id):
     """ """
 
     c = run.config
-    # --continue_training ==> model_id = 2
-    # new run: model_id = 1
-    # WHY? model_id 3 and 4 exist. So a new run should have model_id == 5
-    #                              A continuation should either be highest model_id or s specified model_id
-    #                              If the specified model_id does not exist, the program shoudl not do anything.
-    #print(f"ENTER run_code_impl: {model_id=}")
-    #print(f"ENTER run_code_impl: {epoch_num=}")
-    #print(f"ENTER {c.model_path=}")
 
     # Choose automatically if no argument
     device = train_impl.get_device("cpu")
@@ -118,9 +109,7 @@ def run_code_impl(run, ds, epochs_completed, model_id):
     # Separate table for train and validation data?
     gm.generated_text_table = generated_text_table
 
-
     # plot_impl.pre_plotting_wandb()  # not debugged
-
 
     metrics = train_impl.run_train_val_loop(gm)
 

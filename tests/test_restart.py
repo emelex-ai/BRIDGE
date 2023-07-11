@@ -1,4 +1,6 @@
 from src.wandb_wrapper import WandbWrapper
+from pprint import pprint
+import torch  # (how does this work on github?)
 import os
 import shutil
 import pytest
@@ -8,7 +10,6 @@ from src.train_impl import get_starting_model_epoch, get_model_file_name, set_se
 import src.train_impl as train_impl
 from src.train import run_code_impl
 from pathlib import Path
-from pprint import pprint
 from src.main import handle_arguments
 from src.dataset import ConnTextULDataset
 
@@ -20,15 +21,18 @@ def get_starting_model_epoch(model_path, model_id=None, continue_training=False)
 """
 @pytest.fixture(scope='function')
 def model_path(monkeypatch):
-    print("==> enter fixture")
+    
+    # function to replace get_model_file_name for testing
     def mock_file_name(model_id, epoch_nb):
         """ Same user regardless of actual user """
-        return f"erlebach{model_id:05d}_chkpt{epoch_nb:03d}"
+        file_nm = f"erlebach{model_id:05d}_chkpt{epoch_nb:03d}.pth"
+        print("mock_file_name: ", file_nm)
+        return file_nm
 
     def mock_user():
         return "erlebach"
 
-    monkeypatch.setattr(train_impl, "get_model_file_name", mock_file_name)
+    #monkeypatch.setattr(train_impl, "get_model_file_name", mock_file_name)
     monkeypatch.setattr(getpass, "getuser", mock_user)
     folder_mock = "./models_mock"
     try:
@@ -115,22 +119,110 @@ def test_runcodes(monkeypatch, model_path):
     # last_epoch_completed == 0 since continue_training is False
     # model_id == 6 since the highest model_id in models_mock is 5. 
     assert c.continue_training == False
-    assert model_id == 6 and last_epoch_completed == 0
+    assert model_id == 6   
+    last_epoch_completed = 0
 
-    print(f"==> {model_id=}, {last_epoch_completed=}")
-    """
-    print("==> run.config")
-    pprint(run.config)
-    print("==> c")
-    pprint(c)
-    raise "error"
-    """
+    #print(f"==> {model_id=}, {last_epoch_completed=}")
 
     set_seed(c)
+    print("test_restart, id(c): ", id(c)) 
+    # Inside run_code_impl, there is a line: "c = run.config"
+
     metrics, gm = run_code_impl(run, ds, last_epoch_completed, model_id)
+    c = gm.cc  # Make sure that gg.cc and c are the same.
+    # It might be better if "c" were a singleton. 
+
+    print("test_restart, id(gm): ", id(gm))
+    print("test_restart, id(gm.cc): ", id(gm.cc))  # Same as c = run.config()
+    print(f"1 => {model_id=}")
 
     # Check that a new file is created in the models_mock/ folder
-    print(f"{model_path=}")
     assert os.path.exists(c.model_path + "erlebach00006_chkpt002.pth")
+
+    # Starting from the same simulation, run for 1 epoch twice
+    assert c.continue_training == False
+    model_id = model_id + 1  # new run 6 -> 7
+    last_epoch_completed = 0
+    gm.cc.epochs_completed = 0
+    set_seed(c)
+    gm.cc.num_epochs = 1
+    pprint(gm)
+    print("before run 1 epoch, model_id: ", model_id)
+
+    # Reinialize gm
+    metrics, gm = run_code_impl(run, ds, gm.cc.epochs_completed, model_id)
+    print(f"Ran a first epoch: {gm.cc.epochs_completed=}")
+    assert gm.cc.num_epochs == 1
+    assert gm.cc.epochs_completed == 1
+    print("gm.cc.num_epochs: ", gm.cc.num_epochs)
+    print("after run 1 epoch, model_id: ", model_id)
+    assert model_id == 7  
+    assert os.path.exists(c.model_path + "erlebach00007_chkpt001.pth")
+
+    # Run another epoch (2nd epoch)
+    print(f"about to run 2nd epoch: {gm.cc.epochs_completed=}")
+    gm.cc.continue_training = True
+    assert gm.cc.epochs_completed == 1
+    assert gm.cc.num_epochs == 1 
+    metrics2 = train_impl.run_train_val_loop(gm)
+    assert gm.cc.epochs_completed == 2
+    print("COMPLETED 1 epoch a second time")
+    assert os.path.exists(c.model_path + "erlebach00007_chkpt002.pth")  # FAILED
+    # assert os.path.exists(c.model_path + "erlebach00007_chkpt003.pth")  # FILE EXISTS. WY? 
+    assert model_id == 7  
+
+    model1, _, c1, gm1 = train_impl.load_model(c.model_path, model_id=6, epochs_completed=2);
+    assert gm1.model_id == 6
+    model2, _, c2, gm2 = train_impl.load_model(c.model_path, model_id=7, epochs_completed=2);
+    assert gm2.model_id == 7
+
+    # Read the models saved after two epochs and compare their weights. 
+    train_impl.print_weight_norms(model1, "model1 weight norms: ")  
+    train_impl.print_weight_norms(model2, "model2 weight norms: ")  
+
+    # I might only check first two matrices (to run faster)
+    norm1 = torch.sqrt(sum(torch.norm(w[0], p=2) ** 2 for w in model1.parameters()))
+    norm2 = torch.sqrt(sum(torch.norm(w[0], p=2) ** 2 for w in model2.parameters()))
+    assert norm1 == norm2
+
+    # Run model1 and model2 for two more epochs and check for equality
+    assert gm1.cc.num_epochs == 2
+    assert gm2.cc.num_epochs == 1  
+    assert gm1.cc.epochs_completed == 2  
+    assert gm2.cc.epochs_completed == 2 
+
+    gm1.cc.num_epochs = 2
+    gm2.cc.num_epochs = 2
+
+    set_seed(gm1.cc)
+    print("pprint gm1.cc")
+    pprint(gm1.cc)
+    metrics1 = train_impl.run_train_val_loop(gm1);   # Divide by zero. nb_steps == 0. len(dataset_slices) == 0. WHY?
+    set_seed(gm2.cc)
+    print("pprint gm2.cc")
+    pprint(gm2.cc)
+    metrics2 = train_impl.run_train_val_loop(gm2);
+    norm1 = torch.sqrt(sum(torch.norm(w[0], p=2) ** 2 for w in model1.parameters()))
+    norm2 = torch.sqrt(sum(torch.norm(w[0], p=2) ** 2 for w in model2.parameters()))
+    print("---- gm1.cc")
+    pprint(gm1.cc)
+    print("---- gm2.cc")
+    pprint(gm2.cc)
+    print("----")
+    print(f"{norm1=:14.7e}")
+    print(f"{norm2=:14.7e}")
+    assert norm1 == norm2 #norm1= 1.1248668e+01  #norm2= 1.1248734e+01 (FAILED)
+
+    # I could continue both models for 2 epochs, and check the results. The seed has to be 
+    # rest since I am restarting both from within the same program. 
+
+    print("==================")
+    print(gm1.model.state_dict())
+    print("==================")
+    print(gm2.model.state_dict())
+
+    for p1, p2 in zip(gm1.model.parameters(), gm2.model.parameters()):
+        assert torch.norm(p1) == torch.norm(p2)
+    assert gm1.opt.state_dict() == gm2.opt.state_dict()
 
 #----------------------------------------------------------------------

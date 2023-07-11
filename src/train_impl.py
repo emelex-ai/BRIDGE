@@ -1,6 +1,7 @@
 from src.wandb_wrapper import WandbWrapper, MyRun
 from torch.utils.data import Dataset
 from src.model import Model
+from src.dataset import ConnTextULDataset
 from addict import Dict as AttrDict
 from typing import List, Tuple, Dict, Any, Union
 import random
@@ -266,6 +267,8 @@ def train_single_epoch(gm, dataset_slices, epoch):  # , single_step_fct):
     nb_steps = 0
     start = time.time()
 
+    print("train_single_epoch: len(dataset_slices): ", len(dataset_slices))  # == 0 at some point? HOW? 
+
     metrics = [{}]
     for step, batch_slice in enumerate(dataset_slices):
         if gm.cc.max_nb_steps > 0 and nb_steps >= gm.cc.max_nb_steps:
@@ -344,7 +347,7 @@ def load_model(
 
     model_file_name = get_model_file_name(model_id, epochs_completed)
     model_path = os.path.join(model_path, model_file_name)
-    print(f"Load model: {model_path}")
+    #print(f"Load model: {model_path}")
 
     try:
         chkpt = pt.load(model_path)
@@ -360,17 +363,32 @@ def load_model(
 
     gm = AttrDict({})
     gm.cc = c
-    gm.opt = opt
-    gm.model = model
-    gm.model_id = model.id
+    gm.opt = chkpt['optimizer']
+    gm.model = chkpt['model']
+    gm.model_id = model_id
     # Missing from gm: ds, train_dataset_slices, val_dataset_slices, run, generated_text_table
+
+    # Handle dataset (WHY WASN'T THIS IN NATHAN's original code?)
+    ### c.which_dataset, c.nb_samples, c.test
+    ds = ConnTextULDataset(
+        c, test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples
+    )
+    num_train = int(len(ds) * c.train_test_split)
+    train_dataset_slices, val_dataset_slices = create_data_slices(num_train, c, ds)
+    gm.ds = ds
+    gm.train_dataset_slices = train_dataset_slices
+    gm.val_dataset_slices = val_dataset_slices
+
+    # ISSUE: How is this handled for a continuation run? What if I have to models in the 
+    # same code and am using wandb? What happens to the tables?  NOT CLEAR.
+    gm.generated_text_table = wandb.Table(columns=["Step", "Generated Output"])
+
 
     model_path_load = chkpt["model_path"]  # needed?
     assert model_path == model_path_load
 
-    opt = chkpt["optimizer"]
 
-    return model, opt, c, gm
+    return gm.model, gm.opt, gm.cc, gm
 
 
 # ----------------------------------------------------------------------
@@ -383,16 +401,12 @@ def save(gm):
     # model.to('cpu')  # Perhaps this should be controlled via an input parameter
 
     assert "epochs_completed" in gm.cc, "'epochs_completed' not in c"
-    print("ENTER SAVE")
-    print("dictionary c: ")
-    pprint(gm.cc)
-    print("gm.model_id: ", gm.model_id)
-    print("save <<<<<<")
-    print("nb epochs completed: ", gm.cc.epochs_completed)  # <<< 0
-    model_file_name = get_model_file_name(gm.model_id, gm.cc.epochs_completed)
-    print("model_file_name: ", model_file_name)
+    print(f"before save: {gm.cc.epochs_completed=}")
+    model_file_name = get_model_file_name(gm.model_id, gm.cc.epochs_completed)  # NOT ENTERING THE FUNCTION!!! NOT POSSIBLE
+    print(f"after save: {gm.cc.epochs_completed=}")
+    print(f"save: {model_file_name=}")
     model_path = os.path.join(gm.cc.model_path, model_file_name)
-    print("model_path: ", model_path)
+    print(f"model_path: {model_path}")
 
     # c contains epochs_completed
     pt.save(
@@ -582,6 +596,7 @@ def log_embeddings(model, ds):
 
 # ----------------------------------------------------------------------
 def get_model_file_name(model_id, epoch_num):
+    print("ENTER get_model_file_name")
     user = getpass.getuser()
     file_name = f"{user}{model_id:05d}_chkpt{epoch_num:03d}.pth"
     print("before return from model_file_name, file_name: ", file_name)
@@ -641,22 +656,26 @@ def print_model_parameters(model, verbose=False):
 def run_train_val_loop(gm):
     # c = gm.cc
 
-    print("ENTER run_train_val_loop")
-    run = gm.run
+    #run = gm.run  # run is a global. 
     train_dataset_slices = gm.train_dataset_slices
     val_dataset_slices = gm.val_dataset_slices
     gm.model.to(gm.cc.device)
-    pprint(gm)
+    print("run_train_val_loop: gm.c")
+    print(f"{gm.cc.epochs_completed=}")
 
     metrics: List[Dict] = [{}]
     #print(f"==> run_train_val_loop: {gm.cc.epochs_completed=}, {gm.cc.num_epochs=}")  # 5, 2
     #print(f"==> run_train_val_loop: {gm.epochs_completed=}, {gm.model_id=}")  # 0, 6
     # Why is gm.cc.epochs_completed == 5?
-    pbar = create_pbar(gm.epochs_completed, gm.epochs_completed + gm.cc.num_epochs)
-    ##print("\n\npbar: ", pbar)
-    #raise "error"
+    #print(f"pbar settings: {gm.cc.epochs_completed=}, {gm.cc.num_epochs=}")
+    #print(f".pbar settings: {[gm.cc.epochs_completed, gm.cc.epochs_completed+gm.cc.num_epochs]=}")
+    #pbar = create_pbar(gm.cc.epochs_completed, gm.cc.epochs_completed + gm.cc.num_epochs)
+    #print("pbar iterable: ", list(pbar.iterable))
+    #epochs_completed = gm.cc.epochs_completed
+    print(f"BEFORE epoch loop, {gm.cc.epochs_completed=}")
 
-    for epoch in pbar:
+    #for epoch in pbar:
+    for epoch in range(gm.cc.epochs_completed, gm.cc.epochs_completed+gm.cc.num_epochs):
         print(f"****** {epoch=} *******")
         metrics[0] = train_single_epoch(
             gm,
@@ -677,12 +696,11 @@ def run_train_val_loop(gm):
         # Log the embeddings
         log_embeddings(gm.model, gm.ds)
         datum = gm.ds[:1]
-        gm.cc.epochs_completed = epoch + 1
-        #print(f"{gm.cc.epochs_completed=}, {epoch=}")
-        #print(f"END epoch loop: {gm.cc.epochs_completed=}")  # = 0. WHY? 
+        gm.cc.epochs_completed += 1
+        print(f"INSIDE epoch loop, {gm.cc.epochs_completed=}, {epoch=}")
 
-    #pprint(gm.cc)
-    print("SIMULATED 2 epochs!!!")
+    print(f"END epoch loop: {gm.cc.epochs_completed=}")  # = 0. WHY? 
+
     save(gm)
 
     return metrics
