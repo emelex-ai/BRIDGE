@@ -2,6 +2,7 @@ from addict import Dict as AttrDict
 from pprint import pprint
 import argparse
 import yaml
+import os
 
 #----------------------------------------------------------------------
 def read_args():
@@ -32,6 +33,7 @@ def read_args():
 
     args = parser.parse_args()
 
+    """
     assert args.which_dataset == "all" or isinstance(args.which_dataset, int)
 
     assert args.pathway in [
@@ -39,6 +41,7 @@ def read_args():
         "p2o",
         "op2op",
     ], "Invalid pathway argument: must be 'o2p', 'p2o', or 'op2op'"
+    """
 
     return args
 
@@ -54,16 +57,24 @@ if __name__ == '__main__':
     with open(filenm, "r") as file:
         config = yaml.safe_load(file)
 
+    print("==================")
+    pprint(config)
+    print("==================")
     if os.path.exists("ctul.yaml"):
         with open("ctul.yaml", "r") as file:
             config_local = yaml.safe_load(file)
+            print("\nconfig_local")
+            pprint(config_local)
+            print("===============")
             config.update(config_local)
+            print("\nconfig")
+            pprint(config)
+            print("===============")
 
-    pprint(config)
 
     args = read_args()
 
-    if args.yaml_file_path != "":
+    if args.yaml_file != "":
         if os.path.exists("args.yaml_file"): # And check if it is a file
             with open("args.yaml_file", "r") as file:
                 config_arg = yaml.safe_load(file)
@@ -72,4 +83,7 @@ if __name__ == '__main__':
     args_dct = AttrDict(vars(args))
     config.update(args_dct)
 
+    print("\n Final parameters")
+    pprint(config)
+    print("===============")
 #----------------------------------------------------------------------
