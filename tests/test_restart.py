@@ -81,19 +81,12 @@ def test_restart5(model_path):
     assert epochs_completed == -1  # since continue_training == None
 
 
-# How can I have arguments on my fixture? 
-# Parametrized fixtures
-#@pytest.fixture(scope='function')
-#def metrics_gm(monkeypatch):
-        #return metrics, gm
-
 def test_runcodes(monkeypatch, model_path):
     args = "script --num_epochs 2 --test --which_dataset 100 --project proj"
     monkeypatch.setattr("sys.argv", args.split(" "))
     c = handle_arguments()
     c.model_path = model_path
     seed = c.seed
-    pprint(c)
 
     wandb = WandbWrapper()
     wandb.set_params(config=c, is_sweep=False, is_wandb_on=False)
@@ -109,32 +102,17 @@ def test_runcodes(monkeypatch, model_path):
     ds = ConnTextULDataset(
         c, test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples
     )
-    # continue_training == False : create new model_id and set last_epoch_completed to 0
-    # continue_training == True : 
-    #  model_id == None: find highest model_id already run and extract last_epoch_completed 
-    #  model_id is int > 0: find the specified model_id and extract last_epoch_completed
     model_id, last_epoch_completed = get_starting_model_epoch(
         c.model_path, model_id=None, continue_training=c.continue_training
     )
-    # last_epoch_completed == 0 since continue_training is False
-    # model_id == 6 since the highest model_id in models_mock is 5. 
     assert c.continue_training == False
     assert model_id == 6   
     last_epoch_completed = 0
 
-    #print(f"==> {model_id=}, {last_epoch_completed=}")
-
     set_seed(c)
-    print("test_restart, id(c): ", id(c)) 
-    # Inside run_code_impl, there is a line: "c = run.config"
 
     metrics, gm = run_code_impl(run, ds, last_epoch_completed, model_id)
     c = gm.cc  # Make sure that gg.cc and c are the same.
-    # It might be better if "c" were a singleton. 
-
-    print("test_restart, id(gm): ", id(gm))
-    print("test_restart, id(gm.cc): ", id(gm.cc))  # Same as c = run.config()
-    print(f"1 => {model_id=}")
 
     # Check that a new file is created in the models_mock/ folder
     assert os.path.exists(c.model_path + "erlebach00006_chkpt002.pth")
@@ -146,27 +124,20 @@ def test_runcodes(monkeypatch, model_path):
     gm.cc.epochs_completed = 0
     set_seed(c)
     gm.cc.num_epochs = 1
-    pprint(gm)
-    print("before run 1 epoch, model_id: ", model_id)
 
     # Reinialize gm
     metrics, gm = run_code_impl(run, ds, gm.cc.epochs_completed, model_id)
-    print(f"Ran a first epoch: {gm.cc.epochs_completed=}")
     assert gm.cc.num_epochs == 1
     assert gm.cc.epochs_completed == 1
-    print("gm.cc.num_epochs: ", gm.cc.num_epochs)
-    print("after run 1 epoch, model_id: ", model_id)
     assert model_id == 7  
     assert os.path.exists(c.model_path + "erlebach00007_chkpt001.pth")
 
     # Run another epoch (2nd epoch)
-    print(f"about to run 2nd epoch: {gm.cc.epochs_completed=}")
     gm.cc.continue_training = True
     assert gm.cc.epochs_completed == 1
     assert gm.cc.num_epochs == 1 
     metrics2 = train_impl.run_train_val_loop(gm)
     assert gm.cc.epochs_completed == 2
-    print("COMPLETED 1 epoch a second time")
     assert os.path.exists(c.model_path + "erlebach00007_chkpt002.pth")  # FAILED
     # assert os.path.exists(c.model_path + "erlebach00007_chkpt003.pth")  # FILE EXISTS. WY? 
     assert model_id == 7  
@@ -195,31 +166,15 @@ def test_runcodes(monkeypatch, model_path):
     gm2.cc.num_epochs = 2
 
     set_seed(gm1.cc)
-    print("pprint gm1.cc")
-    pprint(gm1.cc)
     metrics1 = train_impl.run_train_val_loop(gm1);   # Divide by zero. nb_steps == 0. len(dataset_slices) == 0. WHY?
     set_seed(gm2.cc)
-    print("pprint gm2.cc")
-    pprint(gm2.cc)
     metrics2 = train_impl.run_train_val_loop(gm2);
     norm1 = torch.sqrt(sum(torch.norm(w[0], p=2) ** 2 for w in model1.parameters()))
     norm2 = torch.sqrt(sum(torch.norm(w[0], p=2) ** 2 for w in model2.parameters()))
-    print("---- gm1.cc")
-    pprint(gm1.cc)
-    print("---- gm2.cc")
-    pprint(gm2.cc)
-    print("----")
-    print(f"{norm1=:14.7e}")
-    print(f"{norm2=:14.7e}")
     assert norm1 == norm2 #norm1= 1.1248668e+01  #norm2= 1.1248734e+01 (FAILED)
 
     # I could continue both models for 2 epochs, and check the results. The seed has to be 
     # rest since I am restarting both from within the same program. 
-
-    print("==================")
-    print(gm1.model.state_dict())
-    print("==================")
-    print(gm2.model.state_dict())
 
     for p1, p2 in zip(gm1.model.parameters(), gm2.model.parameters()):
         assert torch.norm(p1) == torch.norm(p2)
