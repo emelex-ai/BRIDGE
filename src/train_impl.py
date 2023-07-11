@@ -338,7 +338,7 @@ def load_model(
     user = re.sub(r"[^a-zA-Z]", "", user)
     model_runs = glob.glob(
         model_path + f"/{user}{model_id:05d}*"
-    )  # GE added model[0-9]
+    )  
 
     if epochs_completed < 0:
         model_id, epochs_completed = get_starting_model_epoch(
@@ -347,7 +347,6 @@ def load_model(
 
     model_file_name = get_model_file_name(model_id, epochs_completed)
     model_path = os.path.join(model_path, model_file_name)
-    #print(f"Load model: {model_path}")
 
     try:
         chkpt = pt.load(model_path)
@@ -358,7 +357,6 @@ def load_model(
     c = chkpt["config"]
     model = chkpt["model"]
 
-    print("==> load, c= ")
     pprint(c)
 
     gm = AttrDict({})
@@ -382,12 +380,6 @@ def load_model(
     # ISSUE: How is this handled for a continuation run? What if I have to models in the 
     # same code and am using wandb? What happens to the tables?  NOT CLEAR.
     gm.generated_text_table = wandb.Table(columns=["Step", "Generated Output"])
-
-
-    model_path_load = chkpt["model_path"]  # needed?
-    assert model_path == model_path_load
-
-
     return gm.model, gm.opt, gm.cc, gm
 
 
@@ -400,13 +392,9 @@ def save(gm):
     # be reloaded to save GPU it was saved from.  Note that there is an additional transfer cost.
     # model.to('cpu')  # Perhaps this should be controlled via an input parameter
 
-    assert "epochs_completed" in gm.cc, "'epochs_completed' not in c"
-    print(f"before save: {gm.cc.epochs_completed=}")
-    model_file_name = get_model_file_name(gm.model_id, gm.cc.epochs_completed)  # NOT ENTERING THE FUNCTION!!! NOT POSSIBLE
-    print(f"after save: {gm.cc.epochs_completed=}")
-    print(f"save: {model_file_name=}")
+    # If error not entering, check mockups in tests/
+    model_file_name = get_model_file_name(gm.model_id, gm.cc.epochs_completed) 
     model_path = os.path.join(gm.cc.model_path, model_file_name)
-    print(f"model_path: {model_path}")
 
     # c contains epochs_completed
     pt.save(
@@ -436,18 +424,15 @@ def get_starting_model_epoch(model_path, model_id=None, continue_training=False)
     if continue_training == False:
         model_id = None
 
-    print("==> enter get_starting_model_epoch: model_id: ", model_id)
     user = getpass.getuser()
     user = re.sub(r"[^a-zA-Z]", "", user)
 
     def most_recent_model_id_epoch():
         # Called when model_id == None
-        print("ENTER most_recent_model_id_epoch")
         # if model_id == None, seek most recent run (run with largest model_id)
         # if model_id is an int, seek the run with the specified model id
         model_runs = glob.glob(model_path + f"/{user}*")
         latest_run = sorted(model_runs)[-1].split("/")[-1]
-        print("lastest_run: ", latest_run)
         pattern = r"[a-zA-Z](\d{5})_chkpt(\d{3}).pth"
         match = re.search(pattern, latest_run)
         new_model_id = int(match.group(1))
@@ -469,23 +454,14 @@ def get_starting_model_epoch(model_path, model_id=None, continue_training=False)
         return epochs_completed
 
     if model_id == None:
-        print("1 get_starting_model_epoch, (model_id==None), model_id: ", model_id)
-        print(f"==> most_recent_model_id_epoch, {continue_training=}")
         model_id, epochs_completed = most_recent_model_id_epoch()
-        print(f"{model_id=}, {epochs_completed=}")
-        # raise "error1"
     else:
-        print(f"==> most_recent_epoch, {model_id=}")
-        # If a run with `model_id`` cannot be found, return -1
         epochs_completed = most_recent_epoch(model_id)
-        print(f"{epochs_completed=}")
 
     if not continue_training:
         model_id += 1
         epochs_completed = 0
 
-    # print("starting point: model_id, epochs_completed: ", model_id, epochs_completed)
-    # print("continue_training: ", continue_training)
     return model_id, epochs_completed
 
 
