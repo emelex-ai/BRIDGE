@@ -6,7 +6,7 @@ import argparse
 import torch
 import yaml
 import sys
-from attrdict import AttrDict
+from addict import Dict as AttrDict
 from typing import List, Tuple, Dict, Any, Union
 
 # used to get the user name in a portable manner
@@ -17,6 +17,9 @@ wandb = WandbWrapper()
 def read_args():
     parser = argparse.ArgumentParser(description="Train a ConnTextUL model")
 
+    parser.add_argument(
+        "--device", type=str, default='cpu', help="cpu or gpu device"
+    )
     parser.add_argument(
         "--project", type=str, required=True, help="Project name (no default)"
     )
@@ -144,6 +147,7 @@ def hardcoded_args():
     # Overide progrma args with test dictionary
     # Do not include "test" in function names to avoid interference with pytest.
     dct = AttrDict({})
+    dct.device = 'cpu'
     dct.d_model = 16
     dct.d_embedding = 2
     dct.nhead = 2
@@ -161,6 +165,7 @@ def hardcoded_args():
     dct.which_dataset = 100
     dct.test = True
     dct.pathway = "op2op"
+    dct.epochs_completed = 0
     # wandb should always be set through the command line. False by default.
     dct.sweep = ""
 
@@ -190,9 +195,11 @@ def main(args: Dict):
     project = args.project  # "GE_ConnTextUL"
 
     globals().update({"wandb": wandb})
+    print("==> main, after globals")
 
     if args.sweep != "":
         # Perform parameter sweep
+        print("==> Perform parameter sweep")
         wandb.set_params(config=config, is_sweep=True, is_wandb_on=True)
         wandb.login()
 
@@ -219,10 +226,12 @@ def main(args: Dict):
         sweep_id = wandb.sweep(sweep_config, project=project, entity=entity)
         wandb.agent(sweep_id, function=lambda: run_code_sweep(args))
     else:
+        print("main: do NOT perform parameter sweep")
         wandb.set_params(config=config, is_sweep=False, is_wandb_on=wandb_enabled)
         wandb.login()
+        print(f"==> {args_dct.model_path=}")
         model_id, epoch_num = train_impl.get_starting_model_epoch(
-            args_dct.model_path, args_dct.continue_training
+            args_dct.model_path, continue_training=args_dct.continue_training
         )
         wandb_name = train_impl.get_model_file_name(model_id, epoch_num)
 
@@ -246,6 +255,8 @@ def handle_arguments():
 
     args = read_args()
     args_dct = AttrDict(vars(args))
+    # will be overwritten if loading a saved file
+    args_dct.epochs_completed = 0  
     test_dct = hardcoded_args()
 
     # When not in test mode, arguments overwrite the default values

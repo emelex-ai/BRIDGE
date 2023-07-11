@@ -12,3 +12,5 @@ pip install protobuf==3.20.0 (see GPT4)
 python -m src.main --sweep sweep4.yaml --num_epochs 1 --which_dataset 100
  (why is nb epochs wrong?)
 
+2023-07-08
+Dependencies: torch, addict
