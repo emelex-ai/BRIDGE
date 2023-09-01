@@ -1,7 +1,7 @@
 # Wrapper around wandb to allow user use or not use it
 # Author: G. Erlebacher
 import wandb
-from attrdict import AttrDict  # dot notation for dictionaries
+from addict import Dict as AttrDict
 
 
 class Singleton(object):

@@ -1,4 +1,4 @@
-#from attrdict import AttrDict
+#from addict import Dict as AttrDict
 #import argparse
 #import numpy as np
 #import pytest

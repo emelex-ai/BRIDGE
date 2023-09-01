@@ -4,3 +4,6 @@ An empty __init__.py is necessary inside tests/. Otherwise the code does not run
 A non-empty __init__.py is necessary in unit_test_example/ . Inside __init__.py, 
    `from .my_code import *`
 ----------------------------------------------------------------------
+2023-07-07
+Create a test to run a test for 100 iterations
+----------------------------------------------------------------------

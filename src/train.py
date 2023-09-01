@@ -6,9 +6,12 @@ from typing import List, Tuple, Dict, Any, Union
 import src.train_impl as train_impl
 import src.plot_impl as plot_impl
 import torch as pt
-import tqdm
-import random
-import math
+from addict import Dict as AttrDict
+from pprint import pprint
+
+# import tqdm
+# import random
+# import math
 
 wandb = WandbWrapper()
 
@@ -21,7 +24,7 @@ More complex code structure to accomodate running wandb with and without hypersw
 def run_code_sweep(args_dct: Dict):
     # Use startup data to determine starting epoch. Update the model_id
     model_id, epoch_num = get_starting_model_epoch(
-        args_dct.model_path, args_dct.continue_training
+        args_dct.model_path, model_id=None, continue_training=args_dct.continue_training
     )
     wandb_name = train_impl.get_model_file_name(model_id, epoch_num)
     run = wandb.init(name=wandb_name, config=args_dct)
@@ -40,9 +43,11 @@ def run_code_sweep(args_dct: Dict):
 # ----------------------------------------------------------------------
 def run_code(run, epoch_num, model_id):
     c = run.config
+    print("ENTER run_code")
     ds = ConnTextULDataset(
         c, test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples
     )
+    pprint(c)
     results = run_code_impl(run, ds, epoch_num, model_id)
 
     c.metrics = results
@@ -52,29 +57,13 @@ def run_code(run, epoch_num, model_id):
 
 
 # ----------------------------------------------------------------------
-def run_code_impl(run, ds, epoch_num, model_id):
+def run_code_impl(run, ds, epochs_completed, model_id):
     """ """
-    print("ENTER run_code_impl")
+
     c = run.config
-    print("run.config: ", run.config)
 
-    MODEL_PATH = c.model_path
-
-    if pt.cuda.is_available():
-        device = pt.device("cuda:0")
-    else:
-        device = pt.device("cpu")
-
-    device = "cpu"
-
-    num_layers_dict = {
-        "phon_dec": c.num_layers,
-        "phon_enc": c.num_layers,
-        "orth_dec": c.num_layers,
-        "orth_enc": c.num_layers,
-        "mixing_enc": c.num_layers,
-    }
-    assert c.d_model % c.nhead == 0, "d_model must be evenly divisible by nhead"
+    # Choose automatically if no argument
+    device = train_impl.get_device("cpu")
 
     num_train = int(len(ds) * c.train_test_split)
 
@@ -86,135 +75,48 @@ def run_code_impl(run, ds, epoch_num, model_id):
     # TODO: call this function from within Main. Use to name the run in wandb.
     # TODO: Store the model name in the config dictionary?
 
-    # Now called from main
-    # model_id, epoch_num = train_impl.get_starting_model_epoch(MODEL_PATH, c.continue_training)
-
-    # A number for WandB:
     c.n_steps_per_epoch = len(train_dataset_slices)
 
-    model, opt = train_impl.setup_model(MODEL_PATH, c, ds, num_layers_dict)
+    num_layers_dict = {
+        "phon_dec": c.num_layers,
+        "phon_enc": c.num_layers,
+        "orth_dec": c.num_layers,
+        "orth_enc": c.num_layers,
+        "mixing_enc": c.num_layers,
+    }
+    assert c.d_model % c.nhead == 0, "d_model must be evenly divisible by nhead"
 
+    model, opt = train_impl.setup_model(c, ds, num_layers_dict)
     generated_text_table = wandb.Table(columns=["Step", "Generated Output"])
     run.watch(model, log="all", log_freq=100)
-    # run.finish()  # Call not needed for sweeps. SHould be use for non-sweeps.
 
-    # ----------------------------------------------------------------------
+    # Dictionary to store elements of a model that are generic. This could become a class in the future.
+    # This dictionary could eventually become a class
+    gm = AttrDict({})
+    gm.cc = c  # Temporary. gm.c = c has issues. 
 
-    model.to(device)
-    # print(f"DEBUG: epoch_num = {epoch_num}, c.epoch_nums = {c.num_epochs}")
-    print("c.num_epochs: ", c.num_epochs)
-    pbar = tqdm.tqdm(range(epoch_num, epoch_num + c.num_epochs), position=0)
-    example_ct = [0]
+    gm.model = model
+    gm.opt = opt
+    gm.ds = ds
+    # next two lines based on last file saved and continue_training
+    gm.model_id = model_id
+    gm.epochs_completed = epochs_completed 
 
-    # Function closure
-    def single_step_fct(batch_slice, step, epoch, mode):
-        return train_impl.single_step(
-            c,
-            pbar,
-            model,
-            train_dataset_slices,
-            batch_slice,
-            ds,
-            device,
-            opt,
-            epoch,
-            step,
-            generated_text_table,
-            example_ct,
-            mode,
-        )
+    gm.run = run  # Necessary when using wandb
+    # Attributes specific to this model
+    gm.train_dataset_slices = train_dataset_slices
+    gm.val_dataset_slices = val_dataset_slices
+    # Separate table for train and validation data?
+    gm.generated_text_table = generated_text_table
 
-    def train_single_epoch_fct(epoch):
-        return train_impl.train_single_epoch(
-            c,
-            model,
-            train_dataset_slices,
-            epoch,
-            single_step_fct,
-        )
+    # plot_impl.pre_plotting_wandb()  # not debugged
 
-    def validate_single_epoch_fct(epoch):
-        return train_impl.validate_single_epoch(
-            c,
-            model,
-            val_dataset_slices,
-            epoch,
-            single_step_fct,
-        )
+    metrics = train_impl.run_train_val_loop(gm)
 
-    def save_fct(epoch):
-        return train_impl.save(epoch, c, model, opt, MODEL_PATH, model_id, epoch_num)
-
-    # generate a type hint for list of dict
-
-    """
-    #Preparation for enhanced plotting on wandb
-
-    # Map from the table's columns to the chart's fields
-    fields = {"x": "iii", "y": "height", "color": "line_id" }
-    data_single = []
-    table_single = wandb.Table(data=[], columns=["myepoch", "random", "line_id"])
-    # Not sure how this works. Is this the only way to define fields?
-    my_custom_line_chart = wandb.plot_table(vega_spec_name="erlebacher/GE_multi_line_plot",
-        data_table=table_single, fields=fields)
-
-    # 1) I could create a single table after collecting all the data. 
-    # 2) I could log the table every epoch, and then I have multiple tables. 
-    # Let us do both
-    """
-    """
-    fields = {"x": "iii", "y": "height", "color": "line_id" }
-    data_single = []
-    table_single = wandb.Table(data=[], columns=["myepoch", "random", "line_id"])
-    # Not sure how this works. Is this the only way to define fields?
-    my_custom_line_chart = wandb.plot_table(vega_spec_name="erlebacher/GE_multi_line_plot",
-        data_table=table_single, fields=fields)
-    """
-
-    metrics: List[Dict] = [{}]
-
-    # ==== OUTER TRAINING LOOP =====
-    for epoch in pbar:
-        # print("************* epoch: ", epoch, " *******************88")
-        metrics[0] = train_single_epoch_fct(epoch)
-        more_metrics = validate_single_epoch_fct(epoch)
-        if c.max_nb_steps < 0:
-            metrics[0].update(more_metrics)
-        run.log(metrics[0])
-        # Log the embeddings
-        train_impl.log_embeddings(model, ds)
-        print("Call generate")
-        datum = ds[:1]
-
-        model.generate(
-            c.pathway,
-            datum["orthography"]["enc_input_ids"],
-            datum["orthography"]["enc_pad_mask"],
-            datum["phonology"]["enc_input_ids"],
-            datum["phonology"]["enc_pad_mask"],
-            deterministic=True,
-        )
-
-        save_fct(epoch)
-
-        # Preparation for enhanced plotting on wandb
-
-        """
-        # Test Vegalite custom charts
-        plot_impl.update_multi_tables(c, epoch, data_single)
-
-        line_plot = wandb.plot.line(
-            table_single, x="myepoch", y="random", title="my Line Plot"
-        )
-        histogram = wandb.plot.histogram(
-            table_single, value="loss", title="my Histogram"
-        )
-        table_single = wandb.Table(data=data_single, columns=["myepoch", "random", "line_id"])
-        wandb.log({"table_single": table_single})
-        """
+    # plot_impl.post_plotting_wandb()  # not debugged
 
     # 🐝 Close wandb
-    return metrics[0]
+    return metrics[0], gm
 
 
 # ----------------------------------------------------------------------
