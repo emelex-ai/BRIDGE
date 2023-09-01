@@ -1,3 +1,14 @@
+"""
+This module contains the main function for training a ConnTextUL model. It reads 
+command-line arguments, sets up the training environment, and runs the training 
+loop. The module also defines a function for setting up hardcoded arguments for 
+testing purposes.
+
+Functions:
+- read_args(): Parses command-line arguments and returns a dictionary of arguments.
+- hardcoded_args(): Returns a dictionary of hardcoded arguments for testing purposes.
+- main(args: Dict): Runs the training loop with the given arguments.
+"""
 from src.wandb_wrapper import WandbWrapper
 from src.train import run_code, run_code_sweep
 import src.train_impl as train_impl
@@ -141,7 +152,7 @@ def read_args():
 def hardcoded_args():
     # Parameter values used with test. Should override default arguments,
     # but should be overwritten by the arguments used when invoking the code.
-    # Overide progrma args with test dictionary
+    # Overide program args with test dictionary
     # Do not include "test" in function names to avoid interference with pytest.
     dct = AttrDict({})
     dct.d_model = 16
