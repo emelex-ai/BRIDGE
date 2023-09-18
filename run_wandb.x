@@ -1,4 +1,4 @@
-python -m mainy \
+python -m src.main \
     --nb_samples 96 \
     --num_epochs 10 \
     --num_layers 1 \
@@ -6,3 +6,5 @@ python -m mainy \
     --batch_size_val 32 \
     --d_model 64 \
     --wandb
+
+#python -m mainy \
