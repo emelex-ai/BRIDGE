@@ -1,0 +1,11 @@
+python -m src.main \
+	--which_data 100 \
+    --nb_samples 96 \
+    --num_epochs 20 \
+    --num_layers 1 \
+    --batch_size_train 32 \
+    --batch_size_val 32 \
+    --d_model 64 \
+    --project myGE \
+	--sweep "sweep_nathan.yaml" \
+	--test

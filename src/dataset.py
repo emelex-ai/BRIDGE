@@ -331,6 +331,9 @@ class ConnTextULDataset(Dataset):
             print(f"File {file_path} exists")
             dataset = pd.read_csv(file_path)
 
+        # Remove any NaN from the data (Gordon Erlebacher)
+        dataset.dropna(inplace=True, axis='rows')
+
         # Do not remove duplicate words since we are performing curriculum training
         # Series of all lowercased words
         self.tmp_words = dataset["word_raw"].str.lower()
