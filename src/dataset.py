@@ -17,7 +17,12 @@ DATA_PATH = "./data/"
 # The user can remove the cache folder, which will auto-generate
 CACHE_PATH = os.path.join(DATA_PATH, ".cache")
 
-
+"""
+Class Name: CUDA_Dict
+Class Parameters: device
+    'device' can represent eother a GPU or other hardware where to move data.
+Class Purpose: CUDA_Dict repesents a way to take existing input and move it to the device that is specified.
+"""
 class CUDA_Dict(dict):
     def to(self, device):
         output = {}
@@ -25,52 +30,73 @@ class CUDA_Dict(dict):
             batches = self[key]
             if isinstance(batches, list):
                 try:
+                    # If the batches are a list, move each tensor in the batch to the specified device
                     output[key] = [
                         [val.to(device) for val in batch] for batch in batches
                     ]
                 except:
+                    # If an error occurs, print the batches and raise the error
                     print(f"batches = {batches}")
                     raise
             elif isinstance(batches, torch.Tensor):
+                # If the batches are a single tensor, move it to the specified device
                 output[key] = batches.to(device)
             else:
+                # If the batches are neither a list nor a tensor, raise a TypeError
                 raise TypeError("Must be list or torch tensor")
 
+        # Return the output dictionary
         return output
 
 
+
+"""
+Class Name: CharacterTokenizer
+Class Parameters: list_of_characters 
+    'list_of_characters' represents custom tokens that can be included into the default vocabulary. 
+Class Purpose: The function of this class is both to encode or decode characters presented to it. Using its function 'encode', it encodes the character returning a CUDA dictionary.
+With the function 'decode', it returns a list of integers to then be decoded.
+"""
 class CharacterTokenizer:
     def __init__(self, list_of_characters):
-        # Include custom tokens into vocabulary
+        # Initialize the vocabulary with predefined tokens
         self.vocab = ["[BOS]", "[EOS]", "[CLS]", "[UNK]", "[PAD]"]
+        # Add custom characters to the vocabulary
         self.vocab.extend(list_of_characters)
 
+        # Create two dictionaries for mapping characters to indices and vice versa
         self.char_2_idx, self.idx_2_char = {}, {}
         for i, ch in enumerate(self.vocab):
             self.char_2_idx[ch] = i
             self.idx_2_char[i] = ch
-        # Reuse index from previous for loop to save computation
-        # self.size = i + 1
-        self.size = len(self.vocab)  # more robust
+
+        # Set the size of the vocabulary
+        self.size = len(self.vocab)
 
     def __len__(self):
+        # Return the size of the vocabulary
         return self.size
 
     def encode(self, list_of_strings):
+        # Check if the input is a string or a list of strings
         assert isinstance(list_of_strings, str) or (
             isinstance(list_of_strings, list)
             and all(isinstance(string, str) for string in list_of_strings)
         )
+        # If the input is a string, convert it to a list of strings
         if isinstance(list_of_strings, str):
             list_of_strings = [list_of_strings]
 
+        # Calculate the length of each string in the list
         lengths = [len(string) for string in list_of_strings]
+        # Find the maximum length among all strings
         max_length = max(lengths)
 
-        # Padding function, puts beginning-of-string and end-of-string tokens
-        # on beginning and end of string, after padding the original string
-        # up to max length of string.
-        # This function converts the output to a list rather than string.
+        # Define functions for padding the strings
+        # The padding function adds beginning-of-string and end-of-string tokens
+        # to the beginning and end of the string, respectively.
+        # The string is then padded up to the maximum length of the string.
+        # The output is a list rather than a string.
         enc_pad = (
             lambda string: ["[BOS]"]
             + list(string)
@@ -83,32 +109,39 @@ class CharacterTokenizer:
             + (max_length - len(string)) * ["[PAD]"]
         )
 
+        # Apply the padding function to each string in the list
         list_of_enc_strings = list(map(enc_pad, list_of_strings))
         list_of_dec_strings = list(map(dec_pad, list_of_strings))
 
-        # Initiate encoder tokens tensor as tensor of zeros,
+        # Initialize the encoder tokens tensor as a tensor of zeros
         enc_input_ids = torch.zeros(
             (len(list_of_enc_strings), 2 + max_length), dtype=torch.long
         )
+        # Convert each character in each string to its corresponding index
         for idx, string in enumerate(list_of_enc_strings):
             for jdx, char in enumerate(string):
                 enc_input_ids[idx, jdx] = self.char_2_idx.get(
                     char, 3
                 )  # Default to [UNK]
 
-        # Initiate decoder tokens tensor as tensor of zeros,
+        # Initialize the decoder tokens tensor as a tensor of zeros
         dec_input_ids = torch.zeros(
             (len(list_of_dec_strings), 1 + max_length), dtype=torch.long
         )
+        # Convert each character in each string to its corresponding index
         for idx, string in enumerate(list_of_dec_strings):
             for jdx, char in enumerate(string):
                 dec_input_ids[idx, jdx] = self.char_2_idx.get(
                     char, 3
                 )  # Default to [UNK]
 
+        # Get the index of the [PAD] token
         PAD_TOKEN = self.char_2_idx["[PAD]"]
+        # Create masks for the encoder and decoder tokens
         enc_pad_mask = enc_input_ids == PAD_TOKEN
         dec_pad_mask = dec_input_ids == PAD_TOKEN
+
+        # Return a dictionary containing the encoder and decoder tensors and their corresponding masks
         return CUDA_Dict(
             {
                 "enc_input_ids": enc_input_ids,
@@ -119,10 +152,12 @@ class CharacterTokenizer:
         )
 
     def decode(self, list_of_ints):
+        # Convert each integer in the list to its corresponding character
         outputs = [
             "".join([self.idx_2_char.get(i) for i in ints]) for ints in list_of_ints
         ]
 
+        # Return the list of outputs
         return outputs
 
 
@@ -130,12 +165,18 @@ class CharacterTokenizer:
 # This way, we can just look up the vector instead of calculating it on the fly. That will save time
 # during training.
 
-
+"""
+Class Name: Phonemizer
+Class Parameters: wordlist
+    'wordlist' represents the list of words to be turned into phonems through the phonemizer class and the model as a whole.
+Class Purpose: Phonemizer is a class that is used to calculate all of the phonological vectors that may be present in the dataset ahead of time. 
+If the vectors are already present, then they won't have to be calculated during training, saving much time.
+"""
 class Phonemizer:
     def __init__(self, wordlist):
         self.PAD = 33
 
-        # GE: Why are there more than 34 lines in phonreps.csv?
+        # Load the training data from a CSV file
         self.traindata = Traindata(
             wordlist,
             phonpath="raw/phonreps.csv",
@@ -170,6 +211,7 @@ class Phonemizer:
         del traindata
 
     def __len__(self):
+        # The size of the vocabulary is fixed at 34
         return 34
 
     def encode(self, wordlist):
@@ -201,145 +243,149 @@ class Phonemizer:
             # We then include padding, or indices in the targets to be passed to the 'ignore_index' parameter in the CrossEntropyLoss
             # Since each phonological vector is either on or off, it is a binary classification problem, so valid labels are either 0, or 1.
             # We will include labels of '2' where the padding is in the target vectors
-            # print("targets = ", targets)
             for i in range(len(targets)):
+                # Append the padding tokens to the targets
                 tv = targets[i]
                 targets[i] = torch.cat(
                     (
-                        tv,
+                        targets[i],
                         torch.tensor(
-                            [[2] * 33] * (max_length - 1 - len(tv)), dtype=torch.long
+                            [[2] * 33] * (max_length - 1 - len(targets[i])), dtype=torch.long
                         ),
                     )
                 )
-                # print("len(tv) = ", len(tv))
-                # tv = torch.cat((tv, torch.tensor([[2]*33]*(max_length-len(tv)))))
-                # print("tv = ", tv)
-                # sys.exit()
+            # Create masks for the encoder and decoder tokens
+            enc_pad_mask = torch.tensor(
+                [
+                    [all(val == torch.tensor([self.PAD])) for val in token]
+                    for token in enc_input_ids
+                ]
+            )
+            dec_pad_mask = torch.tensor(
+                [
+                    [all(val == torch.tensor([self.PAD])) for val in token]
+                    for token in dec_input_ids
+                ]
+            )
+            # Ensure that the number of tokens matches the number of boolean values in the mask
+            assert len(enc_input_ids) == len(
+                enc_pad_mask
+            ), f"tokens is length {len(enc_input_ids)}, enc_pad_mask is length {len(enc_pad_mask)}. They must be equal"
+
+            # Return a dictionary containing the encoder and decoder tensors, their corresponding masks, and the targets
+            return CUDA_Dict(
+                {
+                    "enc_input_ids": enc_input_ids,
+                    "enc_pad_mask": enc_pad_mask.bool(),
+                    "dec_input_ids": dec_input_ids,
+                    "dec_pad_mask": dec_pad_mask.bool(),
+                    "targets": torch.stack(targets, 0),
+                }
+            )
         else:
             raise TypeError("encode only accepts lists or a single string as input")
 
-        enc_pad_mask = torch.tensor(
-            [
-                [all(val == torch.tensor([self.PAD])) for val in token]
-                for token in enc_input_ids
-            ]
-        )
-        dec_pad_mask = torch.tensor(
-            [
-                [all(val == torch.tensor([self.PAD])) for val in token]
-                for token in dec_input_ids
-            ]
-        )
-        # dec_pad_mask = torch.tensor([1])
-
-        # Ensure that the number of tokens matches the number of boolean values in the mask
-        assert len(enc_input_ids) == len(
-            enc_pad_mask
-        ), f"tokens is length {len(enc_input_ids)}, enc_pad_mask is length {len(enc_pad_mask)}. They must be equal"
-
-        # Do we need to pad the targets? We do to convert it to a tensor which is needed for the CrossEntropy criterion
-        return CUDA_Dict(
-            {
-                "enc_input_ids": enc_input_ids,
-                "enc_pad_mask": enc_pad_mask.bool(),
-                "dec_input_ids": dec_input_ids,
-                "dec_pad_mask": dec_pad_mask.bool(),
-                "targets": torch.stack(targets, 0),
-            }
-        )
-
     def decode(self, tokens):
+        # Initialize an output tensor of zeros
         output = torch.zeros(len(tokens), 33)
+        # For each token in the input, set the corresponding index in the output tensor to 1
         for i, token in enumerate(tokens):
             output[i, token] = 1
 
+        # Return the output tensor
         return output
 
+"""
+Class Name: ConnTextULDataset
+Class Purpose: This class is designed to handle and process a dataset for the Emelex Deep Learning model. It reads and prepares orthographic and phonological data, tokenizes the data, and provides methods to access the data.
+Class Parameters:
+    config (dict): A dictionary containing configuration parameters for the dataset.
+    test (bool): A boolean indicating whether the dataset is for testing. Default is False.
+    nb_rows (int): The number of rows to read from the dataset. Default is None, which means all rows will be read.
+    which_dataset (int): The index of the dataset to use. Default is 5.
 
+"""
 class ConnTextULDataset(Dataset):
-    """
-    ConnTextULDataset
-
-    Dataset of
-    For Matt's Phonological Feature Vectors, we will use (31, 32, 33) to represent ('[BOS]', '[EOS]', '[PAD]')
-    """
-
-    """
-  GE: only read smaller datasets in --test mode. But then, how can I make arguments override my test parameters? 
-  """
-
-    # ----------------------------------------------------------------------
     def __init__(self, config, test=False, nb_rows=None, which_dataset=5):
-        # Check cache folder. Perform this check in test suite.
-
+        # Store the configuration and dataset parameters
         self.config = config
         self.which_dataset = which_dataset
         self.nb_rows = nb_rows
+
+        # Read the orthographic and phonological data
         self.read_orthographic_data()
         self.read_phonology_data()
 
-        # self.listed_words = [word for word in self.words]
-
-        # Notice I created a tokenizer in this class.
-        # We can use it to tokenize word output of __getitem__ below,
-        # although I haven't implemented yet.
+        # Create a character tokenizer
         list_of_characters = sorted(set([c for word in self.tmp_words for c in word]))
         self.character_tokenizer = CharacterTokenizer(list_of_characters)
 
-        final_words = []
+        # Initialize variables for the maximum length of the orthographic and phonological sequences
         self.max_orth_seq_len = 0
         self.max_phon_seq_len = 0
+
+        # Initialize a list for the final words
+        final_words = []
+
+        # For each word in the temporary words
         for word in self.tmp_words:
+            # Encode the phonology of the word
             phonology = self.phonology_tokenizer.encode([word])
+
+            # If the word is empty, None, or an empty list, skip this iteration
             if word == "" or word is None or word == []:
                 continue
-            if phonology:  # check if in phoneme_dict
+
+            # If the word is in the phoneme dictionary
+            if phonology:
+                # Add the word to the final words
                 final_words.append(word)
+
+                # Update the maximum length of the phonological sequences
                 self.max_phon_seq_len = max(
                     self.max_phon_seq_len, len(phonology["enc_pad_mask"][0])
                 )
+
+                # Update the maximum length of the orthographic sequences
                 self.max_orth_seq_len = max(
                     self.max_orth_seq_len,
                     len(self.character_tokenizer.encode(word)["enc_input_ids"][0]),
                 )
 
+        # Store the final words
         self.words = final_words
 
-    # ----------------------------------------------------------------------
     def read_orthographic_data(self):
+        # Check if the cache folder exists and create it if it doesn't
         if not os.path.exists(CACHE_PATH):
             os.makedirs(CACHE_PATH)
             print("Create Cache folder: %s", CACHE_PATH)
         else:
             print("Cache folder: %s already exists", CACHE_PATH)
 
+        # Determine the file path based on the dataset
         if self.which_dataset == "all":
             file_path = os.path.join(DATA_PATH, "data.csv")
         else:
             file_path = os.path.join(CACHE_PATH, "data_test%05d.csv" % self.which_dataset)
 
+        # If the file doesn't exist, create it
         if not os.path.exists(file_path):
-            # Create the file
             print(f"File {file_path} does not exist")
             dataset = pd.read_csv(os.path.join(DATA_PATH, "data.csv"), nrows=self.nb_rows)
             if self.which_dataset != "all":
                 dataset = dataset.sample(n=self.which_dataset)
             dataset.to_csv(file_path, index=False)
         else:
-            # File exists
             print(f"File {file_path} exists")
             dataset = pd.read_csv(file_path)
 
-        # Do not remove duplicate words since we are performing curriculum training
-        # Series of all lowercased words
+        # Store the words in lowercase
         self.tmp_words = dataset["word_raw"].str.lower()
 
     # ----------------------------------------------------------------------
     def read_phonology_data(self):
-        """
-        Read pkl file if it exists, else create it
-        """
+        # Determine the file path for the pickle file based on the dataset
         if self.which_dataset == "all":
             pkl_file_path = os.path.join(CACHE_PATH, "phonology_tokenizer.pkl")
         else:
@@ -347,24 +393,28 @@ class ConnTextULDataset(Dataset):
                 CACHE_PATH, "phonology_tokenizer%05d.pkl" % self.which_dataset
             )
 
+        # If the pickle file exists, load the phonology tokenizer
         if os.path.exists(pkl_file_path):
-            # pkl file exists
             with open(pkl_file_path, "rb") as f:
                 self.phonology_tokenizer = pickle.load(f)
         else:
-            # pkl file does not exist
+            # If the pickle file doesn't exist, create a new phonology tokenizer
             self.phonology_tokenizer = Phonemizer(self.tmp_words)
+            # Save the phonology tokenizer to a pickle file
             with open(pkl_file_path, "wb") as f:
                 pickle.dump(self.phonology_tokenizer, f)
 
-    # ----------------------------------------------------------------------
     def __len__(self):
+        # Return the number of words in the dataset
         return len(self.words)
 
     def __getitem__(self, idx):
+        # Get the word at the specified index
         string_input = self.words[idx]
-        # tokenized orthographic output. character_tokenizer pads and wraps in tensor
+
+        # Tokenize the orthographic and phonological representations of the word
         orth_tokenized = self.character_tokenizer.encode(string_input)
         phon_tokenized = self.phonology_tokenizer.encode(string_input)
 
+        # Return a dictionary containing the orthographic and phonological tokenized representations
         return {"orthography": orth_tokenized, "phonology": phon_tokenized}
