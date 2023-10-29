@@ -305,6 +305,10 @@ class ConnTextULDataset(Dataset):
                 )
 
         self.words = final_words
+        self.cmudict = self.phonology_tokenizer.traindata.cmudict
+        self.convert_numeric_prediction = (
+            self.phonology_tokenizer.traindata.convert_numeric_prediction
+        )
 
     # ----------------------------------------------------------------------
     def read_orthographic_data(self):
@@ -317,12 +321,16 @@ class ConnTextULDataset(Dataset):
         if self.which_dataset == "all":
             file_path = os.path.join(DATA_PATH, "data.csv")
         else:
-            file_path = os.path.join(CACHE_PATH, "data_test%05d.csv" % self.which_dataset)
+            file_path = os.path.join(
+                CACHE_PATH, "data_test%05d.csv" % self.which_dataset
+            )
 
         if not os.path.exists(file_path):
             # Create the file
             print(f"File {file_path} does not exist")
-            dataset = pd.read_csv(os.path.join(DATA_PATH, "data.csv"), nrows=self.nb_rows)
+            dataset = pd.read_csv(
+                os.path.join(DATA_PATH, "data.csv"), nrows=self.nb_rows
+            )
             if self.which_dataset != "all":
                 dataset = dataset.sample(n=self.which_dataset)
             dataset.to_csv(file_path, index=False)
@@ -330,6 +338,9 @@ class ConnTextULDataset(Dataset):
             # File exists
             print(f"File {file_path} exists")
             dataset = pd.read_csv(file_path)
+
+        # Remove any NaN from the data (Gordon Erlebacher)
+        dataset.dropna(inplace=True, axis="rows")
 
         # Do not remove duplicate words since we are performing curriculum training
         # Series of all lowercased words
@@ -362,8 +373,35 @@ class ConnTextULDataset(Dataset):
         return len(self.words)
 
     def __getitem__(self, idx):
-        string_input = self.words[idx]
-        # tokenized orthographic output. character_tokenizer pads and wraps in tensor
+        # Currently phonology tokenizer expects a list of strings, so we enforce that here
+        # by slicing the list of words to get a single word (in a list), or a list of words.
+        # Under either circumstance, the input to self.encode must be a list of strings
+        if isinstance(idx, int):
+            string_input = self.words[idx : idx + 1]
+        elif isinstance(idx, slice):
+            string_input = self.words[idx]
+        elif isinstance(idx, str):
+            assert (
+                idx in self.words
+            ), f'"{idx}" not in list of input words (checked in dataset.words)'
+            string_input = [idx]
+        else:
+            raise TypeError("idx must be int, slice, or string")
+        print(f"{string_input=}")
+
+        # string_input must be a list of strings
+        return self.encode(string_input)
+
+    def encode(self, content_to_encode):
+        if isinstance(content_to_encode, str):
+            # If the content is a single word, wrap it in a list
+            string_input = [content_to_encode]
+        elif isinstance(content_to_encode, list):
+            assert all(
+                isinstance(content, str) for content in content_to_encode
+            ), f"{content_to_encode} must be a string or a list of strings"
+            string_input = content_to_encode
+
         orth_tokenized = self.character_tokenizer.encode(string_input)
         phon_tokenized = self.phonology_tokenizer.encode(string_input)
 

@@ -27,6 +27,7 @@ def run_code_sweep(args_dct: Dict):
         args_dct.model_path, model_id=None, continue_training=args_dct.continue_training
     )
     wandb_name = train_impl.get_model_file_name(model_id, epoch_num)
+    print("sweep: wandb_name: ", wandb_name)
     run = wandb.init(name=wandb_name, config=args_dct)
 
     c = run.config
@@ -41,14 +42,15 @@ def run_code_sweep(args_dct: Dict):
 
 
 # ----------------------------------------------------------------------
-def run_code(run, epoch_num, model_id):
+#def run_code(run, epoch_num, model_id):
+def run_code(run, epochs_completed, model_id):
     c = run.config
     print("ENTER run_code")
     ds = ConnTextULDataset(
         c, test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples
     )
-    pprint(c)
-    results = run_code_impl(run, ds, epoch_num, model_id)
+    results = run_code_impl(run, ds, epochs_completed, model_id)
+    #results = run_code_impl(run, ds, epoch_num, model_id)
 
     c.metrics = results
     wandb.finish()
@@ -89,6 +91,7 @@ def run_code_impl(run, ds, epochs_completed, model_id):
     model, opt = train_impl.setup_model(c, ds, num_layers_dict)
     generated_text_table = wandb.Table(columns=["Step", "Generated Output"])
     run.watch(model, log="all", log_freq=100)
+    #wandb.watch(model, log="all", log_freq=100)
 
     # Dictionary to store elements of a model that are generic. This could become a class in the future.
     # This dictionary could eventually become a class
@@ -109,10 +112,11 @@ def run_code_impl(run, ds, epochs_completed, model_id):
     # Separate table for train and validation data?
     gm.generated_text_table = generated_text_table
 
-    # plot_impl.pre_plotting_wandb()  # not debugged
+    # Not debugged: plots on wandb. I never completed this work. 
+    # Look in src/plot_impl.py
 
+    # plot_impl.pre_plotting_wandb()  
     metrics = train_impl.run_train_val_loop(gm)
-
     # plot_impl.post_plotting_wandb()  # not debugged
 
     # 🐝 Close wandb

@@ -1,0 +1,34 @@
+[tool.poetry]
+name = "conntextul-conda"
+version = "0.1.0"
+description = ""
+authors = ["erlebach <gordon.erlebach@gmail.com>"]
+readme = "README.md"
+packages = [{include = "conntextul_conda"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+beautifulsoup4
+fastapi
+google_api_python_client
+google_auth_oauthlib
+PyYAML
+openai
+Requests
+selenium
+sentence_transformers
+setuptools
+text2vec
+tdqm
+uvcorn
+pydantic="^1.10.9"
+torch = "^2.0.1"
+pandas = "^2.1.0"
+numpy = ">=1.23,<1.26"
+gradio= "^3.39.0"
+langchain=="^0.0.246"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

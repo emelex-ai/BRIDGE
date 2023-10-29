@@ -12,6 +12,33 @@ from src.train import run_code_impl
 from pathlib import Path
 from src.main import handle_arguments
 from src.dataset import ConnTextULDataset
+import glob
+
+
+def remove_all_files_in_folder(folder_path):
+    """
+    Remove all files from models_mock/ folder
+    """
+    # Verify that the folder exists before attempting to remove files
+    if os.path.exists(folder_path) and os.path.isdir(folder_path):
+        # Use glob to get a list of all files in the folder
+        files = glob.glob(os.path.join(folder_path, '*'))
+
+        # Loop through the files and remove them using os.system
+        for file in files:
+            # Check if the file is a regular file (not a directory)
+            if os.path.isfile(file):
+                # Use os.system to remove the file
+                os.system(f'rm -rf "{file}"')
+                print(f"Removed: {file}")
+    else:
+        print(f"The folder '{folder_path}' does not exist.")
+        print(f"Create folder '{folder_path}' does not exist.")
+        os.mkdir("./models_mock")
+
+remove_all_files_in_folder("models_mock")
+
+
 
 """
 Six tests: continue_training == True/False && model_id == None/int/int
@@ -85,6 +112,7 @@ def test_runcodes(monkeypatch, model_path):
     args = "script --num_epochs 2 --test --which_dataset 100 --project proj"
     monkeypatch.setattr("sys.argv", args.split(" "))
     c = handle_arguments()
+    c.test = True  
     c.model_path = model_path
     seed = c.seed
 
@@ -112,6 +140,7 @@ def test_runcodes(monkeypatch, model_path):
     set_seed(c)
 
     metrics, gm = run_code_impl(run, ds, last_epoch_completed, model_id)
+    #gm.last_epoch_completed = last_epoch_completed  
     c = gm.cc  # Make sure that gg.cc and c are the same.
 
     # Check that a new file is created in the models_mock/ folder
@@ -121,30 +150,41 @@ def test_runcodes(monkeypatch, model_path):
     assert c.continue_training == False
     model_id = model_id + 1  # new run 6 -> 7
     last_epoch_completed = 0
-    gm.cc.epochs_completed = 0
+    gm.epochs_completed = 0
+    #gm.cc.epochs_completed = 0
     set_seed(c)
     gm.cc.num_epochs = 1
 
+    print("0 ==> gm= ", gm)
+
     # Reinialize gm
-    metrics, gm = run_code_impl(run, ds, gm.cc.epochs_completed, model_id)
+    metrics, gm = run_code_impl(run, ds, gm.epochs_completed, model_id)
+    print("1 ==> gm= ", gm)
+    #metrics, gm = run_code_impl(run, ds, gm.cc.epochs_completed, model_id)
     assert gm.cc.num_epochs == 1
-    assert gm.cc.epochs_completed == 1
+    assert gm.epochs_completed == 1
+    #assert gm.cc.epochs_completed == 1
     assert model_id == 7  
     assert os.path.exists(c.model_path + "erlebach00007_chkpt001.pth")
 
     # Run another epoch (2nd epoch)
     gm.cc.continue_training = True
-    assert gm.cc.epochs_completed == 1
+    #assert gm.cc.epochs_completed == 1
+    assert gm.epochs_completed == 1
     assert gm.cc.num_epochs == 1 
     metrics2 = train_impl.run_train_val_loop(gm)
-    assert gm.cc.epochs_completed == 2
+    assert gm.epochs_completed == 2
+    #assert gm.cc.epochs_completed == 2
     assert os.path.exists(c.model_path + "erlebach00007_chkpt002.pth")  # FAILED
     # assert os.path.exists(c.model_path + "erlebach00007_chkpt003.pth")  # FILE EXISTS. WY? 
     assert model_id == 7  
 
     model1, _, c1, gm1 = train_impl.load_model(c.model_path, model_id=6, epochs_completed=2);
+    print("2 ==> gm1= ", gm1)
+
     assert gm1.model_id == 6
     model2, _, c2, gm2 = train_impl.load_model(c.model_path, model_id=7, epochs_completed=2);
+    print("2 ==> gm2= ", gm2)
     assert gm2.model_id == 7
 
     # Read the models saved after two epochs and compare their weights. 
@@ -157,10 +197,12 @@ def test_runcodes(monkeypatch, model_path):
     assert norm1 == norm2
 
     # Run model1 and model2 for two more epochs and check for equality
-    assert gm1.cc.num_epochs == 2
+    assert gm1.cc.num_epochs == 2    # FAILED 1 == 2  (fix my code. Do not change test)
     assert gm2.cc.num_epochs == 1  
-    assert gm1.cc.epochs_completed == 2  
-    assert gm2.cc.epochs_completed == 2 
+    #assert gm1.cc.epochs_completed == 2  
+    #assert gm2.cc.epochs_completed == 2 
+    assert gm1.epochs_completed == 2  
+    assert gm2.epochs_completed == 2 
 
     gm1.cc.num_epochs = 2
     gm2.cc.num_epochs = 2

@@ -3,7 +3,6 @@ import argparse
 import numpy as np
 import pytest
 from pytest import approx
-import unit_test_example as ut
 import src.train
 from src.main import main, hardcoded_args, read_args, handle_arguments
 import sys
