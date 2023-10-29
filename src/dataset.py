@@ -1,4 +1,5 @@
-from Traindata.Traindata import Traindata
+#from Traindata.Traindata import Traindata
+from traindata import Traindata
 
 # import Traindata.Traindata
 from torch.utils.data import Dataset
@@ -387,7 +388,6 @@ class ConnTextULDataset(Dataset):
             string_input = [idx]
         else:
             raise TypeError("idx must be int, slice, or string")
-        print(f"{string_input=}")
 
         # string_input must be a list of strings
         return self.encode(string_input)
