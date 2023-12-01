@@ -1,3 +1,27 @@
+"""
+Module: dataset.py
+
+Description:
+This module defines the ConnTextULDataset class, a custom dataset class for the ConnTextUL model. It handles the loading and processing of orthographic and phonological data, as well as providing functionality for tokenization.
+
+Classes:
+- CUDA_Dict: A custom dictionary class with a to() method for moving its contents to a specified device.
+- CharacterTokenizer: Tokenizes input strings into character sequences.
+- Phonemizer: Converts words into phonological vectors using the Traindata class.
+- ConnTextULDataset: Custom dataset class for training and testing the ConnTextUL model.
+
+Functions:
+- encode: Encodes input strings into orthographic and phonological representations.
+
+Attributes:
+- DATA_PATH: Path to the data folder.
+- CACHE_PATH: Path to the cache folder.
+- CUDA_Dict: Custom dictionary class.
+- CharacterTokenizer: Tokenizes input strings into character sequences.
+- Phonemizer: Converts words into phonological vectors.
+- ConnTextULDataset: Custom dataset class for the ConnTextUL model.
+"""
+
 #from Traindata.Traindata import Traindata
 from traindata import Traindata
 

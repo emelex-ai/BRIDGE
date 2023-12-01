@@ -1,3 +1,54 @@
+"""
+This file contains the implementation of the training and validation loops for a neural network model.
+It includes functions for single training and validation steps, calculating metrics, and handling model saving and loading.
+
+Dependencies:
+- torch: PyTorch library for building and training neural networks.
+- src.wandb_wrapper: Custom WandbWrapper class for handling logging and visualization using Weights & Biases.
+- torch.utils.data.Dataset: PyTorch Dataset class for handling datasets.
+- src.model: Custom Model class representing the neural network architecture.
+- src.dataset: Custom ConnTextULDataset class representing the dataset.
+- addict.Dict: Custom Dict class for handling configurations.
+- typing: Module for supporting type hints.
+- random: Python standard library for generating random numbers.
+- pprint: Pretty-printing module for formatting output.
+- time: Python standard library for handling time-related tasks.
+- math: Python standard library for mathematical functions.
+- glob: Python standard library for file path pattern matching.
+- getpass: Python standard library for retrieving user information.
+- re: Python standard library for regular expressions.
+- os: Python standard library for interacting with the operating system.
+- tqdm: Library for creating progress bars.
+
+Functions:
+- single_step: Perform a single training or validation step.
+- calculate_accuracies: Calculate orthographic and phonological accuracies.
+- compute_metrics: Compute various metrics during training or validation.
+- average_metrics_over_epoch: Average metrics over one epoch.
+- train_single_epoch: Run the training loop for a single epoch.
+- validate_single_epoch: Run the validation loop for a single epoch.
+- load_model: Load a pre-trained model from storage.
+- save: Save the current model to storage.
+- get_starting_model_epoch: Get the starting model ID and epoch for training.
+- setup_model: Set up the neural network model for training.
+- create_data_slices: Create slices for dividing the dataset into training and validation sets.
+- print_weight_norms: Print the weight norms of the model.
+- log_embeddings: Log the embeddings of the model.
+- get_user: Get the username of the current user.
+- get_latest_run: Get the latest run based on the model path and username.
+- extract_model_id_epoch: Extract the model ID and epoch from the model file name.
+- get_new_model_id: Get a new model ID based on the current timestamp.
+- get_model_file_name: Get the model file name based on the model ID and epoch.
+- compare_state_dicts: Compare two PyTorch model state dictionaries.
+- print_model_parameters: Print the parameters and norms of the model.
+- run_train_val_loop: Run the training and validation loop for multiple epochs.
+- create_pbar: Create a tqdm progress bar.
+- get_device: Get the device for running the model (GPU or CPU).
+- set_seed: Set the seed for random number generation.
+"""
+
+
+
 from src.wandb_wrapper import WandbWrapper, MyRun
 from torch.utils.data import Dataset
 from src.model import Model

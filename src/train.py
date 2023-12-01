@@ -1,3 +1,25 @@
+"""
+train.py - Model Training Script
+
+This script is designed for training a neural network model using PyTorch. It incorporates the use of Weights and Biases (WandB) for experiment tracking and visualization. The training process involves loading datasets, setting up the model architecture, defining optimization parameters, and running the training and validation loops.
+
+Dependencies:
+- src.wandb_wrapper: Module providing a wrapper for WandB functionalities.
+- src.dataset: Module containing the ConnTextULDataset class for handling dataset loading and preprocessing.
+- src.train_impl: Module with implementation details for model training, including setup, training loop, and evaluation.
+- src.plot_impl: Module for plotting functionalities (partially implemented).
+
+Usage:
+- The script can be executed to train a model with specified configurations.
+- It supports continuation of training from a specified epoch, allowing for model checkpoint loading.
+- The WandB integration enables experiment tracking and logging of metrics during training.
+
+Functions:
+- run_code_sweep(args_dct): Function for running model training with hyperparameter sweeps.
+- run_code(run, epochs_completed, model_id): Core function for running the model training and evaluation process.
+- run_code_impl(run, ds, epochs_completed, model_id): Implementation of the training and evaluation process.
+"""
+
 from src.wandb_wrapper import WandbWrapper
 from src.dataset import ConnTextULDataset
 from src.train_impl import get_starting_model_epoch

@@ -1,14 +1,30 @@
 """
-This module contains the main function for training a ConnTextUL model. It reads 
-command-line arguments, sets up the training environment, and runs the training 
-loop. The module also defines a function for setting up hardcoded arguments for 
-testing purposes.
+train module - ConnTextUL Model Training
+
+This module contains the main function for training a ConnTextUL model. It reads command-line arguments, sets up the training environment, and runs the training loop. The module also defines a function for setting up hardcoded arguments for testing purposes.
+
+Dependencies:
+- src.wandb_wrapper: Module providing a wrapper for WandB functionalities.
+- src.train_impl: Module with implementation details for model training, including setup, training loop, and evaluation.
+- src.dataset: Module containing the ConnTextULDataset class for handling dataset loading and preprocessing.
 
 Functions:
 - read_args(): Parses command-line arguments and returns a dictionary of arguments.
 - hardcoded_args(): Returns a dictionary of hardcoded arguments for testing purposes.
+- setup_new_run(config): Sets up a new model run with a unique model ID.
+- handle_model_continuation(config): Handles the continuation of an existing model run based on the provided configuration.
 - main(args: Dict): Runs the training loop with the given arguments.
+
+Note:
+- This module assumes a specific project structure with the presence of required modules and datasets.
+
+Usage:
+- The module can be executed to start the ConnTextUL model training process.
+- It supports continuation of training from a specified checkpoint or the latest run.
+- WandB integration can be enabled/disabled through command-line arguments.
+
 """
+
 from src.wandb_wrapper import WandbWrapper
 from src.train import run_code, run_code_sweep
 import src.train_impl as train_impl

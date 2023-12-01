@@ -1,3 +1,32 @@
+"""
+Module: model.py
+
+Description:
+This module defines a neural network model for sequence-to-sequence tasks, specifically designed for orthography and phonology processing in the ConnTextUL model.
+
+Classes:
+- Encoder: Implements the Transformer encoder block.
+- Decoder: Implements the Transformer decoder block.
+- Model: Integrates encoder and decoder components to create the ConnTextUL model.
+
+Functions:
+- generate_triangular_mask: Generates a triangular mask for sequence decoding.
+
+Methods in Model class:
+- embed_orth_tokens: Embeds orthographic tokens.
+- embed_phon_tokens: Embeds phonological tokens.
+- embed_o2p: Embeds orthography to phonology.
+- embed_p2o: Embeds phonology to orthography.
+- embed_op2op: Embeds orthography to phonography and vice versa.
+- forward: Implements the forward pass of the model.
+- ortho_sample: Samples orthographic tokens during generation.
+- phono_sample: Samples phonological tokens during generation.
+- orthography_decoder_loop: Implements the decoding loop for orthography.
+- phonology_decoder_loop: Implements the decoding loop for phonology.
+- generate: Generates sequences for a given pathway.
+- size: Computes the size of the model in terms of parameters and memory.
+"""
+
 import torch
 
 

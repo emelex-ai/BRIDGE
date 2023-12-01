@@ -1,3 +1,18 @@
+"""
+Module: plot_impl.py
+
+Description:
+This module implements functions related to plotting and visualization using the WandbWrapper and other utilities. It includes functions to update and log custom charts during training.
+
+Classes and Functions:
+- WandbWrapper: Wrapper for interacting with Weights & Biases for experiment tracking.
+- ConnTextULDataset: Custom dataset class for training and testing the ConnTextUL model.
+- update_multi_tables: Function to update and log custom tables and charts during training.
+
+Attributes:
+- wandb: Instance of the WandbWrapper class for experiment tracking.
+"""
+
 from src.wandb_wrapper import WandbWrapper
 from src.dataset import ConnTextULDataset
 

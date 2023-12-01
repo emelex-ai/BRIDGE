@@ -1,3 +1,21 @@
+"""
+Module: wandb_wrapper.py
+
+Description:
+This module provides a wrapper around the Weights & Biases (wandb) library, allowing users to easily enable or disable wandb functionality. It includes classes and functions to manage wandb runs, tables, plots, and logging.
+
+Classes and Functions:
+- read_wandb_history: Function to read wandb history using the wandb API.
+- Singleton: Singleton class implementation for creating a single instance.
+- MyRun: Proxy class to handle the 'run' variable when wandb is disabled.
+- MyTable: Class to return when calling wandb.Table() when wandb is disabled.
+- MyPlot: Class to return when calling wandb.Plot() when wandb is disabled.
+- WandbWrapper: Wrapper class around wandb to allow it to be disabled. Manages wandb runs, tables, plots, and logging.
+
+Attributes:
+- wandb: Instance of the WandbWrapper class for wandb-related operations.
+"""
+
 # Wrapper around wandb to allow user use or not use it
 # Author: G. Erlebacher
 import wandb
