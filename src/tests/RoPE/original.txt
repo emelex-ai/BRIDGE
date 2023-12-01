@@ -1,0 +1,325 @@
+[nltk_data] Downloading package cmudict to /home/mes19f/nltk_data...
+[nltk_data]   Package cmudict is already up-to-date!
+==========================
+Hardcoded, test_dct=
+{'batch_size_train': 8,
+ 'batch_size_val': 8,
+ 'continue_training': False,
+ 'd_embedding': 2,
+ 'd_model': 16,
+ 'device': 'cpu',
+ 'learning_rate': 0.001,
+ 'max_nb_steps': -1,
+ 'model_chkpt': '',
+ 'model_path': './models',
+ 'nb_samples': 1000,
+ 'nhead': 2,
+ 'num_epochs': 2,
+ 'num_layers': 2,
+ 'pathway': 'op2op',
+ 'save_every': 2,
+ 'seed': 1337,
+ 'sweep': '',
+ 'test': True,
+ 'train_test_split': 0.9,
+ 'which_dataset': 100}
+==========================
+device ==> cpu
+project ==> None
+num_epochs ==> 2
+batch_size_train ==> 8
+batch_size_val ==> 8
+num_layers ==> 2
+learning_rate ==> 0.001
+continue_training ==> False
+model_chkpt ==> 
+d_model ==> 16
+nhead ==> 2
+wandb ==> False
+test ==> True
+max_nb_steps ==> -1
+train_test_split ==> 0.9
+which_dataset ==> 100
+sweep ==> 
+d_embedding ==> 2
+seed ==> 1337
+nb_samples ==> 1000
+model_path ==> ./models
+pathway ==> op2op
+save_every ==> 2
+before return from model_file_name, file_name:  mes19f_2023-12-01_14h58m08475ms_chkpt000.pth
+New run: mes19f_2023-12-01_14h58m08475ms_chkpt000.pth=
+==> main, after globals
+main: do NOT perform parameter sweep
+wandb_name, filename:  mes19f_2023-12-01_14h58m08475ms
+ENTER run_code
+Cache folder: %s already exists ./data/.cache
+File ./data/.cache/data_test00100.csv exists
+NEW RUN
+run_train_val_loop: gm.c
+BEFORE epoch loop, gm.epochs_completed=0
+****** epoch=0 *******
+train_single_epoch: len(dataset_slices):  12
+/home/mes19f/.cache/pypoetry/virtualenvs/conntextul-conda-M6Ip2Ab4-py3.9/lib/python3.9/site-packages/torch/autograd/__init__.py:251: UserWarning: CUDA initialization: The NVIDIA driver on your system is too old (found version 11050). Please update your GPU driver by downloading and installing a new version from the URL: http://www.nvidia.com/Download/index.aspx Alternatively, go to: https://pytorch.org to install a PyTorch version that has been compiled with your version of the CUDA driver. (Triggered internally at ../c10/cuda/CUDAFunctions.cpp:108.)
+  Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+==> validation: nb steps:  2
+valid: nb_steps:  1
+valid: nb_steps:  2
+metrics[0]:  {'train/loss': tensor(3.2872, grad_fn=<AddBackward0>), 'train/epoch': 0, 'train/example_ct': 48, 'train/global_embedding_magnitude': tensor(1.3420, grad_fn=<LinalgVectorNormBackward0>), 'train/model_weights_magnitude': tensor(11.5760, grad_fn=<SqrtBackward0>), 'train/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f7d72332c10>, 'train/orth_loss': tensor(2.7506, grad_fn=<NllLoss2DBackward0>), 'train/phon_loss': tensor(0.5366, grad_fn=<NllLoss2DBackward0>), 'train/letter_wise_accuracy': tensor(0.5000), 'train/word_wise_accuracy': tensor(0.), 'train/phon_segment_accuracy': tensor(0.7576), 'train/phoneme_wise_accuracy': tensor(0.), 'train/phon_word_accuracy': tensor(0.), 'time_per_train_step': 0.12402009963989258, 'time_per_train_epoch': 1.488241195678711, 'val/loss': tensor(3.3762, grad_fn=<AddBackward0>), 'val/epoch': 0, 'val/example_ct': 8, 'val/global_embedding_magnitude': tensor(1.3420, grad_fn=<LinalgVectorNormBackward0>), 'val/model_weights_magnitude': tensor(11.5760, grad_fn=<SqrtBackward0>), 'val/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f7d72332c10>, 'val/orth_loss': tensor(2.8817, grad_fn=<NllLoss2DBackward0>), 'val/phon_loss': tensor(0.4945, grad_fn=<NllLoss2DBackward0>), 'val/letter_wise_accuracy': tensor(0.3333), 'val/word_wise_accuracy': tensor(0.), 'val/phon_segment_accuracy': tensor(0.7727), 'val/phoneme_wise_accuracy': tensor(0.), 'val/phon_word_accuracy': tensor(0.), 'time_per_val_step': 0.11354756355285645, 'time_per_val_epoch': 1.3625707626342773}
+orth_embed_weights shape:  torch.Size([26, 16])
+phon_embed_weights shape:  torch.Size([34, 16])
+phon_embed_weights type:  <class 'torch.Tensor'>
+wandb.log orth_embed_table: log_embeddings:  <function log_embeddings at 0x7f7cbc64fe50>
+before update: gm.epochs_completed=0
+after update: gm.epochs_completed=1
+INSIDE epoch loop, gm.epochs_completed=1, epoch=0
+before return from model_file_name, file_name:  mes19f_2023-12-01_14h58m08475ms_chkpt001.pth
+****** epoch=1 *******
+train_single_epoch: len(dataset_slices):  12
+==> validation: nb steps:  2
+valid: nb_steps:  1
+valid: nb_steps:  2
+metrics[0]:  {'train/loss': tensor(2.8678, grad_fn=<AddBackward0>), 'train/epoch': 1, 'train/example_ct': 48, 'train/global_embedding_magnitude': tensor(1.3392, grad_fn=<LinalgVectorNormBackward0>), 'train/model_weights_magnitude': tensor(11.5859, grad_fn=<SqrtBackward0>), 'train/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f7d72332c10>, 'train/orth_loss': tensor(2.4493, grad_fn=<NllLoss2DBackward0>), 'train/phon_loss': tensor(0.4185, grad_fn=<NllLoss2DBackward0>), 'train/letter_wise_accuracy': tensor(0.5000), 'train/word_wise_accuracy': tensor(0.), 'train/phon_segment_accuracy': tensor(0.8990), 'train/phoneme_wise_accuracy': tensor(0.), 'train/phon_word_accuracy': tensor(0.), 'time_per_train_step': 0.06621501843134563, 'time_per_train_epoch': 0.7945802211761475, 'val/loss': tensor(3.1315, grad_fn=<AddBackward0>), 'val/epoch': 1, 'val/example_ct': 8, 'val/global_embedding_magnitude': tensor(1.3392, grad_fn=<LinalgVectorNormBackward0>), 'val/model_weights_magnitude': tensor(11.5859, grad_fn=<SqrtBackward0>), 'val/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f7d72332c10>, 'val/orth_loss': tensor(2.7314, grad_fn=<NllLoss2DBackward0>), 'val/phon_loss': tensor(0.4001, grad_fn=<NllLoss2DBackward0>), 'val/letter_wise_accuracy': tensor(0.1667), 'val/word_wise_accuracy': tensor(0.), 'val/phon_segment_accuracy': tensor(0.8838), 'val/phoneme_wise_accuracy': tensor(0.), 'val/phon_word_accuracy': tensor(0.), 'time_per_val_step': 0.03300607204437256, 'time_per_val_epoch': 0.3960728645324707}
+orth_embed_weights shape:  torch.Size([26, 16])
+phon_embed_weights shape:  torch.Size([34, 16])
+phon_embed_weights type:  <class 'torch.Tensor'>
+wandb.log orth_embed_table: log_embeddings:  <function log_embeddings at 0x7f7cbc64fe50>
+before update: gm.epochs_completed=1
+after update: gm.epochs_completed=2
+INSIDE epoch loop, gm.epochs_completed=2, epoch=1
+END epoch loop: gm.epochs_completed=2
+resuts:  ({'train/loss': tensor(2.8678, grad_fn=<AddBackward0>), 'train/epoch': 1, 'train/example_ct': 48, 'train/global_embedding_magnitude': tensor(1.3392, grad_fn=<LinalgVectorNormBackward0>), 'train/model_weights_magnitude': tensor(11.5859, grad_fn=<SqrtBackward0>), 'train/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f7d72332c10>, 'train/orth_loss': tensor(2.4493, grad_fn=<NllLoss2DBackward0>), 'train/phon_loss': tensor(0.4185, grad_fn=<NllLoss2DBackward0>), 'train/letter_wise_accuracy': tensor(0.5000), 'train/word_wise_accuracy': tensor(0.), 'train/phon_segment_accuracy': tensor(0.8990), 'train/phoneme_wise_accuracy': tensor(0.), 'train/phon_word_accuracy': tensor(0.), 'time_per_train_step': 0.06621501843134563, 'time_per_train_epoch': 0.7945802211761475, 'val/loss': tensor(3.1315, grad_fn=<AddBackward0>), 'val/epoch': 1, 'val/example_ct': 8, 'val/global_embedding_magnitude': tensor(1.3392, grad_fn=<LinalgVectorNormBackward0>), 'val/model_weights_magnitude': tensor(11.5859, grad_fn=<SqrtBackward0>), 'val/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f7d72332c10>, 'val/orth_loss': tensor(2.7314, grad_fn=<NllLoss2DBackward0>), 'val/phon_loss': tensor(0.4001, grad_fn=<NllLoss2DBackward0>), 'val/letter_wise_accuracy': tensor(0.1667), 'val/word_wise_accuracy': tensor(0.), 'val/phon_segment_accuracy': tensor(0.8838), 'val/phoneme_wise_accuracy': tensor(0.), 'val/phon_word_accuracy': tensor(0.), 'time_per_val_step': 0.03300607204437256, 'time_per_val_epoch': 0.3960728645324707}, {'cc': {'device': 'cpu', 'project': None, 'num_epochs': 2, 'batch_size_train': 8, 'batch_size_val': 8, 'num_layers': 2, 'learning_rate': 0.001, 'continue_training': False, 'model_chkpt': '', 'd_model': 16, 'nhead': 2, 'wandb': False, 'test': True, 'max_nb_steps': -1, 'train_test_split': 0.9, 'which_dataset': 100, 'sweep': '', 'd_embedding': 2, 'seed': 1337, 'nb_samples': 1000, 'model_path': './models', 'pathway': 'op2op', 'save_every': 2, 'model_id': 'mes19f_2023-12-01_14h58m08475ms', 'chkpt_file_exists': False, 'epochs_completed': 0, 'model_file_name': 'mes19f_2023-12-01_14h58m08475ms_chkpt000.pth', 'n_steps_per_epoch': 12, 'metrics': (...)}, 'model': Model(
+  (orthography_embedding): Embedding(26, 16)
+  (orth_position_embedding): Embedding(11, 16)
+  (phonology_embedding): Embedding(34, 16)
+  (phon_position_embedding): Embedding(9, 16)
+  (orthography_encoder): Encoder(
+    (transformer_encoder): TransformerEncoder(
+      (layers): ModuleList(
+        (0-1): 2 x TransformerEncoderLayer(
+          (self_attn): MultiheadAttention(
+            (out_proj): NonDynamicallyQuantizableLinear(in_features=16, out_features=16, bias=True)
+          )
+          (linear1): Linear(in_features=16, out_features=64, bias=True)
+          (dropout): Dropout(p=0.1, inplace=False)
+          (linear2): Linear(in_features=64, out_features=16, bias=True)
+          (norm1): LayerNorm((16,), eps=1e-05, elementwise_affine=True)
+          (norm2): LayerNorm((16,), eps=1e-05, elementwise_affine=True)
+          (dropout1): Dropout(p=0.1, inplace=False)
+          (dropout2): Dropout(p=0.1, inplace=False)
+        )
+      )
+    )
+  )
+  (phonology_encoder): Encoder(
+    (transformer_encoder): TransformerEncoder(
+      (layers): ModuleList(
+        (0-1): 2 x TransformerEncoderLayer(
+          (self_attn): MultiheadAttention(
+            (out_proj): NonDynamicallyQuantizableLinear(in_features=16, out_features=16, bias=True)
+          )
+          (linear1): Linear(in_features=16, out_features=64, bias=True)
+          (dropout): Dropout(p=0.1, inplace=False)
+          (linear2): Linear(in_features=64, out_features=16, bias=True)
+          (norm1): LayerNorm((16,), eps=1e-05, elementwise_affine=True)
+          (norm2): LayerNorm((16,), eps=1e-05, elementwise_affine=True)
+          (dropout1): Dropout(p=0.1, inplace=False)
+          (dropout2): Dropout(p=0.1, inplace=False)
+        )
+      )
+    )
+  )
+  (gp_multihead_attention): MultiheadAttention(
+    (out_proj): NonDynamicallyQuantizableLinear(in_features=16, out_features=16, bias=True)
+  )
+  (gp_layer_norm): LayerNorm((16,), eps=1e-05, elementwise_affine=True)
+  (pg_multihead_attention): MultiheadAttention(
+    (out_proj): NonDynamicallyQuantizableLinear(in_features=16, out_features=16, bias=True)
+  )
+  (pg_layer_norm): LayerNorm((16,), eps=1e-05, elementwise_affine=True)
+  (transformer_mixer): Encoder(
+    (transformer_encoder): TransformerEncoder(
+      (layers): ModuleList(
+        (0-1): 2 x TransformerEncoderLayer(
+          (self_attn): MultiheadAttention(
+            (out_proj): NonDynamicallyQuantizableLinear(in_features=16, out_features=16, bias=True)
+          )
+          (linear1): Linear(in_features=16, out_features=64, bias=True)
+          (dropout): Dropout(p=0.1, inplace=False)
+          (linear2): Linear(in_features=64, out_features=16, bias=True)
+          (norm1): LayerNorm((16,), eps=1e-05, elementwise_affine=True)
+          (norm2): LayerNorm((16,), eps=1e-05, elementwise_affine=True)
+          (dropout1): Dropout(p=0.1, inplace=False)
+          (dropout2): Dropout(p=0.1, inplace=False)
+        )
+      )
+    )
+  )
+  (reduce): Linear(in_features=16, out_features=16, bias=True)
+  (reduce_layer_norm): LayerNorm((16,), eps=1e-05, elementwise_affine=True)
+  (orthography_decoder): Decoder(
+    (transformer_decoder): TransformerDecoder(
+      (layers): ModuleList(
+        (0-1): 2 x TransformerDecoderLayer(
+          (self_attn): MultiheadAttention(
+            (out_proj): NonDynamicallyQuantizableLinear(in_features=16, out_features=16, bias=True)
+          )
+          (multihead_attn): MultiheadAttention(
+            (out_proj): NonDynamicallyQuantizableLinear(in_features=16, out_features=16, bias=True)
+          )
+          (linear1): Linear(in_features=16, out_features=64, bias=True)
+          (dropout): Dropout(p=0.1, inplace=False)
+          (linear2): Linear(in_features=64, out_features=16, bias=True)
+          (norm1): LayerNorm((16,), eps=1e-05, elementwise_affine=True)
+          (norm2): LayerNorm((16,), eps=1e-05, elementwise_affine=True)
+          (norm3): LayerNorm((16,), eps=1e-05, elementwise_affine=True)
+          (dropout1): Dropout(p=0.1, inplace=False)
+          (dropout2): Dropout(p=0.1, inplace=False)
+          (dropout3): Dropout(p=0.1, inplace=False)
+        )
+      )
+    )
+  )
+  (linear_orthography_decoder): Linear(in_features=16, out_features=26, bias=True)
+  (phonology_decoder): Decoder(
+    (transformer_decoder): TransformerDecoder(
+      (layers): ModuleList(
+        (0-1): 2 x TransformerDecoderLayer(
+          (self_attn): MultiheadAttention(
+            (out_proj): NonDynamicallyQuantizableLinear(in_features=16, out_features=16, bias=True)
+          )
+          (multihead_attn): MultiheadAttention(
+            (out_proj): NonDynamicallyQuantizableLinear(in_features=16, out_features=16, bias=True)
+          )
+          (linear1): Linear(in_features=16, out_features=64, bias=True)
+          (dropout): Dropout(p=0.1, inplace=False)
+          (linear2): Linear(in_features=64, out_features=16, bias=True)
+          (norm1): LayerNorm((16,), eps=1e-05, elementwise_affine=True)
+          (norm2): LayerNorm((16,), eps=1e-05, elementwise_affine=True)
+          (norm3): LayerNorm((16,), eps=1e-05, elementwise_affine=True)
+          (dropout1): Dropout(p=0.1, inplace=False)
+          (dropout2): Dropout(p=0.1, inplace=False)
+          (dropout3): Dropout(p=0.1, inplace=False)
+        )
+      )
+    )
+  )
+  (linear_phonology_decoder): Linear(in_features=16, out_features=66, bias=True)
+), 'opt': AdamW (
+Parameter Group 0
+    amsgrad: False
+    betas: (0.9, 0.999)
+    capturable: False
+    differentiable: False
+    eps: 1e-08
+    foreach: None
+    fused: None
+    lr: 0.001
+    maximize: False
+    weight_decay: 0.01
+), 'ds': <src.dataset.ConnTextULDataset object at 0x7f7cbc5faeb0>, 'model_id': 'mes19f_2023-12-01_14h58m08475ms', 'epochs_completed': 2, 'run': <src.wandb_wrapper.MyRun object at 0x7f7cbc5faf10>, 'train_dataset_slices': [slice(0, 8, None), slice(8, 16, None), slice(16, 24, None), slice(24, 32, None), slice(32, 40, None), slice(40, 48, None), slice(48, 56, None), slice(56, 64, None), slice(64, 72, None), slice(72, 80, None), slice(80, 88, None), slice(88, 89, None)], 'val_dataset_slices': [slice(89, 97, None), slice(97, 99, None)], 'generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f7d72332c10>, 'mode': 'val'})
+Return from main: No errors
+(conntextul-conda-py3.9) mes19f@kirk:~/Documents/ConnTextUL$ 
+ures=16, out_features=16, bias=True)
+          )
+          (linear1): Linear(in_features=16, out_features=64, bias=True)as=True)
+          (dropout): Dropout(p=0.1, inplace=False)
+          (linear2): Linear(in_features=64, out_features=16, bias=True)as=True)
+          (norm1): LayerNorm((16,), eps=1e-05, elementwise_affine=True)ne=True)
+          (norm2): LayerNorm((16,), eps=1e-05, elementwise_affine=True)ne=True)
+          (dropout1): Dropout(p=0.1, inplace=False)
+          (dropout2): Dropout(p=0.1, inplace=False)
+        )
+      )
+    )
+  )
+  (gp_multihead_attention): MultiheadAttention(
+    (out_proj): NonDynamicallyQuantizableLinear(in_features=16, out_features=16, bias=True) out_features=16, bias=True)
+  )
+  (gp_layer_norm): LayerNorm((16,), eps=1e-05, elementwise_affine=True)ne=True)
+  (pg_multihead_attention): MultiheadAttention(
+    (out_proj): NonDynamicallyQuantizableLinear(in_features=16, out_features=16, bias=True) out_features=16, bias=True)
+  )
+  (pg_layer_norm): LayerNorm((16,), eps=1e-05, elementwise_affine=True)ne=True)
+  (transformer_mixer): Encoder(
+    (transformer_encoder): TransformerEncoder(
+      (layers): ModuleList(
+        (0-1): 2 x TransformerEncoderLayer(
+          (self_attn): MultiheadAttention(
+            (out_proj): NonDynamicallyQuantizableLinear(in_features=16, out_features=16, bias=True)ures=16, out_features=16, bias=True)
+          )
+          (linear1): Linear(in_features=16, out_features=64, bias=True)as=True)
+          (dropout): Dropout(p=0.1, inplace=False)
+          (linear2): Linear(in_features=64, out_features=16, bias=True)as=True)
+          (norm1): LayerNorm((16,), eps=1e-05, elementwise_affine=True)ne=True)
+          (norm2): LayerNorm((16,), eps=1e-05, elementwise_affine=True)ne=True)
+          (dropout1): Dropout(p=0.1, inplace=False)
+          (dropout2): Dropout(p=0.1, inplace=False)
+        )
+      )
+    )
+  )
+  (reduce): Linear(in_features=16, out_features=16, bias=True)
+  (reduce_layer_norm): LayerNorm((16,), eps=1e-05, elementwise_affine=True)affine=True)
+  (orthography_decoder): Decoder(
+    (transformer_decoder): TransformerDecoder(
+      (layers): ModuleList(
+        (0-1): 2 x TransformerDecoderLayer(
+          (self_attn): MultiheadAttention(
+            (out_proj): NonDynamicallyQuantizableLinear(in_features=16, out_features=16, bias=True)ures=16, out_features=16, bias=True)
+          )
+          (multihead_attn): MultiheadAttention(
+            (out_proj): NonDynamicallyQuantizableLinear(in_features=16, out_features=16, bias=True)ures=16, out_features=16, bias=True)
+          )
+          (linear1): Linear(in_features=16, out_features=64, bias=True)as=True)
+          (dropout): Dropout(p=0.1, inplace=False)
+          (linear2): Linear(in_features=64, out_features=16, bias=True)as=True)
+          (norm1): LayerNorm((16,), eps=1e-05, elementwise_affine=True)ne=True)
+          (norm2): LayerNorm((16,), eps=1e-05, elementwise_affine=True)ne=True)
+          (norm3): LayerNorm((16,), eps=1e-05, elementwise_affine=True)ne=True)
+          (dropout1): Dropout(p=0.1, inplace=False)
+          (dropout2): Dropout(p=0.1, inplace=False)
+          (dropout3): Dropout(p=0.1, inplace=False)
+        )
+      )
+    )
+  )
+  (linear_orthography_decoder): Linear(in_features=16, out_features=26, bias=True)ures=26, bias=True)
+  (phonology_decoder): Decoder(
+    (transformer_decoder): TransformerDecoder(
+      (layers): ModuleList(
+        (0-1): 2 x TransformerDecoderLayer(
+          (self_attn): MultiheadAttention(
+            (out_proj): NonDynamicallyQuantizableLinear(in_features=16, out_features=16, bias=True)ures=16, out_features=16, bias=True)
+          )
+          (multihead_attn): MultiheadAttention(
+            (out_proj): NonDynamicallyQuantizableLinear(in_features=16, out_features=16, bias=True)ures=16, out_features=16, bias=True)
+          )
+          (linear1): Linear(in_features=16, out_features=64, bias=True)as=True)
+          (dropout): Dropout(p=0.1, inplace=False)
+          (linear2): Linear(in_features=64, out_features=16, bias=True)as=True)
+          (norm1): LayerNorm((16,), eps=1e-05, elementwise_affine=True)ne=True)
+          (norm2): LayerNorm((16,), eps=1e-05, elementwise_affine=True)ne=True)
+          (norm3): LayerNorm((16,), eps=1e-05, elementwise_affine=True)ne=True)
+          (dropout1): Dropout(p=0.1, inplace=False)
+          (dropout2): Dropout(p=0.1, inplace=False)
+          (dropout3): Dropout(p=0.1, inplace=False)
+        )
+      )
+    )
+  )
+  (linear_phonology_decoder): Linear(in_features=16, out_features=66, bias=True)es=66, bias=True)
+), 'opt': AdamW (
+Parameter Group 0
+    amsgrad: False
+    betas: (0.9, 0.999)
+    capturable: False
+    differentiable: False
+    eps: 1e-08
+    foreach: None
+    fused: None
+    lr: 0.001
+    maximize: False
+    weight_decay: 0.01
+), 'ds': <src.dataset.ConnTextULDataset object at 0x7f7cbc5faeb0>, 'model_id': 'mes19f_2023-12-01_14h58m08475ms', 'epochs_completed': 2, 'run': <src.wandb_wrapper.MyRun object at 0x7f7cbc5faf10>, 'train_dataset_slices': [slice(0, 8, None), slice(8, 16, None), slice(16, 24, None), slice(24, 32, None), slice(32, 40, None), slice(40, 48, None), slice(48, 56, None), slice(56, 64, None), slice(64, 72, None), slice(72, 80, None), slice(80, 88, None), slice(88, 89, None)], 'val_dataset_slices': [slice(89, 97, None), slice(97, 99, None)], 'generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f7d72332c10>, 'mode': 'val'}) None), slice(16, 24, None), slice(24, 32, None), slice(32, 40, None), slice(40, 48, None), slice(48, 56, None), slice(56, 64, None), slice(64, 72, None), slice(72, 80, None), slice(80, 88, None), slice(88, 89, None)], 'val_dataset_slices': [slice(89, 97, None), slice(97, 99, None)], 'generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f7d72332c10>, 'mode': 'val'})
+Return from main: No errors

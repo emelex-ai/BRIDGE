@@ -81,6 +81,25 @@ class Decoder(torch.nn.Module):
         )
         return output
 
+class RotaryPositionEmbedding(torch.nn.Module):
+    def __init__(self, dim, max_len):
+        super(RotaryPositionEmbedding, self).__init__()
+        self.dim = dim
+        self.max_len = max_len
+
+    def forward(self, seq_len, device):
+        # Ensure the sequence length doesn't exceed the maximum
+        seq_len = min(seq_len, self.max_len)
+        # Compute rotary embeddings
+        return rotary_position_embedding(self.dim, seq_len, device)
+
+def rotary_position_embedding(dim, seq_len, device=None):
+    inv_freq = 1.0 / (10000 ** (torch.arange(0, dim, 2).float() / dim))
+    if device is not None:
+        inv_freq = inv_freq.to(device)
+    t = torch.arange(seq_len, device=device).type_as(inv_freq)
+    sinusoid_inp = torch.einsum('i,j->ij', t, inv_freq)
+    return torch.stack((sinusoid_inp.sin(), sinusoid_inp.cos()), dim=-1).view(seq_len, -1)
 
 # ----------------------------------------------------------------------
 class Model(torch.nn.Module):
@@ -95,7 +114,7 @@ class Model(torch.nn.Module):
         nhead,
         num_layers_dict,
     ):
-        super().__init__()
+        super(Model, self).__init__()
 
         nlayers_phon_enc = num_layers_dict["phon_enc"]
         nlayers_phon_dec = num_layers_dict["phon_dec"]
@@ -106,10 +125,12 @@ class Model(torch.nn.Module):
         # Initial embeddings for orthography, phonology, and position
         # Embedding for orthography
         self.orthography_embedding = torch.nn.Embedding(orth_vocab_size, d_model)
-        self.orth_position_embedding = torch.nn.Embedding(max_orth_seq_len, d_model)
+        # self.orth_position_embedding = torch.nn.Embedding(max_orth_seq_len, d_model)
+        self.orth_position_embedding = RotaryPositionEmbedding(d_model, max_orth_seq_len)
         # Embedding for phonology
         self.phonology_embedding = torch.nn.Embedding(phon_vocab_size, d_model)
-        self.phon_position_embedding = torch.nn.Embedding(max_phon_seq_len, d_model)
+        # self.phon_position_embedding = torch.nn.Embedding(max_phon_seq_len, d_model)
+        self.phone_position_embedding = RotaryPositionEmbedding(d_model, max_phon_seq_len)
         self.vocab_sizes = {
             "orth_vocab_size": orth_vocab_size,
             "phon_vocab_size": phon_vocab_size,
@@ -178,16 +199,25 @@ class Model(torch.nn.Module):
 
     # -----------------------------------------------------
     def embed_orth_tokens(self, tokens):
-        assert isinstance(
-            tokens, torch.Tensor
-        ), "For orthographic embeddings, tokens must be a pytorch tensor of integers (indices of orthography_embedding)"
-        assert (
-            tokens.dtype == torch.long or tokens.dtype == torch.int
-        ), f"Input tensor to Embedding must be type int or long but is {tokens.dtype}"
-        return (
-            self.orthography_embedding(tokens)
-            + self.orth_position_embedding.weight[None, : tokens.shape[1]]
-        )
+        assert isinstance(tokens, torch.Tensor), \
+            "For orthographic embeddings, tokens must be a PyTorch tensor of integers (indices of orthography_embedding)"
+        assert tokens.dtype == torch.long or tokens.dtype == torch.int, \
+            f"Input tensor to Embedding must be type int or long but is {tokens.dtype}"
+
+        # Compute word embeddings
+        orth_embeddings = self.orthography_embedding(tokens)
+
+        # Compute rotary position embeddings
+        seq_len = tokens.shape[1]  # Assuming tokens is of shape [batch_size, seq_len]
+        rotary_emb = self.orth_position_embedding(seq_len, tokens.device)
+
+        # Ensure the dimensions of rotary_emb match those of orth_embeddings
+        # This might require reshaping or expanding the dimensions of rotary_emb
+        # For example, if necessary: 
+        # rotary_emb = rotary_emb.expand_as(orth_embeddings)
+
+        # Combine word and position embeddings
+        return orth_embeddings + rotary_emb
 
     # -----------------------------------------------------
     def embed_phon_tokens(self, tokens):
@@ -206,32 +236,25 @@ class Model(torch.nn.Module):
                 "For phonological vectors, each element of the list must be \
                     a pytorch tensor of integers (indices)"
             )
-        # Here we average the embeddings for each feature in a phonological vector
-        # Each row of indices will become of batch once we extract rows from the embedding matrix
-        # So the size of the resulting 'output_embedding' tensor should be (batch_size, max_phon_len, d_model)
-
-        # Why do this? Isn't the device known in the beginning of the code?
         device = next(self.parameters()).device  # device of weights
-        # len(tokens) is the batch size. self.d_model=16
-        output_embedding = torch.zeros(
-            (len(tokens), len(tokens[0]), self.d_model), device=device
-        )
+        output_embedding = torch.zeros((len(tokens), len(tokens[0]), self.d_model), device=device)
+
         for batch_num, batch in enumerate(tokens):
             for indx, tokes in enumerate(batch):
-                # Here tokens should be a pytorch tensor of integers.
-                # It extracts the indicated rows from self.phonology_embedding
-                # ERROR tokes is empty. SOMETHING WRONG.
                 avg_embedding = self.phonology_embedding(tokes).mean(axis=0)
-                # Insert the resulting averaged embedding vector into the
-                # output_embedding tensor as a new row
                 output_embedding[batch_num, indx, :] = avg_embedding
-        # Why is phon_position_embedding shape[1] not increasing? (BECAUSE thERE IS NO OUTPUT TOKEN)
-        return (
-            output_embedding  # (1,9,16), (1,9,16)
-            # ERROR, (1,9,16), (1,10,16)
-            + self.phon_position_embedding.weight[None, : len(tokens[0])]
-        )
 
+        # Compute rotary position embeddings
+        seq_len = len(tokens[0])  # Assuming tokens[0] represents the sequence length for the batch
+        rotary_emb = self.phone_position_embedding(seq_len, device)
+
+        # Ensure the dimensions of rotary_emb match those of output_embedding
+        # This might require reshaping or expanding the dimensions of rotary_emb
+        # For example, if necessary: 
+        # rotary_emb = rotary_emb.expand(len(tokens), seq_len, -1)
+
+        # Combine phonological embeddings and position embeddings
+        return output_embedding + rotary_emb
     # ----------------------------------------------------------------------
 
     def embed_o2p(self, orthography, orthography_padding_mask):
