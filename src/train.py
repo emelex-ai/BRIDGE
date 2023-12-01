@@ -78,6 +78,8 @@ def run_code_impl(run, ds, epochs_completed, model_id):
     # TODO: Store the model name in the config dictionary?
 
     c.n_steps_per_epoch = len(train_dataset_slices)
+    
+    # --- Hyperparameter value location ---
 
     num_layers_dict = {
         "phon_dec": c.num_layers,

@@ -1,5 +1,8 @@
 import torch
 
+# --- Hyperparameter value location ---
+# --- IMPORTANT NOTE! THIS FILE CONTAINS THE ACTIVATION FUNCTIONS IN THE MODEL --- 
+
 
 class Encoder(torch.nn.Module):
     def __init__(self, d_model, nhead, num_layers):
@@ -159,6 +162,8 @@ class Model(torch.nn.Module):
         self.orthography_decoder = Decoder(
             d_model=self.d_model, nhead=nhead, num_layers=nlayers_orth_dec
         )
+        # --- Hyperparameter value location ---
+        # --- IMPORTANT NOTE! ACTIVATION LAYER --- 
         self.linear_orthography_decoder = torch.nn.Linear(
             self.d_model, self.vocab_sizes["orth_vocab_size"]
         )

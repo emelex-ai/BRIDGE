@@ -485,6 +485,8 @@ def setup_model(c, ds, num_layers_dict):
 
         # Why would this be required. Model can be loaded directly from the file"
 
+        # --- Hyperparameter value location ---
+
         model = Model(
             len(ds.character_tokenizer),
             len(ds.phonology_tokenizer),
