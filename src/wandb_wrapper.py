@@ -3,6 +3,7 @@
 import wandb
 from addict import Dict as AttrDict
 
+
 # ----------------------------------------------------------------------
 def read_wandb_history(entity, project, run):
     # Initialize the wandb API
@@ -44,6 +45,8 @@ def read_wandb_history(entity, project, run):
         # Access the values of the record
         print(record["step"], record["loss"])
     """
+
+
 # ----------------------------------------------------------------------
 
 
@@ -64,13 +67,14 @@ class MyRun(Singleton):
     def __init__(self, config=None):
         self.config = config
 
-    #def watch(self, *kargs, **kwargs):
-        #pass
+    # def watch(self, *kargs, **kwargs):
+    # pass
 
     def watch(self, *kargs, **kwargs):
         if WandbWrapper().is_wandb_on and WandbWrapper().run:
-            #print("wandb wrapper, call self.run.watch")
+            # print("wandb wrapper, call self.run.watch")
             self.run.watch(*kargs, **kwargs)
+
     def id(self):
         if WandbWrapper().is_wandb_on and WandbWrapper().run:
             return self.run.id
@@ -95,6 +99,7 @@ class MyTable:
 
     def add_data(self, *kargs, **kwargs):
         pass
+
 
 class MyPlot:
     """
@@ -140,8 +145,8 @@ class WandbWrapper(Singleton):
         return self
 
     def get_real_wandb(self):
-        """ 
-        Return the "real" wandb reference 
+        """
+        Return the "real" wandb reference
         Only use if wandb is enabled
         """
         if is_wandb_on:
@@ -170,18 +175,18 @@ class WandbWrapper(Singleton):
 
     def watch(self, *kargs, **kwargs):
         if self.is_wandb_on and self.run:
-            #print("wandb wrapper, call self.run.watch")
+            # print("wandb wrapper, call self.run.watch")
             self.run.watch(*kargs, **kwargs)
 
     def Table(self, *kargs, **kwargs):
         if self.is_wandb_on and self.run:
-            return wandb.Table(*kargs, **kwargs) 
+            return wandb.Table(*kargs, **kwargs)
         else:
             return self.my_table
 
     def plot_table(self, *kargs, **kwargs):
         if self.is_wandb_on and self.run:
-            return wandb.plot_table(*kargs, **kwargs)  
+            return wandb.plot_table(*kargs, **kwargs)
         else:
             return self.my_plot  # could return anything I think
 
@@ -208,20 +213,20 @@ class WandbWrapper(Singleton):
     def watch(self, model):
         if self.is_wandb_on and self.run:
             return wandb.watch(model)
-        else :
+        else:
             return None
 
     def unwatch(self, model):
         if self.is_wandb_on and self.run:
             return wandb.unwatch(model)
-        else :
+        else:
             return None
 
-    #def remove_hook(self, model):
-        #if self.is_wandb_on and self.run:
-            #wandb.remove_hook(model)
+    # def remove_hook(self, model):
+    # if self.is_wandb_on and self.run:
+    # wandb.remove_hook(model)
 
-    # Required because the wandb object in the code is a WandbWrapper object 
+    # Required because the wandb object in the code is a WandbWrapper object
 
     def sweep(self, *kargs, **kwargs):
         if len(kargs) > 0:

@@ -9,32 +9,36 @@ Functions:
 - hardcoded_args(): Returns a dictionary of hardcoded arguments for testing purposes.
 - main(args: Dict): Runs the training loop with the given arguments.
 """
-from src.wandb_wrapper import WandbWrapper
-from src.train import run_code, run_code_sweep
-import src.train_impl as train_impl
-from src.train_impl import get_new_model_id, get_user, get_model_file_name, get_latest_run, extract_model_id_epoch
-from src.dataset import ConnTextULDataset
-import argparse
-import torch
-import yaml
 import sys, os
+from typing import Dict
+import argparse
+import yaml
+
+import torch
 from addict import Dict as AttrDict
-from typing import List, Tuple, Dict, Any, Union
 from pprint import pprint
 
-# used to get the user name in a portable manner
+from src.wandb_wrapper import WandbWrapper
+from src.train import run_code, run_code_sweep
+from src.train_impl import (
+    get_new_model_id,
+    get_user,
+    get_model_file_name,
+    get_latest_run,
+    extract_model_id_epoch,
+)
 
+
+# used to get the user name in a portable manner
 wandb = WandbWrapper()
 
 
 def read_args():
     parser = argparse.ArgumentParser(description="Train a ConnTextUL model")
 
+    parser.add_argument("--device", type=str, default="cpu", help="cpu or gpu device")
     parser.add_argument(
-        "--device", type=str, default='cpu', help="cpu or gpu device"
-    )
-    parser.add_argument(
-        "--project", type=str, required=True, help="Project name (no default)"
+        "--project", type=str, required=False, help="Project name (no default)"
     )
     parser.add_argument("--num_epochs", type=int, default=100, help="Number of epochs")
     parser.add_argument(
@@ -138,8 +142,8 @@ def read_args():
     parser.add_argument(
         "--save_every",
         type=int,
-        default=1, 
-        help="Save data every 'save_every' number of epochs. Default: 1", 
+        default=1,
+        help="Save data every 'save_every' number of epochs. Default: 1",
     )
 
     args = parser.parse_args()
@@ -174,7 +178,7 @@ def hardcoded_args():
     # Overide program args with test dictionary
     # Do not include "test" in function names to avoid interference with pytest.
     dct = AttrDict({})
-    dct.device = 'cpu'
+    dct.device = "cpu"
     dct.d_model = 16
     dct.d_embedding = 2
     dct.nhead = 2
@@ -193,7 +197,7 @@ def hardcoded_args():
     dct.which_dataset = 100
     dct.test = True
     dct.pathway = "op2op"
-    #dct.epochs_completed = 0  # should probably not be in dict. config attrib should not change
+    # dct.epochs_completed = 0  # should probably not be in dict. config attrib should not change
     # wandb should always be set through the command line. False by default.
     dct.sweep = ""
     dct.save_every = 2
@@ -204,16 +208,18 @@ def hardcoded_args():
     torch.backends.cudnn.benchmark = False
     return dct
 
+
 # ----------------------------------------------------------------------
 def setup_new_run(config):
     model_id = get_new_model_id()
     model_file_name = get_model_file_name(model_id, epoch_num=0)
     config.model_id = model_id
-    #print(f"{config.continue_training=}, {model_file_name=}")
+    # print(f"{config.continue_training=}, {model_file_name=}")
     # Probably should save the new file at initial time. NOT DONE.
     epochs_completed = 0  # new run (not a continuation run)
     config.chkpt_file_exists = False
     return model_id, model_file_name, epochs_completed
+
 
 # ----------------------------------------------------------------------
 def handle_model_continuation(config):
@@ -224,7 +230,7 @@ def handle_model_continuation(config):
     if config.continue_training == False:
         # New simulation with new model_id
         model_id, model_file_name, epochs_completed = setup_new_run(config)
-        print(f"New run: {model_file_name=}")
+        print(f"New run: {model_file_name}=")
     else:
         # Continue existing simulation
         if config.model_chkpt:
@@ -234,7 +240,7 @@ def handle_model_continuation(config):
             full_path = os.path.join(config.model_path, config.model_chkpt)
             if os.path.exists(full_path):
                 # Desired checkpointed file exists
-                model_file_name = config.model_chkpt  
+                model_file_name = config.model_chkpt
                 model_id, epochs_completed = extract_model_id_epoch(model_file_name)
                 config.chkpt_file_exists = True
             else:
@@ -245,13 +251,15 @@ def handle_model_continuation(config):
             # Continue from the last model id of the current user
             user = get_user()
             try:
-                latest_file = get_latest_run(config.model_path, user)  # latest_file exists
+                latest_file = get_latest_run(
+                    config.model_path, user
+                )  # latest_file exists
                 model_id, epochs_completed = extract_model_id_epoch(latest_file)
                 model_file_name = latest_file
                 config.chkpt_file_exists = True
                 print(f"{model_id=}, {epochs_completed=}, {model_file_name=}")
             except:
-                # If there is no latest file from the user in the proper format, 
+                # If there is no latest file from the user in the proper format,
                 print("Expected a continuation run, but there is no previous run")
                 quit()
 
@@ -260,6 +268,8 @@ def handle_model_continuation(config):
     # epochs_completed: if zero, it is a new run
     # model_id: username + date (yyyy-mm-dd) + time (14h17m23232ms)
     return model_id, epochs_completed, model_file_name
+
+
 # ----------------------------------------------------------------------
 def main(args: Dict):
     """ """
@@ -278,7 +288,7 @@ def main(args: Dict):
 
     # Not clear these are needed, but they can't hurt. They are unchanged during the run
     config.model_id = model_id
-    config.epochs_completed = epochs_completed 
+    config.epochs_completed = epochs_completed
     config.model_file_name = model_file_name
 
     #  Parameters specific to W&B
@@ -288,19 +298,17 @@ def main(args: Dict):
     globals().update({"wandb": wandb})
     print("==> main, after globals")
 
-
     if args.sweep != "":
-
         #################################
-        # Perform parameter sweep 
+        # Perform parameter sweep
         #################################
 
         print("==> Perform parameter sweep")
         wandb.set_params(config=config, is_sweep=True, is_wandb_on=True)
         wandb.login()
 
-        #wandb.read_wandb_history(entity, project)  # Add for sweeps and tests as well
-        #raise "error"
+        # wandb.read_wandb_history(entity, project)  # Add for sweeps and tests as well
+        # raise "error"
 
         with open(args.sweep, "r") as file:
             sweep_config = yaml.safe_load(file)
@@ -325,7 +333,6 @@ def main(args: Dict):
         sweep_id = wandb.sweep(sweep_config, project=project, entity=entity)
         wandb.agent(sweep_id, function=lambda: run_code_sweep(args))
     else:
-
         #################################
         #  do NOT perform parameter sweep.
         #  Wandb might be turned on or off, but write code as if wandb is active.
@@ -344,7 +351,7 @@ def main(args: Dict):
 
         epochs_completed = config.epochs_completed
 
-        #wandb_name = train_impl.get_model_file_name(model_id, epoch_num)
+        # wandb_name = train_impl.get_model_file_name(model_id, epoch_num)
         wandb_name = config.model_id
         print("wandb_name, filename: ", wandb_name)
 
@@ -355,17 +362,17 @@ def main(args: Dict):
             config=config,
         )
 
-        #run_id = run.id
-        #name_id = run.name
-        #run_id = run.id
-        #print("main: type run.id: ", run.id)
-        #print("main: type run.id: ", run.name)
+        # run_id = run.id
+        # name_id = run.name
+        # run_id = run.id
+        # print("main: type run.id: ", run.id)
+        # print("main: type run.id: ", run.name)
 
-        #print("version else")
-        #wandb.read_wandb_history(entity, project, run)  # Add for sweeps and tests as well
-        #raise "error_else"
+        # print("version else")
+        # wandb.read_wandb_history(entity, project, run)  # Add for sweeps and tests as well
+        # raise "error_else"
 
-        #metrics = run_code(run, epoch_num, model_id)
+        # metrics = run_code(run, epoch_num, model_id)
         metrics = run_code(run, epochs_completed, model_id)
 
     return 0
@@ -374,13 +381,13 @@ def main(args: Dict):
 # ----------------------------------------------------------------------
 def handle_arguments():
     """
-    If in test =mode (--test): 
+    If in test =mode (--test):
         Use the hardcoded variables in hardcoded_args()
         Override these arguments with command line arguments
 
-    If not in test mode: 
+    If not in test mode:
         Use command line arguments only
-        
+
     """
     if "--test" in sys.argv:
         test_mode = True
@@ -390,7 +397,7 @@ def handle_arguments():
     args = read_args()
     args_dct = AttrDict(vars(args))
     # will be overwritten if loading a saved file
-    #args_dct.epochs_completed = 0  # 2023-09-18
+    # args_dct.epochs_completed = 0  # 2023-09-18
     test_dct = hardcoded_args()
     print("==========================")
     print(f"Hardcoded, test_dct=")

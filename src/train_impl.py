@@ -268,7 +268,9 @@ def train_single_epoch(gm, dataset_slices, epoch):  # , single_step_fct):
     nb_steps = 0
     start = time.time()
 
-    print("train_single_epoch: len(dataset_slices): ", len(dataset_slices))  # == 0 at some point? HOW? 
+    print(
+        "train_single_epoch: len(dataset_slices): ", len(dataset_slices)
+    )  # == 0 at some point? HOW?
 
     metrics = [{}]
     for step, batch_slice in enumerate(dataset_slices):
@@ -333,11 +335,9 @@ def load_model(
     epochs_completed. If < 0, identify file with highest epoch_completed
                       If > 0, use epoch_completed to tag the proper file
     """
-    # search all models in model_path/ with model_id. Remove underscores. 
+    # search all models in model_path/ with model_id. Remove underscores.
     user = get_user()
-    model_runs = glob.glob(
-        model_path + f"/{user}{model_id:05d}*"
-    )  
+    model_runs = glob.glob(model_path + f"/{user}{model_id:05d}*")
 
     if epochs_completed < 0:
         model_id, epochs_completed = get_starting_model_epoch(
@@ -358,9 +358,9 @@ def load_model(
     model = chkpt["model"]
 
     gm = AttrDict({})
-    gm.cc = run.config   # This should be be a wandb config
-    gm.opt = chkpt['optimizer']
-    gm.model = chkpt['model']
+    gm.cc = run.config  # This should be be a wandb config
+    gm.opt = chkpt["optimizer"]
+    gm.model = chkpt["model"]
     gm.model_id = model_id
     print("==> gm.cc= ", gm.cc)
     # Missing from gm: ds, train_dataset_slices, val_dataset_slices, run, generated_text_table
@@ -376,14 +376,13 @@ def load_model(
     gm.train_dataset_slices = train_dataset_slices
     gm.val_dataset_slices = val_dataset_slices
 
-    # ISSUE: How is this handled for a continuation run? What if I have to models in the 
+    # ISSUE: How is this handled for a continuation run? What if I have to models in the
     # same code and am using wandb? What happens to the tables?  NOT CLEAR.
 
     # Upload data tables to Wandb if active
     gm.generated_text_table = wandb.Table(columns=["Step", "Generated Output"])
-    gm.epochs_completed = epochs_completed # 2023-09-18
+    gm.epochs_completed = epochs_completed  # 2023-09-18
     return gm.model, gm.opt, gm.cc, gm
-
 
 
 # ----------------------------------------------------------------------
@@ -396,25 +395,25 @@ def save(gm):
     # model.to('cpu')  # Perhaps this should be controlled via an input parameter
 
     # If error not entering, check mockups in tests/
-    #model_file_name = get_model_file_name(gm.model_id, gm.cc.epochs_completed) 
-    model_file_name = get_model_file_name(gm.model_id, gm.epochs_completed) 
+    # model_file_name = get_model_file_name(gm.model_id, gm.cc.epochs_completed)
+    model_file_name = get_model_file_name(gm.model_id, gm.epochs_completed)
     model_path = os.path.join(gm.cc.model_path, model_file_name)
 
-    # I cannot save a wandb.run.config as a pickle file. 
+    # I cannot save a wandb.run.config as a pickle file.
     # I simply create an empty dictionary and fill it with the configuration parameters
-    #print("----")
+    # print("----")
     config_wrap = dict(gm.cc)
-    #print(f"{type(gm.cc)=}, {gm.cc=}")
-    #print(f"{type(dict(gm.cc))=}, {gm.cc=}")
-    #print(f"{config_wrap=}")
-    #print("----")
+    # print(f"{type(gm.cc)=}, {gm.cc=}")
+    # print(f"{type(dict(gm.cc))=}, {gm.cc=}")
+    # print(f"{config_wrap=}")
+    # print("----")
 
     # Remove hooks to allow save
     wandb.unwatch(gm.model)
 
     # remove gm.run.watch if it exists
 
-    # when using Wandb, I get an error when saving. WHY? 
+    # when using Wandb, I get an error when saving. WHY?
 
     # c contains epochs_completed
     pt.save(
@@ -432,8 +431,7 @@ def save(gm):
 
     wandb.watch(gm.model)
 
-    #gm.cc = cc_bak
-
+    # gm.cc = cc_bak
 
 
 # ----------------------------------------------------------------------
@@ -464,7 +462,7 @@ def get_starting_model_epoch(model_path, model_id=None, continue_training=False)
 # ----------------------------------------------------------------------
 def setup_model(c, ds, num_layers_dict):
     """
-    Continuation run. Load corresponding model. 
+    Continuation run. Load corresponding model.
     c: configuration (parameters that don't change during the simulation. Same as run.config when wandb is active..
     """
 
@@ -473,15 +471,14 @@ def setup_model(c, ds, num_layers_dict):
     """
 
     if c.chkpt_file_exists == True:
-
-        file_name = c.model_file_name 
+        file_name = c.model_file_name
 
         # Should use the load method
         chkpt = pt.load(file_name)
 
         # Call  load_model (not debugged)
-        #gm.model, gm.opt, gm.cc, gm
-        #model, opt, cc, gm = load_model(c.model_path, c.model_id, c.device, c.epochs_completed, c.continue_training)
+        # gm.model, gm.opt, gm.cc, gm
+        # model, opt, cc, gm = load_model(c.model_path, c.model_id, c.device, c.epochs_completed, c.continue_training)
 
         # Why would this be required. Model can be loaded directly from the file"
 
@@ -513,7 +510,7 @@ def setup_model(c, ds, num_layers_dict):
             num_layers_dict=num_layers_dict,  # New, GE, 2023-05-27
         )
         c.epochs_completed = 0
-        #opt = pt.optim.SGD(model.parameters(), c.learning_rate)
+        # opt = pt.optim.SGD(model.parameters(), c.learning_rate)
         opt = pt.optim.AdamW(model.parameters(), c.learning_rate)
 
     return model, opt
@@ -583,12 +580,16 @@ def log_embeddings(model, ds):
 # ----------------------------------------------------------------------
 def get_user():
     return getpass.getuser().replace("_", "")
+
+
 # ----------------------------------------------------------------------
 def get_latest_run(model_path, user):
     model_runs = glob.glob(model_path + f"/{user}_*")
-    return  sorted(model_runs)[-1].split("/")[-1]
+    return sorted(model_runs)[-1].split("/")[-1]
+
+
 # ----------------------------------------------------------------------
-def extract_model_id_epoch(file_nm):  
+def extract_model_id_epoch(file_nm):
     file_pattern = r"^([a-zA-Z0-9.-]{6,30})_(\d{4}-\d{2}-\d{2})_(\d{2}h\d{2}m\d{5}ms)_chkpt(\d{3})\.pth$"
     file_pattern = re.compile(file_pattern, flags=0)
 
@@ -597,23 +598,28 @@ def extract_model_id_epoch(file_nm):
         return f"{user}_{date}_{tme}", int(epochs_completed)
     except:
         print("extract_model_id_epoch: file_pattern not handled correctly")
+
+
 # ----------------------------------------------------------------------
 def get_new_model_id():
     current_time = datetime.now()
     current_time = datetime.now()
     # Y-m-d is necessary for proper sorting
     date_time = current_time.strftime("%Y-%m-%d_%Hh%Mm")
-    seconds = current_time.second + current_time.microsecond/1000000
-    milliseconds = round(seconds*1000)
+    seconds = current_time.second + current_time.microsecond / 1000000
+    milliseconds = round(seconds * 1000)
     date_time = date_time + f"{milliseconds:05d}ms"
     user = get_user()
     return f"{user}_{date_time}"
+
+
 # ----------------------------------------------------------------------
 def get_model_file_name(model_id, epoch_num):
     # Remove all underscores from the user name
     file_name = f"{model_id}_chkpt{epoch_num:03d}.pth"
     print("before return from model_file_name, file_name: ", file_name)
     return f"{file_name}"
+
 
 # ----------------------------------------------------------------------
 """
@@ -624,6 +630,7 @@ def most_recent_model_id_epoch(latest_run):
     model_id, epochs_completed = extract_model_id_epoch(latest_run)
     return model_id, epochs_completed
 """
+
 
 # ----------------------------------------------------------------------
 def compare_state_dicts(state_dict1, state_dict2):
@@ -684,9 +691,9 @@ def run_train_val_loop(gm):
     metrics: List[Dict] = [{}]
     print(f"BEFORE epoch loop, {gm.epochs_completed=}")
 
-    #for epoch in pbar:
+    # for epoch in pbar:
     # for epoch in range(gm.cc.epochs_completed, gm.cc.epochs_completed+gm.cc.num_epochs): # 2023-09-17
-    for epoch in range(gm.epochs_completed, gm.epochs_completed+gm.cc.num_epochs):
+    for epoch in range(gm.epochs_completed, gm.epochs_completed + gm.cc.num_epochs):
         print(f"****** {epoch=} *******")
         metrics[0] = train_single_epoch(
             gm,
@@ -702,8 +709,8 @@ def run_train_val_loop(gm):
 
         if gm.cc.max_nb_steps < 0:
             metrics[0].update(more_metrics)
-        wandb.log(metrics[0])   # should not be run.log
-        #run.log(metrics[0])
+        wandb.log(metrics[0])  # should not be run.log
+        # run.log(metrics[0])
         print("metrics[0]: ", metrics[0])
 
         # Log the embeddings
@@ -714,19 +721,19 @@ def run_train_val_loop(gm):
         print(f"before update: {gm.epochs_completed=}")
         gm.epochs_completed += 1
         print(f"after update: {gm.epochs_completed=}")
-        #gm.cc.update({'epochs_completed': epochs_completed})
-        # Why does the previous line lead to the error: 
-        # wandb.sdk.lib.config_util.ConfigError: Attempted to change value of key  
+        # gm.cc.update({'epochs_completed': epochs_completed})
+        # Why does the previous line lead to the error:
+        # wandb.sdk.lib.config_util.ConfigError: Attempted to change value of key
         #      "epochs_completed" from 0 to 1
         #  If you really want to do this, pass allow_val_change=True to config.update()
-        #print(f"INSIDE epoch loop, {gm.cc.epochs_completed=}, {epoch=}")
+        # print(f"INSIDE epoch loop, {gm.cc.epochs_completed=}, {epoch=}")
         print(f"INSIDE epoch loop, {gm.epochs_completed=}, {epoch=}")
 
         if epoch % gm.cc.save_every == 0:
             save(gm)
 
-    #print(f"END epoch loop: {gm.cc.epochs_completed=}")  # = 0. WHY? 
-    print(f"END epoch loop: {gm.epochs_completed=}")  # = 0. WHY? 
+    # print(f"END epoch loop: {gm.cc.epochs_completed=}")  # = 0. WHY?
+    print(f"END epoch loop: {gm.epochs_completed=}")  # = 0. WHY?
 
     return metrics
 
