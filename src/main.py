@@ -36,16 +36,16 @@ def read_args():
     parser.add_argument(
         "--project", type=str, required=True, help="Project name (no default)"
     )
-    parser.add_argument("--num_epochs", type=int, default=100, help="Number of epochs")
+    parser.add_argument("--num_epochs", type=int, default=200, help="Number of epochs")
     parser.add_argument(
         "--batch_size_train", type=int, default=32, help="Train batch size"
     )
     parser.add_argument(
         "--batch_size_val", type=int, default=32, help="Validation batch size"
     )
-    parser.add_argument("--num_layers", type=int, default=4, help="Number of layers")
+    parser.add_argument("--num_layers", type=int, default=3, help="Number of layers")
     parser.add_argument(
-        "--learning_rate", type=float, default=0.001, help="Learning rate"
+        "--learning_rate", type=float, default=0.0005, help="Learning rate"
     )
     parser.add_argument(
         "--continue_training",
@@ -175,7 +175,7 @@ def hardcoded_args():
     # Do not include "test" in function names to avoid interference with pytest.
     dct = AttrDict({})
     dct.device = 'cpu'
-    dct.d_model = 16
+    dct.d_model = 32
     dct.d_embedding = 2
     dct.nhead = 2
     dct.num_layers = 2
