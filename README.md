@@ -55,7 +55,27 @@ To run a sweep, simply add
 
    --sweep "sweep_file.yaml"
 
-where "sweep_file.yaml" is a yaml file that contains the sweep parameters. 
+where "sweep_file.yaml" is a yaml file that contains the sweep parameters.
+
+# Development with Dev Container
+
+This project supports development within a Docker container via a Dev Container. This ensures a consistent development environment and avoids the need to install project dependencies directly on your machine.
+
+## Setup
+
+1. Ensure [Docker Desktop](https://www.docker.com/products/docker-desktop/) is installed and running on your system.
+2. Ensure that the [Dev Container](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) VS Code extention is installed (ms-vscode-remote.remote-containers)
+3. Open the ConnTextUL project in Visual Studio Code.
+4. When prompted, choose to reopen the project in a container. (Or Shift+CMD+P and select Dev Containers: Rebuild Container)
+5. VS Code (and the Dev Containers extension) will build the container based on the provided Dockerfile and the and devcontainer.json file, run the image on your local machine using Docker Desktop, and then connect your local version of VS Code to the one running in the Docker container. [See here](https://code.visualstudio.com/docs/devcontainers/containers) for details.
+6. Once the build is complete, you will have access to a fully configured development environment.
+
+## Using Dev Container
+
+1. All dependencies are pre-installed in the container.
+2. Extensions listed in devcontainer.json are automatically available.
+3. Use VS Code's terminal and editor to write and execute code in the containerized environment.
+
 ----------------------------------------------------------------------
 # ISSUES: 
 - I cannot see metric graphs on wandb. I cannot figure out the error. Possibly it 
