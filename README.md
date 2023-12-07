@@ -4,6 +4,7 @@
 ## Date: 2023-09-18
 
 # Installation with Poetry
+# TODO: Pramodh will make all our lives better and improve the README
 - Clone from github
 
   github clone https://github.com/erlebach/ConnTextUL_poetry.git

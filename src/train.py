@@ -42,7 +42,7 @@ def run_code_sweep(args_dct: Dict):
 
 
 # ----------------------------------------------------------------------
-#def run_code(run, epoch_num, model_id):
+# def run_code(run, epoch_num, model_id):
 def run_code(run, epochs_completed, model_id):
     c = run.config
     print("ENTER run_code")
@@ -50,7 +50,7 @@ def run_code(run, epochs_completed, model_id):
         c, test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples
     )
     results = run_code_impl(run, ds, epochs_completed, model_id)
-    #results = run_code_impl(run, ds, epoch_num, model_id)
+    # results = run_code_impl(run, ds, epoch_num, model_id)
 
     c.metrics = results
     wandb.finish()
@@ -91,19 +91,19 @@ def run_code_impl(run, ds, epochs_completed, model_id):
     model, opt = train_impl.setup_model(c, ds, num_layers_dict)
     generated_text_table = wandb.Table(columns=["Step", "Generated Output"])
     run.watch(model, log="all", log_freq=100)
-    #wandb.watch(model, log="all", log_freq=100)
+    # wandb.watch(model, log="all", log_freq=100)
 
     # Dictionary to store elements of a model that are generic. This could become a class in the future.
     # This dictionary could eventually become a class
     gm = AttrDict({})
-    gm.cc = c  # Temporary. gm.c = c has issues. 
+    gm.cc = c  # Temporary. gm.c = c has issues.
 
     gm.model = model
     gm.opt = opt
     gm.ds = ds
     # next two lines based on last file saved and continue_training
     gm.model_id = model_id
-    gm.epochs_completed = epochs_completed 
+    gm.epochs_completed = epochs_completed
 
     gm.run = run  # Necessary when using wandb
     # Attributes specific to this model
@@ -112,10 +112,10 @@ def run_code_impl(run, ds, epochs_completed, model_id):
     # Separate table for train and validation data?
     gm.generated_text_table = generated_text_table
 
-    # Not debugged: plots on wandb. I never completed this work. 
+    # Not debugged: plots on wandb. I never completed this work.
     # Look in src/plot_impl.py
 
-    # plot_impl.pre_plotting_wandb()  
+    # plot_impl.pre_plotting_wandb()
     metrics = train_impl.run_train_val_loop(gm)
     # plot_impl.post_plotting_wandb()  # not debugged
 
