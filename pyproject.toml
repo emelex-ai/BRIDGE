@@ -8,6 +8,8 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = ">=3.9,<3.13"
 torch = "^2.0.1"
+torchvision = "0.15.2"
+torchaudio= "2.0.2"
 pandas = "^2.1.0"
 numpy = ">=1.23,<=1.26"
 pyyaml = "^6.0.1"
