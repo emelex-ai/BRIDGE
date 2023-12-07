@@ -104,3 +104,41 @@ Program arguments:
 
 2023-07-08
 Dependencies: torch, addict
+
+
+# Notes
+
+Regarding running the model with one's GPU, it must be mentioned that the performance will not change by a significant amount. However, it is to noted that the current implementation uses an old and deprecated version of CUDA and pytorch.
+
+Pytorch version = 2.0.1
+
+NVidia Driver Version  = 510.108.03
+
++-----------------------------------------------------------------------------+
+| NVIDIA-SMI 510.108.03   Driver Version: 510.108.03   CUDA Version: 11.6     |
+|-------------------------------+----------------------+----------------------+
+| GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |
+|                               |                      |               MIG M. |
+|===============================+======================+======================|
+|   0  NVIDIA GeForce ...  Off  | 00000000:0A:00.0  On |                  N/A |
+|  0%   41C    P8    23W / 290W |    215MiB /  8192MiB |      0%      Default |
+|                               |                      |                  N/A |
++-------------------------------+----------------------+----------------------+
+
++-----------------------------------------------------------------------------+
+| Processes:                                                                  |
+|  GPU   GI   CI        PID   Type   Process name                  GPU Memory |
+|        ID   ID                                                   Usage      |
+|=============================================================================|
+|    0   N/A  N/A      2494      G   /usr/lib/xorg/Xorg                 59MiB |
+|    0   N/A  N/A    523242      G   /usr/lib/xorg/Xorg                120MiB |
+|    0   N/A  N/A    523385      G   /usr/bin/gnome-shell               16MiB |
++-----------------------------------------------------------------------------+
+
+Current CUDA version = 10.1
+
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2019 NVIDIA Corporation
+Built on Sun_Jul_28_19:07:16_PDT_2019
+Cuda compilation tools, release 10.1, V10.1.243
