@@ -186,7 +186,7 @@ def hardcoded_args():
     dct.batch_size_train = 8
     dct.batch_size_val = 8
     dct.learning_rate = 0.001
-    dct.num_epochs = 2
+    dct.num_epochs = 10
     dct.max_nb_steps = -1
     dct.continue_training = False
     dct.model_chkpt = ""

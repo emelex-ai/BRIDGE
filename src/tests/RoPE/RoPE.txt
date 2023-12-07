@@ -12,7 +12,7 @@ Hardcoded, test_dct=
  'model_path': './models',
  'nb_samples': 1000,
  'nhead': 2,
- 'num_epochs': 2,
+ 'num_epochs': 10,
  'num_layers': 2,
  'pathway': 'op2op',
  'save_every': 2,
@@ -24,7 +24,7 @@ Hardcoded, test_dct=
 ==========================
 device ==> cpu
 project ==> None
-num_epochs ==> 2
+num_epochs ==> 10
 batch_size_train ==> 8
 batch_size_val ==> 8
 num_layers ==> 2
@@ -45,11 +45,11 @@ nb_samples ==> 1000
 model_path ==> ./models
 pathway ==> op2op
 save_every ==> 2
-before return from model_file_name, file_name:  mes19f_2023-12-01_16h03m54349ms_chkpt000.pth
-New run: mes19f_2023-12-01_16h03m54349ms_chkpt000.pth=
+before return from model_file_name, file_name:  mes19f_2023-12-01_17h28m18376ms_chkpt000.pth
+New run: mes19f_2023-12-01_17h28m18376ms_chkpt000.pth=
 ==> main, after globals
 main: do NOT perform parameter sweep
-wandb_name, filename:  mes19f_2023-12-01_16h03m54349ms
+wandb_name, filename:  mes19f_2023-12-01_17h28m18376ms
 ENTER run_code
 Cache folder: %s already exists ./data/.cache
 File ./data/.cache/data_test00100.csv exists
@@ -61,30 +61,138 @@ train_single_epoch: len(dataset_slices):  12
 ==> validation: nb steps:  2
 valid: nb_steps:  1
 valid: nb_steps:  2
-metrics[0]:  {'train/loss': tensor(3.4465, grad_fn=<AddBackward0>), 'train/epoch': 0, 'train/example_ct': 48, 'train/global_embedding_magnitude': tensor(1.3372, grad_fn=<LinalgVectorNormBackward0>), 'train/model_weights_magnitude': tensor(9.9114, grad_fn=<SqrtBackward0>), 'train/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7fb3ae4e5af0>, 'train/orth_loss': tensor(2.9338, grad_fn=<NllLoss2DBackward0>), 'train/phon_loss': tensor(0.5127, grad_fn=<NllLoss2DBackward0>), 'train/letter_wise_accuracy': tensor(0.2500), 'train/word_wise_accuracy': tensor(0.), 'train/phon_segment_accuracy': tensor(0.7778), 'train/phoneme_wise_accuracy': tensor(0.), 'train/phon_word_accuracy': tensor(0.), 'time_per_train_step': 0.047639151414235435, 'time_per_train_epoch': 0.5716698169708252, 'val/loss': tensor(3.0345, grad_fn=<AddBackward0>), 'val/epoch': 0, 'val/example_ct': 8, 'val/global_embedding_magnitude': tensor(1.3372, grad_fn=<LinalgVectorNormBackward0>), 'val/model_weights_magnitude': tensor(9.9114, grad_fn=<SqrtBackward0>), 'val/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7fb3ae4e5af0>, 'val/orth_loss': tensor(2.5390, grad_fn=<NllLoss2DBackward0>), 'val/phon_loss': tensor(0.4955, grad_fn=<NllLoss2DBackward0>), 'val/letter_wise_accuracy': tensor(0.3333), 'val/word_wise_accuracy': tensor(0.), 'val/phon_segment_accuracy': tensor(0.8081), 'val/phoneme_wise_accuracy': tensor(0.), 'val/phon_word_accuracy': tensor(0.), 'time_per_val_step': 0.01737070083618164, 'time_per_val_epoch': 0.2084484100341797}
+metrics[0]:  {'train/loss': tensor(3.4465, grad_fn=<AddBackward0>), 'train/epoch': 0, 'train/example_ct': 48, 'train/global_embedding_magnitude': tensor(1.3372, grad_fn=<LinalgVectorNormBackward0>), 'train/model_weights_magnitude': tensor(9.9114, grad_fn=<SqrtBackward0>), 'train/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'train/orth_loss': tensor(2.9338, grad_fn=<NllLoss2DBackward0>), 'train/phon_loss': tensor(0.5127, grad_fn=<NllLoss2DBackward0>), 'train/letter_wise_accuracy': tensor(0.2500), 'train/word_wise_accuracy': tensor(0.), 'train/phon_segment_accuracy': tensor(0.7778), 'train/phoneme_wise_accuracy': tensor(0.), 'train/phon_word_accuracy': tensor(0.), 'time_per_train_step': 0.04748417933781942, 'time_per_train_epoch': 0.569810152053833, 'val/loss': tensor(3.0345, grad_fn=<AddBackward0>), 'val/epoch': 0, 'val/example_ct': 8, 'val/global_embedding_magnitude': tensor(1.3372, grad_fn=<LinalgVectorNormBackward0>), 'val/model_weights_magnitude': tensor(9.9114, grad_fn=<SqrtBackward0>), 'val/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'val/orth_loss': tensor(2.5390, grad_fn=<NllLoss2DBackward0>), 'val/phon_loss': tensor(0.4955, grad_fn=<NllLoss2DBackward0>), 'val/letter_wise_accuracy': tensor(0.3333), 'val/word_wise_accuracy': tensor(0.), 'val/phon_segment_accuracy': tensor(0.8081), 'val/phoneme_wise_accuracy': tensor(0.), 'val/phon_word_accuracy': tensor(0.), 'time_per_val_step': 0.012934207916259766, 'time_per_val_epoch': 0.1552104949951172}
 orth_embed_weights shape:  torch.Size([26, 16])
 phon_embed_weights shape:  torch.Size([34, 16])
 phon_embed_weights type:  <class 'torch.Tensor'>
-wandb.log orth_embed_table: log_embeddings:  <function log_embeddings at 0x7fb2f0a6f040>
+wandb.log orth_embed_table: log_embeddings:  <function log_embeddings at 0x7f5b5314b160>
 before update: gm.epochs_completed=0
 after update: gm.epochs_completed=1
 INSIDE epoch loop, gm.epochs_completed=1, epoch=0
-before return from model_file_name, file_name:  mes19f_2023-12-01_16h03m54349ms_chkpt001.pth
+before return from model_file_name, file_name:  mes19f_2023-12-01_17h28m18376ms_chkpt001.pth
 ****** epoch=1 *******
 train_single_epoch: len(dataset_slices):  12
 ==> validation: nb steps:  2
 valid: nb_steps:  1
 valid: nb_steps:  2
-metrics[0]:  {'train/loss': tensor(3.1994, grad_fn=<AddBackward0>), 'train/epoch': 1, 'train/example_ct': 48, 'train/global_embedding_magnitude': tensor(1.3339, grad_fn=<LinalgVectorNormBackward0>), 'train/model_weights_magnitude': tensor(9.9145, grad_fn=<SqrtBackward0>), 'train/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7fb3ae4e5af0>, 'train/orth_loss': tensor(2.7928, grad_fn=<NllLoss2DBackward0>), 'train/phon_loss': tensor(0.4067, grad_fn=<NllLoss2DBackward0>), 'train/letter_wise_accuracy': tensor(0.2500), 'train/word_wise_accuracy': tensor(0.), 'train/phon_segment_accuracy': tensor(0.8485), 'train/phoneme_wise_accuracy': tensor(0.), 'train/phon_word_accuracy': tensor(0.), 'time_per_train_step': 0.05126136541366577, 'time_per_train_epoch': 0.6151363849639893, 'val/loss': tensor(2.8247, grad_fn=<AddBackward0>), 'val/epoch': 1, 'val/example_ct': 8, 'val/global_embedding_magnitude': tensor(1.3339, grad_fn=<LinalgVectorNormBackward0>), 'val/model_weights_magnitude': tensor(9.9145, grad_fn=<SqrtBackward0>), 'val/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7fb3ae4e5af0>, 'val/orth_loss': tensor(2.4183, grad_fn=<NllLoss2DBackward0>), 'val/phon_loss': tensor(0.4064, grad_fn=<NllLoss2DBackward0>), 'val/letter_wise_accuracy': tensor(0.3333), 'val/word_wise_accuracy': tensor(0.), 'val/phon_segment_accuracy': tensor(0.8434), 'val/phoneme_wise_accuracy': tensor(0.), 'val/phon_word_accuracy': tensor(0.), 'time_per_val_step': 0.013139963150024414, 'time_per_val_epoch': 0.15767955780029297}
+metrics[0]:  {'train/loss': tensor(3.1994, grad_fn=<AddBackward0>), 'train/epoch': 1, 'train/example_ct': 48, 'train/global_embedding_magnitude': tensor(1.3339, grad_fn=<LinalgVectorNormBackward0>), 'train/model_weights_magnitude': tensor(9.9145, grad_fn=<SqrtBackward0>), 'train/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'train/orth_loss': tensor(2.7928, grad_fn=<NllLoss2DBackward0>), 'train/phon_loss': tensor(0.4067, grad_fn=<NllLoss2DBackward0>), 'train/letter_wise_accuracy': tensor(0.2500), 'train/word_wise_accuracy': tensor(0.), 'train/phon_segment_accuracy': tensor(0.8485), 'train/phoneme_wise_accuracy': tensor(0.), 'train/phon_word_accuracy': tensor(0.), 'time_per_train_step': 0.048263609409332275, 'time_per_train_epoch': 0.5791633129119873, 'val/loss': tensor(2.8247, grad_fn=<AddBackward0>), 'val/epoch': 1, 'val/example_ct': 8, 'val/global_embedding_magnitude': tensor(1.3339, grad_fn=<LinalgVectorNormBackward0>), 'val/model_weights_magnitude': tensor(9.9145, grad_fn=<SqrtBackward0>), 'val/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'val/orth_loss': tensor(2.4183, grad_fn=<NllLoss2DBackward0>), 'val/phon_loss': tensor(0.4064, grad_fn=<NllLoss2DBackward0>), 'val/letter_wise_accuracy': tensor(0.3333), 'val/word_wise_accuracy': tensor(0.), 'val/phon_segment_accuracy': tensor(0.8434), 'val/phoneme_wise_accuracy': tensor(0.), 'val/phon_word_accuracy': tensor(0.), 'time_per_val_step': 0.03001725673675537, 'time_per_val_epoch': 0.36020708084106445}
 orth_embed_weights shape:  torch.Size([26, 16])
 phon_embed_weights shape:  torch.Size([34, 16])
 phon_embed_weights type:  <class 'torch.Tensor'>
-wandb.log orth_embed_table: log_embeddings:  <function log_embeddings at 0x7fb2f0a6f040>
+wandb.log orth_embed_table: log_embeddings:  <function log_embeddings at 0x7f5b5314b160>
 before update: gm.epochs_completed=1
 after update: gm.epochs_completed=2
 INSIDE epoch loop, gm.epochs_completed=2, epoch=1
-END epoch loop: gm.epochs_completed=2
-resuts:  ({'train/loss': tensor(3.1994, grad_fn=<AddBackward0>), 'train/epoch': 1, 'train/example_ct': 48, 'train/global_embedding_magnitude': tensor(1.3339, grad_fn=<LinalgVectorNormBackward0>), 'train/model_weights_magnitude': tensor(9.9145, grad_fn=<SqrtBackward0>), 'train/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7fb3ae4e5af0>, 'train/orth_loss': tensor(2.7928, grad_fn=<NllLoss2DBackward0>), 'train/phon_loss': tensor(0.4067, grad_fn=<NllLoss2DBackward0>), 'train/letter_wise_accuracy': tensor(0.2500), 'train/word_wise_accuracy': tensor(0.), 'train/phon_segment_accuracy': tensor(0.8485), 'train/phoneme_wise_accuracy': tensor(0.), 'train/phon_word_accuracy': tensor(0.), 'time_per_train_step': 0.05126136541366577, 'time_per_train_epoch': 0.6151363849639893, 'val/loss': tensor(2.8247, grad_fn=<AddBackward0>), 'val/epoch': 1, 'val/example_ct': 8, 'val/global_embedding_magnitude': tensor(1.3339, grad_fn=<LinalgVectorNormBackward0>), 'val/model_weights_magnitude': tensor(9.9145, grad_fn=<SqrtBackward0>), 'val/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7fb3ae4e5af0>, 'val/orth_loss': tensor(2.4183, grad_fn=<NllLoss2DBackward0>), 'val/phon_loss': tensor(0.4064, grad_fn=<NllLoss2DBackward0>), 'val/letter_wise_accuracy': tensor(0.3333), 'val/word_wise_accuracy': tensor(0.), 'val/phon_segment_accuracy': tensor(0.8434), 'val/phoneme_wise_accuracy': tensor(0.), 'val/phon_word_accuracy': tensor(0.), 'time_per_val_step': 0.013139963150024414, 'time_per_val_epoch': 0.15767955780029297}, {'cc': {'device': 'cpu', 'project': None, 'num_epochs': 2, 'batch_size_train': 8, 'batch_size_val': 8, 'num_layers': 2, 'learning_rate': 0.001, 'continue_training': False, 'model_chkpt': '', 'd_model': 16, 'nhead': 2, 'wandb': False, 'test': True, 'max_nb_steps': -1, 'train_test_split': 0.9, 'which_dataset': 100, 'sweep': '', 'd_embedding': 2, 'seed': 1337, 'nb_samples': 1000, 'model_path': './models', 'pathway': 'op2op', 'save_every': 2, 'model_id': 'mes19f_2023-12-01_16h03m54349ms', 'chkpt_file_exists': False, 'epochs_completed': 0, 'model_file_name': 'mes19f_2023-12-01_16h03m54349ms_chkpt000.pth', 'n_steps_per_epoch': 12, 'metrics': (...)}, 'model': Model(
+****** epoch=2 *******
+train_single_epoch: len(dataset_slices):  12
+==> validation: nb steps:  2
+valid: nb_steps:  1
+valid: nb_steps:  2
+metrics[0]:  {'train/loss': tensor(2.8864, grad_fn=<AddBackward0>), 'train/epoch': 2, 'train/example_ct': 48, 'train/global_embedding_magnitude': tensor(1.3313, grad_fn=<LinalgVectorNormBackward0>), 'train/model_weights_magnitude': tensor(9.9190, grad_fn=<SqrtBackward0>), 'train/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'train/orth_loss': tensor(2.5490, grad_fn=<NllLoss2DBackward0>), 'train/phon_loss': tensor(0.3374, grad_fn=<NllLoss2DBackward0>), 'train/letter_wise_accuracy': tensor(0.2500), 'train/word_wise_accuracy': tensor(0.), 'train/phon_segment_accuracy': tensor(0.9293), 'train/phoneme_wise_accuracy': tensor(0.), 'train/phon_word_accuracy': tensor(0.), 'time_per_train_step': 0.04967524607976278, 'time_per_train_epoch': 0.5961029529571533, 'val/loss': tensor(2.6747, grad_fn=<AddBackward0>), 'val/epoch': 2, 'val/example_ct': 8, 'val/global_embedding_magnitude': tensor(1.3313, grad_fn=<LinalgVectorNormBackward0>), 'val/model_weights_magnitude': tensor(9.9190, grad_fn=<SqrtBackward0>), 'val/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'val/orth_loss': tensor(2.3285, grad_fn=<NllLoss2DBackward0>), 'val/phon_loss': tensor(0.3462, grad_fn=<NllLoss2DBackward0>), 'val/letter_wise_accuracy': tensor(0.3333), 'val/word_wise_accuracy': tensor(0.), 'val/phon_segment_accuracy': tensor(0.9141), 'val/phoneme_wise_accuracy': tensor(0.), 'val/phon_word_accuracy': tensor(0.), 'time_per_val_step': 0.02156233787536621, 'time_per_val_epoch': 0.25874805450439453}
+orth_embed_weights shape:  torch.Size([26, 16])
+phon_embed_weights shape:  torch.Size([34, 16])
+phon_embed_weights type:  <class 'torch.Tensor'>
+wandb.log orth_embed_table: log_embeddings:  <function log_embeddings at 0x7f5b5314b160>
+before update: gm.epochs_completed=2
+after update: gm.epochs_completed=3
+INSIDE epoch loop, gm.epochs_completed=3, epoch=2
+before return from model_file_name, file_name:  mes19f_2023-12-01_17h28m18376ms_chkpt003.pth
+****** epoch=3 *******
+train_single_epoch: len(dataset_slices):  12
+==> validation: nb steps:  2
+valid: nb_steps:  1
+valid: nb_steps:  2
+metrics[0]:  {'train/loss': tensor(2.7636, grad_fn=<AddBackward0>), 'train/epoch': 3, 'train/example_ct': 48, 'train/global_embedding_magnitude': tensor(1.3279, grad_fn=<LinalgVectorNormBackward0>), 'train/model_weights_magnitude': tensor(9.9248, grad_fn=<SqrtBackward0>), 'train/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'train/orth_loss': tensor(2.4653, grad_fn=<NllLoss2DBackward0>), 'train/phon_loss': tensor(0.2983, grad_fn=<NllLoss2DBackward0>), 'train/letter_wise_accuracy': tensor(0.2500), 'train/word_wise_accuracy': tensor(0.), 'train/phon_segment_accuracy': tensor(0.9293), 'train/phoneme_wise_accuracy': tensor(0.), 'train/phon_word_accuracy': tensor(0.), 'time_per_train_step': 0.04322977860768636, 'time_per_train_epoch': 0.5187573432922363, 'val/loss': tensor(2.5209, grad_fn=<AddBackward0>), 'val/epoch': 3, 'val/example_ct': 8, 'val/global_embedding_magnitude': tensor(1.3279, grad_fn=<LinalgVectorNormBackward0>), 'val/model_weights_magnitude': tensor(9.9248, grad_fn=<SqrtBackward0>), 'val/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'val/orth_loss': tensor(2.2152, grad_fn=<NllLoss2DBackward0>), 'val/phon_loss': tensor(0.3057, grad_fn=<NllLoss2DBackward0>), 'val/letter_wise_accuracy': tensor(0.5000), 'val/word_wise_accuracy': tensor(0.), 'val/phon_segment_accuracy': tensor(0.9141), 'val/phoneme_wise_accuracy': tensor(0.), 'val/phon_word_accuracy': tensor(0.), 'time_per_val_step': 0.020033597946166992, 'time_per_val_epoch': 0.2404031753540039}
+orth_embed_weights shape:  torch.Size([26, 16])
+phon_embed_weights shape:  torch.Size([34, 16])
+phon_embed_weights type:  <class 'torch.Tensor'>
+wandb.log orth_embed_table: log_embeddings:  <function log_embeddings at 0x7f5b5314b160>
+before update: gm.epochs_completed=3
+after update: gm.epochs_completed=4
+INSIDE epoch loop, gm.epochs_completed=4, epoch=3
+****** epoch=4 *******
+train_single_epoch: len(dataset_slices):  12
+==> validation: nb steps:  2
+valid: nb_steps:  1
+valid: nb_steps:  2
+metrics[0]:  {'train/loss': tensor(2.6096, grad_fn=<AddBackward0>), 'train/epoch': 4, 'train/example_ct': 48, 'train/global_embedding_magnitude': tensor(1.3252, grad_fn=<LinalgVectorNormBackward0>), 'train/model_weights_magnitude': tensor(9.9356, grad_fn=<SqrtBackward0>), 'train/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'train/orth_loss': tensor(2.3418, grad_fn=<NllLoss2DBackward0>), 'train/phon_loss': tensor(0.2678, grad_fn=<NllLoss2DBackward0>), 'train/letter_wise_accuracy': tensor(0.2500), 'train/word_wise_accuracy': tensor(0.), 'train/phon_segment_accuracy': tensor(0.9394), 'train/phoneme_wise_accuracy': tensor(0.), 'train/phon_word_accuracy': tensor(0.), 'time_per_train_step': 0.05077958106994629, 'time_per_train_epoch': 0.6093549728393555, 'val/loss': tensor(2.3430, grad_fn=<AddBackward0>), 'val/epoch': 4, 'val/example_ct': 8, 'val/global_embedding_magnitude': tensor(1.3252, grad_fn=<LinalgVectorNormBackward0>), 'val/model_weights_magnitude': tensor(9.9356, grad_fn=<SqrtBackward0>), 'val/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'val/orth_loss': tensor(2.0640, grad_fn=<NllLoss2DBackward0>), 'val/phon_loss': tensor(0.2790, grad_fn=<NllLoss2DBackward0>), 'val/letter_wise_accuracy': tensor(0.6667), 'val/word_wise_accuracy': tensor(0.), 'val/phon_segment_accuracy': tensor(0.9141), 'val/phoneme_wise_accuracy': tensor(0.), 'val/phon_word_accuracy': tensor(0.), 'time_per_val_step': 0.016945242881774902, 'time_per_val_epoch': 0.20334291458129883}
+orth_embed_weights shape:  torch.Size([26, 16])
+phon_embed_weights shape:  torch.Size([34, 16])
+phon_embed_weights type:  <class 'torch.Tensor'>
+wandb.log orth_embed_table: log_embeddings:  <function log_embeddings at 0x7f5b5314b160>
+before update: gm.epochs_completed=4
+after update: gm.epochs_completed=5
+INSIDE epoch loop, gm.epochs_completed=5, epoch=4
+before return from model_file_name, file_name:  mes19f_2023-12-01_17h28m18376ms_chkpt005.pth
+****** epoch=5 *******
+train_single_epoch: len(dataset_slices):  12
+==> validation: nb steps:  2
+valid: nb_steps:  1
+valid: nb_steps:  2
+metrics[0]:  {'train/loss': tensor(2.3849, grad_fn=<AddBackward0>), 'train/epoch': 5, 'train/example_ct': 48, 'train/global_embedding_magnitude': tensor(1.3225, grad_fn=<LinalgVectorNormBackward0>), 'train/model_weights_magnitude': tensor(9.9496, grad_fn=<SqrtBackward0>), 'train/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'train/orth_loss': tensor(2.1485, grad_fn=<NllLoss2DBackward0>), 'train/phon_loss': tensor(0.2364, grad_fn=<NllLoss2DBackward0>), 'train/letter_wise_accuracy': tensor(0.5000), 'train/word_wise_accuracy': tensor(0.), 'train/phon_segment_accuracy': tensor(0.9394), 'train/phoneme_wise_accuracy': tensor(0.), 'train/phon_word_accuracy': tensor(0.), 'time_per_train_step': 0.04768949747085571, 'time_per_train_epoch': 0.5722739696502686, 'val/loss': tensor(2.1657, grad_fn=<AddBackward0>), 'val/epoch': 5, 'val/example_ct': 8, 'val/global_embedding_magnitude': tensor(1.3225, grad_fn=<LinalgVectorNormBackward0>), 'val/model_weights_magnitude': tensor(9.9496, grad_fn=<SqrtBackward0>), 'val/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'val/orth_loss': tensor(1.9047, grad_fn=<NllLoss2DBackward0>), 'val/phon_loss': tensor(0.2609, grad_fn=<NllLoss2DBackward0>), 'val/letter_wise_accuracy': tensor(0.6667), 'val/word_wise_accuracy': tensor(0.), 'val/phon_segment_accuracy': tensor(0.9141), 'val/phoneme_wise_accuracy': tensor(0.), 'val/phon_word_accuracy': tensor(0.), 'time_per_val_step': 0.01906752586364746, 'time_per_val_epoch': 0.22881031036376953}
+orth_embed_weights shape:  torch.Size([26, 16])
+phon_embed_weights shape:  torch.Size([34, 16])
+phon_embed_weights type:  <class 'torch.Tensor'>
+wandb.log orth_embed_table: log_embeddings:  <function log_embeddings at 0x7f5b5314b160>
+before update: gm.epochs_completed=5
+after update: gm.epochs_completed=6
+INSIDE epoch loop, gm.epochs_completed=6, epoch=5
+****** epoch=6 *******
+train_single_epoch: len(dataset_slices):  12
+==> validation: nb steps:  2
+valid: nb_steps:  1
+valid: nb_steps:  2
+metrics[0]:  {'train/loss': tensor(2.3003, grad_fn=<AddBackward0>), 'train/epoch': 6, 'train/example_ct': 48, 'train/global_embedding_magnitude': tensor(1.3183, grad_fn=<LinalgVectorNormBackward0>), 'train/model_weights_magnitude': tensor(9.9616, grad_fn=<SqrtBackward0>), 'train/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'train/orth_loss': tensor(2.0747, grad_fn=<NllLoss2DBackward0>), 'train/phon_loss': tensor(0.2256, grad_fn=<NllLoss2DBackward0>), 'train/letter_wise_accuracy': tensor(0.2500), 'train/word_wise_accuracy': tensor(0.), 'train/phon_segment_accuracy': tensor(0.9394), 'train/phoneme_wise_accuracy': tensor(0.), 'train/phon_word_accuracy': tensor(0.), 'time_per_train_step': 0.05189863840738932, 'time_per_train_epoch': 0.6227836608886719, 'val/loss': tensor(1.9723, grad_fn=<AddBackward0>), 'val/epoch': 6, 'val/example_ct': 8, 'val/global_embedding_magnitude': tensor(1.3183, grad_fn=<LinalgVectorNormBackward0>), 'val/model_weights_magnitude': tensor(9.9616, grad_fn=<SqrtBackward0>), 'val/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'val/orth_loss': tensor(1.7245, grad_fn=<NllLoss2DBackward0>), 'val/phon_loss': tensor(0.2478, grad_fn=<NllLoss2DBackward0>), 'val/letter_wise_accuracy': tensor(0.6667), 'val/word_wise_accuracy': tensor(0.), 'val/phon_segment_accuracy': tensor(0.9141), 'val/phoneme_wise_accuracy': tensor(0.), 'val/phon_word_accuracy': tensor(0.), 'time_per_val_step': 0.020626187324523926, 'time_per_val_epoch': 0.2475142478942871}
+orth_embed_weights shape:  torch.Size([26, 16])
+phon_embed_weights shape:  torch.Size([34, 16])
+phon_embed_weights type:  <class 'torch.Tensor'>
+wandb.log orth_embed_table: log_embeddings:  <function log_embeddings at 0x7f5b5314b160>
+before update: gm.epochs_completed=6
+after update: gm.epochs_completed=7
+INSIDE epoch loop, gm.epochs_completed=7, epoch=6
+before return from model_file_name, file_name:  mes19f_2023-12-01_17h28m18376ms_chkpt007.pth
+****** epoch=7 *******
+train_single_epoch: len(dataset_slices):  12
+==> validation: nb steps:  2
+valid: nb_steps:  1
+valid: nb_steps:  2
+metrics[0]:  {'train/loss': tensor(2.0981, grad_fn=<AddBackward0>), 'train/epoch': 7, 'train/example_ct': 48, 'train/global_embedding_magnitude': tensor(1.3146, grad_fn=<LinalgVectorNormBackward0>), 'train/model_weights_magnitude': tensor(9.9654, grad_fn=<SqrtBackward0>), 'train/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'train/orth_loss': tensor(1.8713, grad_fn=<NllLoss2DBackward0>), 'train/phon_loss': tensor(0.2268, grad_fn=<NllLoss2DBackward0>), 'train/letter_wise_accuracy': tensor(0.5000), 'train/word_wise_accuracy': tensor(0.), 'train/phon_segment_accuracy': tensor(0.9394), 'train/phoneme_wise_accuracy': tensor(0.), 'train/phon_word_accuracy': tensor(0.), 'time_per_train_step': 0.046636104583740234, 'time_per_train_epoch': 0.5596332550048828, 'val/loss': tensor(1.8319, grad_fn=<AddBackward0>), 'val/epoch': 7, 'val/example_ct': 8, 'val/global_embedding_magnitude': tensor(1.3146, grad_fn=<LinalgVectorNormBackward0>), 'val/model_weights_magnitude': tensor(9.9654, grad_fn=<SqrtBackward0>), 'val/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'val/orth_loss': tensor(1.5944, grad_fn=<NllLoss2DBackward0>), 'val/phon_loss': tensor(0.2376, grad_fn=<NllLoss2DBackward0>), 'val/letter_wise_accuracy': tensor(0.8333), 'val/word_wise_accuracy': tensor(0.5000), 'val/phon_segment_accuracy': tensor(0.9141), 'val/phoneme_wise_accuracy': tensor(0.), 'val/phon_word_accuracy': tensor(0.), 'time_per_val_step': 0.05055570602416992, 'time_per_val_epoch': 0.6066684722900391}
+orth_embed_weights shape:  torch.Size([26, 16])
+phon_embed_weights shape:  torch.Size([34, 16])
+phon_embed_weights type:  <class 'torch.Tensor'>
+wandb.log orth_embed_table: log_embeddings:  <function log_embeddings at 0x7f5b5314b160>
+before update: gm.epochs_completed=7
+after update: gm.epochs_completed=8
+INSIDE epoch loop, gm.epochs_completed=8, epoch=7
+****** epoch=8 *******
+train_single_epoch: len(dataset_slices):  12
+==> validation: nb steps:  2
+valid: nb_steps:  1
+valid: nb_steps:  2
+metrics[0]:  {'train/loss': tensor(2.0060, grad_fn=<AddBackward0>), 'train/epoch': 8, 'train/example_ct': 48, 'train/global_embedding_magnitude': tensor(1.3126, grad_fn=<LinalgVectorNormBackward0>), 'train/model_weights_magnitude': tensor(9.9676, grad_fn=<SqrtBackward0>), 'train/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'train/orth_loss': tensor(1.7857, grad_fn=<NllLoss2DBackward0>), 'train/phon_loss': tensor(0.2203, grad_fn=<NllLoss2DBackward0>), 'train/letter_wise_accuracy': tensor(0.5000), 'train/word_wise_accuracy': tensor(0.), 'train/phon_segment_accuracy': tensor(0.9394), 'train/phoneme_wise_accuracy': tensor(0.), 'train/phon_word_accuracy': tensor(0.), 'time_per_train_step': 0.05414104461669922, 'time_per_train_epoch': 0.6496925354003906, 'val/loss': tensor(1.6996, grad_fn=<AddBackward0>), 'val/epoch': 8, 'val/example_ct': 8, 'val/global_embedding_magnitude': tensor(1.3126, grad_fn=<LinalgVectorNormBackward0>), 'val/model_weights_magnitude': tensor(9.9676, grad_fn=<SqrtBackward0>), 'val/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'val/orth_loss': tensor(1.4715, grad_fn=<NllLoss2DBackward0>), 'val/phon_loss': tensor(0.2281, grad_fn=<NllLoss2DBackward0>), 'val/letter_wise_accuracy': tensor(0.8333), 'val/word_wise_accuracy': tensor(0.5000), 'val/phon_segment_accuracy': tensor(0.9141), 'val/phoneme_wise_accuracy': tensor(0.), 'val/phon_word_accuracy': tensor(0.), 'time_per_val_step': 0.021973371505737305, 'time_per_val_epoch': 0.26368045806884766}
+orth_embed_weights shape:  torch.Size([26, 16])
+phon_embed_weights shape:  torch.Size([34, 16])
+phon_embed_weights type:  <class 'torch.Tensor'>
+wandb.log orth_embed_table: log_embeddings:  <function log_embeddings at 0x7f5b5314b160>
+before update: gm.epochs_completed=8
+after update: gm.epochs_completed=9
+INSIDE epoch loop, gm.epochs_completed=9, epoch=8
+before return from model_file_name, file_name:  mes19f_2023-12-01_17h28m18376ms_chkpt009.pth
+****** epoch=9 *******
+train_single_epoch: len(dataset_slices):  12
+==> validation: nb steps:  2
+valid: nb_steps:  1
+valid: nb_steps:  2
+metrics[0]:  {'train/loss': tensor(1.8765, grad_fn=<AddBackward0>), 'train/epoch': 9, 'train/example_ct': 48, 'train/global_embedding_magnitude': tensor(1.3119, grad_fn=<LinalgVectorNormBackward0>), 'train/model_weights_magnitude': tensor(9.9740, grad_fn=<SqrtBackward0>), 'train/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'train/orth_loss': tensor(1.6639, grad_fn=<NllLoss2DBackward0>), 'train/phon_loss': tensor(0.2126, grad_fn=<NllLoss2DBackward0>), 'train/letter_wise_accuracy': tensor(0.7500), 'train/word_wise_accuracy': tensor(0.), 'train/phon_segment_accuracy': tensor(0.9293), 'train/phoneme_wise_accuracy': tensor(0.), 'train/phon_word_accuracy': tensor(0.), 'time_per_train_step': 0.05326873064041138, 'time_per_train_epoch': 0.6392247676849365, 'val/loss': tensor(1.6399, grad_fn=<AddBackward0>), 'val/epoch': 9, 'val/example_ct': 8, 'val/global_embedding_magnitude': tensor(1.3119, grad_fn=<LinalgVectorNormBackward0>), 'val/model_weights_magnitude': tensor(9.9740, grad_fn=<SqrtBackward0>), 'val/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'val/orth_loss': tensor(1.4202, grad_fn=<NllLoss2DBackward0>), 'val/phon_loss': tensor(0.2197, grad_fn=<NllLoss2DBackward0>), 'val/letter_wise_accuracy': tensor(0.6667), 'val/word_wise_accuracy': tensor(0.), 'val/phon_segment_accuracy': tensor(0.9141), 'val/phoneme_wise_accuracy': tensor(0.), 'val/phon_word_accuracy': tensor(0.), 'time_per_val_step': 0.0279465913772583, 'time_per_val_epoch': 0.3353590965270996}
+orth_embed_weights shape:  torch.Size([26, 16])
+phon_embed_weights shape:  torch.Size([34, 16])
+phon_embed_weights type:  <class 'torch.Tensor'>
+wandb.log orth_embed_table: log_embeddings:  <function log_embeddings at 0x7f5b5314b160>
+before update: gm.epochs_completed=9
+after update: gm.epochs_completed=10
+INSIDE epoch loop, gm.epochs_completed=10, epoch=9
+END epoch loop: gm.epochs_completed=10
+resuts:  ({'train/loss': tensor(1.8765, grad_fn=<AddBackward0>), 'train/epoch': 9, 'train/example_ct': 48, 'train/global_embedding_magnitude': tensor(1.3119, grad_fn=<LinalgVectorNormBackward0>), 'train/model_weights_magnitude': tensor(9.9740, grad_fn=<SqrtBackward0>), 'train/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'train/orth_loss': tensor(1.6639, grad_fn=<NllLoss2DBackward0>), 'train/phon_loss': tensor(0.2126, grad_fn=<NllLoss2DBackward0>), 'train/letter_wise_accuracy': tensor(0.7500), 'train/word_wise_accuracy': tensor(0.), 'train/phon_segment_accuracy': tensor(0.9293), 'train/phoneme_wise_accuracy': tensor(0.), 'train/phon_word_accuracy': tensor(0.), 'time_per_train_step': 0.05326873064041138, 'time_per_train_epoch': 0.6392247676849365, 'val/loss': tensor(1.6399, grad_fn=<AddBackward0>), 'val/epoch': 9, 'val/example_ct': 8, 'val/global_embedding_magnitude': tensor(1.3119, grad_fn=<LinalgVectorNormBackward0>), 'val/model_weights_magnitude': tensor(9.9740, grad_fn=<SqrtBackward0>), 'val/generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'val/orth_loss': tensor(1.4202, grad_fn=<NllLoss2DBackward0>), 'val/phon_loss': tensor(0.2197, grad_fn=<NllLoss2DBackward0>), 'val/letter_wise_accuracy': tensor(0.6667), 'val/word_wise_accuracy': tensor(0.), 'val/phon_segment_accuracy': tensor(0.9141), 'val/phoneme_wise_accuracy': tensor(0.), 'val/phon_word_accuracy': tensor(0.), 'time_per_val_step': 0.0279465913772583, 'time_per_val_epoch': 0.3353590965270996}, {'cc': {'device': 'cpu', 'project': None, 'num_epochs': 10, 'batch_size_train': 8, 'batch_size_val': 8, 'num_layers': 2, 'learning_rate': 0.001, 'continue_training': False, 'model_chkpt': '', 'd_model': 16, 'nhead': 2, 'wandb': False, 'test': True, 'max_nb_steps': -1, 'train_test_split': 0.9, 'which_dataset': 100, 'sweep': '', 'd_embedding': 2, 'seed': 1337, 'nb_samples': 1000, 'model_path': './models', 'pathway': 'op2op', 'save_every': 2, 'model_id': 'mes19f_2023-12-01_17h28m18376ms', 'chkpt_file_exists': False, 'epochs_completed': 0, 'model_file_name': 'mes19f_2023-12-01_17h28m18376ms_chkpt000.pth', 'n_steps_per_epoch': 12, 'metrics': (...)}, 'model': Model(
   (orthography_embedding): Embedding(26, 16)
   (orth_position_embedding): RotaryPositionEmbedding()
   (phonology_embedding): Embedding(34, 16)
@@ -213,5 +321,5 @@ Parameter Group 0
     lr: 0.001
     maximize: False
     weight_decay: 0.01
-), 'ds': <src.dataset.ConnTextULDataset object at 0x7fb2f0a513d0>, 'model_id': 'mes19f_2023-12-01_16h03m54349ms', 'epochs_completed': 2, 'run': <src.wandb_wrapper.MyRun object at 0x7fb2f0a51340>, 'train_dataset_slices': [slice(0, 8, None), slice(8, 16, None), slice(16, 24, None), slice(24, 32, None), slice(32, 40, None), slice(40, 48, None), slice(48, 56, None), slice(56, 64, None), slice(64, 72, None), slice(72, 80, None), slice(80, 88, None), slice(88, 89, None)], 'val_dataset_slices': [slice(89, 97, None), slice(97, 99, None)], 'generated_text_table': <src.wandb_wrapper.MyTable object at 0x7fb3ae4e5af0>, 'mode': 'val'})
+), 'ds': <src.dataset.ConnTextULDataset object at 0x7f5b53112850>, 'model_id': 'mes19f_2023-12-01_17h28m18376ms', 'epochs_completed': 10, 'run': <src.wandb_wrapper.MyRun object at 0x7f5b53112940>, 'train_dataset_slices': [slice(0, 8, None), slice(8, 16, None), slice(16, 24, None), slice(24, 32, None), slice(32, 40, None), slice(40, 48, None), slice(48, 56, None), slice(56, 64, None), slice(64, 72, None), slice(72, 80, None), slice(80, 88, None), slice(88, 89, None)], 'val_dataset_slices': [slice(89, 97, None), slice(97, 99, None)], 'generated_text_table': <src.wandb_wrapper.MyTable object at 0x7f5c10f2fc10>, 'mode': 'val'})
 Return from main: No errors
