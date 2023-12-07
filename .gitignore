@@ -11,3 +11,4 @@ settings.json
 data/.cache/
 .vscode/
 venv/
+.venv/
