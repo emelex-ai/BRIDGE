@@ -18,7 +18,7 @@ def extract_loss(file,csv_filename):
             epochs.append(int(match.group(2)))
     
     # Write the losses and epochs to a csv file
-    with open(f'src/tests/RoPE/{csv_filename}', 'w',newline='') as f:
+    with open(f'{csv_filename}', 'w',newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['epoch', 'loss'])
         for i in range(len(epochs)):
