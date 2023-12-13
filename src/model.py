@@ -129,6 +129,7 @@ class Model(torch.nn.Module):
         self.orth_position_embedding = RotaryPositionEmbedding(d_model, max_orth_seq_len)
         # Embedding for phonology
         self.phonology_embedding = torch.nn.Embedding(phon_vocab_size, d_model)
+        
         # self.phon_position_embedding = torch.nn.Embedding(max_phon_seq_len, d_model)
         self.phone_position_embedding = RotaryPositionEmbedding(d_model, max_phon_seq_len)
         self.vocab_sizes = {
@@ -211,8 +212,7 @@ class Model(torch.nn.Module):
         seq_len = tokens.shape[1]  # Assuming tokens is of shape [batch_size, seq_len]
         rotary_emb = self.orth_position_embedding(seq_len, tokens.device)
 
-        # Ensure the dimensions of rotary_emb match those of orth_embeddings
-        # This might require reshaping or expanding the dimensions of rotary_emb
+        # Reshaping or expanding the dimensions of rotary_emb
         # For example, if necessary: 
         # rotary_emb = rotary_emb.expand_as(orth_embeddings)
 
@@ -248,8 +248,7 @@ class Model(torch.nn.Module):
         seq_len = len(tokens[0])  # Assuming tokens[0] represents the sequence length for the batch
         rotary_emb = self.phone_position_embedding(seq_len, device)
 
-        # Ensure the dimensions of rotary_emb match those of output_embedding
-        # This might require reshaping or expanding the dimensions of rotary_emb
+        # Might require reshaping or expanding the dimensions of rotary_emb
         # For example, if necessary: 
         # rotary_emb = rotary_emb.expand(len(tokens), seq_len, -1)
 
