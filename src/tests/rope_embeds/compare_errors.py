@@ -48,8 +48,9 @@ def plot_graph(csv_filename, label, ax=None):
 def compare_errors(file1, file2, csv1, csv2):
     extract_loss(file1, csv1)
     extract_loss(file2, csv2)
-    ax = plot_graph(csv1, label=f'{file1}')
-    plot_graph(csv2, label=f'{file2}', ax=ax)
+    ax = plot_graph(csv1, label=f'Original Embeddings')
+    plot_graph(csv2, label=f'Rotary Position Embeddings', ax=ax)
+    plt.title(f"Positional Embeddings Loss Comparison")
     plt.legend()
     plt.savefig(f'comparison.png')
     plt.show()
