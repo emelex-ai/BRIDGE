@@ -51,7 +51,7 @@ def compare_errors(file1, file2, csv1, csv2):
     ax = plot_graph(csv1, label=f'{file1}')
     plot_graph(csv2, label=f'{file2}', ax=ax)
     plt.legend()
-    plt.savefig(f'{csv1}_{csv2}.png')
+    plt.savefig(f'comparison.png')
     plt.show()
 
 if __name__ == "__main__":
