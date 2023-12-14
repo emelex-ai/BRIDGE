@@ -4,23 +4,27 @@
 ## Date: 2023-09-18
 
 # Installation with Poetry
-# TODO: Pramodh will make all our lives better and improve the README
-- Clone from github
 
-  github clone https://github.com/erlebach/ConnTextUL_poetry.git
 
-- Create the virtual environment (./.venv)
+- Install poetry through the set of commands for linux :
+   - curl -sSL https://install.python-poetry.org | python3 -
+   - nano ~/.bashrc   
+   - export PATH="/home/name/.local/bin:$PATH"  #add your directory
+   - source ~/.bashrc  #applying the changes to the current session
+   - poetry --version  #to check if poetry has been installed
 
-   poetry install
+- Now once into our project folder , steps use our existing pyproject.toml file to create a poetry shell
+   - poetry shell #will create a new venv based on the existing pyproject.toml file 
+   - poetry install (or) poetry add wandb@latest 
+   - The above commands will install the dependencies required for our project mentioned in the pyproject.toml file
+   - Now run the code based on the commands below.
 
-- Enter the Poetry shell
-
-   poetry shell
-
-- Run one of the scripts below
-
-Github: ConnTextUL_poetry
-
+- To create a new poetry project 
+   - poetry new project-name
+   - cd project-name 
+   - Copy and paste the list of dependencies from our original pyproject.toml file to project-name/pyproject.toml
+   - poetry shell
+   - poetry install
 # Running the code
 
 How to run the code. I provide four example files, stored in scripts/: 
