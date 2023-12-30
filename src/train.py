@@ -32,7 +32,7 @@ def run_code_sweep(args_dct: Dict):
 
     c = run.config
     ds = ConnTextULDataset(
-        c, test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples
+        c, test=c.test, which_dataset=c.which_dataset, nb_rows=c.nb_samples, input_data = args_dct.input_data
     )
     results = run_code_impl(run, ds, epoch_num, model_id)
 

@@ -271,7 +271,7 @@ class ConnTextULDataset(Dataset):
   """
 
     # ----------------------------------------------------------------------
-    def __init__(self, config, test=False, nb_rows=None, which_dataset=5):
+    def __init__(self, config, test=False, nb_rows=None, which_dataset=5, input_data = 'data.csv'):
         # Check cache folder. Perform this check in test suite.
 
         self.config = config
@@ -279,6 +279,7 @@ class ConnTextULDataset(Dataset):
         self.nb_rows = nb_rows
         self.read_orthographic_data()
         self.read_phonology_data()
+        self.input_data = input_data
 
         # self.listed_words = [word for word in self.words]
 
@@ -320,7 +321,7 @@ class ConnTextULDataset(Dataset):
             print("Cache folder: %s already exists", CACHE_PATH)
 
         if self.which_dataset == "all":
-            file_path = os.path.join(DATA_PATH, "data.csv")
+            file_path = os.path.join(DATA_PATH, self.input_data)
         else:
             file_path = os.path.join(
                 CACHE_PATH, "data_test%05d.csv" % self.which_dataset
@@ -330,7 +331,7 @@ class ConnTextULDataset(Dataset):
             # Create the file
             print(f"File {file_path} does not exist")
             dataset = pd.read_csv(
-                os.path.join(DATA_PATH, "data.csv"), nrows=self.nb_rows
+                os.path.join(DATA_PATH, self.input_data), nrows=self.nb_rows
             )
             if self.which_dataset != "all":
                 dataset = dataset.sample(n=self.which_dataset)

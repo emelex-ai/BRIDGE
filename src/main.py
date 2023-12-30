@@ -142,6 +142,13 @@ def read_args():
         help="Save data every 'save_every' number of epochs. Default: 1", 
     )
 
+    parser.add_argument(
+        "--input_data",
+        type=str,
+        default="data.csv",
+        help="Name of the input training file present in the /data folder. Can be a path with root folder as the /data folder."
+    )
+
     args = parser.parse_args()
 
     if args.nb_samples <= 0:
@@ -197,6 +204,7 @@ def hardcoded_args():
     # wandb should always be set through the command line. False by default.
     dct.sweep = ""
     dct.save_every = 2
+    dct.input_data = "data.csv"
 
     torch.manual_seed(dct.seed)
     torch.cuda.manual_seed_all(dct.seed)
