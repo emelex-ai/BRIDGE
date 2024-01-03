@@ -214,6 +214,7 @@ def hardcoded_args():
 
 # ----------------------------------------------------------------------
 def setup_new_run(config):
+    
     model_id = get_new_model_id()
     model_file_name = get_model_file_name(model_id, epoch_num=0)
     config.model_id = model_id
@@ -231,8 +232,8 @@ def handle_model_continuation(config):
 
     if config.continue_training == False:
         # New simulation with new model_id
+        dct = hardcoded_args()
         model_id, model_file_name, epochs_completed = setup_new_run(config)
-        print(f"New run: {model_file_name=}")
     else:
         # Continue existing simulation
         if config.model_chkpt:
