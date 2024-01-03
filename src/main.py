@@ -247,7 +247,6 @@ def handle_model_continuation(config):
                 model_id, epochs_completed = extract_model_id_epoch(model_file_name)
                 config.chkpt_file_exists = True
             else:
-                print(f"Checkpoint file ({full_path}) does not exist!")
                 print("Exit program")
                 quit()
         else:
@@ -258,7 +257,6 @@ def handle_model_continuation(config):
                 model_id, epochs_completed = extract_model_id_epoch(latest_file)
                 model_file_name = latest_file
                 config.chkpt_file_exists = True
-                print(f"{model_id=}, {epochs_completed=}, {model_file_name=}")
             except:
                 # If there is no latest file from the user in the proper format, 
                 print("Expected a continuation run, but there is no previous run")
