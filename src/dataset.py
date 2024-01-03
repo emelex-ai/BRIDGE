@@ -277,7 +277,7 @@ class ConnTextULDataset(Dataset):
         self.config = config
         self.which_dataset = which_dataset
         self.nb_rows = nb_rows
-        self.read_orthographic_data()
+        self.read_orthographic_data(input_data)
         self.read_phonology_data()
         self.input_data = input_data
 
@@ -313,7 +313,7 @@ class ConnTextULDataset(Dataset):
         )
 
     # ----------------------------------------------------------------------
-    def read_orthographic_data(self):
+    def read_orthographic_data(self, input_data):
         if not os.path.exists(CACHE_PATH):
             os.makedirs(CACHE_PATH)
             print("Create Cache folder: %s", CACHE_PATH)
@@ -321,7 +321,7 @@ class ConnTextULDataset(Dataset):
             print("Cache folder: %s already exists", CACHE_PATH)
 
         if self.which_dataset == "all":
-            file_path = os.path.join(DATA_PATH, self.input_data)
+            file_path = os.path.join(DATA_PATH, input_data)
         else:
             file_path = os.path.join(
                 CACHE_PATH, "data_test%05d.csv" % self.which_dataset
@@ -331,7 +331,7 @@ class ConnTextULDataset(Dataset):
             # Create the file
             print(f"File {file_path} does not exist")
             dataset = pd.read_csv(
-                os.path.join(DATA_PATH, self.input_data), nrows=self.nb_rows
+                os.path.join(DATA_PATH, input_data), nrows=self.nb_rows
             )
             if self.which_dataset != "all":
                 dataset = dataset.sample(n=self.which_dataset)
