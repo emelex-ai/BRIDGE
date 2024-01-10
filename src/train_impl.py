@@ -189,12 +189,7 @@ def calculate_accuracies(pathway, logits, orthography, phonology):
     return output
 
 #----------------------------------------------------------------------
-def calculate_euclideandist(pathway,phon_pred,phon_true):
-    #print("Inside calculate_euclidean")
-    if pathway=="op2op":
-        phone_pred_vec= np.array(phon_pred)
 
-    return distance
 
 
 # ----------------------------------------------------------------------
@@ -239,12 +234,11 @@ def compute_metrics(
         phon_true = phonology["targets"]
         metrics["phon_pred"]=phon_pred
         metrics["phon_true"] = phon_true
-        #mask = torch.all(metrics["phon_true"] == 2, dim=2)
+        mask = torch.all(metrics["phon_true"] == 2, dim=2)  # Convert vectors to 0s
         #print(mask)
-        # Convert vectors to 0s
-        #metrics["phon_true"][mask]=0
-
+        metrics["phon_true"][mask]=0
         metrics["euc_dis"] = torch.norm(phon_pred.float() - phon_true.float(), dim=2)
+        
 
 
 
