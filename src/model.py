@@ -447,6 +447,14 @@ class Model(torch.nn.Module):
         return token
 
     def phono_sample(self, last_token_probs, deterministic):
+        """
+        Sample from phonological decoder output. last_token_probs is a tensor of shape (max_seq_length, 2)
+        where max_seq_length is the maximum sequence length of the phonological decoder and the 2 represents the
+        probability dimension. For the probabilitye dimension (2) the zeroth index is the probability of the
+        feature being off, and the first index is the probability of the feature being on.
+
+        For example [0.6, 0.4] -> [feature off, feature on] and in this scenario the feature is off
+        """
         if deterministic:
             vec = last_token_probs[:, 1] > 0.5
         else:  # non-deterministic
