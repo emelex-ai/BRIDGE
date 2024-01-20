@@ -1,8 +1,8 @@
 [tool.poetry]
-name = "conntextul-conda"
+name = "conntextul"
 version = "0.1.0"
 description = ""
-authors = ["erlebach <gordon.erlebach@gmail.com>"]
+authors = ["Nathan Crock <mathnathan@gmail.com>", "erlebach <gordon.erlebach@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
@@ -21,6 +21,7 @@ xlsxwriter = "^3.1.9"
 tqdm = "^4.66.1"
 openpyxl = "^3.1.2"
 traindata = { git = "https://github.com/mathnathan/Traindata.git", branch = "main" }
+ipykernel = "^6.27.1"
 
 
 [tool.poetry.group.dev.dependencies]
