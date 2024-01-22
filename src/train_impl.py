@@ -567,9 +567,10 @@ def log_embeddings(model, ds):
     # log the embeddings as two tables: one for orthography, one for phonology
 
     def fill_table(A):
-        n, m = A.numpy().shape
+        n, m = A.cpu().numpy().shape
         columns = [f"col{str(i)}" for i in range(m)]
-        return wandb.Table(data=A.numpy().tolist(), columns=columns)
+        return wandb.Table(data=A.cpu().numpy().tolist(), columns=columns)
+
 
     orth_embed_table = fill_table(orth_embed_weights)
     phon_embed_table = fill_table(orth_embed_weights)
