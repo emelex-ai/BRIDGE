@@ -9,5 +9,6 @@ explore.ipynb
 scratchpad_*.ipynb
 settings.json
 data/.cache/
+.venv/
 .vscode/
 venv/
