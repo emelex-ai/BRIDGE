@@ -7,6 +7,11 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends build-essential libffi-dev git python3.10 python3-pip && \
     rm -rf /var/lib/apt/lists/*
 
+# Install CUDA Toolkit (which includes CUPTI)
+RUN apt-get update && \
+    apt-get install -y cuda-toolkit-12-0 && \
+    rm -rf /var/lib/apt/lists/*
+
 # Install poetry
 RUN pip install poetry
 
