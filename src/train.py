@@ -1,6 +1,6 @@
 from src.wandb_wrapper import WandbWrapper
 from src.dataset import ConnTextULDataset
-from src.train_impl import get_starting_model_epoch
+from src.train_impl import get_starting_model_epoch, save_string_reductions
 from torch.utils.data import DataLoader, Subset
 from typing import List, Tuple, Dict, Any, Union
 import src.train_impl as train_impl
@@ -89,6 +89,8 @@ def run_code_impl(run, ds, epochs_completed, model_id):
     assert c.d_model % c.nhead == 0, "d_model must be evenly divisible by nhead"
 
     model, opt = train_impl.setup_model(c, ds, num_layers_dict)
+    #s = save_string_reductions(model,ds)
+    #print(s)
     generated_text_table = wandb.Table(columns=["Step", "Generated Output"])
     run.watch(model, log="all", log_freq=100)
     #wandb.watch(model, log="all", log_freq=100)

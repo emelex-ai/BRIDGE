@@ -1,3 +1,4 @@
+import pandas as pd
 from src.wandb_wrapper import WandbWrapper, MyRun
 from torch.utils.data import Dataset
 from src.model import Model
@@ -320,6 +321,7 @@ def validate_single_epoch(gm, dataset_slices, epoch):  # , single_step_fct):
     metrics["time_per_val_epoch"] = (
         gm.cc.n_steps_per_epoch * metrics["time_per_val_step"]
     )
+    
     return metrics
 
 
@@ -724,6 +726,7 @@ def run_train_val_loop(gm):
 
         if epoch % gm.cc.save_every == 0:
             save(gm)
+        save_string_reductions(gm.model,gm.ds,epoch)
 
     #print(f"END epoch loop: {gm.cc.epochs_completed=}")  # = 0. WHY? 
     print(f"END epoch loop: {gm.epochs_completed=}")  # = 0. WHY? 
@@ -754,3 +757,102 @@ def set_seed(c):
 
 
 # ----------------------------------------------------------------------\n",
+def save_string_reductions(model,ds,epoch_num):
+    df = pd.DataFrame(
+    columns=[
+        "word_raw",
+        "phon_target",
+        "phon_prediction",
+        "correct",
+        "phon_target_features",
+        "phon_prediction_features",
+        "phon_prediction_probabilities",
+        "global_encoding",
+        "in_wj3",
+        "in_traindata",
+    ]
+    )
+    #df.drop(df.indexgdown, inplace=True)
+    while epoch_num+1>0:
+            
+        writer = pd.ExcelWriter("wj3_predictions.xlsx", engine="openpyxl")
+        all_words=set()
+        all_words.update(ds.words)
+        for orth in all_words:
+            new_row = {}
+            # Since all_words is a union of both WJ3 and the original dataset,
+            # the phonological form of any orth in all_words is in either WJ3 or
+            # the original cmudict dataset. We check both below
+            #in_wj3 = orth in wj3_json.keys()
+            #new_row["in_wj3"] = in_wj3
+            in_traindata = orth in ds.words
+            new_row["in_traindata"] = in_traindata
+            phon = ds.cmudict[orth]
+
+            datum = ds.character_tokenizer.encode(orth)
+            pred = model.generate(
+                "o2p",
+                datum["enc_input_ids"],
+                datum["enc_pad_mask"],
+                datum["enc_input_ids"],
+                datum["enc_pad_mask"],
+                deterministic=True,
+            )
+            
+            
+            # Save the original input orthography
+            new_row["word_raw"] = orth
+            # Save the target phonology for the above input orthography
+            new_row["phon_target"] = ":".join(phon)
+            # Remove the start and end tokens from each phonological vector
+            # and convert them from tensors to lists
+            phon_pred_features = [tensor.tolist() for tensor in pred["phon_tokens"][1:-1]]
+            # Convert the phonological vectors to phonemes using Matt's handy dandy routine
+            phon_pred = ds.phonology_tokenizer.traindata.convert_numeric_prediction(
+                phon_pred_features, phonology=True, hot_nodes=True
+            )
+            # Save the model's predicted pronunciation for this word. Phonemes are
+            # separated by colons
+            phon_pred = ["None" if p == None else p for p in phon_pred]
+            new_row["phon_prediction"] = ":".join(phon_pred)
+            # Save a boolean indicating whether the prediction was correct
+            new_row["correct"] = new_row["phon_target"] == new_row["phon_prediction"]
+            # Save the phonological features for the target phonology
+            phon_target_features = ds.phonology_tokenizer.encode([orth])
+            if phon_target_features:
+                phon_target_features = ";".join(
+                    [
+                        ":".join([str(v.item()) for v in vector])
+                        for vector in phon_target_features["targets"][0]
+                    ]
+                )
+            else:
+                phon_target_features = "None"
+            new_row["phon_target_features"] = phon_target_features
+            # Save the phonological features for the predicted phonology
+            phon_prediction_features = ";".join(
+                [
+                    ":".join([str(int(v.item())) for v in vector])
+                    for vector in pred["phon_vecs"][1:-1]
+                ]
+            )
+            new_row["phon_prediction_features"] = phon_prediction_features
+            # Save the phonological probabilities for the predicted phonology
+            phon_prediction_probabilities = ";".join(
+                [
+                    ":".join([str(v.item()) for v in vector])
+                    for vector in pred["phon_probs"][1:-1]
+                ]
+            )
+            new_row["phon_prediction_probabilities"] = phon_prediction_probabilities
+            # Save the global encoding vector for the predicted phonology
+        # global_encoding = ":".join(
+            #    [str(v.item()) for v in pred["global_encoding"].squeeze()]
+            #)
+            #new_row["global_encoding"] = global_encoding
+            new_row = pd.Series(new_row)
+            new_row = new_row.to_frame().transpose()
+            df = pd.concat([df, new_row])
+        df.to_excel(writer, sheet_name="epoch__"+str(epoch_num))
+    writer.book.save("wj3_predictions.xlsx")
+    #return new_row
