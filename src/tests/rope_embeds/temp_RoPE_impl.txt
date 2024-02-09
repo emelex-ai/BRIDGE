@@ -1,0 +1,19 @@
+class RotaryPositionEmbedding(torch.nn.Module): 
+    def __init__(self, dim, max_len):
+        super(RotaryPositionEmbedding, self).__init__()
+        self.dim = dim
+        self.max_len = max_len
+
+    def forward(self, seq_len, device):
+        # Ensure the sequence length doesn't exceed the maximum
+        seq_len = min(seq_len, self.max_len)
+        # Compute rotary embeddings
+        return rotary_position_embedding(self.dim, seq_len, device)
+
+def rotary_position_embedding(dim, seq_len, device=None):
+    inv_freq = 1.0 / (10000 ** (torch.arange(0, dim, 2).float() / dim))
+    if device is not None:
+        inv_freq = inv_freq.to(device)
+    t = torch.arange(seq_len, device=device).type_as(inv_freq)
+    sinusoid_inp = torch.einsum('i,j->ij', t, inv_freq)
+    return torch.stack((sinusoid_inp.sin(), sinusoid_inp.cos()), dim=-1).view(seq_len, -1)
