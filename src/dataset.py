@@ -1,4 +1,4 @@
-#from Traindata.Traindata import Traindata
+# from Traindata.Traindata import Traindata
 from traindata import Traindata
 
 # import Traindata.Traindata
@@ -271,9 +271,17 @@ class ConnTextULDataset(Dataset):
   """
 
     # ----------------------------------------------------------------------
-    def __init__(self, config, test=False, nb_rows=None, which_dataset=5):
+    def __init__(
+        self,
+        config,
+        test=False,
+        nb_rows=None,
+        which_dataset="all",
+        dataset_filename="data.csv",
+    ):
         # Check cache folder. Perform this check in test suite.
 
+        self.data_filename = dataset_filename
         self.config = config
         self.which_dataset = which_dataset
         self.nb_rows = nb_rows
@@ -315,22 +323,23 @@ class ConnTextULDataset(Dataset):
     def read_orthographic_data(self):
         if not os.path.exists(CACHE_PATH):
             os.makedirs(CACHE_PATH)
-            print("Create Cache folder: %s", CACHE_PATH)
+            print(f"Create Cache folder: {CACHE_PATH}")
         else:
-            print("Cache folder: %s already exists", CACHE_PATH)
+            print(f"Cache folder: {CACHE_PATH} already exists")
 
         if self.which_dataset == "all":
-            file_path = os.path.join(DATA_PATH, "data.csv")
+            file_path = os.path.join(DATA_PATH, self.data_filename)
         else:
             file_path = os.path.join(
-                CACHE_PATH, "data_test%05d.csv" % self.which_dataset
+                CACHE_PATH,
+                self.data_filename.split(".")[0] + "_%05d.csv" % self.which_dataset,
             )
 
         if not os.path.exists(file_path):
             # Create the file
             print(f"File {file_path} does not exist")
             dataset = pd.read_csv(
-                os.path.join(DATA_PATH, "data.csv"), nrows=self.nb_rows
+                os.path.join(DATA_PATH, self.data_filename), nrows=self.nb_rows
             )
             if self.which_dataset != "all":
                 dataset = dataset.sample(n=self.which_dataset)
@@ -352,11 +361,12 @@ class ConnTextULDataset(Dataset):
         """
         Read pkl file if it exists, else create it
         """
+        phonology_cache_name = self.data_filename.split(".")[0]
         if self.which_dataset == "all":
-            pkl_file_path = os.path.join(CACHE_PATH, "phonology_tokenizer.pkl")
+            pkl_file_path = os.path.join(CACHE_PATH, phonology_cache_name + ".pkl")
         else:
             pkl_file_path = os.path.join(
-                CACHE_PATH, "phonology_tokenizer%05d.pkl" % self.which_dataset
+                CACHE_PATH, phonology_cache_name + "_%05d.pkl" % self.which_dataset
             )
 
         if os.path.exists(pkl_file_path):
