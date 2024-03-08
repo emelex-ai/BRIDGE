@@ -69,6 +69,13 @@ def read_args():
                         and linear layers. Must be evenly divisible by nhead",
     )
     parser.add_argument(
+        "--d_global",
+        type=int,
+        default=64,
+        help="Dimensionality of the global embedding layer. This sets the \
+            \"width\" of the layer, d_embedding sets the height",
+    )
+    parser.add_argument(
         "--nhead",
         type=int,
         default=4,
@@ -177,6 +184,7 @@ def hardcoded_args():
     dct.device = 'cpu'
     dct.d_model = 16
     dct.d_embedding = 2
+    dct.d_global= 64
     dct.nhead = 2
     dct.num_layers = 2
     dct.batch_size_train = 8
@@ -273,6 +281,10 @@ def main(args: Dict):
     assert (
         config.d_model % config.nhead == 0
     ), "d_model must be evenly divisible by nhead"
+
+    assert (
+        config.d_global % config.d_model == 0
+    ), "d_global must be evenly divisible by d_model"
 
     model_id, epochs_completed, model_file_name = handle_model_continuation(config)
 

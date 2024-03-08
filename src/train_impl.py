@@ -510,6 +510,7 @@ def setup_model(c, ds, num_layers_dict):
             max_phon_seq_len=ds.max_phon_seq_len,
             num_layers_dict=num_layers_dict,
             d_embedding=c.d_embedding,
+            d_global=c.d_global,
         )
         model.load_state_dict(chkpt["model"])
         opt = pt.optim.AdamW(model.parameters(), c.learning_rate)
@@ -527,6 +528,7 @@ def setup_model(c, ds, num_layers_dict):
             max_phon_seq_len=ds.max_phon_seq_len,
             nhead=c.nhead,
             num_layers_dict=num_layers_dict,  # New, GE, 2023-05-27
+            d_global = c.d_global
         )
         c.epochs_completed = 0
         #opt = pt.optim.SGD(model.parameters(), c.learning_rate)

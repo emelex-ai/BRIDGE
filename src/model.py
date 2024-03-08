@@ -90,6 +90,7 @@ class Model(torch.nn.Module):
         phon_vocab_size,
         d_model,
         d_embedding,
+        d_global,
         max_orth_seq_len,
         max_phon_seq_len,
         nhead,
@@ -116,12 +117,13 @@ class Model(torch.nn.Module):
         }
         self.d_model = d_model
         self.d_embedding = d_embedding
+        self.d_global = d_global
         self.max_orth_seq_len = max_orth_seq_len
         self.max_phon_seq_len = max_phon_seq_len
 
         # A 1 × d_embedding × d_model tensor of model parameters, rescaled by √d_model
         self.global_embedding = torch.nn.Parameter(
-            torch.randn((1, self.d_embedding, self.d_model)) / self.d_model**0.5,
+            torch.randn((1, self.d_embedding, self.d_global)) / self.d_global**0.5,
             requires_grad=True,
         )
 
