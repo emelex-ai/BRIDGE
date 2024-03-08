@@ -184,7 +184,7 @@ def hardcoded_args():
     dct.device = 'cpu'
     dct.d_model = 16
     dct.d_embedding = 2
-    dct.d_global= 64
+    dct.d_global = 64
     dct.nhead = 2
     dct.num_layers = 2
     dct.batch_size_train = 8

@@ -121,7 +121,7 @@ class Model(torch.nn.Module):
         self.max_orth_seq_len = max_orth_seq_len
         self.max_phon_seq_len = max_phon_seq_len
 
-        # A 1 × d_embedding × d_model tensor of model parameters, rescaled by √d_model
+        # A 1 × d_embedding × d_global tensor of model parameters, rescaled by √d_global
         self.global_embedding = torch.nn.Parameter(
             torch.randn((1, self.d_embedding, self.d_global)) / self.d_global**0.5,
             requires_grad=True,
