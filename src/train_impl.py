@@ -188,6 +188,9 @@ def calculate_accuracies(pathway, logits, orthography, phonology):
 
     return output
 
+#----------------------------------------------------------------------
+
+
 
 # ----------------------------------------------------------------------
 def compute_metrics(
@@ -210,30 +213,43 @@ def compute_metrics(
 ):
     example_ct[0] += len(batch["orthography"])
     metrics = {
-        f"{gm.mode}/loss": loss,
-        f"{gm.mode}/epoch": epoch,
-        f"{gm.mode}/example_ct": example_ct[
+        f"{gm.mode}_loss": loss,
+        f"{gm.mode}_epoch": epoch,
+        f"{gm.mode}_example_ct": example_ct[
             0
         ],  # GE: put in a list so I could use it in a function argument
-        f"{gm.mode}/global_embedding_magnitude": pt.norm(
+        f"{gm.mode}_global_embedding_magnitude": pt.norm(
             model.global_embedding[0], p=2
         ),
-        f"{gm.mode}/model_weights_magnitude": pt.sqrt(
+        f"{gm.mode}_model_weights_magnitude": pt.sqrt(
             sum([pt.norm(w[0], p=2) ** 2 for w in model.parameters()])
         ),
         # "train/lr": opt.state_dict()['param_groups'][0]['lr'],
-        f"{gm.mode}/generated_text_table": generated_text_table,
+        f"{gm.mode}_generated_text_table": generated_text_table,
     }
     if pathway == "op2op":
-        metrics[f"{gm.mode}/orth_loss"] = orth_loss
-        metrics[f"{gm.mode}/phon_loss"] = phon_loss
+        metrics[f"{gm.mode}_orth_loss"] = orth_loss
+        metrics[f"{gm.mode}_phon_loss"] = phon_loss
+        phon_pred = pt.argmax(logits["phon"], dim=1)
+        phon_true = phonology["targets"]
+        metrics["phon_pred"]=phon_pred
+        metrics["phon_true"] = phon_true
+        mask = torch.all(metrics["phon_true"] == 2, dim=2)  # Convert vectors to 0s
+        #print(mask)
+        metrics["phon_true"][mask]=0
+        metrics["euc_dis"] = torch.norm(phon_pred.float() - phon_true.float(), dim=2)
+        
+
+
+
 
     accuracies = calculate_accuracies(pathway, logits, orthography, phonology)
+    #distances =calculate_euclideandist(pathway,phon_pred,phon_true)
     for accuracy in accuracies:
-        metrics[f"{gm.mode}/{accuracy}"] = accuracies[accuracy]
+        metrics[f"{gm.mode}_{accuracy}"] = accuracies[accuracy]
 
     return metrics
-
+ 
 
 # ----------------------------------------------------------------------
 def average_metrics_over_epoch(all_metrics):
@@ -297,7 +313,7 @@ def validate_single_epoch(gm, dataset_slices, epoch):  # , single_step_fct):
     example_ct = [0]
 
     model.eval()
-    gm.mode = "val"
+    gm.mode = "valid"
     nb_steps = 0
     start = time.time()
     print("==> validation: nb steps: ", len(list(dataset_slices)))
@@ -704,6 +720,9 @@ def run_train_val_loop(gm):
             metrics[0].update(more_metrics)
         wandb.log(metrics[0])   # should not be run.log
         #run.log(metrics[0])
+        
+        rough_dis = {'eucleadian_dis':0}
+        #metrics[0].update(rough_dis)
         print("metrics[0]: ", metrics[0])
 
         # Log the embeddings
