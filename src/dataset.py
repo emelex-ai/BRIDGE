@@ -8,15 +8,14 @@ import torch
 import nltk
 import numpy as np
 import pickle
-import os
+from pathlib import Path
 
 nltk.download("cmudict")
 
 
-DATA_PATH = "./data/"
-# The user can remove the contents of the cache at any time.
+ROOT_DIR = Path(__file__).resolve().parent.parent
 # The user can remove the cache folder, which will auto-generate
-CACHE_PATH = os.path.join(DATA_PATH, ".cache")
+CACHE_PATH = ROOT_DIR / "data" / ".cache"
 
 
 class CUDA_Dict(dict):
@@ -262,37 +261,20 @@ class ConnTextULDataset(Dataset):
     """
     ConnTextULDataset
 
-    Dataset of
     For Matt's Phonological Feature Vectors, we will use (31, 32, 33) to represent ('[BOS]', '[EOS]', '[PAD]')
     """
-
-    """
-  GE: only read smaller datasets in --test mode. But then, how can I make arguments override my test parameters? 
-  """
 
     # ----------------------------------------------------------------------
     def __init__(
         self,
         config,
-        test=False,
-        nb_rows=None,
-        which_dataset="all",
-        dataset_filename="data.csv",
     ):
-        # Check cache folder. Perform this check in test suite.
 
-        self.data_filename = dataset_filename
+        self.dataset_filename = config.dataset_filename
         self.config = config
-        self.which_dataset = which_dataset
-        self.nb_rows = nb_rows
         self.read_orthographic_data()
         self.read_phonology_data()
 
-        # self.listed_words = [word for word in self.words]
-
-        # Notice I created a tokenizer in this class.
-        # We can use it to tokenize word output of __getitem__ below,
-        # although I haven't implemented yet.
         list_of_characters = sorted(set([c for word in self.tmp_words for c in word]))
         self.character_tokenizer = CharacterTokenizer(list_of_characters)
 
@@ -321,35 +303,9 @@ class ConnTextULDataset(Dataset):
 
     # ----------------------------------------------------------------------
     def read_orthographic_data(self):
-        if not os.path.exists(CACHE_PATH):
-            os.makedirs(CACHE_PATH)
-            print(f"Create Cache folder: {CACHE_PATH}")
-        else:
-            print(f"Cache folder: {CACHE_PATH} already exists")
 
-        if self.which_dataset == "all":
-            file_path = os.path.join(DATA_PATH, self.data_filename)
-        else:
-            file_path = os.path.join(
-                CACHE_PATH,
-                self.data_filename.split(".")[0] + "_%05d.csv" % self.which_dataset,
-            )
-
-        if not os.path.exists(file_path):
-            # Create the file
-            print(f"File {file_path} does not exist")
-            dataset = pd.read_csv(
-                os.path.join(DATA_PATH, self.data_filename), nrows=self.nb_rows
-            )
-            if self.which_dataset != "all":
-                dataset = dataset.sample(n=self.which_dataset)
-            dataset.to_csv(file_path, index=False)
-        else:
-            # File exists
-            print(f"File {file_path} exists")
-            dataset = pd.read_csv(file_path)
-
-        # Remove any NaN from the data (Gordon Erlebacher)
+        # Read the dataset (path already made absolute in main.py)
+        dataset = pd.read_csv(self.dataset_filename)
         dataset.dropna(inplace=True, axis="rows")
 
         # Do not remove duplicate words since we are performing curriculum training
@@ -361,15 +317,18 @@ class ConnTextULDataset(Dataset):
         """
         Read pkl file if it exists, else create it
         """
-        phonology_cache_name = self.data_filename.split(".")[0]
-        if self.which_dataset == "all":
-            pkl_file_path = os.path.join(CACHE_PATH, phonology_cache_name + ".pkl")
+        if not CACHE_PATH.exists():
+            CACHE_PATH.mkdir(parents=True)
+            print(f"Created Cache folder: {CACHE_PATH}")
         else:
-            pkl_file_path = os.path.join(
-                CACHE_PATH, phonology_cache_name + "_%05d.pkl" % self.which_dataset
-            )
+            print(f"Cache folder: {CACHE_PATH} already exists")
 
-        if os.path.exists(pkl_file_path):
+        new_phon_cache_filename = f"{self.dataset_filename.stem}_phonology.pkl"
+        pkl_file_path = (
+            CACHE_PATH / self.dataset_filename.parent / new_phon_cache_filename
+        )
+
+        if pkl_file_path.exists():
             # pkl file exists
             with open(pkl_file_path, "rb") as f:
                 self.phonology_tokenizer = pickle.load(f)
@@ -379,7 +338,6 @@ class ConnTextULDataset(Dataset):
             with open(pkl_file_path, "wb") as f:
                 pickle.dump(self.phonology_tokenizer, f)
 
-    # ----------------------------------------------------------------------
     def __len__(self):
         return len(self.words)
 

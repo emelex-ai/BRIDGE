@@ -98,31 +98,39 @@ Test new run with d_model=128 and d_model=64  (output files shoudl be different)
 ----------------------------------------------------------------------
 Program arguments: 
 
-| Command Line Argument | Argument  | Type  | Description |
-|-----------------------|-----------|-------|-------------|
-| --device              | cpu/gpu   | str   | cpu or gpu device |
-| --project             | project name  | str   | Project name (no default) |
-| --num_epochs          | nb of epochs to run  | int   | Number of epochs |
-| --batch_size_train    | batch size during training | int   | Train batch size |
-| --batch_size_val      | batch size during validation  | int   | Validation batch size |
-| --num_layers          | number of layers | int   | Number of layers |
-| --learning_rate       | learning rate | float | Learning rate |
-| --continue_training   | N/A       | bool  | Continue training from last checkpoint (default: new run if argument absent) |
-| --model_chkpt         | model file name to start from  | str   | Continue training from the checkpoint model_chkpt (assumes --continue_training is present) (default: continue from latest run if --model_id is absent) |
-| --d_model             | embedding dimension | int   | Dimensionality of the internal model components including Embedding layer, transformer layers, and linear layers. Must be evenly divisible by nhead |
-| --nhead               | number of attention heads | int   | Number of attention heads for all attention modules. Must evenly divided d_model. |
-| --wandb               | use Weights & Biases | bool  | Enable wandb (default: disabled if argument absent) |
-| --test                | N/A       | bool  | Test mode: only run one epoch on a small subset of the data (default: no test if argument absent) |
-| --max_nb_steps        | max number of steps per epoch | int   | Hardcode nb steps per epoch for fast testing. Run full epoch if not present. |
-| --train_test_split    | fraction of data in training set  | float | Fraction of data in the training set in [0,1]|
-| --which_dataset       | number ot words to read in with --test | int   | Choose the dataset to load |
-| --sweep               | yaml file name | str | Yaml file name for W & B sweep run |
-| --d_embedding         | Global embedding dimension | int   | Dimensionality of the final embedding layer. |
-| --seed                | random seed | int   | Random seed for repeatability. |
-| --nb_samples          | number of samples | int   | Number of total samples from dataset. All samples if <=0 |
-| --model_path          | path to model checkpoint files  | str   | Path to model checkpoint files. |
-| --pathway             | o2p/p2o/op2op | str | Specify the particular pathway to use: o2p, p2o, op2op |
-| --save_every          | skip factor for model saves | int   | Save data every 'save_every' number of epochs. Default: 1 |
+| Command Line Argument | Argument  | Type  |
+|-----------------------|-----------|-------|
+| --config              | name of YAML file containing training configuration data | str |
+
+----------------------------------------------------------------------
+Configuration options:
+
+| YAML Config Options   | Type | Description | 
+|-----------------------|------|-------------|
+| device                | str  | specify device to run on 'cpu' or 'gpu' |
+| project               | str  | wandb project name |
+| num_epochs            | int  | nb of epochs to run |
+| batch_size_train      | int  | batch size during training |
+| batch_size_val        | int  | batch size during validation |
+| num_phon_enc_layers   | int  | number of layers in phonology encoder transformer block |
+| num_orth_enc_layers   | int  | number of layers in orthography encoder transformer block |
+| num_mixing_enc_layers | int  | number of layers in mixing encoder transformer block |
+| num_phon_dec_layers   | int  | number of layers in phonology decoder transformer block |
+| num_orth_dec_layers   | int  | number of layers in orthography decoder transformer block |
+| learning_rate         | float| learning rate |
+| d_model               | int  | Dimensionality of internal model components (embedding, linear and transformer layers). Must be evenly divisble by nhead |
+| nhead                 | int  | number of attention heads |
+| wandb                 | bool | use Weights & Biases |
+| train_test_split      | float| fraction of data in training set. Leave at 1.0 is using test_filenames |
+| sweep_filename        | str  | yaml file name for W&B sweep run |
+| d_embedding           | int  | Global embedding dimension |
+| seed                  | int  | random seed for repeatability |
+| model_path            | str  | path to model checkpoint files |
+| pathway               | str  | particular pathway to be trained 'o2p', 'p2o', or 'op2op' |
+| save_every            | int  | Save data every 'save_every' number of epochs |
+| dataset_filename      | str  | The name of the csv file in the data folder that contains the data to train on. (must be in `data/` directory) |
+| max_nb_steps          | int  | The maximum number of steps to take per epoch. Good for testing |
+| test_filenames        | list | A list of csv files to test the model on once per epoch. (must be in `data/test/` directory) |
 
 ----------------------------------------------------------------------
 
