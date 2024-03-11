@@ -65,7 +65,7 @@ class Decoder(torch.nn.Module):
             tensor
 
         """
-        # print("tgt: ", tgt.shape)
+        # print("tgt: ", tgt.shapedddd)
         # print("memory: ", memory.shape)
         # print("tgt_mask: ", tgt_mask.shape)
         # print("tgt_mask: ", tgt_mask)
@@ -612,7 +612,7 @@ class Model(torch.nn.Module):
                     gen_phon_tokes.append(torch.tensor(new_phon_tokes))
 
                 for i, vec in enumerate(new_phonology_vectors):
-                    phon_vecs.append(vec)
+                    phon_vecs[i].append(vec)
 
                 print(f"{generated_phon_tokens=}")
                 # generated_phon_tokens[0].append(new_phonology_tokens)
@@ -623,7 +623,7 @@ class Model(torch.nn.Module):
         output = {
             "phon_probs": phon_probs,
             "phon_vecs": phon_vecs,
-            "phon_tokens": generated_phon_tokens[0],
+            "phon_tokens": generated_phon_tokens,
         }
 
         return output
@@ -637,11 +637,96 @@ class Model(torch.nn.Module):
         phon_enc_pad_mask,
         deterministic=False,
     ):
+        """
+        Once a model has been trained, to perform inference or generate new phonological vectors or orthographic tokens, use this generate function. As 
+        input, it expects the pathway and the encoded orthography/phonology. Get the encodings from the character_tokenizer.encode or phonology_tokenizer.encode 
+        routines.
+
+        Parameters:
+            - pathway (string): one of three pathway options ['op2op', 'o2p' 'p2o'].
+            - orth_enc_input (torch.tensor): Output from the tokenizer encode routine. Has shape (batch_size, max_sen_len)
+            - orth_enc_pad_mask (torch.tensor): Also output from the tokenizer encode routine. Has shape (batch_size, max_seq_len). This is a boolena tensor
+                of Trues and Falses, where the True indicates the presence of a PAD token (the integer 4). See Example section for example 
+            - phon_enc_input (): TODO
+            - phon_enc_pad_mask (): TODO
+            - deterministic (boolean): Flag contolling whether the token sampling process is deteministic (greedy) or stochastic, meaning we draw from a bernoulli
+                distribution parameterized by model's output probabilities.
+
+        Returns:
+            The routine returna a dictionary with keys containing the generated data at various levels, along with the global embedding vector. 
+            More precisely,
+
+                >>> output = model.generate(**params)
+
+                - output["orth_probs"] (List(torch.tensor)): TODO
+                - output["orth_tokens"] (List(torch.tensor)): TODO
+                - output["phon_probs"] (List(List(torch.tensor))): This object contains the probabilities (bernoulli parameters) of each feature vector, for each 
+                    phonome, for each word in the batch. So the shape is (batch_size, max_phon_len, 33) or (words, phonemes, phonological features).
+                - output["phon_vecs"] (List(List(torch.tensor))): The phonological feature vectors resulting from the generation process. If determinisitc=True then
+                    each tensor is created from the output probabilites:
+                        (last_token_probs[:, 1, :] > 0.5).long())
+                    if deterministic=False, then the vector is sampled:
+                        torch.bernoulli(last_token_probs[:, 1, :]).long()
+                    The final object has shape (batch_size, max_phon_len, 33) or (words, phonemes, phonological features).
+                - output["phon_tokens"] (List(List(torch.tensor))): Each feature vector is composed of zeros and ones. We keep track of all the indices where phonological
+                    features are on, or set to one, with this object. The outer list contains the words, the inner list contains all the feature vectors indices, each 
+                    inner torch.tensor contains numbers between 0 - 33, where each indicates the presence of a one at the corresponding index in the phonologica feature
+                    vector. In other words, the shape is (batch_size, max_phon_len, num_active_features). Each inner tensor can have a different size, as its length
+                    ie equal to the number of nonzero entries in the phonological feature vector.
+                - output["global_encoding"] (torch.tensor): This is the global embedding vector that is passed into the decoder as the Key/Value tensors in the cross attention
+                    head. Its shape is (batch_size, 1, global_embedding_dim), or (word, the vector, num elements in the vector).
+            
+        Examples:
+            Below we generate phonological data for the three input words "hello", "dog", and "a".
+
+            >>> from src.model import Model
+            >>> from addict import Dict as AttrDict
+            >>> from pathlib import Path
+
+            >>> config = type(
+                            "config",
+                            (object,),
+                            {"dataset_filename": Path("data/data.csv")},
+                        )
+            >>> ds = ConnTextULDataset(config)
+            >>> chkpt = pt.load("path_to_checkpoint_file.pth")
+            >>> model = Model(AttrDict(chkpt["config"]), ds)
+            >>> model.load_state_dict(chkpt["model_state_dict"])
+
+            >>> datum = ds.character_tokenizer.encode(["hello", "dog", "a"])
+            >>> datum['enc_input_ids']
+                tensor([[ 0, 18, 15, 22, 22, 25,  1],
+                        [ 0, 14, 25, 17,  1,  4,  4],
+                        [ 0, 11,  1,  4,  4,  4,  4]])
+            >>> datum['enc_pad_mask']
+                tensor([[False, False, False, False, False, False, False],
+                        [False, False, False, False, False,  True,  True],
+                        [False, False, False,  True,  True,  True,  True]])
+
+            >>> pred = model.generate(
+                            "o2p",
+                            datum["enc_input_ids"],
+                            datum["enc_pad_mask"],
+                            None,
+                            None,
+                            deterministic=True,
+                        )
+            >>> pred.keys()
+                dict_keys(['orth_probs', 'orth_tokens', 'phon_probs', 'phon_vecs', 'phon_tokens', 'global_encoding'])
+
+        Note:
+            Only the o2p pathway is currently implemented to support batch processing. Need to add an issue to complete implementation of the
+            p2o and op2op batch processing pathways.
+
+        See Also:
+            - phonology_decoder_loop
+            - phono_sample
+            - orthography_decoder_loop
+            - ortho_sample
+        """
         print("--In Generate--")
         print("orth_enc_input: ", orth_enc_input.shape)
         print("orth_enc_pad_mask: ", orth_enc_pad_mask.shape)
-        print("phon_enc_input: ", phon_enc_input.shape)
-        print("phon_enc_pad_mask: ", phon_enc_pad_mask.shape)
         self.eval()
         device = next(self.parameters()).device
         batch_size = orth_enc_input.shape[0]
@@ -689,11 +774,12 @@ class Model(torch.nn.Module):
                 deterministic,
             )
             generated_phon_probs = generated_phon_output["phon_probs"]
-            print(f"{generated_phon_probs.shape=}")
+            print(f"{generated_phon_probs=}")
             generated_phon_vecs = generated_phon_output["phon_vecs"]
-            print(f"{generated_phon_vecs.shape=}")
+            print(f"{generated_phon_vecs=}")
             generated_phon_tokens = generated_phon_output["phon_tokens"]
-            print(f"{generated_phon_tokens.shape=}")
+            print(f"{generated_phon_tokens=}")
+        print("--- DONE WITH GENERATE PHONOLOGY ---😆")
 
         generated_orth_probs = None
         generated_orth_tokens = None
