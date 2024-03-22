@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install basic build dependencies
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential libffi-dev git python3.10 python3-pip && \
+    apt-get install -y --no-install-recommends build-essential libffi-dev git python3.10 python3-pip curl && \
     rm -rf /var/lib/apt/lists/*
 
 # Install CUDA Toolkit (which includes CUPTI)
@@ -13,14 +13,16 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Install poetry
-RUN pip install poetry
+RUN curl -sSL https://install.python-poetry.org | python3 - && \
+    ls -la /root/.local/bin
+# Add Poetry to PATH manually
+ENV PATH="${PATH}:/root/.local/bin"
+#RUN pip install poetry
 
 # Copy poetry files and install dependencies
 COPY poetry.lock pyproject.toml /app/
 RUN poetry config virtualenvs.create false \
-    && poetry install --no-dev
+    && poetry install --no-root
 
 # Copy the rest of the application
 COPY . /app
-
-
