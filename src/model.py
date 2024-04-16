@@ -65,13 +65,6 @@ class Decoder(torch.nn.Module):
             tensor
 
         """
-        # print("tgt: ", tgt.shapedddd)
-        # print("memory: ", memory.shape)
-        # print("tgt_mask: ", tgt_mask.shape)
-        # print("tgt_mask: ", tgt_mask)
-        # print("memory_mask: ", memory_mask.shape)
-        # print("tgt_key_padding_mask: ", tgt_key_padding_mask.shape)
-        # print("memory_key_padding_mask: ", memory_key_padding_mask.shape)
         output = self.transformer_decoder(
             tgt,
             memory,
@@ -476,21 +469,15 @@ class Model(torch.nn.Module):
         For example [0.6, 0.4] -> [feature off, feature on] and in this scenario the feature is off
         """
 
-        print("--In phono_sample--")
-        print(f"{last_token_probs.shape=}")
-        print(f"{last_token_probs=}")
         if deterministic:
             # Greater than 0.5 probability indicates feature presence
             feature_presence = (last_token_probs[:, 1, :] > 0.5).long()
         else:  # non-deterministic
             feature_presence = torch.bernoulli(last_token_probs[:, 1, :]).long()
 
-        print(f"{feature_presence.shape=}")
-        print(f"{feature_presence=}")
         # This returns a tuple of indices ([x_indices], [y_indices]) we need to convert this to a list of lists
         # where each sublist contains the indicies of activate features for each vector in the batch
         tokens_tmp = torch.where(feature_presence)
-        print(f"{tokens_tmp=}")
 
         # We create this new data structure to store the tokens in the list of lists. Each index of the outer list
         # corresponds to a batch element, and the inner list contains the indices of the active features for that
@@ -563,10 +550,6 @@ class Model(torch.nn.Module):
         prompt_encoding,
         deterministic,
     ):
-        print("--In phonology_decoder_loop--")
-        print(f"{generated_phon_embeddings.shape=}")
-        print(f"{prompt_encoding.shape=}")
-        print(f"{len(generated_phon_tokens)=}")
         # LOOP THROUGH PHONOLOGY DECODER.
         phon_probs = []
         phon_vecs = []
@@ -578,9 +561,6 @@ class Model(torch.nn.Module):
             step_mask = mask[: step + 1, : step + 1]
 
             with torch.no_grad():
-                print("\tgenerated_phon_embeddings: ", generated_phon_embeddings.shape)
-                print("\tprompt_encoding: ", prompt_encoding.shape)
-                print("\tstep_mask: ", step_mask.shape)
                 phon_output = self.phonology_decoder(
                     generated_phon_embeddings,
                     memory=prompt_encoding,
@@ -607,14 +587,11 @@ class Model(torch.nn.Module):
                 for gen_phon_tokes, new_phon_tokes in zip(
                     generated_phon_tokens, new_phonology_tokens
                 ):
-                    print(f"{gen_phon_tokes=}")
-                    print(f"{new_phon_tokes=}")
                     gen_phon_tokes.append(torch.tensor(new_phon_tokes))
 
                 for i, vec in enumerate(new_phonology_vectors):
                     phon_vecs[i].append(vec)
 
-                print(f"{generated_phon_tokens=}")
                 # generated_phon_tokens[0].append(new_phonology_tokens)
                 generated_phon_embeddings = self.embed_phon_tokens(
                     generated_phon_tokens
@@ -724,9 +701,6 @@ class Model(torch.nn.Module):
             - orthography_decoder_loop
             - ortho_sample
         """
-        print("--In Generate--")
-        print("orth_enc_input: ", orth_enc_input.shape)
-        print("orth_enc_pad_mask: ", orth_enc_pad_mask.shape)
         self.eval()
         device = next(self.parameters()).device
         batch_size = orth_enc_input.shape[0]
@@ -764,7 +738,6 @@ class Model(torch.nn.Module):
                 for _ in range(batch_size)
             ]
 
-            print(f"{generated_phon_tokens=}")
             generated_phon_embeddings = self.embed_phon_tokens(generated_phon_tokens)
             generated_phon_output = self.phonology_decoder_loop(
                 mask,
@@ -774,12 +747,8 @@ class Model(torch.nn.Module):
                 deterministic,
             )
             generated_phon_probs = generated_phon_output["phon_probs"]
-            print(f"{generated_phon_probs=}")
             generated_phon_vecs = generated_phon_output["phon_vecs"]
-            print(f"{generated_phon_vecs=}")
             generated_phon_tokens = generated_phon_output["phon_tokens"]
-            print(f"{generated_phon_tokens=}")
-        print("--- DONE WITH GENERATE PHONOLOGY ---😆")
 
         generated_orth_probs = None
         generated_orth_tokens = None

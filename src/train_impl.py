@@ -517,9 +517,9 @@ def run_train_val_loop(gm):
                 val_dataset_slices,
                 epoch,
             )
+            if gm.cc.max_nb_steps < 0:
+                metrics[0].update(more_metrics)
 
-        if gm.cc.max_nb_steps < 0:
-            metrics[0].update(more_metrics)
         wandb.log(metrics[0])  # should not be run.log
         # run.log(metrics[0])
 

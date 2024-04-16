@@ -8,14 +8,14 @@ import torch
 import nltk
 import numpy as np
 import pickle
-from pathlib import Path
+import os
 
 nltk.download("cmudict")
 
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # The user can remove the cache folder, which will auto-generate
-CACHE_PATH = ROOT_DIR / "data" / ".cache"
+CACHE_PATH = os.path.join(ROOT_DIR, "data", ".cache")
 
 
 class CUDA_Dict(dict):
@@ -317,18 +317,17 @@ class ConnTextULDataset(Dataset):
         """
         Read pkl file if it exists, else create it
         """
-        if not CACHE_PATH.exists():
-            CACHE_PATH.mkdir(parents=True)
+        if not os.path.exists(CACHE_PATH):
+            os.makedirs(CACHE_PATH, exist_ok=True)
             print(f"Created Cache folder: {CACHE_PATH}")
         else:
             print(f"Cache folder: {CACHE_PATH} already exists")
 
-        new_phon_cache_filename = f"{self.dataset_filename.stem}_phonology.pkl"
-        pkl_file_path = (
-            CACHE_PATH / self.dataset_filename.parent / new_phon_cache_filename
-        )
+        dataset_filename = os.path.splitext(os.path.basename(self.dataset_filename))[0]
+        new_phon_cache_filename = f"{dataset_filename}_phonology.pkl"
+        pkl_file_path = os.path.join(CACHE_PATH, new_phon_cache_filename)
 
-        if pkl_file_path.exists():
+        if os.path.exists(pkl_file_path):
             # pkl file exists
             with open(pkl_file_path, "rb") as f:
                 self.phonology_tokenizer = pickle.load(f)

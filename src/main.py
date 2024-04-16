@@ -45,7 +45,7 @@ def read_args():
 def setup_new_run(config):
     model_id = get_new_model_id()
     config.model_id = model_id
-    model_file_name = get_model_file_name(model_id, epoch_num=0)
+    model_file_name = get_model_file_name(model_id, 0)
     return model_id, model_file_name
 
 
@@ -81,7 +81,7 @@ def main(config: AttrDict):
     config.model_file_name = model_file_name
 
     #  Parameters specific to W&B
-    entity = "emelex"
+    entity = "nathan-crock"
     project = config.project
 
     globals().update({"wandb": wandb})
@@ -171,14 +171,14 @@ def load_config(config_filepath=None):
     )
 
     # Grab the project root for relative path conversion
-    project_root = Path(__file__).parent.parent
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     if not config_filepath:
         # If no config file is passed in, use the default values
         config = default_values
     else:
         # Try to open the yaml file with some basic error checking and handling
-        config_filepath = project_root / config_filepath
+        config_filepath = os.path.join(project_root, config_filepath)
         config = read_yaml(config_filepath)
 
     # We make sure that the user has included all necessary keys in the config file
@@ -190,28 +190,32 @@ def load_config(config_filepath=None):
     # -- Convert relative paths to absolute paths --
     # Begin with sweep_filename
     if config.sweep_filename:
-        abs_path = project_root / config.sweep_filename
+        abs_path = os.path.join(project_root, config.sweep_filename)
         config.sweep_filename = abs_path
     # Next the model_path. This is a directory where models are stored
-    abs_path = project_root / config.model_path
+    abs_path = os.path.join(project_root, config.model_path)
     config.model_path = abs_path
     # Next the dataset_filename
-    abs_path = project_root / "data" / config.dataset_filename
+    abs_path = os.path.join(project_root, "data", config.dataset_filename)
     config.dataset_filename = abs_path
     # Lastly, the test_filenames
-    for idx, test_filename in enumerate(config.test_filenames):
-        abs_path = project_root / "data" / "tests" / test_filename
-        config.test_filenames[idx] = abs_path
+    if config.test_filenames:
+        for idx, test_filename in enumerate(config.test_filenames):
+            abs_path = os.path.join(project_root, "data", "tests", test_filename)
+            config.test_filenames[idx] = abs_path
+    else:
+        config.test_filenames = []
 
     return config
 
 
 def read_yaml(filepath):
 
-    assert filepath.exists(), f"YAML file not found: {filepath}"
-    assert (filepath.is_file()) and (
-        filepath.suffix in [".yaml", ".yml"]
-    ), "Config file must be a YAML file"
+    assert os.path.exists(filepath), f"YAML file not found: {filepath}"
+    # Extract the file extension and check if it is either ".yaml" or ".yml"
+    file_extension = os.path.splitext(filepath)[1]
+    is_yaml = file_extension in [".yaml", ".yml"]
+    assert os.path.isfile(filepath) and is_yaml, "Config file must be a YAML file"
 
     try:
         # Attempt to load the YAML configuration file
@@ -261,36 +265,41 @@ def validate_config(config):
     # Begin with the sweep file
     if config.sweep_filename:
         assert (
-            config.sweep_filename.exists()
+            os.path.exists(config.sweep_filename)
         ), f"Sweep file not found: {config.sweep_filename}"
-        assert (config.sweep_filename.is_file()) and (
-            (config.sweep_filename.suffix == ".yaml")
-            or (config.sweep_filename.suffix == ".yml")
-        ), f"Sweep file must be a YAML file: {config.sweep_filename}"
+
+        # Check if the path points to an existing file
+        is_file = os.path.isfile(config.sweep_filename)
+
+        # Extract the file extension and check if it is either ".yaml" or ".yml"
+        file_extension = os.path.splitext(config.sweep_filename)[1]
+        is_yaml_extension = file_extension in [".yaml", ".yml"]
+
+        # Combine the checks in an assert statement
+        assert is_file and is_yaml_extension, f"Sweep file must be a YAML file: {config.sweep_filename}"
+
     # Next the model_path. This is a directory where models are stored
-    assert config.model_path.exists(), f"Model path not found: {config.model_path}"
+    assert os.path.exists(config.model_path), f"Model path not found: {config.model_path}"
     assert (
-        config.model_path.is_dir()
+        os.path.isdir(config.model_path)
     ), f"Model path must be a directory: {config.model_path}"
     # Next the dataset_filename
     assert (
-        config.dataset_filename.exists()
+        os.path.exists(config.dataset_filename)
     ), f"Dataset file not found: {config.dataset_filename}"
-    assert (config.dataset_filename.is_file()) and (
-        config.dataset_filename.suffix == ".csv"
+    assert (os.path.isfile(config.dataset_filename)) and (
+        os.path.splitext(config.dataset_filename)[1] == ".csv"
     ), f"Dataset file must be a CSV file: {config.dataset_filename}"
 
     # Lastly, the test_filenames
     for test_filename in config.test_filenames:
-        project_root = Path(__file__).parent.parent
-        relative_path = project_root / "data" / "tests" / test_filename
-        assert relative_path.exists(), f"Test file not found: {relative_path}"
-        assert (
-            relative_path.is_file()
-        ), f"Provided test csv, {relative_path}, is not a file"
-        assert (
-            relative_path.suffix == ".csv"
-        ), f"Test file must be a CSV file: {relative_path}"
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        relative_path = os.path.join(project_root, "data", "tests", test_filename)
+        assert os.path.exists(relative_path), f"Test file not found: {relative_path}"
+        # Check if the path points to a file
+        assert os.path.isfile(relative_path), f"Provided test csv, {relative_path}, is not a file"
+        # Check if the file has a .csv extension
+        assert os.path.splitext(relative_path)[1] == ".csv", f"Test file must be a CSV file: {relative_path}"
 
     # Add other checks here as necessary
 

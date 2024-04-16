@@ -9,7 +9,7 @@ RUN apt-get update && \
 
 # Install CUDA Toolkit (which includes CUPTI)
 RUN apt-get update && \
-    apt-get install -y cuda-toolkit-12-0 && \
+    apt-get install -y cuda-toolkit-12-0 gcc python3-dev && \
     rm -rf /var/lib/apt/lists/*
 
 # Install poetry
@@ -20,7 +20,7 @@ ENV PATH="${PATH}:/root/.local/bin"
 #RUN pip install poetry
 
 # Copy poetry files and install dependencies
-COPY poetry.lock pyproject.toml /app/
+COPY pyproject.toml /app/
 RUN poetry config virtualenvs.create false \
     && poetry install --no-root
 

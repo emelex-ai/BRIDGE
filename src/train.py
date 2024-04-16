@@ -17,17 +17,14 @@ More complex code structure to accomodate running wandb with and without hypersw
 
 def run_code_sweep(args_dct: Dict):
     # Use startup data to determine starting epoch. Update the model_id
-    model_id, epoch_num = get_starting_model_epoch(
-        args_dct.model_path,
-        model_id=None,
-    )
-    wandb_name = train_impl.get_model_file_name(model_id, epoch_num)
+    model_id = get_starting_model_epoch()
+    wandb_name = train_impl.get_model_file_name(model_id, 0)
     print("sweep: wandb_name: ", wandb_name)
     run = wandb.init(name=wandb_name, config=args_dct)
 
     config = run.config
     dataset = ConnTextULDataset(config)
-    results = run_code_impl(run, dataset, epoch_num, model_id)
+    results = run_code_impl(run, dataset, model_id)
 
     # config is no longer needed except for possible testing. So no harm done
     # by the next two lines
