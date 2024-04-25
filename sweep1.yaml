@@ -1,8 +1,0 @@
-"method": "grid"
-"name": "sweep1"
-"metric": 
-    "goal": "maximize" 
-    "name": "phonological accuracy"
-"parameters": 
-    "common_num_layers": {"values": [1, 4]}
-    "which_dataset": {"values": [5, 20]}
