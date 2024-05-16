@@ -81,7 +81,8 @@ def main(config: AttrDict):
     config.model_file_name = model_file_name
 
     #  Parameters specific to W&B
-    entity = "nathan-crock"
+    #entity = "nathan-crock"
+    entity  = "ConnTextUL-test"
     project = config.project
 
     globals().update({"wandb": wandb})

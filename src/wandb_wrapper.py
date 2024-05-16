@@ -2,6 +2,12 @@
 # Author: G. Erlebacher
 import wandb
 from addict import Dict as AttrDict
+import os
+import time
+from watchdog.observers import Observer
+ # install watch dog with pip package
+from watchdog.events import FileSystemEventHandler
+import asyncio
 
 # ----------------------------------------------------------------------
 def read_wandb_history(entity, project, run):
@@ -130,12 +136,21 @@ class WandbWrapper(Singleton):
         self.my_plot = MyPlot()
         self.plot = self.my_plot
         self.run = None
-
+        self.write_artifacts = False
+        self.observer = None
+        #self.is_wandb_on = False
     def set_params(self, is_wandb_on=False, is_sweep=False, config=None):
         self.is_wandb_on = is_wandb_on
         self.is_sweep = is_sweep
         self.config = AttrDict(config) if config else AttrDict({})
-
+        print("config in set parama",self.config)
+        self.write_artifacts = config['write_artifacts']#Newly added for save checkpoints
+        
+        self.checkpoint_dir=self.config.get('model_path')#Newly added for save checkpoints
+        self.artifact_name=self.config['model_file_name']#Newly added for save checkpoints              
+        print("Checkpoint directory:", self.checkpoint_dir)
+        print("Artifact name:", self.artifact_name)
+        self.start_monitoring()
     def get_wandb(self):
         return self
 
@@ -162,11 +177,82 @@ class WandbWrapper(Singleton):
     def read_wandb_history(self, *kargs, **kwargs):
         if self.is_wandb_on:
             read_wandb_history(*kargs, **kwargs)
+    async def get_checkpoint_dir(self):
+        print("inside get",self.checkpoint_dir)
+        return self.checkpoint_dir
+
+    async def get_artifact_name(self):
+        return self.artifact_name
 
     def log(self, *kargs, **kwargs):
         if self.is_wandb_on and self.run:
             print("wandb wrapper, call self.run.log")
             self.run.log(*kargs, **kwargs)
+            #time.sleep(10)
+            #self.save_checkpoints_to_artifacts(self.checkpoint_dir, self.artifact_name,artifact_type="model")
+
+    #code for the Watchdog
+    def start_monitoring(self):
+        """
+        Idea for this function is to observe the models folder continuously and check for 
+        appropriate checkpoint file creation but Observer is getting terminated after watching once.
+        """
+        # Convert checkpoint directory to an absolute path to avoid path issues
+        self.checkpoint_dir = os.path.abspath(self.checkpoint_dir)
+        print(f"Starting monitoring at: {self.checkpoint_dir}")
+
+        # Check if directory exists
+        if not os.path.exists(self.checkpoint_dir):
+            print("Directory does not exist, creating directory.")
+            os.makedirs(self.checkpoint_dir, exist_ok=True)
+
+        if not self.observer or not self.observer.is_alive():
+            self.observer = Observer()
+            print("observer_type",type(self.observer))
+
+        #Invoking File system Event handler of Watchdog
+        event_handler = MyHandler(self.checkpoint_dir, self.artifact_name, self, self.observer)
+        self.observer.schedule(event_handler, self.checkpoint_dir, recursive=True)
+        self.observer.start()
+        print("Observer has been started!")
+
+    #Commented Code for Async Implementation
+    """async def some_method(self,checkpoint_dir,artifact_name,):
+        # some operations
+        print("inside some")
+        await self.save_checkpoints_to_artifacts(checkpoint_dir, artifact_name,artifact_type="model")"""
+
+    def save_checkpoints_to_artifacts(self, checkpoint_dir, artifact_name, artifact_type="model"):
+        """
+        The function is used to save checkpoints to Wandb in artfacts folder
+        """
+        #print("inside save checkpoints to Wandb",self.is_wandb_on,self.run,self.write_artifacts)
+
+        if self.is_wandb_on and self.run and self.write_artifacts: #condtition to check if appropriate flags are true
+            print("inside check")
+            #Creating a new artifact object for organizing experiment checkpoints
+            artifact = wandb.Artifact(name=artifact_name, type=artifact_type)
+            artifact.add_dir(checkpoint_dir)
+
+            for filename in os.listdir(checkpoint_dir):
+                if filename.endswith('.pth'):
+                    print("inside if")
+                    checkpoint_files = os.path.join(checkpoint_dir, artifact_name)
+                    print("Files before logging to Wandb:", checkpoint_files)
+                    if(filename==artifact_name):
+                           artifact.add_file(os.path.join(checkpoint_dir, artifact_name), name=artifact_name)
+                    else:
+                        print(f"The current file: {artifact_name} is not found in the directory or not yet created!")
+                        pass
+            self.run.log_artifact(artifact)
+        else:
+            # Do nothing if artifacts writing is disabled
+            print("Write Artifacts is disabled for the Wandb ")
+            pass
+    
+                    
+                
+
 
     def watch(self, *kargs, **kwargs):
         if self.is_wandb_on and self.run:
@@ -236,3 +322,50 @@ class WandbWrapper(Singleton):
     def agent(self, *kargs, **kwargs):
         if self.is_wandb_on and self.run and self.is_sweep:
             return wandb.agent(*kargs, **kwargs)
+        
+#File Systems Event Handler for Watchdog        
+class MyHandler(FileSystemEventHandler):
+    def __init__(self, checkpoint_dir, artifact_name, wandb_wrapper, observer):
+        self.checkpoint_dir = checkpoint_dir
+        self.artifact_name = artifact_name
+        self.wandb_wrapper = wandb_wrapper
+        self.observer = observer
+        #print("MyHandler-->",type(wandb_wrapper))
+
+    """ When Expected checkpoint file is created this should invoke below function 
+     but not triggered as expected"""
+    def on_created(self, event):
+        print("inside on create of My Handler class")
+        if event.src_path.endswith('.pth'):
+            print(f"New checkpoint file detected: {event.src_path}")
+            # Trigger your save operation here
+            self.wandb_wrapper.save_checkpoints_to_artifacts(self.checkpoint_dir, self.artifact_name)
+            # Optionally stop the observer if you only need to act on the first file created
+            #self.observer.stop()
+
+#Implementing Async
+
+"""async def main():
+    # Create an instance of WandbWrapper
+    #time.sleep(5)
+    #wandb_wrapper = WandbWrapper()
+    #wandb_wrapper.set_params(is_wandb_on=False, is_sweep=False, config=None)
+    # Call get_checkpoint_dir asynchronously
+    checkpoint_dir = WandbWrapper().get_checkpoint_dir()
+    artifact_name= WandbWrapper().get_artifact_name()
+    # Now you can use the checkpoint directory as needed
+    print("Checkpoint directory, artifact name in async:", checkpoint_dir,artifact_name)
+    
+    await WandbWrapper().save_checkpoints_to_artifacts(checkpoint_dir,artifact_name,artifact_type="model")
+# Run the main function using asyncio
+asyncio.run(main())"""
+
+"""checkpoint_dir = WandbWrapper().get_checkpoint_dir()
+artifact_name= WandbWrapper().get_artifact_name()
+
+WandbWrapper().save_checkpoints_to_artifacts(checkpoint_dir,artifact_name,artifact_type="model")"""
+
+
+
+   
+
