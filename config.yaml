@@ -10,8 +10,8 @@ train_test_split: 1.0
 save_every: 1
 seed: 1337
 learning_rate: 0.0001
-project: nathan 
-wandb: False
+project: conntextul_runs
+wandb: True
 num_phon_enc_layers: 1
 num_orth_enc_layers: 1
 num_mixing_enc_layers: 1
