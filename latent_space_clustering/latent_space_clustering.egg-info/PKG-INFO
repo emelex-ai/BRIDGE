@@ -1,0 +1,16 @@
+Metadata-Version: 2.1
+Name: latent_space_clustering
+Version: 0.1.0
+Summary: Latent Space Clustering and Visualization Library
+Home-page: https://github.com/yourusername/latent_space_clustering
+Author: Mario Shontz
+Author-email: shontzm@gmail.com
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.10
+Requires-Dist: pandas
+Requires-Dist: numpy
+Requires-Dist: scikit-learn
+Requires-Dist: matplotlib
+Requires-Dist: seaborn
