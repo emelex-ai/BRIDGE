@@ -1,4 +1,4 @@
-num_epochs: 2
+num_epochs: 1
 batch_size_train: 64
 batch_size_val: 64
 d_model: 64
@@ -10,8 +10,8 @@ train_test_split: 1.0
 save_every: 1
 seed: 1337
 learning_rate: 0.0001
-project: nathan 
-wandb: False
+project: chk_pnt_final_test
+wandb: True
 num_phon_enc_layers: 1
 num_orth_enc_layers: 1
 num_mixing_enc_layers: 1
@@ -19,9 +19,10 @@ num_phon_dec_layers: 1
 num_orth_dec_layers: 1
 device: cpu
 model_path: './models'
-dataset_filename: 'data.csv'
+dataset_filename: 'sidewalk_data.csv'
 max_nb_steps: 20
 sweep_filename: ""
 test_filenames:
   - test1.csv
   - test2.csv
+write_artifacts: True

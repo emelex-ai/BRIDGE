@@ -17,6 +17,7 @@ from pathlib import Path
 import os
 from addict import Dict as AttrDict
 from typing import List, Tuple, Dict, Any, Union
+import time
 
 # used to get the user name in a portable manner
 
@@ -81,7 +82,8 @@ def main(config: AttrDict):
     config.model_file_name = model_file_name
 
     #  Parameters specific to W&B
-    entity = "nathan-crock"
+    #entity = "nathan-crock"
+    entity  = "ConnTextUL-test"
     project = config.project
 
     globals().update({"wandb": wandb})
@@ -131,10 +133,10 @@ def main(config: AttrDict):
             project=project,
             config=config,
         )
-
+                
         # Nothing done with returned metrics yet... If not needed, consider not returning
         metrics = run_code(run, model_id)
-
+        
     return 0
 
 
