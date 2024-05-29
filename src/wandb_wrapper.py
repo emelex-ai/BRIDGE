@@ -2,6 +2,7 @@
 # Author: G. Erlebacher
 import wandb
 from addict import Dict as AttrDict
+import os
 
 # ----------------------------------------------------------------------
 def read_wandb_history(entity, project, run):
@@ -135,6 +136,13 @@ class WandbWrapper(Singleton):
         self.is_wandb_on = is_wandb_on
         self.is_sweep = is_sweep
         self.config = AttrDict(config) if config else AttrDict({})
+        print("config in set parama",self.config)
+        self.write_artifacts = config['write_artifacts'] #Fetching the value of write_artifacts flg from Wandb
+        
+        self.checkpoint_dir=self.config.get('model_path')#Newly added for save checkpoints
+        self.artifact_name=self.config['model_file_name']#Newly added for save checkpoints              
+        print("Checkpoint directory:", self.checkpoint_dir)
+        print("Artifact name:", self.artifact_name)
 
     def get_wandb(self):
         return self
@@ -162,11 +170,17 @@ class WandbWrapper(Singleton):
     def read_wandb_history(self, *kargs, **kwargs):
         if self.is_wandb_on:
             read_wandb_history(*kargs, **kwargs)
+    def get_config(self):        
+    # Returns a copy of the config to avoid direct manipulation outside
+       #print("type(self.config) in WandbWrapper",type(AttrDict(kwargs["config"])))
+       return self.config
+
 
     def log(self, *kargs, **kwargs):
         if self.is_wandb_on and self.run:
             print("wandb wrapper, call self.run.log")
             self.run.log(*kargs, **kwargs)
+            #self.save_checkpoints_to_artifacts(self.checkpoint_dir, self.artifact_name, artifact_type="model")
 
     def watch(self, *kargs, **kwargs):
         if self.is_wandb_on and self.run:
@@ -175,12 +189,14 @@ class WandbWrapper(Singleton):
 
     def Table(self, *kargs, **kwargs):
         if self.is_wandb_on and self.run:
+            #self.save_checkpoints_to_artifacts(self.checkpoint_dir, self.artifact_name, artifact_type="model")
             return wandb.Table(*kargs, **kwargs) 
         else:
             return self.my_table
 
     def plot_table(self, *kargs, **kwargs):
         if self.is_wandb_on and self.run:
+            #self.save_checkpoints_to_artifacts(self.checkpoint_dir, self.artifact_name, artifact_type="model")
             return wandb.plot_table(*kargs, **kwargs)  
         else:
             return self.my_plot  # could return anything I think
@@ -194,6 +210,34 @@ class WandbWrapper(Singleton):
     def login(self):
         if self.is_wandb_on and self.run:
             wandb.login()
+
+    def save_checkpoints_to_artifacts(self, checkpoint_dir, artifact_name, artifact_type="model"):
+        """
+        The function is used to save checkpoints to Wandb in artfacts folder
+        """
+        #print("inside save checkpoints to Wandb",self.is_wandb_on,self.run,self.write_artifacts)
+
+        if self.is_wandb_on and self.run and self.write_artifacts: #condtition to check if appropriate flags are true
+            print("inside check")
+            #Creating a new artifact object for organizing experiment checkpoints
+            artifact = wandb.Artifact(name=artifact_name, type=artifact_type)
+            #artifact.add_dir(checkpoint_dir)
+
+            if artifact_name in os.listdir(checkpoint_dir):
+                if artifact_name.endswith('.pth'):
+                    print("inside if")
+                    checkpoint_files = os.path.join(checkpoint_dir, artifact_name)
+                    print("Files before logging to Wandb:", checkpoint_files)
+                    #if(filename==artifact_name):
+                    artifact.add_file(os.path.join(checkpoint_dir, artifact_name), name=artifact_name)
+            else:
+              print(f"The current file: {artifact_name} is not found in the directory or not yet created!")
+              pass
+            self.run.log_artifact(artifact)
+        else:
+            # Do nothing if artifacts writing is disabled
+            print("Write Artifacts is disabled for the Wandb ")
+            pass
 
     def save(self):
         if self.is_wandb_on and self.run:

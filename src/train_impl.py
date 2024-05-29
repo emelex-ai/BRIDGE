@@ -442,7 +442,10 @@ def get_new_model_id():
 def get_model_file_name(model_id, epoch_num):
     # Remove all underscores from the user name
     file_name = f"{model_id}_chkpt{epoch_num:03d}.pth"
+    current_dir = os.path.dirname(__file__)
+    checkpoint_dir=os.path.join(current_dir, '..', 'models') 
     print("before return from model_file_name, file_name: ", file_name)
+    #wandb.save_checkpoints_to_artifacts(checkpoint_dir=checkpoint_dir, artifact_name=file_name, artifact_type="model")
     return f"{file_name}"
 
 
@@ -538,7 +541,14 @@ def run_train_val_loop(gm):
         gm.epochs_completed += 1
         if epoch % gm.cc.save_every == 0:
             save(gm)
-
+            #For getting checkpoint path
+            current_dir = os.path.dirname(__file__)
+            checkpoint_dir=os.path.join(current_dir, '..', 'models') 
+            #Fetching filename for the every epoch
+            file_name = get_model_file_name(gm.model_id, gm.epochs_completed)
+            #calling Save_checkpoints functions from wandb wrapper to log artifacts to Wandb
+            wandb.save_checkpoints_to_artifacts(checkpoint_dir, artifact_name=file_name, artifact_type="model")  
+             
     return metrics
 
 
