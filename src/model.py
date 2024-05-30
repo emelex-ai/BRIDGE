@@ -86,8 +86,8 @@ class Model(torch.nn.Module):
         phon_vocab_size = len(dataset.phonology_tokenizer)
         self.d_model = config.d_model
         self.d_embedding = config.d_embedding
-        self.max_orth_seq_len = dataset.max_orth_seq_len
-        self.max_phon_seq_len = dataset.max_phon_seq_len
+        self.max_orth_seq_len = 100 #dataset.max_orth_seq_len
+        self.max_phon_seq_len = 100 #dataset.max_phon_seq_len
         nhead = config.nhead
         nlayers_phon_enc = config.num_phon_enc_layers
         nlayers_orth_enc = config.num_orth_enc_layers
