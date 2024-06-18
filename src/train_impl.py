@@ -112,7 +112,7 @@ def calculate_accuracies(pathway, logits, orthography, phonology):
         masked_orth_true = orth_true[orth_valid_mask]
         masked_orth_pred = orth_pred[orth_valid_mask]
 
-        # Calculate letter-wise accuracy
+        # Feature-wise accuracy
         correct_matches = (masked_orth_pred == masked_orth_true).sum()
         letter_wise_accuracy = correct_matches.float() / orth_valid_mask.sum().float()
 
@@ -135,10 +135,10 @@ def calculate_accuracies(pathway, logits, orthography, phonology):
         masked_phon_true = phon_true[phon_valid_mask]
         masked_phon_pred = phon_pred[phon_valid_mask]
 
-        # Phoneme segment accuracy
-        correct_phoneme_segments = (masked_phon_pred == masked_phon_true).sum()
-        phon_segment_accuracy = (
-            correct_phoneme_segments.float() / phon_valid_mask.sum().float()
+        # Feature-wise accuracy
+        correct_features = (masked_phon_pred == masked_phon_true).sum()
+        feature_accuracy = (
+            correct_features.float() / phon_valid_mask.sum().float()
         )
 
         # Phoneme-wise accuracy
@@ -152,10 +152,9 @@ def calculate_accuracies(pathway, logits, orthography, phonology):
             word[target != 2].all().int()
             for word, target in zip(phoneme_wise_mask, phon_true)
         ]
-        # phon_word_accuracy = phoneme_wise_mask.all(dim=-1).all(dim=-1).sum()/phon_true.shape[0]
         phon_word_accuracy = sum(word_accuracies) / len(word_accuracies)
-        output["phon_segment_accuracy"] = phon_segment_accuracy
-        output["phoneme_wise_accuracy"] = phoneme_wise_accuracy
+        output["phon_feature_wise_accuracy"] = feature_accuracy 
+        output["phon_phoneme_wise_accuracy"] = phoneme_wise_accuracy
         output["phon_word_accuracy"] = phon_word_accuracy
 
     return output

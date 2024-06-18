@@ -5,7 +5,6 @@
 
 # Installation with Poetry
 
-
 - Install poetry through the set of commands for linux :
    - curl -sSL https://install.python-poetry.org | python3 -
    - nano ~/.bashrc   
@@ -13,8 +12,8 @@
    - source ~/.bashrc  #applying the changes to the current session
    - poetry --version  #to check if poetry has been installed
 
-- Now once into our project folder , steps use our existing pyproject.toml file to create a poetry shell
-   - poetry shell #will create a new venv based on the existing pyproject.toml file 
+- Now once into our project folder, steps use our existing pyproject.toml file to create a poetry shell
+   - poetry shell will create a new venv based on the existing pyproject.toml file 
    - poetry install (or) poetry add wandb@latest 
    - The above commands will install the dependencies required for our project mentioned in the pyproject.toml file
    - Now run the code based on the commands below.
@@ -29,40 +28,15 @@
 
 # Running the code
 
-How to run the code. I provide four example files, stored in scripts/: 
+The specification for a model is provided via a config file. The acceptable
+values for the config file are outlined in the table below. To launch a
+training run based on the parameters in a config file named config.yaml
+run the following code
 
-run_test.x		
-run_wandb.x		
-run_wandb_test.x
+```shell
+python -m src.main --config config.yaml
+```
 
-
-1. make sure "--project project_name" is included in the arguments
-
-  Example:   
-       python -m src.main --project "nathan"
-
-----------------------------------------------------------------------
-2. To use wandb, add --wandb
-
-       python -m src.main --project "nathan"  \
-	                      --wandb
-----------------------------------------------------------------------
-3. To run in test mode, 
-       python -m src.main --project "nathan"  \
-	                      --wandb \
-						  --test
-----------------------------------------------------------------------
-4. To run in sweep mode, 
-       python -m src.main --project "nathan"  \
-	                      --wandb \
-						  --test
-						  --sweep "nathan_sweep.yaml"
-----------------------------------------------------------------------
-To run a sweep, simply add 
-
-   --sweep "sweep_file.yaml"
-
-where "sweep_file.yaml" is a yaml file that contains the sweep parameters.
 
 # Development with Dev Container
 
@@ -96,7 +70,7 @@ is related to something in the WandbWrapper class.
 Test new run with d_model=128 and d_model=64  (output files shoudl be different). Run in test mode 5 epochs.
 
 ----------------------------------------------------------------------
-Program arguments: 
+Config file parameters: 
 
 | Command Line Argument | Argument  | Type  |
 |-----------------------|-----------|-------|

@@ -279,6 +279,7 @@ def validate_config(config):
         assert is_file and is_yaml_extension, f"Sweep file must be a YAML file: {config.sweep_filename}"
 
     # Next the model_path. This is a directory where models are stored
+    os.makedirs(config.model_path, exist_ok=True)
     assert os.path.exists(config.model_path), f"Model path not found: {config.model_path}"
     assert (
         os.path.isdir(config.model_path)
