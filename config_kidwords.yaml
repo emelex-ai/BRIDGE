@@ -1,0 +1,79 @@
+wandb_version: 1
+
+num_epochs:
+  desc: null
+  value: 150
+batch_size_train:
+  desc: null
+  value: 64
+batch_size_val:
+  desc: null
+  value: 64
+d_model:
+  desc: null
+  value: 256
+d_embedding:
+  desc: null
+  value: 1
+nhead:
+  desc: null
+  value: 2
+pathway:
+  desc: null
+  value: o2p
+test:
+  desc: null
+  value: false
+train_test_split:
+  desc: null
+  value: 1.0
+save_every:
+  desc: null
+  value: 9
+seed:
+  desc: null
+  value: 1337
+learning_rate:
+  desc: null
+  value: 0.0001
+project:
+  desc: null
+  value: shallow_kidwords_100k
+wandb:
+  desc: null
+  value: true
+num_phon_enc_layers:
+  desc: null
+  value: 1
+num_orth_enc_layers:
+  desc: null
+  value: 1
+num_mixing_enc_layers:
+  desc: null
+  value: 1
+num_phon_dec_layers:
+  desc: null
+  value: 7
+num_orth_dec_layers:
+  desc: null
+  value: 1
+device:
+  desc: null
+  value: cpu
+model_path:
+  desc: null
+  value: /workspaces/ConnTextUL/./models
+dataset_filename:
+  desc: null
+  value: /workspaces/ConnTextUL/data/kidwords_5000000_020724.csv
+max_nb_steps:
+  desc: null
+  value: 20
+sweep_filename:
+  desc: null
+  value: ''
+test_filenames:
+  desc: null
+  value:
+  - /workspaces/ConnTextUL/data/tests/test1.csv
+  - /workspaces/ConnTextUL/data/tests/test2.csv
