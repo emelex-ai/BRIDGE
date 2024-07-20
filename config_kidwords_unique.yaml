@@ -20,7 +20,7 @@ num_phon_dec_layers: 7
 num_orth_dec_layers: 1
 device: cpu
 model_path: /workspaces/BRIDGE/./models
-dataset_filename: /workspaces/BRIDGE/data/kidwords_5000000_020724.csv
+dataset_filename: /workspaces/BRIDGE/data/kidwords_5000000_020724_unique.csv
 max_nb_steps: 20
 sweep_filename: ''
 test_filenames:
