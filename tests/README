@@ -7,3 +7,5 @@ A non-empty __init__.py is necessary in unit_test_example/ . Inside __init__.py,
 2023-07-07
 Create a test to run a test for 100 iterations
 ----------------------------------------------------------------------
+2024-07-28
+Setup some tests and the github pipeline. Unit test are now run on a new commit and PR.
