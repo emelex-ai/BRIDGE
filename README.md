@@ -3,7 +3,7 @@
  - Gordon Erlebacher
 ## Date: 2023-09-18
 
-# Installation with Poetry
+# Installation
 
 ## Install poetry
 ### Linux
@@ -12,29 +12,32 @@ Install directly from poetry's website:
 ```
 curl -sSL https://install.python-poetry.org | python3 -
 ```
-make sure `~/.local/bin` is included in your `$PATH`, by adding the following line:
-```
-export PATH="$HOME/.local/bin:$PATH"
-```
-to your shell configuration (`nano ~/.bashrc`).
 
 ### macOS
 
-Install `brew` if not already installed:
+Install directly from poetry's website:
+
 ```
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+curl -sSL https://install.python-poetry.org | python3 -
 ```
-and then:
+or install using `brew`:
 ```
 brew install poetry
 ```
+
 ### Validate
 
-You can now validate that `poetry` is correctly installed—after reinitializing the shell or using `source ~/.bashrc`—with `poetry --version`.
+YValidate that `poetry` is correctly installed—after reinitializing the shell or using `source ~/.bashrc`—with `poetry --version`.
+
+If it's not working, make sure `~/.local/bin` is included in your `$PATH`, by adding the following line:
+```
+export PATH="$HOME/.local/bin:$PATH"
+```
+to your shell configuration (`~/.bashrc` or `~/.zshrc`).
 
 ## Create the environment
 
-Now once into our project folder, steps use our existing pyproject.toml file to create a poetry shell.
+Now, once into our project folder, steps use our existing `project.toml` file to create a poetry shell.
 
 ```
 poetry shell
@@ -47,7 +50,7 @@ The previous comments will create a new virtual environment  based on the existi
 
 The specification for a model is provided via a config file. The acceptable
 values for the config file are outlined in the table below. To launch a
-training run based on the parameters in a config file named config.yaml
+training run based on the parameters in a config file named `config.yaml`
 run the following code
 
 ```shell
@@ -62,10 +65,10 @@ This project supports development within a Docker container via a Dev Container.
 ## Setup
 
 1. Ensure [Docker Desktop](https://www.docker.com/products/docker-desktop/) is installed and running on your system.
-2. Ensure that the [Dev Container](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) VS Code extention is installed (ms-vscode-remote.remote-containers)
+2. Ensure that the [Dev Container](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) VS Code extension is installed (ms-vscode-remote.remote-containers)
 3. Open the ConnTextUL project in Visual Studio Code.
 4. When prompted, choose to reopen the project in a container. (Or Shift+CMD+P and select Dev Containers: Rebuild Container)
-5. VS Code (and the Dev Containers extension) will build the container based on the provided Dockerfile and the and devcontainer.json file, run the image on your local machine using Docker Desktop, and then connect your local version of VS Code to the one running in the Docker container. [See here](https://code.visualstudio.com/docs/devcontainers/containers) for details.
+5. VS Code (and the Dev Containers extension) will build the container based on the provided Dockerfile and the devcontainer.json file, run the image on your local machine using Docker Desktop, and then connect your local version of VS Code to the one running in the Docker container. [See here](https://code.visualstudio.com/docs/devcontainers/containers) for details.
 6. Once the build is complete, you will have access to a fully configured development environment.
 
 ## Using Dev Container
@@ -84,7 +87,7 @@ is related to something in the WandbWrapper class.
 # Unit Tests
 
 2023-10-01
-Test new run with d_model=128 and d_model=64  (output files shoudl be different). Run in test mode 5 epochs.
+Test new run with d_model=128 and d_model=64  (output files should be different). Run in test mode for 5 epochs.
 
 ----------------------------------------------------------------------
 Config file parameters:
