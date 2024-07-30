@@ -3,7 +3,7 @@
  - Gordon Erlebacher
 ## Date: 2023-09-18
 
-# Installation with Poetry
+# Installation
 
 ## Install poetry
 ### Linux
@@ -12,25 +12,28 @@ Install directly from poetry's website:
 ```
 curl -sSL https://install.python-poetry.org | python3 -
 ```
-make sure `~/.local/bin` is included in your `$PATH`, by adding the following line:
-```
-export PATH="$HOME/.local/bin:$PATH"
-```
-to your shell configuration (`nano ~/.bashrc`).
 
 ### macOS
 
-Install `brew` if not already installed:
+Install directly from poetry's website:
+
 ```
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+curl -sSL https://install.python-poetry.org | python3 -
 ```
-and then:
+or install using `brew`:
 ```
 brew install poetry
 ```
+
 ### Validate
 
-You can now validate that `poetry` is correctly installed—after reinitializing the shell or using `source ~/.bashrc`—with `poetry --version`.
+YValidate that `poetry` is correctly installed—after reinitializing the shell or using `source ~/.bashrc`—with `poetry --version`.
+
+If it's not working, make sure `~/.local/bin` is included in your `$PATH`, by adding the following line:
+```
+export PATH="$HOME/.local/bin:$PATH"
+```
+to your shell configuration (`~/.bashrc` or `~/.zshrc`).
 
 ## Create the environment
 
