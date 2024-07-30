@@ -138,7 +138,7 @@ def main(config: AttrDict):
     return 0
 
 
-def load_config(config_filepath=None):
+def load_config(config_filepath: str = None):
     # Default test values. If there is no config file passed, code uses these values. Helpful
     # for quick testing when making minor code changes
     default_values = AttrDict(
@@ -234,7 +234,7 @@ def read_yaml(filepath):
 
 def create_config(args):
 
-    if args.config:
+    if isinstance(args, AttrDict) and args.config:
         # This means the config was passed in for a single training run
         print(f"Using config file: {args.config}")
         config = load_config(args.config)

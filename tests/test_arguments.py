@@ -1,44 +1,46 @@
 from addict import Dict as AttrDict
-import argparse
-import numpy as np
 import pytest
-from pytest import approx
-import src.train
-from src.main import main, hardcoded_args, read_args, handle_arguments
-import sys
+from src.main import create_config, load_config, read_args, validate_config
 
-def test_arguments_from_cli_1(monkeypatch):
+def assert_required_args_in_config(config, required_args):
+    for arg in required_args:
+        assert arg in config
+
+def test_load_config_default(required_args):
+    config = load_config()
+
+    assert isinstance(config, AttrDict)
+    assert_required_args_in_config(config, required_args)
+
+def test_loading_config_file(required_args):
+    filename = "config.yaml"
+    config = load_config(filename)
+    assert isinstance(config, AttrDict)
+    assert_required_args_in_config(config, required_args)
+
+def test_create_config_default(required_args):
+    config = create_config(args = [])
+
+    assert isinstance(config, AttrDict)
+    assert_required_args_in_config(config, required_args)
+
+def test_create_config_with_conf(required_args):
+    config = load_config()
+    config = create_config(config)
+    assert_required_args_in_config(config, required_args)
+
+    assert isinstance(config, AttrDict)
+    print(config)
+
+def test_arguments_from_cli(monkeypatch):
     """Test whether arguments from the command line are set up correctly."""
-    # Script is a dummy variable
-    monkeypatch.setattr("sys.argv", ["script", "--num_epochs", "5", "--test", "--project", "proj"])
-    arg_dct = handle_arguments()
-    print(arg_dct)
-    assert arg_dct.test == True
-    assert arg_dct.num_epochs == 5
-    assert arg_dct.which_dataset == 100
+    monkeypatch.setattr("sys.argv", ["-m" "script_name", "--config", "config.yaml"])
+    args = read_args()
+    assert args.config == "config.yaml"
 
-def test_arguments_from_cli_2(monkeypatch):
+def test_cli_missing_parameters(monkeypatch):
     """Test whether arguments from the command line are set up correctly."""
-    monkeypatch.setattr("sys.argv", ["script", "--test", "--which_dataset", "25", "--project", "proj"])
-    arg_dct = handle_arguments()
-    print(arg_dct)
-    assert arg_dct.test == True
-    assert arg_dct.which_dataset == 25
-
-def test_arguments_from_cli_3(monkeypatch):
-    """Test whether arguments from the command line are set up correctly."""
-    monkeypatch.setattr("sys.argv", ["script", "--project", "proj"])
-    arg_dct = handle_arguments()
-    print(arg_dct)
-    assert arg_dct.test == False
-    assert arg_dct.which_dataset == 'all'
-
-def test_arguments_from_cli_4(monkeypatch):
-    """Test whether arguments from the command line are set up correctly."""
-    # One can only select smaller datasets in --test mode
-    monkeypatch.setattr("sys.argv", ["script", "--which_dataset", "45", "--project", "proj"])
-    arg_dct = handle_arguments()
-    print(arg_dct)
-    assert arg_dct.test == False
-    assert arg_dct.which_dataset == 'all'
-
+    monkeypatch.setattr("sys.argv", ["-m", "script_name"])
+    with pytest.raises(TypeError, match=r'missing 1 required positional argument'):
+        validate_config()
+    pass
