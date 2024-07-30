@@ -12,3 +12,4 @@ data/.cache/
 .venv/
 .vscode/
 venv/
+.coverage
