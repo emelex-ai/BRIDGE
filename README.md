@@ -5,13 +5,6 @@
 
 # Installation with Poetry
 
-- Install poetry through the set of commands for linux :
-   - curl -sSL https://install.python-poetry.org | python3 -
-   - nano ~/.bashrc
-   - export PATH="/home/name/.local/bin:$PATH"  #add your directory
-   - source ~/.bashrc  #applying the changes to the current session
-   - poetry --version  #to check if poetry has been installed
-
 ## Install poetry
 ### Linux
 
@@ -39,7 +32,7 @@ brew install poetry
 
 You can now validate that `poetry` is correctly installed—after reinitializing the shell or using `source ~/.bashrc`—with `poetry --version`.
 
-## Environment
+## Create the environment
 
 Now once into our project folder, steps use our existing pyproject.toml file to create a poetry shell.
 
