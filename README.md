@@ -1,30 +1,54 @@
-# Authors: 
+# Authors:
  - Nathan Crock
- - Gordon erlebacher
+ - Gordon Erlebacher
 ## Date: 2023-09-18
 
 # Installation with Poetry
 
 - Install poetry through the set of commands for linux :
    - curl -sSL https://install.python-poetry.org | python3 -
-   - nano ~/.bashrc   
+   - nano ~/.bashrc
    - export PATH="/home/name/.local/bin:$PATH"  #add your directory
    - source ~/.bashrc  #applying the changes to the current session
    - poetry --version  #to check if poetry has been installed
 
-- Now once into our project folder, steps use our existing pyproject.toml file to create a poetry shell
-   - poetry shell will create a new venv based on the existing pyproject.toml file 
-   - poetry install (or) poetry add wandb@latest 
-   - The above commands will install the dependencies required for our project mentioned in the pyproject.toml file
-   - Now run the code based on the commands below.
+## Install poetry
+### Linux
 
-- To create a new poetry project 
-   - poetry new project-name
-   - cd project-name 
-   - Copy and paste the list of dependencies from our original pyproject.toml file to project-name/pyproject.toml
-   - poetry shell
-   - poetry install
+Install directly from poetry's website:
+```
+curl -sSL https://install.python-poetry.org | python3 -
+```
+make sure `~/.local/bin` is included in your `$PATH`, by adding the following line:
+```
+export PATH="$HOME/.local/bin:$PATH"
+```
+to your shell configuration (`nano ~/.bashrc`).
 
+### macOS
+
+Install `brew` if not already installed:
+```
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+and then:
+```
+brew install poetry
+```
+### Validate
+
+You can now validate that `poetry` is correctly installed—after reinitializing the shell or using `source ~/.bashrc`—with `poetry --version`.
+
+## Environment
+
+Now once into our project folder, steps use our existing pyproject.toml file to create a poetry shell.
+
+```
+poetry shell
+poetry install
+```
+
+The previous comments will create a new virtual environment  based on the existing `pyproject.toml` file and install the required dependencies.
 
 # Running the code
 
@@ -58,11 +82,11 @@ This project supports development within a Docker container via a Dev Container.
 3. Use VS Code's terminal and editor to write and execute code in the containerized environment.
 
 ----------------------------------------------------------------------
-# ISSUES: 
-- I cannot see metric graphs on wandb. I cannot figure out the error. Possibly it 
-is related to something in the WandbWrapper class. 
+# ISSUES:
+- I cannot see metric graphs on wandb. I cannot figure out the error. Possibly it
+is related to something in the WandbWrapper class.
 
-- Sweep, wandb with no sweep, and no wandb are all working. 
+- Sweep, wandb with no sweep, and no wandb are all working.
 ----------------------------------------------------------------------
 # Unit Tests
 
@@ -70,7 +94,7 @@ is related to something in the WandbWrapper class.
 Test new run with d_model=128 and d_model=64  (output files shoudl be different). Run in test mode 5 epochs.
 
 ----------------------------------------------------------------------
-Config file parameters: 
+Config file parameters:
 
 | Command Line Argument | Argument  | Type  |
 |-----------------------|-----------|-------|
@@ -79,7 +103,7 @@ Config file parameters:
 ----------------------------------------------------------------------
 Configuration options:
 
-| YAML Config Options   | Type | Description | 
+| YAML Config Options   | Type | Description |
 |-----------------------|------|-------------|
 | device                | str  | specify device to run on 'cpu' or 'gpu' |
 | project               | str  | wandb project name |
@@ -108,11 +132,11 @@ Configuration options:
 
 ----------------------------------------------------------------------
 
-# How to SSH into any of the lab's machine 
+# How to SSH into any of the lab's machine
 
 Machines in the Computational Science's laboratory likely contain better hardware than what is available on one's own local machine. For that reason, it would
 be a good idea to run extensive simulations on them. One might also have the urge to change the code, modify the code base or test minor changes in one of the files.
-To perform an ssh jump into any of the machines one requires the following: 
+To perform an ssh jump into any of the machines one requires the following:
 
 - An FSU ID
 - That ID's password
@@ -128,14 +152,14 @@ The steps that must be taken for a simple ssh jump are the following:
 
 To jump into the machine using VSCODE, and to have any element on it available on VSCode (as long as it is openable):
 1. Open the .ssh folder of your machine
-2. Create a file named _config_ 
+2. Create a file named _config_
 3. In the file named _config_, type in the following:
 ```
 Host pamd
     HostName pamd.sc.fsu.edu
     User <your FSUID>
     Port 22
-    
+
 Host spock
     HostName <desired machine>
     User gm23k
@@ -144,7 +168,7 @@ Host spock
 ```
 4. Open VSCode
 5. Open the bottom-left remote connections selector
-6. Select 'Connect to Host' 
+6. Select 'Connect to Host'
 7. Select '+ Add New SSH Host...'
 8. Type the following: ```ssh <machine_name>```
 9. Select the correct config file that you have just created
