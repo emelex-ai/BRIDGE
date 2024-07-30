@@ -22,6 +22,4 @@ model_path: './models'
 dataset_filename: 'data.csv'
 max_nb_steps: 20
 sweep_filename: ""
-test_filenames:
-  - test1.csv
-  - test2.csv
+test_filenames: ""
