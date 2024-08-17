@@ -57,7 +57,6 @@ run the following code
 python -m src.main --config config.yaml
 ```
 
-
 # Development with Dev Container
 
 This project supports development within a Docker container via a Dev Container. This ensures a consistent development environment and avoids the need to install project dependencies directly on your machine.
