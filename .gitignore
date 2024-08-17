@@ -1,7 +1,7 @@
 *.pth
 *.log
 wandb/**
-*.pkl
+*.cache/
 *.pyc
 .tox/**
 explore.ipynb

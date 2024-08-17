@@ -9,7 +9,7 @@ import pickle
 from traindata import Traindata
 
 def input_data(words: list) -> dict:
-    """create the input file for the model
+    """Create the input file for the model
 
     Args:
         words (list): list of words
