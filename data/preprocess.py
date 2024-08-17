@@ -8,7 +8,24 @@ import pandas as pd
 import pickle
 from traindata import Traindata
 
-def input_data(words: list):
+def input_data(words: list) -> dict:
+    """create the input file for the model
+
+    Args:
+        words (list): list of words
+
+    Returns:
+        dict: dictionary with the following structure:
+            {
+                "word": {
+                    count: int,
+                    phoneme: np.array,
+                    orthograph: np.array
+                },
+                "word2": {}
+                ...
+            }
+    """
     phonemes_path = "data/phonreps.csv"
     data = Traindata(
         words, phonpath=phonemes_path, terminals=False, oneletter=True, verbose=False
