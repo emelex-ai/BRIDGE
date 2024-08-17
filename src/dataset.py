@@ -138,7 +138,7 @@ class Phonemizer:
         # GE: Why are there more than 34 lines in phonreps.csv?
         self.traindata = Traindata(
             wordlist,
-            phonpath="raw/phonreps.csv",
+            phonpath="data/phonreps.csv",
             terminals=True,
             oneletter=True,
             verbose=False,
@@ -270,18 +270,18 @@ class ConnTextULDataset(Dataset):
         config,
     ):
 
-        self.dataset_filename = config.dataset_filename
         self.config = config
-        self.read_orthographic_data()
-        self.read_phonology_data()
+        self.dataset_filename = self.config.dataset_filename
+        tmp_words = self.read_orthographic_data()
+        self.phonology_tokenizer = self.read_phonology_data(tmp_words)
 
-        list_of_characters = sorted(set([c for word in self.tmp_words for c in word]))
+        list_of_characters = sorted(set([c for word in tmp_words for c in word]))
         self.character_tokenizer = CharacterTokenizer(list_of_characters)
 
         final_words = []
         self.max_orth_seq_len = 0
         self.max_phon_seq_len = 0
-        for word in self.tmp_words:
+        for word in tmp_words:
             phonology = self.phonology_tokenizer.encode([word])
             if word == "" or word is None or word == []:
                 continue
@@ -310,10 +310,10 @@ class ConnTextULDataset(Dataset):
 
         # Do not remove duplicate words since we are performing curriculum training
         # Series of all lowercased words
-        self.tmp_words = dataset["word_raw"].str.lower()
+        return dataset["word_raw"].str.lower()
 
     # ----------------------------------------------------------------------
-    def read_phonology_data(self):
+    def read_phonology_data(self, tmp_words):
         """
         Read pkl file if it exists, else create it
         """
@@ -330,12 +330,14 @@ class ConnTextULDataset(Dataset):
         if os.path.exists(pkl_file_path):
             # pkl file exists
             with open(pkl_file_path, "rb") as f:
-                self.phonology_tokenizer = pickle.load(f)
+                phonology_tokenizer = pickle.load(f)
         else:
             # pkl file does not exist
-            self.phonology_tokenizer = Phonemizer(self.tmp_words)
+            phonology_tokenizer = Phonemizer(tmp_words)
             with open(pkl_file_path, "wb") as f:
-                pickle.dump(self.phonology_tokenizer, f)
+                pickle.dump(phonology_tokenizer, f)
+
+        return phonology_tokenizer
 
     def __len__(self):
         return len(self.words)
