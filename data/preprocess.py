@@ -3,10 +3,13 @@ Module containing help functionssss to convert a list of word into the input fil
 """
 
 from collections import Counter
-import numpy as np
+import nltk
 import pandas as pd
 import pickle
 from traindata import Traindata
+
+nltk.download("cmudict")
+
 
 def input_data(words: list) -> dict:
     """Create the input file for the model
@@ -39,7 +42,6 @@ def input_data(words: list) -> dict:
             data[length]["phon"],
             data[length]["orth"],
         ):
-
             # don't keep orthograph padding
             orth = orth.flatten()
             orth = orth[orth != 0]
@@ -51,6 +53,7 @@ def input_data(words: list) -> dict:
                 "orthograph": orth,
             }
     return input_data
+
 
 if __name__ == "__main__":
     # ideally we would have all the raw data sources
