@@ -23,7 +23,8 @@ def input_data(words: list) -> dict:
             {
                 "word": {
                     count: int,
-                    phoneme: np.array,
+                    phoneme: tuple[np.array, np.array],
+                    phoneme_shape: tuple[int, int],
                     orthograph: np.array
                 },
                 "word2": {}
@@ -43,12 +44,14 @@ def input_data(words: list) -> dict:
             data[length]["phon"],
             data[length]["orth"],
         ):
-            # don't keep orthograph padding
-            orth = orth.flatten()
-            orth = orth[orth != 0]
-
+            # store only non-zero phonemes
+            # and the shape of the phoneme matrix
             phon_shp = phon.shape
             phon = np.where(phon)
+
+            # remove orthographic padding
+            orth = orth.flatten()
+            orth = orth[orth != 0]
 
             # add to dictionary
             input_data[word] = {
