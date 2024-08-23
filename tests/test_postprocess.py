@@ -8,7 +8,8 @@ def validate_input_data(data, word_count):
     phoneme_feature_size = 31
     for word, v in data.items():
         assert v["count"] == word_count[word]
-        assert v["phoneme"].shape[1] == phoneme_feature_size
+        assert max(v["phoneme"][0]) + 1 == v["phoneme_shape"][0]
+        assert v["phoneme_shape"][1] == phoneme_feature_size
         assert len(v["orthograph"]) == len(word)
 
 def test_input_data():

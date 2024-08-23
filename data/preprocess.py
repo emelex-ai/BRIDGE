@@ -4,6 +4,7 @@ Module containing help functionssss to convert a list of word into the input fil
 
 from collections import Counter
 import nltk
+import numpy as np
 import pandas as pd
 import pickle
 from traindata import Traindata
@@ -46,10 +47,14 @@ def input_data(words: list) -> dict:
             orth = orth.flatten()
             orth = orth[orth != 0]
 
+            phon_shp = phon.shape
+            phon = np.where(phon)
+
             # add to dictionary
             input_data[word] = {
                 "count": word_count[word],
                 "phoneme": phon,
+                "phoneme_shape": phon_shp,
                 "orthograph": orth,
             }
     return input_data
