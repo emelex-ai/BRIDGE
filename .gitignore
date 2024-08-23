@@ -1,7 +1,7 @@
 *.pth
 *.log
 wandb/**
-*.pkl
+*.cache/
 *.pyc
 .tox/**
 explore.ipynb
@@ -13,3 +13,5 @@ data/.cache/
 .vscode/
 venv/
 .coverage
+*/.DS_Store
+*/.ipynb_checkpoints

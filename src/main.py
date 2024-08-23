@@ -166,7 +166,7 @@ def load_config(config_filepath: str = None):
             "save_every": 1,
             "dataset_filename": "data.csv",
             "max_nb_steps": 10,
-            "test_filenames": ["test1.csv", "test2.csv"],
+            "test_filenames": "",
         }
     )
 
