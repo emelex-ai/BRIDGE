@@ -24,6 +24,9 @@ or install using `brew`:
 ```
 brew install poetry
 ```
+### Windows
+
+The application is currently only developed and tested on Unix-like system.
 
 ### Validate
 
