@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ["ubuntu-latest", "linux-latest"]
+        os: ["ubuntu-latest", "macos-latest"]
         python-version: ["3.10"]
         poetry-version: ["1.8.3"]
     steps:
