@@ -13,5 +13,5 @@ data/.cache/
 .vscode/
 venv/
 .coverage
-*/.DS_Store
+*.DS_Store
 */.ipynb_checkpoints

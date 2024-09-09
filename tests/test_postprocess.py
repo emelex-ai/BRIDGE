@@ -2,6 +2,7 @@ import pandas as pd
 import pickle
 from collections import Counter
 from data.preprocess import input_data
+from src.main import load_config
 
 # We may consider moving the WordData class from the
 # preprocess.py file to a separate file and importing it
@@ -13,15 +14,12 @@ from data.preprocess import input_data
 
 
 def validate_input_data(data, word_count):
-    # Perhaps we can think about the phoneme_feature_size
-    # a parameter in the config.yaml file. Matt and
-    # Nathan were discussing adding new phoneme features
-    # to expand language and dialect support.
-    phoneme_feature_size = 31
+    config = load_config("config.yaml")
+    num_phon_reps = config["num_phon_reps"]
     for word, v in data.items():
         assert v["count"] == word_count[word]
         assert max(v["phoneme"][0]) + 1 == v["phoneme_shape"][0]
-        assert v["phoneme_shape"][1] == phoneme_feature_size
+        assert v["phoneme_shape"][1] == num_phon_reps
         assert len(v["orthograph"]) == len(word)
 
 

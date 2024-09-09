@@ -126,24 +126,40 @@ class CharacterTokenizer:
         return outputs
 
 
-# We may want to calculate all of the phonological vectors for the entire dataset ahead of time here.
-# This way, we can just look up the vector instead of calculating it on the fly. That will save time
-# during training.
-
-
 class Phonemizer:
-    def __init__(self, wordlist):
-        self.PAD = 33
+    def __init__(self, config):
+        self.phoneme_features_dim = config["num_phon_reps"]
+        self.extra_token = {
+            "BOS": self.phoneme_features_dim + 1,
+            "EOS": self.phoneme_features_dim + 2,
+            "PAD": self.phoneme_features_dim + 3
+        }
 
-        # GE: Why are there more than 34 lines in phonreps.csv?
-        self.traindata = Traindata(
-            wordlist,
-            phonpath="data/phonreps.csv",
-            terminals=True,
-            oneletter=True,
-            verbose=False,
-        )
-        traindata = self.traindata.traindata
+        # self.traindata = Traindata(
+        #     wordlist,
+        #     phonpath="data/phonreps.csv",
+        #     terminals=True,
+        #     oneletter=True,
+        #     verbose=False,
+        # )
+        # traindata = self.traindata.traindata
+
+        # load input file
+        # the input file is a dict[str, WordData] with the folowing structure
+        # Each word's data includes count, phoneme representation, phoneme shape, and orthographic representation.
+        # {
+        #     "word": {
+        #         count: int,
+        #         phoneme: tuple[np.array, np.array],
+        #         phoneme_shape: tuple[int, int],
+        #         orthograph: np.array
+        #     },
+        #     "word2": {}
+        #     ...
+        # }
+        with open(config["dataset_filename"], "rb") as f:
+            input_data = pickle.load(f)
+
         self.enc_inputs = {}
         self.dec_inputs = {}
         self.targets = {}
@@ -152,13 +168,15 @@ class Phonemizer:
                 zip(traindata[length]["phonSOS"], traindata[length]["phonEOS"])
             ):
                 word = traindata[length]["wordlist"][word_num]
-                # The encoder receives the entire phonological vector include the BOS and EOS tokens
+
+                # The encoder receives the entire phonological vector with the BOS and EOS tokens
                 self.enc_inputs[word] = [
                     torch.tensor(np.where(vec)[0], dtype=torch.long)
                     for vec in phon_vec_sos
                 ] + [
-                    torch.tensor([32])
-                ]  # 32 is the EOS token location
+                    torch.tensor(self.extra_token["EOS"])
+                ]
+                
                 # The decoder received the entire phonological vectors including the BOS token, but not the EOS token
                 self.dec_inputs[word] = [
                     torch.tensor(np.where(vec)[0], dtype=torch.long)
@@ -170,7 +188,7 @@ class Phonemizer:
         del traindata
 
     def __len__(self):
-        return 34
+        return self.phoneme_features_dim + len(self.extra_token)
 
     def encode(self, wordlist):
         enc_input_ids = []
@@ -196,8 +214,8 @@ class Phonemizer:
                 max_length = max(max_length, len(enc_input))
             # Now that we know the max length of this batch, we pad the encoder and decoder input token list with PAD tokens
             for epv, dpv in zip(enc_input_ids, dec_input_ids):
-                epv.extend([torch.tensor([self.PAD])] * (max_length - len(epv)))
-                dpv.extend([torch.tensor([self.PAD])] * (max_length - 1 - len(dpv)))
+                epv.extend([torch.tensor([self.extra_token["PAD"]])] * (max_length - len(epv)))
+                dpv.extend([torch.tensor([self.extra_token["PAD"]])] * (max_length - 1 - len(dpv)))
             # We then include padding, or indices in the targets to be passed to the 'ignore_index' parameter in the CrossEntropyLoss
             # Since each phonological vector is either on or off, it is a binary classification problem, so valid labels are either 0, or 1.
             # We will include labels of '2' where the padding is in the target vectors
@@ -221,13 +239,13 @@ class Phonemizer:
 
         enc_pad_mask = torch.tensor(
             [
-                [all(val == torch.tensor([self.PAD])) for val in token]
+                [all(val == torch.tensor([self.extra_token["PAD"]])) for val in token]
                 for token in enc_input_ids
             ]
         )
         dec_pad_mask = torch.tensor(
             [
-                [all(val == torch.tensor([self.PAD])) for val in token]
+                [all(val == torch.tensor([self.extra_token["PAD"]])) for val in token]
                 for token in dec_input_ids
             ]
         )
@@ -261,7 +279,7 @@ class ConnTextULDataset(Dataset):
     """
     ConnTextULDataset
 
-    For Matt's Phonological Feature Vectors, we will use (31, 32, 33) to represent ('[BOS]', '[EOS]', '[PAD]')
+    For Matt's Phonological Feature Vectors, we will use (31, 32, 33) to represent ('BOS', 'EOS', 'PAD')
     """
 
     # ----------------------------------------------------------------------

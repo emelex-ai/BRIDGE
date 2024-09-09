@@ -19,7 +19,8 @@ num_phon_dec_layers: 1
 num_orth_dec_layers: 1
 device: cpu
 model_path: './models'
-dataset_filename: 'data.csv'
+num_phon_reps: 31
+dataset_filename: 'data/input_data.pkl'
 max_nb_steps: 20
 sweep_filename: ""
 test_filenames: ""
