@@ -1,7 +1,3 @@
-# from Traindata.Traindata import Traindata
-from traindata import Traindata
-
-# import Traindata.Traindata
 from torch.utils.data import Dataset
 import pandas as pd
 import torch
@@ -128,67 +124,51 @@ class CharacterTokenizer:
 
 class Phonemizer:
     def __init__(self, config):
-        self.phoneme_features_dim = config["num_phon_reps"]
+        self.phoneme_reps_dim = config["num_phon_reps"]
         self.extra_token = {
-            "BOS": self.phoneme_features_dim + 1,
-            "EOS": self.phoneme_features_dim + 2,
-            "PAD": self.phoneme_features_dim + 3
+            "BOS": self.phoneme_reps_dim + 0,
+            "EOS": self.phoneme_reps_dim + 1,
+            "PAD": self.phoneme_reps_dim + 2,
         }
+        self.phonemizer_dim = self.phoneme_reps_dim + len(self.extra_token)
 
-        # self.traindata = Traindata(
-        #     wordlist,
-        #     phonpath="data/phonreps.csv",
-        #     terminals=True,
-        #     oneletter=True,
-        #     verbose=False,
-        # )
-        # traindata = self.traindata.traindata
-
-        # load input file
-        # the input file is a dict[str, WordData] with the folowing structure
-        # Each word's data includes count, phoneme representation, phoneme shape, and orthographic representation.
-        # {
-        #     "word": {
-        #         count: int,
-        #         phoneme: tuple[np.array, np.array],
-        #         phoneme_shape: tuple[int, int],
-        #         orthograph: np.array
-        #     },
-        #     "word2": {}
-        #     ...
-        # }
         with open(config["dataset_filename"], "rb") as f:
             input_data = pickle.load(f)
 
         self.enc_inputs = {}
         self.dec_inputs = {}
         self.targets = {}
-        for length in traindata.keys():
-            for word_num, (phon_vec_sos, phon_vec_eos) in enumerate(
-                zip(traindata[length]["phonSOS"], traindata[length]["phonEOS"])
-            ):
-                word = traindata[length]["wordlist"][word_num]
 
-                # The encoder receives the entire phonological vector with the BOS and EOS tokens
-                self.enc_inputs[word] = [
-                    torch.tensor(np.where(vec)[0], dtype=torch.long)
-                    for vec in phon_vec_sos
-                ] + [
-                    torch.tensor(self.extra_token["EOS"])
-                ]
-                
-                # The decoder received the entire phonological vectors including the BOS token, but not the EOS token
-                self.dec_inputs[word] = [
-                    torch.tensor(np.where(vec)[0], dtype=torch.long)
-                    for vec in phon_vec_sos
-                ]
-                # The target for the decoder is all phonological vectors including the EOS token, but excluding the BOS token
-                self.targets[word] = phon_vec_eos
+        for word, data in input_data.items():
+            phoneme_index = data["phoneme"][0]
+            phoneme_features = data["phoneme"][1]
 
-        del traindata
+            word_phon = []
+            for i in np.unique(phoneme_index):
+                mask = phoneme_index == i
+                word_phon.append(torch.tensor(phoneme_features[mask], dtype=torch.long))
+
+            # The encoder receives the entire phonological vector with the BOS and EOS tokens
+            self.enc_inputs[word] = (
+                [torch.tensor([self.extra_token["BOS"]])]
+                + word_phon
+                + [torch.tensor([self.extra_token["EOS"]])]
+            )
+
+            # The decoder received the entire phonological vectors including the BOS token, but not the EOS token
+            self.dec_inputs[word] = [
+                torch.tensor([self.extra_token["BOS"]])
+            ] + word_phon
+
+            # The target for the decoder is all phonological vectors including the EOS token, but excluding the BOS token
+            self.targets[word] = [
+                # targets are one-hot encoded (PAD token not included)
+                torch.isin(torch.arange(self.phonemizer_dim - 1), phon).to(torch.int)
+                for phon in (word_phon + [torch.tensor([self.extra_token["EOS"]])])
+            ]
 
     def __len__(self):
-        return self.phoneme_features_dim + len(self.extra_token)
+        return self.phonemizer_dim
 
     def encode(self, wordlist):
         enc_input_ids = []
