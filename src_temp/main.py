@@ -4,9 +4,9 @@ in a configuration file, sets up the training environment, and runs the training
 loop. 
 """
 
-from src.wandb_wrapper import WandbWrapper
-from src.train import run_code, run_code_sweep
-from src.train_impl import (
+from src_temp.wandb_wrapper import WandbWrapper
+from src_temp.train import run_code, run_code_sweep
+from src_temp.train_impl import (
     get_new_model_id,
     get_model_file_name,
 )

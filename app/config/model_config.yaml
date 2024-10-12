@@ -18,8 +18,8 @@ num_mixing_enc_layers: 1
 num_phon_dec_layers: 1
 num_orth_dec_layers: 1
 device: cpu
-model_path: './models'
+model_artifacts_dir: 'models'
 dataset_filename: 'data.csv'
 max_nb_steps: 20
-sweep_filename: ""
-test_filenames: ""
+sweep_filename: 
+test_filenames:  
