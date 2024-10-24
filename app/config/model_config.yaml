@@ -10,8 +10,6 @@ train_test_split: 1.0
 save_every: 1
 seed: 1337
 learning_rate: 0.0001
-project: nathan
-wandb: False
 num_phon_enc_layers: 1
 num_orth_enc_layers: 1
 num_mixing_enc_layers: 1
@@ -19,7 +17,6 @@ num_phon_dec_layers: 1
 num_orth_dec_layers: 1
 device: cpu
 model_artifacts_dir: 'models'
-dataset_filename: 'data.csv'
+model_id: 
 max_nb_steps: 20
-sweep_filename: 
 test_filenames:  

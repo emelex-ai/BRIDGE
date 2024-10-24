@@ -52,7 +52,7 @@ class WandbWrapper(Singleton):
     A wrapper around wandb to allow for it to be disabled.
     """
 
-    def __init__(self):
+    def __init__(self, is_wandb_on: bool = False, is_sweep: bool = False, config: AttrDict = None):
         self.is_wandb_on = False
         self.is_sweep = False
         self.run = None
@@ -61,10 +61,10 @@ class WandbWrapper(Singleton):
         self.my_plot = MyPlot()
         self.config = AttrDict()
 
-    def set_params(self, is_wandb_on=False, is_sweep=False, config=None):
         self.is_wandb_on = is_wandb_on
         self.is_sweep = is_sweep
         self.config = AttrDict(config) if config else AttrDict({})
+
         logger.info(f"Set params: is_wandb_on={self.is_wandb_on}, is_sweep={self.is_sweep}")
 
     def init(self, *args, **kwargs):
@@ -75,7 +75,7 @@ class WandbWrapper(Singleton):
         else:
             self.my_run.config = self.config
             logger.info("Initialized with mocked run (wandb disabled).")
-            return self.my_run 
+            return self.my_run
 
     def log(self, *args, **kwargs):
         if self.is_wandb_on and self.run:
@@ -96,6 +96,10 @@ class WandbWrapper(Singleton):
             return wandb.Table(*args, **kwargs)
         else:
             return self.my_table
+
+    def login(self):
+        if self.is_wandb_on and self.run:
+            wandb.login()
 
     def finish(self):
         if self.is_wandb_on and self.run:

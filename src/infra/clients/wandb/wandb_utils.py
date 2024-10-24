@@ -1,5 +1,6 @@
 import wandb
 import logging
+from src.infra.clients.wandb.wandb_wrapper import WandbWrapper
 
 logger = logging.getLogger(__name__)
 
