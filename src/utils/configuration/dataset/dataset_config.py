@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator, ValidationInfo, model_validator
+from pydantic import BaseModel, Field, field_validator, ValidationInfo, model_validator, PositiveInt
 from src.utils.helper_funtions import get_project_root
 from typing import List, Optional
 import os
@@ -6,6 +6,10 @@ import os
 
 class DatasetConfig(BaseModel):
     dataset_filepath: str = Field(description="Name of the dataset file")
+    character_tokenizer: dict = Field(default=None, description="Name of the dataset file")
+    phonology_tokenizer: dict = Field(default=None, description="Name of the dataset file")
+    max_orth_seq_len: Optional[PositiveInt] = Field(default=100, description="Name of the dataset file")
+    max_phon_seq_len: Optional[PositiveInt] = Field(default=100, description="Name of the dataset file")
 
     @model_validator(mode="before")
     def convert_paths(cls, values):
