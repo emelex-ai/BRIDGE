@@ -15,7 +15,7 @@ class ConnTextULDataset(Dataset):
     def __init__(self, config: dict, cache_path: str):
         self.config = config
         self.cache_path = cache_path
-        self.dataset_filename = self.config.dataset_filename
+        self.dataset_filepath = self.config.dataset_filepath
         self.words = self.read_orthographic_data()
         self.phonology_tokenizer = self.read_phonology_data(self.words)
 
@@ -31,7 +31,7 @@ class ConnTextULDataset(Dataset):
 
     def read_orthographic_data(self) -> pd.Series:
         """Reads and cleans orthographic data (word list) from the dataset."""
-        dataset = pd.read_csv(self.dataset_filename)
+        dataset = pd.read_csv(self.dataset_filepath)
         dataset.dropna(subset=["word_raw"], inplace=True)
         return dataset["word_raw"].str.lower()
 
@@ -40,7 +40,7 @@ class ConnTextULDataset(Dataset):
         if not os.path.exists(self.cache_path):
             os.makedirs(self.cache_path, exist_ok=True)
 
-        dataset_name = os.path.splitext(os.path.basename(self.dataset_filename))[0]
+        dataset_name = os.path.splitext(os.path.basename(self.dataset_filepath))[0]
         cache_file = f"{dataset_name}_phonology.pkl"
         cache_path = os.path.join(self.cache_path, cache_file)
 

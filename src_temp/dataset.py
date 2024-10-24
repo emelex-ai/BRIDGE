@@ -25,9 +25,7 @@ class CUDA_Dict(dict):
             batches = self[key]
             if isinstance(batches, list):
                 try:
-                    output[key] = [
-                        [val.to(device) for val in batch] for batch in batches
-                    ]
+                    output[key] = [[val.to(device) for val in batch] for batch in batches]
                 except:
                     print(f"batches = {batches}")
                     raise
@@ -58,8 +56,7 @@ class CharacterTokenizer:
 
     def encode(self, list_of_strings):
         assert isinstance(list_of_strings, str) or (
-            isinstance(list_of_strings, list)
-            and all(isinstance(string, str) for string in list_of_strings)
+            isinstance(list_of_strings, list) and all(isinstance(string, str) for string in list_of_strings)
         )
         if isinstance(list_of_strings, str):
             list_of_strings = [list_of_strings]
@@ -71,40 +68,23 @@ class CharacterTokenizer:
         # on beginning and end of string, after padding the original string
         # up to max length of string.
         # This function converts the output to a list rather than string.
-        enc_pad = (
-            lambda string: ["[BOS]"]
-            + list(string)
-            + ["[EOS]"]
-            + (max_length - len(string)) * ["[PAD]"]
-        )
-        dec_pad = (
-            lambda string: ["[BOS]"]
-            + list(string)
-            + (max_length - len(string)) * ["[PAD]"]
-        )
+        enc_pad = lambda string: ["[BOS]"] + list(string) + ["[EOS]"] + (max_length - len(string)) * ["[PAD]"]
+        dec_pad = lambda string: ["[BOS]"] + list(string) + (max_length - len(string)) * ["[PAD]"]
 
         list_of_enc_strings = list(map(enc_pad, list_of_strings))
         list_of_dec_strings = list(map(dec_pad, list_of_strings))
 
         # Initiate encoder tokens tensor as tensor of zeros,
-        enc_input_ids = torch.zeros(
-            (len(list_of_enc_strings), 2 + max_length), dtype=torch.long
-        )
+        enc_input_ids = torch.zeros((len(list_of_enc_strings), 2 + max_length), dtype=torch.long)
         for idx, string in enumerate(list_of_enc_strings):
             for jdx, char in enumerate(string):
-                enc_input_ids[idx, jdx] = self.char_2_idx.get(
-                    char, 3
-                )  # Default to [UNK]
+                enc_input_ids[idx, jdx] = self.char_2_idx.get(char, 3)  # Default to [UNK]
 
         # Initiate decoder tokens tensor as tensor of zeros,
-        dec_input_ids = torch.zeros(
-            (len(list_of_dec_strings), 1 + max_length), dtype=torch.long
-        )
+        dec_input_ids = torch.zeros((len(list_of_dec_strings), 1 + max_length), dtype=torch.long)
         for idx, string in enumerate(list_of_dec_strings):
             for jdx, char in enumerate(string):
-                dec_input_ids[idx, jdx] = self.char_2_idx.get(
-                    char, 3
-                )  # Default to [UNK]
+                dec_input_ids[idx, jdx] = self.char_2_idx.get(char, 3)  # Default to [UNK]
 
         PAD_TOKEN = self.char_2_idx["[PAD]"]
         enc_pad_mask = enc_input_ids == PAD_TOKEN
@@ -119,9 +99,7 @@ class CharacterTokenizer:
         )
 
     def decode(self, list_of_ints):
-        outputs = [
-            "".join([self.idx_2_char.get(i) for i in ints]) for ints in list_of_ints
-        ]
+        outputs = ["".join([self.idx_2_char.get(i) for i in ints]) for ints in list_of_ints]
 
         return outputs
 
@@ -153,17 +131,11 @@ class Phonemizer:
             ):
                 word = traindata[length]["wordlist"][word_num]
                 # The encoder receives the entire phonological vector include the BOS and EOS tokens
-                self.enc_inputs[word] = [
-                    torch.tensor(np.where(vec)[0], dtype=torch.long)
-                    for vec in phon_vec_sos
-                ] + [
+                self.enc_inputs[word] = [torch.tensor(np.where(vec)[0], dtype=torch.long) for vec in phon_vec_sos] + [
                     torch.tensor([32])
                 ]  # 32 is the EOS token location
                 # The decoder received the entire phonological vectors including the BOS token, but not the EOS token
-                self.dec_inputs[word] = [
-                    torch.tensor(np.where(vec)[0], dtype=torch.long)
-                    for vec in phon_vec_sos
-                ]
+                self.dec_inputs[word] = [torch.tensor(np.where(vec)[0], dtype=torch.long) for vec in phon_vec_sos]
                 # The target for the decoder is all phonological vectors including the EOS token, but excluding the BOS token
                 self.targets[word] = phon_vec_eos
 
@@ -207,9 +179,7 @@ class Phonemizer:
                 targets[i] = torch.cat(
                     (
                         tv,
-                        torch.tensor(
-                            [[2] * 33] * (max_length - 1 - len(tv)), dtype=torch.long
-                        ),
+                        torch.tensor([[2] * 33] * (max_length - 1 - len(tv)), dtype=torch.long),
                     )
                 )
                 # print("len(tv) = ", len(tv))
@@ -220,16 +190,10 @@ class Phonemizer:
             raise TypeError("encode only accepts lists or a single string as input")
 
         enc_pad_mask = torch.tensor(
-            [
-                [all(val == torch.tensor([self.PAD])) for val in token]
-                for token in enc_input_ids
-            ]
+            [[all(val == torch.tensor([self.PAD])) for val in token] for token in enc_input_ids]
         )
         dec_pad_mask = torch.tensor(
-            [
-                [all(val == torch.tensor([self.PAD])) for val in token]
-                for token in dec_input_ids
-            ]
+            [[all(val == torch.tensor([self.PAD])) for val in token] for token in dec_input_ids]
         )
         # dec_pad_mask = torch.tensor([1])
 
@@ -271,7 +235,7 @@ class ConnTextULDataset(Dataset):
     ):
 
         self.config = config
-        self.dataset_filename = self.config.dataset_filename
+        self.dataset_filepath = self.config.dataset_filepath
         tmp_words = self.read_orthographic_data()
         self.phonology_tokenizer = self.read_phonology_data(tmp_words)
 
@@ -287,9 +251,7 @@ class ConnTextULDataset(Dataset):
                 continue
             if phonology:  # check if in phoneme_dict
                 final_words.append(word)
-                self.max_phon_seq_len = max(
-                    self.max_phon_seq_len, len(phonology["enc_pad_mask"][0])
-                )
+                self.max_phon_seq_len = max(self.max_phon_seq_len, len(phonology["enc_pad_mask"][0]))
                 self.max_orth_seq_len = max(
                     self.max_orth_seq_len,
                     len(self.character_tokenizer.encode(word)["enc_input_ids"][0]),
@@ -297,15 +259,13 @@ class ConnTextULDataset(Dataset):
 
         self.words = final_words
         self.cmudict = self.phonology_tokenizer.traindata.cmudict
-        self.convert_numeric_prediction = (
-            self.phonology_tokenizer.traindata.convert_numeric_prediction
-        )
+        self.convert_numeric_prediction = self.phonology_tokenizer.traindata.convert_numeric_prediction
 
     # ----------------------------------------------------------------------
     def read_orthographic_data(self):
 
         # Read the dataset (path already made absolute in main.py)
-        dataset = pd.read_csv(self.dataset_filename)
+        dataset = pd.read_csv(self.dataset_filepath)
         dataset.dropna(inplace=True, axis="rows")
 
         # Do not remove duplicate words since we are performing curriculum training
@@ -323,8 +283,8 @@ class ConnTextULDataset(Dataset):
         else:
             print(f"Cache folder: {CACHE_PATH} already exists")
 
-        dataset_filename = os.path.splitext(os.path.basename(self.dataset_filename))[0]
-        new_phon_cache_filename = f"{dataset_filename}_phonology.pkl"
+        dataset_filepath = os.path.splitext(os.path.basename(self.dataset_filepath))[0]
+        new_phon_cache_filename = f"{dataset_filepath}_phonology.pkl"
         pkl_file_path = os.path.join(CACHE_PATH, new_phon_cache_filename)
 
         if os.path.exists(pkl_file_path):
@@ -351,9 +311,7 @@ class ConnTextULDataset(Dataset):
         elif isinstance(idx, slice):
             string_input = self.words[idx]
         elif isinstance(idx, str):
-            assert (
-                idx in self.words
-            ), f'"{idx}" not in list of input words (checked in dataset.words)'
+            assert idx in self.words, f'"{idx}" not in list of input words (checked in dataset.words)'
             string_input = [idx]
         else:
             raise TypeError("idx must be int, slice, or string")

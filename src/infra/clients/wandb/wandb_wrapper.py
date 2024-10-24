@@ -65,7 +65,6 @@ class WandbWrapper(Singleton):
         self.is_sweep = is_sweep
         self.config = AttrDict(config) if config else AttrDict({})
 
-        logger.info(f"Set params: is_wandb_on={self.is_wandb_on}, is_sweep={self.is_sweep}")
 
     def init(self, *args, **kwargs):
         if self.is_wandb_on:

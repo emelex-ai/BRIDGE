@@ -87,10 +87,8 @@ def main(config: AttrDict):
     globals().update({"wandb": wandb})
     print("==> main, after globals")
 
-    if config.sweep_filename != "":
-        assert (
-            wandb_enabled
-        ), "For a parameter sweep, Wandb must be enabled in the config file"
+    if config.sweep_filepath != "":
+        assert wandb_enabled, "For a parameter sweep, Wandb must be enabled in the config file"
 
         #################################
         # Perform parameter sweep
@@ -101,7 +99,7 @@ def main(config: AttrDict):
         wandb.login()
 
         # Attempt to parse the sweep file using the read_yaml function (basic error checking)
-        sweep_config = read_yaml(config.sweep_filename)
+        sweep_config = read_yaml(config.sweep_filepath)
 
         # Update sweep_config with new_params without overwriting existing parameters:
         # There are now too many useless vertical lines in the hyperparameter parallel chart.
@@ -158,13 +156,13 @@ def load_config(config_filepath: str = None):
             "nhead": 2,
             "wandb": False,
             "train_test_split": 0.8,
-            "sweep_filename": "",
+            "sweep_filepath": "",
             "d_embedding": 1,
             "seed": 1337,
             "model_path": "./models",
             "pathway": "o2p",
             "save_every": 1,
-            "dataset_filename": "data.csv",
+            "dataset_filepath": "data.csv",
             "max_nb_steps": 10,
             "test_filenames": "",
         }
@@ -183,21 +181,19 @@ def load_config(config_filepath: str = None):
 
     # We make sure that the user has included all necessary keys in the config file
     for default_key in default_values.keys():
-        assert (
-            default_key in config.keys()
-        ), f"Config file must contain key: {default_key}"
+        assert default_key in config.keys(), f"Config file must contain key: {default_key}"
 
     # -- Convert relative paths to absolute paths --
-    # Begin with sweep_filename
-    if config.sweep_filename:
-        abs_path = os.path.join(project_root, config.sweep_filename)
-        config.sweep_filename = abs_path
+    # Begin with sweep_filepath
+    if config.sweep_filepath:
+        abs_path = os.path.join(project_root, config.sweep_filepath)
+        config.sweep_filepath = abs_path
     # Next the model_path. This is a directory where models are stored
     abs_path = os.path.join(project_root, config.model_path)
     config.model_path = abs_path
-    # Next the dataset_filename
-    abs_path = os.path.join(project_root, "data", config.dataset_filename)
-    config.dataset_filename = abs_path
+    # Next the dataset_filepath
+    abs_path = os.path.join(project_root, "data", config.dataset_filepath)
+    config.dataset_filepath = abs_path
     # Lastly, the test_filenames
     if config.test_filenames:
         for idx, test_filename in enumerate(config.test_filenames):
@@ -257,40 +253,32 @@ def validate_config(config):
         "op2op",
     ], "Invalid pathway argument: must be 'o2p', 'p2o', or 'op2op'"
 
-    assert (
-        config.d_model % config.nhead == 0
-    ), "d_model must be evenly divisible by nhead"
+    assert config.d_model % config.nhead == 0, "d_model must be evenly divisible by nhead"
 
     # Ensure all absolute paths exist and point to correct files or directories
     # Begin with the sweep file
-    if config.sweep_filename:
-        assert (
-            os.path.exists(config.sweep_filename)
-        ), f"Sweep file not found: {config.sweep_filename}"
+    if config.sweep_filepath:
+        assert os.path.exists(config.sweep_filepath), f"Sweep file not found: {config.sweep_filepath}"
 
         # Check if the path points to an existing file
-        is_file = os.path.isfile(config.sweep_filename)
+        is_file = os.path.isfile(config.sweep_filepath)
 
         # Extract the file extension and check if it is either ".yaml" or ".yml"
-        file_extension = os.path.splitext(config.sweep_filename)[1]
+        file_extension = os.path.splitext(config.sweep_filepath)[1]
         is_yaml_extension = file_extension in [".yaml", ".yml"]
 
         # Combine the checks in an assert statement
-        assert is_file and is_yaml_extension, f"Sweep file must be a YAML file: {config.sweep_filename}"
+        assert is_file and is_yaml_extension, f"Sweep file must be a YAML file: {config.sweep_filepath}"
 
     # Next the model_path. This is a directory where models are stored
     os.makedirs(config.model_path, exist_ok=True)
     assert os.path.exists(config.model_path), f"Model path not found: {config.model_path}"
-    assert (
-        os.path.isdir(config.model_path)
-    ), f"Model path must be a directory: {config.model_path}"
-    # Next the dataset_filename
-    assert (
-        os.path.exists(config.dataset_filename)
-    ), f"Dataset file not found: {config.dataset_filename}"
-    assert (os.path.isfile(config.dataset_filename)) and (
-        os.path.splitext(config.dataset_filename)[1] == ".csv"
-    ), f"Dataset file must be a CSV file: {config.dataset_filename}"
+    assert os.path.isdir(config.model_path), f"Model path must be a directory: {config.model_path}"
+    # Next the dataset_filepath
+    assert os.path.exists(config.dataset_filepath), f"Dataset file not found: {config.dataset_filepath}"
+    assert (os.path.isfile(config.dataset_filepath)) and (
+        os.path.splitext(config.dataset_filepath)[1] == ".csv"
+    ), f"Dataset file must be a CSV file: {config.dataset_filepath}"
 
     # Lastly, the test_filenames
     for test_filename in config.test_filenames:

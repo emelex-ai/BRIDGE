@@ -118,13 +118,13 @@ Configuration options:
 | nhead                 | int  | number of attention heads |
 | wandb                 | bool | use Weights & Biases |
 | train_test_split      | float| fraction of data in training set. Leave at 1.0 is using test_filenames |
-| sweep_filename        | str  | yaml file name for W&B sweep run |
+| sweep_filepath        | str  | yaml file name for W&B sweep run |
 | d_embedding           | int  | Global embedding dimension |
 | seed                  | int  | random seed for repeatability |
 | model_path            | str  | path to model checkpoint files |
 | pathway               | str  | particular pathway to be trained 'o2p', 'p2o', or 'op2op' |
 | save_every            | int  | Save data every 'save_every' number of epochs |
-| dataset_filename      | str  | The name of the csv file in the data folder that contains the data to train on. (must be in `data/` directory) |
+| dataset_filepath      | str  | The name of the csv file in the data folder that contains the data to train on. (must be in `data/` directory) |
 | max_nb_steps          | int  | The maximum number of steps to take per epoch. Good for testing |
 | test_filenames        | list | A list of csv files to test the model on once per epoch. (must be in `data/test/` directory) |
 
