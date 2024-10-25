@@ -9,7 +9,6 @@ logger = logging.getLogger(__name__)
 class CUDADict(dict):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        logger.info(f"CUDA_Dict initialized with keys: {list(self.keys())}")
 
     def to(self, device: torch.device) -> Dict:
         logger.info(f"Moving tensors to device: {device}")

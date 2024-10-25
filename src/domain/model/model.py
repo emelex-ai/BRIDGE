@@ -1,14 +1,13 @@
 from src.domain.datamodels import DatasetConfig, ModelConfig
 from typing import List, Dict, Optional, Union
 from abc import ABC, abstractmethod
-from pydantic import BaseModel
 import torch.nn as nn
 import torch
 
 
 class Model(ABC, nn.Module):
     def __init__(self, model_config: ModelConfig, dataset_config: DatasetConfig):
-        super(BaseModel, self).__init__()
+        super().__init__()
         self.d_model = model_config.d_model
         self.d_embedding = model_config.d_embedding
         self.max_orth_seq_len = dataset_config.max_orth_seq_len
@@ -16,8 +15,8 @@ class Model(ABC, nn.Module):
         self.nhead = model_config.nhead
 
         # Initialize embeddings
-        self.orthography_embedding = nn.Embedding(len(dataset_config.character_tokenizer), self.d_model)
-        self.phonology_embedding = nn.Embedding(len(dataset_config.phonology_tokenizer), self.d_model)
+        self.orthography_embedding = nn.Embedding(dataset_config.orthographic_vocabulary_size, self.d_model)
+        self.phonology_embedding = nn.Embedding(dataset_config.phonological_vocabulary_size, self.d_model)
         self.global_embedding = nn.Parameter(
             torch.randn((1, self.d_embedding, self.d_model)) / self.d_model**0.5, requires_grad=True
         )

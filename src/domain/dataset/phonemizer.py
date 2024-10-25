@@ -50,7 +50,7 @@ class Phonemizer:
             target = self.targets.get(word)
 
             if enc_input is None or dec_input is None or target is None:
-                logger.error(f"Word '{word}' not found in phonological dictionary.")
+                # logger.error(f"Word '{word}' not found in phonological dictionary.")
                 return None
 
             enc_input_ids.append(enc_input)
@@ -58,7 +58,6 @@ class Phonemizer:
             targets.append(torch.tensor(target.copy(), dtype=torch.long))
 
             max_length = max(max_length, len(enc_input))
-
 
         for epv, dpv in zip(enc_input_ids, dec_input_ids):
             epv.extend([torch.tensor([self.PAD])] * (max_length - len(epv)))
@@ -92,3 +91,7 @@ class Phonemizer:
         for i, token in enumerate(tokens):
             output[i, token] = 1
         return output
+
+    # TODO: why is this hard coded?
+    def get_vocabulary_size(self):
+        return 34

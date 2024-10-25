@@ -1,13 +1,14 @@
-from src.domain.datamodels import ModelConfig, DatasetConfig
 from src.application.training import TrainingPipeline
+from src.domain.dataset import ConnTextULDataset
+from src.domain.datamodels import ModelConfig
 from src.domain.model.model import Model
 import torch as pt
 
 
 class P2OModelPipeline(TrainingPipeline):
 
-    def __init__(self, model: Model, model_config: ModelConfig, dataset_config: DatasetConfig):
-        super().__init__(model, model_config, dataset_config)
+    def __init__(self, model: Model, model_config: ModelConfig, dataset: ConnTextULDataset):
+        super().__init__(model, model_config, dataset)
 
     def forward(self, batch):
         phonology = batch["phonology"].to(self.device)

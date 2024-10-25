@@ -3,8 +3,9 @@ import pickle
 import pandas as pd
 from typing import List, Union
 from torch.utils.data import Dataset
-from src.domain.dataset import CUDADict, CharacterTokenizer, Phonemizer
 from src.domain.datamodels import DatasetConfig
+from src.domain.dataset import Phonemizer
+from src.domain.dataset import CharacterTokenizer
 
 
 class ConnTextULDataset(Dataset):
@@ -13,21 +14,25 @@ class ConnTextULDataset(Dataset):
     Uses (31, 32, 33) to represent ('[BOS]', '[EOS]', '[PAD]').
     """
 
-    def __init__(self, config: DatasetConfig, cache_path: str):
+    def __init__(self, dataset_config: DatasetConfig, cache_path: str = "data/.cache"):
         self.cache_path = cache_path
-        self.dataset_filepath = config.dataset_filepath
+        self.dataset_config = dataset_config
+        self.dataset_filepath = dataset_config.dataset_filepath
         self.words = self.read_orthographic_data()
+
         self.phonology_tokenizer = self.read_phonology_data(self.words)
+        self.dataset_config.phonological_vocabulary_size = self.phonology_tokenizer.get_vocabulary_size()
 
         list_of_characters = sorted(set(c for word in self.words for c in word))
         self.character_tokenizer = CharacterTokenizer(list_of_characters)
+        self.dataset_config.orthographic_vocabulary_size = self.character_tokenizer.get_vocabulary_size()
 
         self.max_orth_seq_len = 0
         self.max_phon_seq_len = 0
         self.finalize_word_data()
 
-        self.cmudict = self.phonology_tokenizer.traindata.cmudict
-        self.convert_numeric_prediction = self.phonology_tokenizer.traindata.convert_numeric_prediction
+        self.cmudict = self.phonology_tokenizer.traindata.get("cmudict")
+        self.convert_numeric_prediction = self.phonology_tokenizer.traindata.get("convert_numeric_prediction")
 
     def read_orthographic_data(self) -> pd.Series:
         """Reads and cleans orthographic data (word list) from the dataset."""

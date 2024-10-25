@@ -15,7 +15,7 @@ class O2PModel(Model):
         self.phonology_decoder = Decoder(
             d_model=self.d_model, nhead=self.nhead, num_layers=model_config.num_phon_dec_layers
         )
-        self.linear_phonology_decoder = nn.Linear(self.d_model, 2 * (len(dataset_config.phonology_tokenizer) - 1))
+        self.linear_phonology_decoder = nn.Linear(self.d_model, 2 * (dataset_config.phonological_vocabulary_size - 1))
 
     def forward(
         self,
@@ -33,6 +33,7 @@ class O2PModel(Model):
         mixed_encoding = orthography_encoding[:, : self.d_embedding] + global_embedding
 
         # Decode phonology
+        print(phon_dec_input)
         phon_dec_input = self.embed_phon_tokens(phon_dec_input)
         phon_ar_mask = self.generate_triangular_mask(phon_dec_input.shape[1], phon_dec_input.device)
         phon_output = self.decode(

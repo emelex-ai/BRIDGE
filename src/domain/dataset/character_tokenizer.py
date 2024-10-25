@@ -1,5 +1,5 @@
-from typing import List, Union
 from src.domain.dataset import CUDADict
+from typing import List, Union
 import logging
 import torch
 
@@ -18,7 +18,7 @@ class CharacterTokenizer:
 
         logger.info(f"CharacterTokenizer initialized with vocabulary size: {self.size}")
 
-    def __len__(self) -> int:
+    def get_vocabulary_size(self) -> int:
         return self.size
 
     def encode(self, list_of_strings: Union[str, List[str]]) -> CUDADict:

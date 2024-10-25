@@ -5,11 +5,11 @@ import os
 
 
 class DatasetConfig(BaseModel):
-    dataset_filepath: str = Field(description="Name of the dataset file")
-    character_tokenizer: dict = Field(default=None, description="Name of the dataset file")
-    phonology_tokenizer: dict = Field(default=None, description="Name of the dataset file")
-    max_orth_seq_len: Optional[PositiveInt] = Field(default=100, description="Name of the dataset file")
-    max_phon_seq_len: Optional[PositiveInt] = Field(default=100, description="Name of the dataset file")
+    dataset_filepath: str = Field(description="")
+    orthographic_vocabulary_size: PositiveInt = Field(default=None, description="Orthographic Vocabulary Size")
+    phonological_vocabulary_size: PositiveInt = Field(default=None, description="Phonological Vocabulary Size")
+    max_orth_seq_len: Optional[PositiveInt] = Field(default=100, description="")
+    max_phon_seq_len: Optional[PositiveInt] = Field(default=100, description="")
 
     @model_validator(mode="before")
     def convert_paths(cls, values):

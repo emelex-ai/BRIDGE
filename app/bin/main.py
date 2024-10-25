@@ -15,11 +15,12 @@ from src.utils.helper_funtions import handle_model_continuation
 from src.infra.clients.wandb import WandbWrapper
 
 
-def main(configs: dict):
-    wandb = WandbWrapper()
-    wandb.login()
-    model_id, model_file_name = handle_model_continuation(configs.get("model_config"))
-    TrainModelHandler()
+def main(model_config, dataset_config):
+    # wandb = WandbWrapper()
+    # wandb.login()
+    model_id, model_file_name = handle_model_continuation(model_config)
+    train_model_handler = TrainModelHandler(model_config=model_config, dataset_config=dataset_config)
+    train_model_handler.initiate_model_training()
 
 
 if __name__ == "__main__":
@@ -39,9 +40,4 @@ if __name__ == "__main__":
     dataset_config_handler.print_config()
     dataset_config: DatasetConfig = dataset_config_handler.get_config()
 
-    configs: dict = {
-        "model_config": model_config,
-        "wandb_config": wandb_config,
-        "dataset_config": dataset_config,
-    }
-    main(configs)
+    main(model_config, dataset_config)

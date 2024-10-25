@@ -15,7 +15,7 @@ class P2OModel(Model):
         self.orthography_decoder = Decoder(
             d_model=self.d_model, nhead=self.nhead, num_layers=model_config.num_orth_dec_layers
         )
-        self.linear_orthography_decoder = nn.Linear(self.d_model, len(dataset_config.character_tokenizer))
+        self.linear_orthography_decoder = nn.Linear(self.d_model, dataset_config.orthographic_vocabulary_size)
 
     def forward(
         self,

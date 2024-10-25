@@ -22,8 +22,8 @@ class OP2OPModel(Model):
             d_model=self.d_model, nhead=self.nhead, num_layers=model_config.num_phon_dec_layers
         )
 
-        self.linear_orthography_decoder = nn.Linear(self.d_model, len(dataset_config.character_tokenizer))
-        self.linear_phonology_decoder = nn.Linear(self.d_model, 2 * (len(dataset_config.phonology_tokenizer) - 1))
+        self.linear_orthography_decoder = nn.Linear(self.d_model, dataset_config.orthographic_vocabulary_size)
+        self.linear_phonology_decoder = nn.Linear(self.d_model, 2 * (dataset_config.phonological_vocabulary_size - 1))
 
     def forward(
         self,

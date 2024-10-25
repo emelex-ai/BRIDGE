@@ -1,4 +1,5 @@
-from src.domain.datamodels import ModelConfig, DatasetConfig
+from src.domain.dataset import ConnTextULDataset
+from src.domain.datamodels import ModelConfig
 from src.domain.model.model import Model
 from abc import ABC, abstractmethod
 from typing import List, Dict
@@ -9,9 +10,9 @@ import time
 
 class TrainingPipeline(ABC):
 
-    def __init__(self, model: Model, model_config: ModelConfig, dataset_config: DatasetConfig):
+    def __init__(self, model: Model, model_config: ModelConfig, dataset: ConnTextULDataset):
         self.model_config = model_config
-        self.dataset_config = dataset_config
+        self.dataset = dataset
         self.model = model
         self.opt = pt.optim.AdamW(model.parameters(), model_config.learning_rate)
         self.device = pt.device(model_config.device)
@@ -30,14 +31,14 @@ class TrainingPipeline(ABC):
         pass
 
     def create_data_slices(self):
-        cutpoint = len(self.dataset_config) * 0.8  # Assuming 80% train split
+        cutpoint = len(self.dataset) * 0.8  # Assuming 80% train split
         train_slices = [
             slice(i, min(i + self.model_config.batch_size_train, cutpoint))
             for i in range(0, int(cutpoint), self.model_config.batch_size_train)
         ]
         val_slices = [
-            slice(i, min(i + self.model_config.batch_size_val, len(self.dataset_config)))
-            for i in range(int(cutpoint), len(self.dataset_config), self.model_config.batch_size_val)
+            slice(i, min(i + self.model_config.batch_size_val, len(self.dataset)))
+            for i in range(int(cutpoint), len(self.dataset), self.model_config.batch_size_val)
         ]
         return train_slices, val_slices
 
@@ -46,7 +47,7 @@ class TrainingPipeline(ABC):
         total_loss = 0
         example_ct = 0
         for step, batch_slice in enumerate(self.train_dataset_config_slices):
-            batch = self.dataset_config[batch_slice]
+            batch = self.dataset[batch_slice]
             logits = self.forward(batch)
             loss = self.compute_loss(logits, batch)
 
@@ -66,7 +67,7 @@ class TrainingPipeline(ABC):
         example_ct = 0
         with torch.no_grad():
             for step, batch_slice in enumerate(self.val_dataset_config_slices):
-                batch = self.dataset_config[batch_slice]
+                batch = self.dataset[batch_slice]
                 logits = self.forward(batch)
                 loss = self.compute_loss(logits, batch)
 
@@ -89,5 +90,5 @@ class TrainingPipeline(ABC):
 
     def save_model(self, epoch):
         if epoch % self.model_config.save_every == 0:
-            model_path = f"{self.model_config.model_path}/model_epoch_{epoch}.pth"
+            model_path = f"{self.model_config.model_artifacts_dir}/model_epoch_{epoch}.pth"
             pt.save(self.model.state_dict(), model_path)
