@@ -259,6 +259,9 @@ class Model(torch.nn.Module):
 
         return final_encoding
 
+    def embed_p2p(self, phonology, phonology_padding_mask):
+        return self.embed_p2o(phonology, phonology_padding_mask)
+
     def embed_p2o(self, phonology, phonology_padding_mask):
         phonology = self.embed_phon_tokens(phonology)
         phonology_encoding = self.phonology_encoder(
@@ -431,7 +434,23 @@ class Model(torch.nn.Module):
             orth_token_logits = self.linear_orthography_decoder(orth_output)
             orth_token_logits = orth_token_logits.transpose(1, 2)
             return {"orth": orth_token_logits}
-
+        elif pathway == "p2p":
+            encoding = self.embed_p2p(phon_enc_input, phon_enc_pad_mask)
+            phon_dec_input = self.embed_phon_tokens(phon_dec_input)
+            phon_ar_mask = self.generate_triangular_mask(
+                phon_dec_input.shape[1], phon_dec_input.device
+            )
+            phon_output = self.phonology_decoder(
+                tgt=phon_dec_input,
+                tgt_mask=phon_ar_mask,
+                tgt_key_padding_mask=phon_dec_pad_mask,
+                memory=encoding,
+            )
+            B, PC, E = phon_output.shape
+            phon_token_logits = self.linear_phonology_decoder(phon_output)
+            phon_token_logits = phon_token_logits.view(B, PC, 2, -1).transpose(1, 2)
+            return {"phon": phon_token_logits}
+            
     def size(self):
         param_num = 0
         param_size = 0

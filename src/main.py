@@ -254,8 +254,9 @@ def validate_config(config):
     assert config.pathway in [
         "o2p",
         "p2o",
-        "op2op",
-    ], "Invalid pathway argument: must be 'o2p', 'p2o', or 'op2op'"
+        "p2p",
+        "op2op"
+    ], "Invalid pathway argument: must be 'o2p', 'p2o', 'p2p', or 'op2op'"
 
     assert (
         config.d_model % config.nhead == 0

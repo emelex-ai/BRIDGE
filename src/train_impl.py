@@ -57,7 +57,7 @@ def single_step(
             logits["orth"], orthography["enc_input_ids"][:, 1:]
         )
         loss += orth_loss
-    if gm.cc.pathway in ["op2op", "o2p"]:
+    if gm.cc.pathway in ["op2op", "o2p", "p2p"]:
         phon_loss = pt.nn.CrossEntropyLoss(ignore_index=2)(
             logits["phon"], phonology["targets"]
         )
@@ -123,7 +123,7 @@ def calculate_accuracies(pathway, logits, orthography, phonology):
         output["letter_wise_accuracy"] = letter_wise_accuracy
         output["word_wise_accuracy"] = orth_word_accuracy
 
-    if pathway in ["op2op", "o2p"]:
+    if pathway in ["op2op", "o2p", "p2p"]:
         # --- Calculate Phonological Accuracy ---
         phon_pred = pt.argmax(logits["phon"], dim=1)
         phon_true = phonology["targets"]

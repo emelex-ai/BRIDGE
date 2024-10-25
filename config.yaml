@@ -4,7 +4,7 @@ batch_size_val: 64
 d_model: 64
 d_embedding: 1
 nhead: 2
-pathway: o2p
+pathway: p2p
 test: False
 train_test_split: 1.0
 save_every: 1
