@@ -1,11 +1,11 @@
 from src.domain.datamodels import DatasetConfig, ModelConfig
-from src.domain.model import BaseModel, Encoder, Decoder
+from src.domain.model import Model, Encoder, Decoder
 from typing import List, Dict, Optional, Union
 import torch.nn as nn
 import torch
 
 
-class O2PModel(BaseModel):
+class O2PModel(Model):
     def __init__(self, model_config: ModelConfig, dataset_config: DatasetConfig):
         super(O2PModel, self).__init__(model_config, dataset_config)
 

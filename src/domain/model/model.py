@@ -1,5 +1,4 @@
-from src.utils.configuration.dataset import DatasetConfig
-from src.utils.configuration.model import ModelConfig
+from src.domain.datamodels import DatasetConfig, ModelConfig
 from typing import List, Dict, Optional, Union
 from abc import ABC, abstractmethod
 from pydantic import BaseModel
@@ -7,7 +6,7 @@ import torch.nn as nn
 import torch
 
 
-class BaseModel(ABC, nn.Module):
+class Model(ABC, nn.Module):
     def __init__(self, model_config: ModelConfig, dataset_config: DatasetConfig):
         super(BaseModel, self).__init__()
         self.d_model = model_config.d_model
