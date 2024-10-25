@@ -1,7 +1,6 @@
-from src.utils.configuration.wandb import WandbConfig
-from src.utils.shared import BaseConfigHandler
+from src.application.shared import BaseConfigHandler
+from src.domain.datamodels import WandbConfig
 import logging
-import os
 
 
 logger = logging.getLogger(__name__)

@@ -1,8 +1,6 @@
-from src.utils.configuration.model.model_config import ModelConfig
-from src.utils.shared import BaseConfigHandler
+from src.application.shared import BaseConfigHandler
+from src.domain.datamodels import ModelConfig
 import logging
-import yaml
-import os
 
 
 logger = logging.getLogger(__name__)

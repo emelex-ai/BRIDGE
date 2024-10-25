@@ -3,13 +3,10 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
-from src.utils.configuration.model import ModelConfig, ModelConfigHandler
-from src.utils.configuration.logging import LoggingConfigHandler
-from src.utils.configuration.dataset import DatasetConfig, DatasetConfigHandler
-from src.utils.configuration.wandb import WandbConfig, WandbConfigHandler
+from src.domain.datamodels import ModelConfig, DatasetConfig, WandbConfig
+from src.application.handlers import ModelConfigHandler, DatasetConfigHandler, WandbConfigHandler, LoggingConfigHandler
 from src.utils.helper_funtions import handle_model_continuation
 from src.infra.clients.wandb import WandbWrapper
-
 
 
 def main(configs: dict):

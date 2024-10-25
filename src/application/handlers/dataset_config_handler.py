@@ -1,5 +1,5 @@
-from src.utils.configuration.dataset import DatasetConfig
-from src.utils.shared import BaseConfigHandler
+from src.application.shared import BaseConfigHandler
+from src.domain.datamodels import DatasetConfig
 import logging
 
 logger = logging.getLogger(__name__)

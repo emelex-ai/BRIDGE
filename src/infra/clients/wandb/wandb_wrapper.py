@@ -1,4 +1,4 @@
-from src.utils.shared import Singleton
+from src.application.shared import Singleton
 from addict import Dict as AttrDict
 import logging
 import wandb
@@ -64,7 +64,6 @@ class WandbWrapper(Singleton):
         self.is_wandb_on = is_wandb_on
         self.is_sweep = is_sweep
         self.config = AttrDict(config) if config else AttrDict({})
-
 
     def init(self, *args, **kwargs):
         if self.is_wandb_on:
