@@ -1,6 +1,7 @@
 from src.domain.datamodels import DatasetConfig, ModelConfig
 from typing import List, Dict, Optional, Union
-from src.domain.model import Encoder, Decoder
+from src.domain.model.encoder import Encoder
+from src.domain.model.decoder import Decoder
 from abc import ABC, abstractmethod
 import torch.nn as nn
 import torch
@@ -74,11 +75,52 @@ class Model(ABC, nn.Module):
 
     def embed_orth_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
         """Embeds orthographic tokens."""
-        return self.orthography_embedding(tokens)
+        assert isinstance(
+            tokens, torch.Tensor
+        ), "For orthographic embeddings, tokens must be a pytorch tensor of integers (indices of orthography_embedding)"
+        assert (
+            tokens.dtype == torch.long or tokens.dtype == torch.int
+        ), f"Input tensor to Embedding must be type int or long but is {tokens.dtype}"
+        return self.orthography_embedding(tokens) + self.orth_position_embedding.weight[None, : tokens.shape[1]]
 
     def embed_phon_tokens(self, tokens: List[torch.Tensor]) -> torch.Tensor:
         """Embeds phonological tokens."""
-        return self.phonology_embedding(tokens)
+        try:
+            isinstance(tokens, list)
+        except:
+            raise TypeError(
+                f"For phonological vectors, tokens must be a list where each element is \
+                    a pytorch tensor of integers (indices), but is type: {type(tokens)}"
+            )
+        try:
+            all(isinstance(token, torch.Tensor) for token in tokens)
+        except:
+            raise TypeError(
+                "For phonological vectors, each element of the list must be \
+                    a pytorch tensor of integers (indices)"
+            )
+        # Here we average the embeddings for each feature in a phonological vector
+        # Each row of indices will become of batch once we extract rows from the embedding matrix
+        # So the size of the resulting 'output_embedding' tensor should be (batch_size, max_phon_len, d_model)
+        batch_size = len(tokens)
+        # Every batch should be the same size. If this function is called from the forward routine, then the dataset.encode
+        # routine will have already added the necessary padding. If this function is called from the generate routine, then
+        # each successive phonological vector (list of active features) will have been generated at the same time. So we can
+        # set the max_phon_len to the length of the first batch, since all batches should be the same length.
+        max_phon_len = len(tokens[0])
+
+        device = next(self.parameters()).device  # device of weights
+        # len(tokens) is the batch size
+        output_embedding = torch.zeros((batch_size, max_phon_len, self.d_model), device=device)
+        for batch_num, batch in enumerate(tokens):
+            for indx, tokes in enumerate(batch):
+                # Here tokens should be a pytorch tensor of integers.
+                # It extracts the indicated rows from self.phonology_embedding
+                avg_embedding = self.phonology_embedding(tokes).mean(axis=0)
+                # Insert the resulting averaged embedding vector into the
+                # output_embedding tensor as a new row
+                output_embedding[batch_num, indx, :] = avg_embedding
+        return output_embedding + self.phon_position_embedding.weight[None, : len(tokens[0])]
 
     def encode_orthography(self, orthography: torch.Tensor, orthography_padding_mask: torch.Tensor) -> torch.Tensor:
         """Encodes orthography using the shared orthography encoder."""

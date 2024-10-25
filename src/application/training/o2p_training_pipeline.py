@@ -13,7 +13,10 @@ class O2PModelPipeline(TrainingPipeline):
     def forward(self, batch):
         orthography = batch["orthography"].to(self.device)
         phonology = batch["phonology"].to(self.device)
-        print(phonology)
+        # print(orthography["enc_input_ids"])
+        # print(orthography["enc_pad_mask"])
+        # print(phonology["dec_input_ids"])
+        # print(phonology["dec_pad_mask"])
         return self.model(
             orthography["enc_input_ids"],
             orthography["enc_pad_mask"],

@@ -1,6 +1,6 @@
 from src.domain.dataset import ConnTextULDataset
 from src.domain.datamodels import ModelConfig
-from src.domain.model.model import Model
+from src.domain.model import Model
 from abc import ABC, abstractmethod
 from typing import List, Dict
 import torch as pt
@@ -31,14 +31,14 @@ class TrainingPipeline(ABC):
         pass
 
     def create_data_slices(self):
-        cutpoint = len(self.dataset) * 0.8  # Assuming 80% train split
+        cutpoint = int(len(self.dataset) * 0.8)  # Assuming 80% train split, and converting to an integer
         train_slices = [
-            slice(i, min(i + self.model_config.batch_size_train, cutpoint))
-            for i in range(0, int(cutpoint), self.model_config.batch_size_train)
+            slice(i, min(i + int(self.model_config.batch_size_train), cutpoint))
+            for i in range(0, cutpoint, int(self.model_config.batch_size_train))  # Ensure batch size is an integer
         ]
         val_slices = [
-            slice(i, min(i + self.model_config.batch_size_val, len(self.dataset)))
-            for i in range(int(cutpoint), len(self.dataset), self.model_config.batch_size_val)
+            slice(i, min(i + int(self.model_config.batch_size_val), len(self.dataset)))
+            for i in range(cutpoint, len(self.dataset), int(self.model_config.batch_size_val))  # Ensure batch size is an integer
         ]
         return train_slices, val_slices
 
