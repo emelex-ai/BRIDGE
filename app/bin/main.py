@@ -4,7 +4,13 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
 from src.domain.datamodels import ModelConfig, DatasetConfig, WandbConfig
-from src.application.handlers import ModelConfigHandler, DatasetConfigHandler, WandbConfigHandler, LoggingConfigHandler
+from src.application.handlers import (
+    ModelConfigHandler,
+    DatasetConfigHandler,
+    WandbConfigHandler,
+    LoggingConfigHandler,
+    TrainModelHandler,
+)
 from src.utils.helper_funtions import handle_model_continuation
 from src.infra.clients.wandb import WandbWrapper
 
@@ -13,6 +19,7 @@ def main(configs: dict):
     wandb = WandbWrapper()
     wandb.login()
     model_id, model_file_name = handle_model_continuation(configs.get("model_config"))
+    TrainModelHandler()
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ import pandas as pd
 from typing import List, Union
 from torch.utils.data import Dataset
 from src.domain.dataset import CUDADict, CharacterTokenizer, Phonemizer
+from src.domain.datamodels import DatasetConfig
 
 
 class ConnTextULDataset(Dataset):
@@ -12,10 +13,9 @@ class ConnTextULDataset(Dataset):
     Uses (31, 32, 33) to represent ('[BOS]', '[EOS]', '[PAD]').
     """
 
-    def __init__(self, config: dict, cache_path: str):
-        self.config = config
+    def __init__(self, config: DatasetConfig, cache_path: str):
         self.cache_path = cache_path
-        self.dataset_filepath = self.config.dataset_filepath
+        self.dataset_filepath = config.dataset_filepath
         self.words = self.read_orthographic_data()
         self.phonology_tokenizer = self.read_phonology_data(self.words)
 

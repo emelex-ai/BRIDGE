@@ -1,6 +1,5 @@
-from src.utils.configuration.dataset import DatasetConfig
+from src.domain.datamodels import DatasetConfig, ModelConfig
 from src.domain.model import BaseModel, Encoder, Decoder
-from src.utils.configuration.model import ModelConfig
 from typing import List, Dict, Optional, Union
 import torch.nn as nn
 import torch
