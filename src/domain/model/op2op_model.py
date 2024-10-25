@@ -9,21 +9,7 @@ class OP2OPModel(Model):
 
     def __init__(self, model_config: ModelConfig, dataset_config: DatasetConfig):
         super(OP2OPModel, self).__init__(model_config, dataset_config)
-        self.orthography_encoder = Encoder(
-            d_model=self.d_model, nhead=self.nhead, num_layers=model_config.num_orth_enc_layers
-        )
-        self.phonology_encoder = Encoder(
-            d_model=self.d_model, nhead=self.nhead, num_layers=model_config.num_phon_enc_layers
-        )
-        self.orthography_decoder = Decoder(
-            d_model=self.d_model, nhead=self.nhead, num_layers=model_config.num_orth_dec_layers
-        )
-        self.phonology_decoder = Decoder(
-            d_model=self.d_model, nhead=self.nhead, num_layers=model_config.num_phon_dec_layers
-        )
 
-        self.linear_orthography_decoder = nn.Linear(self.d_model, dataset_config.orthographic_vocabulary_size)
-        self.linear_phonology_decoder = nn.Linear(self.d_model, 2 * (dataset_config.phonological_vocabulary_size - 1))
 
     def forward(
         self,

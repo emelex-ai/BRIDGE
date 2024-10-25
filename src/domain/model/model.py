@@ -1,5 +1,6 @@
 from src.domain.datamodels import DatasetConfig, ModelConfig
 from typing import List, Dict, Optional, Union
+from src.domain.model import Encoder, Decoder
 from abc import ABC, abstractmethod
 import torch.nn as nn
 import torch
@@ -16,16 +17,52 @@ class Model(ABC, nn.Module):
 
         # Initialize embeddings
         self.orthography_embedding = nn.Embedding(dataset_config.orthographic_vocabulary_size, self.d_model)
+        self.orth_position_embedding = torch.nn.Embedding(self.max_orth_seq_len, self.d_model)
+
         self.phonology_embedding = nn.Embedding(dataset_config.phonological_vocabulary_size, self.d_model)
+        self.phon_position_embedding = torch.nn.Embedding(self.max_phon_seq_len, self.d_model)
+
         self.global_embedding = nn.Parameter(
             torch.randn((1, self.d_embedding, self.d_model)) / self.d_model**0.5, requires_grad=True
         )
+        # Initial, encoding segment of our ConnTextUL model:
+        # Instance of our Encoder module (defined above), for encoding orthography
+        self.orthography_encoder = Encoder(
+            d_model=self.d_model, nhead=model_config.nhead, num_layers=model_config.num_orth_enc_layers
+        )
+        # Instance of our Encoder module (defined above), for encoding phonology
+        self.phonology_encoder = Encoder(
+            d_model=self.d_model, nhead=model_config.nhead, num_layers=model_config.num_phon_enc_layers
+        )
 
-        # Initialize encoders and decoders in child classes
-        self.orthography_encoder = None
-        self.phonology_encoder = None
-        self.orthography_decoder = None
-        self.phonology_decoder = None
+        # Criss-crossing orthography/phonology cross-attenion segment of ConnTextUL model
+        self.gp_multihead_attention = torch.nn.MultiheadAttention(
+            embed_dim=self.d_model, num_heads=model_config.nhead, batch_first=True
+        )
+        self.gp_layer_norm = torch.nn.LayerNorm(self.d_model)
+        self.pg_multihead_attention = torch.nn.MultiheadAttention(
+            embed_dim=self.d_model, num_heads=model_config.nhead, batch_first=True
+        )
+        self.pg_layer_norm = torch.nn.LayerNorm(self.d_model)
+
+        # Segment of ConnTextUL model that mixes orthography/phonology representation
+        self.transformer_mixer = Encoder(
+            d_model=self.d_model,
+            nhead=model_config.nhead,
+            num_layers=model_config.num_mixing_enc_layers,
+        )
+        self.reduce = torch.nn.Linear(self.d_model, self.d_model)
+        self.reduce_layer_norm = torch.nn.LayerNorm(self.d_model)
+
+        self.orthography_decoder = Decoder(
+            d_model=self.d_model, nhead=self.nhead, num_layers=model_config.num_orth_dec_layers
+        )
+        self.phonology_decoder = Decoder(
+            d_model=self.d_model, nhead=self.nhead, num_layers=model_config.num_phon_dec_layers
+        )
+
+        self.linear_orthography_decoder = nn.Linear(self.d_model, dataset_config.orthographic_vocabulary_size)
+        self.linear_phonology_decoder = nn.Linear(self.d_model, 2 * (dataset_config.phonological_vocabulary_size - 1))
 
     @abstractmethod
     def forward(self, *args, **kwargs) -> Dict[str, torch.Tensor]:

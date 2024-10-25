@@ -9,14 +9,6 @@ class O2PModel(Model):
     def __init__(self, model_config: ModelConfig, dataset_config: DatasetConfig):
         super(O2PModel, self).__init__(model_config, dataset_config)
 
-        self.orthography_encoder = Encoder(
-            d_model=self.d_model, nhead=self.nhead, num_layers=model_config.num_orth_enc_layers
-        )
-        self.phonology_decoder = Decoder(
-            d_model=self.d_model, nhead=self.nhead, num_layers=model_config.num_phon_dec_layers
-        )
-        self.linear_phonology_decoder = nn.Linear(self.d_model, 2 * (dataset_config.phonological_vocabulary_size - 1))
-
     def forward(
         self,
         orth_enc_input: torch.Tensor,

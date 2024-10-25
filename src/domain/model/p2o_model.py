@@ -9,13 +9,6 @@ class P2OModel(Model):
 
     def __init__(self, model_config: ModelConfig, dataset_config: DatasetConfig):
         super(P2OModel, self).__init__(model_config, dataset_config)
-        self.phonology_encoder = Encoder(
-            d_model=self.d_model, nhead=self.nhead, num_layers=model_config.num_phon_enc_layers
-        )
-        self.orthography_decoder = Decoder(
-            d_model=self.d_model, nhead=self.nhead, num_layers=model_config.num_orth_dec_layers
-        )
-        self.linear_orthography_decoder = nn.Linear(self.d_model, dataset_config.orthographic_vocabulary_size)
 
     def forward(
         self,

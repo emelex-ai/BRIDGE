@@ -74,10 +74,9 @@ dependencies:
       - sympy==1.13.3
       - torch==2.4.1
       - tqdm==4.66.5
-      - traindata==0.1.0
       - triton==3.0.0
       - typing-extensions==4.12.2
       - tzdata==2024.2
       - urllib3==2.2.3
       - wandb==0.18.3
-prefix: /home/uzair/anaconda3/envs/bridge
+      - git+https://github.com/mathnathan/Traindata.git
