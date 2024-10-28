@@ -1,4 +1,4 @@
-num_epochs: 2
+num_epochs: 100
 batch_size_train: 64
 batch_size_val: 64
 d_model: 64
@@ -15,7 +15,7 @@ num_orth_enc_layers: 1
 num_mixing_enc_layers: 1
 num_phon_dec_layers: 1
 num_orth_dec_layers: 1
-device: cuda #cpu
+device: cpu #cpu #cuda
 model_artifacts_dir: 'models'
 model_id: 
 max_nb_steps: 20

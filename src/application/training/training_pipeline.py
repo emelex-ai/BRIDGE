@@ -1,113 +1,143 @@
-from src.domain.dataset import ConnTextULDataset
-from src.domain.datamodels import ModelConfig
-from src.domain.model import Model
-from abc import ABC, abstractmethod
-from typing import List, Dict
-from tqdm import tqdm
 import torch as pt
+from abc import ABC, abstractmethod
+from tqdm import tqdm
 import torch
-import time
+from datetime import datetime
 
 
 class TrainingPipeline(ABC):
-
-    def __init__(self, model: Model, model_config: ModelConfig, dataset: ConnTextULDataset):
+    def __init__(self, model, model_config, dataset):
+        self.model = model
         self.model_config = model_config
         self.dataset = dataset
-        self.model = model
-        self.opt = pt.optim.AdamW(model.parameters(), model_config.learning_rate)
         self.device = pt.device(model_config.device)
         self.model.to(self.device)
+        self.optimizer = pt.optim.AdamW(self.model.parameters(), lr=model_config.learning_rate)
         self.epochs_completed = 0
-        self.train_dataset_config_slices, self.val_dataset_config_slices = self.create_data_slices()
+        self.train_slices, self.val_slices = self.create_data_slices()
+
+    def create_data_slices(self):
+        cutpoint = int(len(self.dataset) * 0.8)
+        train_slices = [
+            slice(i, min(i + self.model_config.batch_size_train, cutpoint))
+            for i in range(0, cutpoint, self.model_config.batch_size_train)
+        ]
+        val_slices = [
+            slice(i, min(i + self.model_config.batch_size_val, len(self.dataset)))
+            for i in range(cutpoint, len(self.dataset), self.model_config.batch_size_val)
+        ]
+        return train_slices, val_slices
 
     @abstractmethod
     def forward(self, batch):
-        """Forward pass logic specific to each model"""
+        """Abstract method to implement forward pass for each specific model"""
         pass
 
     @abstractmethod
     def compute_loss(self, logits, batch):
-        """Compute loss specific to each model"""
+        """Abstract method to compute loss specific to each model"""
         pass
 
-    def create_data_slices(self):
-        cutpoint = int(len(self.dataset) * 0.8)  # Assuming 80% train split, and converting to an integer
-        train_slices = [
-            slice(i, min(i + int(self.model_config.batch_size_train), cutpoint))
-            for i in range(0, cutpoint, int(self.model_config.batch_size_train))  # Ensure batch size is an integer
-        ]
-        val_slices = [
-            slice(i, min(i + int(self.model_config.batch_size_val), len(self.dataset)))
-            for i in range(
-                cutpoint, len(self.dataset), int(self.model_config.batch_size_val)
-            )  # Ensure batch size is an integer
-        ]
-        return train_slices, val_slices
+    def single_step(self, batch_slice, epoch, step, example_ct):
+        """Handles a single step of training or validation"""
+        batch = self.dataset[batch_slice]
+        orthography = batch["orthography"].to(self.device)
+        phonology = batch["phonology"].to(self.device)
+
+        # Forward pass
+        logits = self.forward(batch)
+
+        # Compute loss
+        loss = self.compute_loss(logits, batch)
+
+        # Backpropagation only if training
+        if self.model.training:
+            loss.backward()
+            self.optimizer.step()
+            self.optimizer.zero_grad()
+
+        # Return metrics
+        metrics = self.compute_metrics(logits, orthography, phonology, loss)
+        return metrics
+
+    @abstractmethod
+    def compute_metrics(self, logits, orthography, phonology, loss):
+        """Abstract method to compute custom metrics"""
+        pass
 
     def train_single_epoch(self, epoch):
         self.model.train()
-        total_loss = 0
         example_ct = 0
-        # Initialize tqdm progress bar
-        progress_bar = tqdm(
-            self.train_dataset_config_slices, desc=f"Training Epoch {epoch + 1}/{self.model_config.num_epochs}"
-        )
+        total_loss = 0
 
+        progress_bar = tqdm(self.train_slices, desc=f"Training Epoch {epoch+1}")
         for step, batch_slice in enumerate(progress_bar):
-            batch = self.dataset[batch_slice]
-            logits = self.forward(batch)
-            loss = self.compute_loss(logits, batch)
+            metrics = self.single_step(batch_slice, epoch, step, example_ct)
+            example_ct += len(self.dataset[batch_slice])
+            total_loss += metrics["loss"]
 
-            loss.backward()
-            self.opt.step()
-            self.opt.zero_grad()
+            # Update progress bar with all metrics
+            progress_bar.set_postfix({key: f"{value:.4f}" for key, value in metrics.items()})
 
-            total_loss += loss.item()
-            example_ct += len(batch["orthography"])
-
-            # Update tqdm bar with current loss
-            progress_bar.set_postfix({"train_loss": total_loss / (step + 1)})
-
-        avg_loss = total_loss / len(self.train_dataset_config_slices)
-        return {"train_loss": avg_loss, "epoch": epoch, "example_count": example_ct}
+        return total_loss / len(self.train_slices)
 
     def validate_single_epoch(self, epoch):
         self.model.eval()
-        total_loss = 0
         example_ct = 0
-        # Initialize tqdm progress bar
-        progress_bar = tqdm(
-            self.val_dataset_config_slices, desc=f"Validating Epoch {epoch + 1}/{self.model_config.num_epochs}"
-        )
+        total_loss = 0
 
+        progress_bar = tqdm(self.val_slices, desc=f"Validating Epoch {epoch+1}")
         with torch.no_grad():
             for step, batch_slice in enumerate(progress_bar):
-                batch = self.dataset[batch_slice]
-                logits = self.forward(batch)
-                loss = self.compute_loss(logits, batch)
+                metrics = self.single_step(batch_slice, epoch, step, example_ct)
+                example_ct += len(self.dataset[batch_slice])
+                total_loss += metrics["loss"]
 
-                total_loss += loss.item()
-                example_ct += len(batch["orthography"])
+                # Update progress bar with all metrics
+                progress_bar.set_postfix({key: f"{value:.4f}" for key, value in metrics.items()})
 
-                # Update tqdm bar with current loss
-                progress_bar.set_postfix({"val_loss": total_loss / (step + 1)})
-
-        avg_loss = total_loss / len(self.val_dataset_config_slices)
-        return {"val_loss": avg_loss, "epoch": epoch, "example_count": example_ct}
+        return total_loss / len(self.val_slices)
 
     def run_train_val_loop(self):
         for epoch in range(self.model_config.num_epochs):
-            train_metrics = self.train_single_epoch(epoch)
-            val_metrics = self.validate_single_epoch(epoch)
-            combined_metrics = {**train_metrics, **val_metrics}
-            self.log_metrics(combined_metrics)
+            train_loss = self.train_single_epoch(epoch)
+            val_loss = self.validate_single_epoch(epoch)
             self.save_model(epoch)
-
-    def log_metrics(self, metrics):
-        print(f"Epoch {metrics['epoch']}: Train Loss {metrics['train_loss']}, Val Loss {metrics['val_loss']}")
+            print(f"Epoch {epoch+1}: Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
 
     def save_model(self, epoch):
         if epoch % self.model_config.save_every == 0:
             model_path = f"{self.model_config.model_artifacts_dir}/model_epoch_{epoch}.pth"
-            pt.save(self.model.state_dict(), model_path)
+            torch.save(
+                {
+                    "model_state_dict": self.model.state_dict(),
+                    "optimizer_state_dict": self.optimizer.state_dict(),
+                    "epoch": epoch,
+                },
+                model_path,
+            )
+
+    @staticmethod
+    def set_seed(seed):
+        """Set seed for reproducibility"""
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+
+    @staticmethod
+    def get_device(device=None):
+        """Return the appropriate device (CPU or GPU)"""
+        if device is None:
+            return torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        return device
+
+    @staticmethod
+    def get_model_file_name(model_id, epoch_num):
+        return f"{model_id}_epoch_{epoch_num}.pth"
+
+    @staticmethod
+    def compare_state_dicts(state_dict1, state_dict2):
+        """Compare two state dicts to check if they are identical"""
+        if state_dict1.keys() != state_dict2.keys():
+            return False
+        return all(torch.allclose(state_dict1[key], state_dict2[key]) for key in state_dict1.keys())
