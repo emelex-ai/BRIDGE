@@ -15,7 +15,7 @@ num_orth_enc_layers: 1
 num_mixing_enc_layers: 1
 num_phon_dec_layers: 1
 num_orth_dec_layers: 1
-device: cpu
+device: cuda #cpu
 model_artifacts_dir: 'models'
 model_id: 
 max_nb_steps: 20

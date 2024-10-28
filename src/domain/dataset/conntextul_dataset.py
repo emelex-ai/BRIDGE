@@ -6,6 +6,9 @@ from torch.utils.data import Dataset
 from src.domain.datamodels import DatasetConfig
 from src.domain.dataset import Phonemizer
 from src.domain.dataset import CharacterTokenizer
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ConnTextULDataset(Dataset):
@@ -20,8 +23,8 @@ class ConnTextULDataset(Dataset):
         self.dataset_filepath = dataset_config.dataset_filepath
         self.words = self.read_orthographic_data()
 
-        self.phonology_tokenizer = self.read_phonology_data(self.words)
-        self.dataset_config.phonological_vocabulary_size = self.phonology_tokenizer.get_vocabulary_size()
+        self.phonemizer = self.read_phonology_data(self.words)
+        self.dataset_config.phonological_vocabulary_size = self.phonemizer.get_vocabulary_size()
 
         list_of_characters = sorted(set(c for word in self.words for c in word))
         self.character_tokenizer = CharacterTokenizer(list_of_characters)
@@ -31,8 +34,8 @@ class ConnTextULDataset(Dataset):
         self.max_phon_seq_len = 0
         self.finalize_word_data()
 
-        self.cmudict = self.phonology_tokenizer.traindata.get("cmudict")
-        self.convert_numeric_prediction = self.phonology_tokenizer.traindata.get("convert_numeric_prediction")
+        self.cmudict = self.phonemizer.traindata.get("cmudict")
+        self.convert_numeric_prediction = self.phonemizer.traindata.get("convert_numeric_prediction")
 
     def read_orthographic_data(self) -> pd.Series:
         """Reads and cleans orthographic data (word list) from the dataset."""
@@ -51,13 +54,16 @@ class ConnTextULDataset(Dataset):
 
         if os.path.exists(cache_path):
             with open(cache_path, "rb") as f:
-                phonology_tokenizer = pickle.load(f)
+                phonemizer = pickle.load(f)
+            logger.info(f"Phonemizer data loaded form : {cache_path}")
         else:
-            phonology_tokenizer = Phonemizer(words.tolist())
+            phonemizer = Phonemizer(words.tolist())
             with open(cache_path, "wb") as f:
-                pickle.dump(phonology_tokenizer, f)
+                pickle.dump(phonemizer, f)
 
-        return phonology_tokenizer
+            logger.info(f"Created cache folder for phonemizer: {cache_path}")
+
+        return phonemizer
 
     def finalize_word_data(self):
         """Processes words and calculates the maximum orthographic and phonological sequence lengths."""
@@ -66,7 +72,7 @@ class ConnTextULDataset(Dataset):
             if not word:  # Skip empty strings
                 continue
 
-            phonology = self.phonology_tokenizer.encode([word])
+            phonology = self.phonemizer.encode([word])
             if phonology:  # Ensure the word is valid in the phoneme dict
                 final_words.append(word)
                 self.max_phon_seq_len = max(self.max_phon_seq_len, len(phonology["enc_pad_mask"][0]))
@@ -103,7 +109,7 @@ class ConnTextULDataset(Dataset):
             content_to_encode = [content_to_encode]  # Ensure it is wrapped in a list
 
         orth_tokenized = self.character_tokenizer.encode(content_to_encode)
-        phon_tokenized = self.phonology_tokenizer.encode(content_to_encode)
+        phon_tokenized = self.phonemizer.encode(content_to_encode)
 
         if phon_tokenized is None:
             raise ValueError(f"Phonology encoding failed for input: {content_to_encode}")

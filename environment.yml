@@ -16,7 +16,7 @@ dependencies:
   - ncurses=6.4
   - openssl=3.0.15
   - pip=24.2
-  - python=3.12.7
+  - python=3.10  # Switch to Python 3.10
   - readline=8.2
   - setuptools=75.1.0
   - sqlite=3.45.3
@@ -72,11 +72,11 @@ dependencies:
       - six==1.16.0
       - smmap==5.0.1
       - sympy==1.13.3
-      - torch==2.4.1
+      - torch==2.4.1  # Install torch without explicitly specifying CUDA version
       - tqdm==4.66.5
       - triton==3.0.0
       - typing-extensions==4.12.2
       - tzdata==2024.2
       - urllib3==2.2.3
       - wandb==0.18.3
-      - git+https://github.com/mathnathan/Traindata.git
+      - git+https://github.com/mathnathan/Traindata.git  # Ensure this is the correct repo

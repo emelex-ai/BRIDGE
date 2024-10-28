@@ -3,6 +3,7 @@ from src.domain.datamodels import ModelConfig
 from src.domain.model import Model
 from abc import ABC, abstractmethod
 from typing import List, Dict
+from tqdm import tqdm
 import torch as pt
 import torch
 import time
@@ -38,7 +39,9 @@ class TrainingPipeline(ABC):
         ]
         val_slices = [
             slice(i, min(i + int(self.model_config.batch_size_val), len(self.dataset)))
-            for i in range(cutpoint, len(self.dataset), int(self.model_config.batch_size_val))  # Ensure batch size is an integer
+            for i in range(
+                cutpoint, len(self.dataset), int(self.model_config.batch_size_val)
+            )  # Ensure batch size is an integer
         ]
         return train_slices, val_slices
 
@@ -46,7 +49,12 @@ class TrainingPipeline(ABC):
         self.model.train()
         total_loss = 0
         example_ct = 0
-        for step, batch_slice in enumerate(self.train_dataset_config_slices):
+        # Initialize tqdm progress bar
+        progress_bar = tqdm(
+            self.train_dataset_config_slices, desc=f"Training Epoch {epoch + 1}/{self.model_config.num_epochs}"
+        )
+
+        for step, batch_slice in enumerate(progress_bar):
             batch = self.dataset[batch_slice]
             logits = self.forward(batch)
             loss = self.compute_loss(logits, batch)
@@ -58,6 +66,9 @@ class TrainingPipeline(ABC):
             total_loss += loss.item()
             example_ct += len(batch["orthography"])
 
+            # Update tqdm bar with current loss
+            progress_bar.set_postfix({"train_loss": total_loss / (step + 1)})
+
         avg_loss = total_loss / len(self.train_dataset_config_slices)
         return {"train_loss": avg_loss, "epoch": epoch, "example_count": example_ct}
 
@@ -65,14 +76,22 @@ class TrainingPipeline(ABC):
         self.model.eval()
         total_loss = 0
         example_ct = 0
+        # Initialize tqdm progress bar
+        progress_bar = tqdm(
+            self.val_dataset_config_slices, desc=f"Validating Epoch {epoch + 1}/{self.model_config.num_epochs}"
+        )
+
         with torch.no_grad():
-            for step, batch_slice in enumerate(self.val_dataset_config_slices):
+            for step, batch_slice in enumerate(progress_bar):
                 batch = self.dataset[batch_slice]
                 logits = self.forward(batch)
                 loss = self.compute_loss(logits, batch)
 
                 total_loss += loss.item()
                 example_ct += len(batch["orthography"])
+
+                # Update tqdm bar with current loss
+                progress_bar.set_postfix({"val_loss": total_loss / (step + 1)})
 
         avg_loss = total_loss / len(self.val_dataset_config_slices)
         return {"val_loss": avg_loss, "epoch": epoch, "example_count": example_ct}
