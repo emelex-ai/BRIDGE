@@ -30,8 +30,8 @@ class ConnTextULDataset(Dataset):
         self.character_tokenizer = CharacterTokenizer(list_of_characters)
         self.dataset_config.orthographic_vocabulary_size = self.character_tokenizer.get_vocabulary_size()
 
-        self.max_orth_seq_len = 0
-        self.max_phon_seq_len = 0
+        self.max_phon_seq_len = self.dataset_config.max_phon_seq_len
+        self.max_orth_seq_len = self.dataset_config.max_orth_seq_len
         self.finalize_word_data()
 
         self.cmudict = self.phonemizer.traindata.get("cmudict")
@@ -69,14 +69,16 @@ class ConnTextULDataset(Dataset):
         """Processes words and calculates the maximum orthographic and phonological sequence lengths."""
         final_words = []
         for word in self.words:
-            if not word:  # Skip empty strings
+            if word == "" or word is None or word == []:
                 continue
 
             phonology = self.phonemizer.encode([word])
             if phonology:  # Ensure the word is valid in the phoneme dict
                 final_words.append(word)
-                self.max_phon_seq_len = max(self.max_phon_seq_len, len(phonology["enc_pad_mask"][0]))
-                self.max_orth_seq_len = max(
+                self.dataset_config.max_phon_seq_len = self.max_phon_seq_len = max(
+                    self.max_phon_seq_len, len(phonology["enc_pad_mask"][0])
+                )
+                self.dataset_config.max_orth_seq_len = self.max_orth_seq_len = max(
                     self.max_orth_seq_len, len(self.character_tokenizer.encode(word)["enc_input_ids"][0])
                 )
 

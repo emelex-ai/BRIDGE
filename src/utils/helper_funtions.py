@@ -30,7 +30,7 @@ def setup_new_run():
     return model_id, model_file_name
 
 
-def handle_model_continuation(model_config):
+def handle_model_continuation(training_config):
     ##############################
     #  This function will be used to handle the scenario where we wish
     #  to continue training an existing model. This is not yet implemented.
@@ -41,8 +41,8 @@ def handle_model_continuation(model_config):
     # For now, setup new simulation with new model_id
 
     model_id, model_file_name = setup_new_run()
-    if not model_config.model_id:
-        model_config.model_id = model_id
+    if not training_config.model_id:
+        training_config.model_id = model_id
 
     print(f"New run: {model_file_name}")
 

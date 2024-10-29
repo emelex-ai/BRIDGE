@@ -1,15 +1,15 @@
-from pydantic import BaseModel, Field, field_validator, ValidationInfo, model_validator, PositiveInt
+from pydantic import BaseModel, Field, model_validator, PositiveInt
 from src.utils.helper_funtions import get_project_root
-from typing import List, Optional
+from typing import Optional
 import os
 
 
 class DatasetConfig(BaseModel):
     dataset_filepath: str = Field(description="")
-    orthographic_vocabulary_size: PositiveInt = Field(default=None, description="Orthographic Vocabulary Size")
-    phonological_vocabulary_size: PositiveInt = Field(default=None, description="Phonological Vocabulary Size")
-    max_orth_seq_len: Optional[PositiveInt] = Field(default=100, description="")
-    max_phon_seq_len: Optional[PositiveInt] = Field(default=100, description="")
+    orthographic_vocabulary_size: Optional[int] = Field(default=None, description="Orthographic Vocabulary Size")
+    phonological_vocabulary_size: Optional[int] = Field(default=None, description="Phonological Vocabulary Size")
+    max_orth_seq_len: Optional[int] = Field(default=0, description="")
+    max_phon_seq_len: Optional[int] = Field(default=0, description="")
 
     @model_validator(mode="before")
     def convert_paths(cls, values):
@@ -25,5 +25,11 @@ class DatasetConfig(BaseModel):
     def validate_paths(self):
         if not os.path.exists(self.dataset_filepath):
             raise FileNotFoundError(f"Dataset file not found: {self.dataset_filepath}")
-
         return self
+
+    def validate_vocab_sizes(self):
+        """Ensure vocabulary sizes are set before they are accessed."""
+        if self.orthographic_vocabulary_size is None:
+            raise ValueError("Orthographic vocabulary size must be set before using this configuration.")
+        if self.phonological_vocabulary_size is None:
+            raise ValueError("Phonological vocabulary size must be set before using this configuration.")

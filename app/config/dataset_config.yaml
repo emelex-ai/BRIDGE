@@ -1,1 +1,5 @@
 dataset_filepath: 'data.csv'
+orthographic_vocabulary_size: 
+phonological_vocabulary_size: 
+max_orth_seq_len: 0
+max_phon_seq_len: 0

@@ -1,6 +1,6 @@
 from src.application.training import TrainingPipeline
 from src.domain.dataset import ConnTextULDataset
-from src.domain.datamodels import ModelConfig
+from src.domain.datamodels import TrainingConfig
 from src.domain.model.model import Model
 import torch as pt
 import torch
@@ -8,12 +8,10 @@ import torch
 
 class P2OModelPipeline(TrainingPipeline):
 
-    def __init__(self, model: Model, model_config: ModelConfig, dataset: ConnTextULDataset):
-        super().__init__(model, model_config, dataset)
+    def __init__(self, model: Model, training_config: TrainingConfig, dataset: ConnTextULDataset):
+        super().__init__(model, training_config, dataset)
 
-    def forward(self, batch):
-        phonology = batch["phonology"].to(self.device)
-        orthography = batch["orthography"].to(self.device)
+    def forward(self, orthography, phonology):
         return self.model(
             phonology["enc_input_ids"],
             phonology["enc_pad_mask"],
@@ -21,8 +19,7 @@ class P2OModelPipeline(TrainingPipeline):
             orthography["dec_pad_mask"],
         )
 
-    def compute_loss(self, logits, batch):
-        orthography = batch["orthography"].to(self.device)
+    def compute_loss(self, logits, orthography, phonology):
         orth_loss = pt.nn.CrossEntropyLoss(ignore_index=4)(logits["orth"], orthography["enc_input_ids"][:, 1:])
         return orth_loss
 

@@ -41,6 +41,7 @@ class O2PModel(Model):
         phon_dec_input: torch.Tensor,
         phon_dec_pad_mask: torch.Tensor,
     ) -> Dict[str, torch.Tensor]:
+
         mixed_encoding = self.embed_o2p(orth_enc_input, orth_enc_pad_mask)
         phon_dec_input = self.embed_phon_tokens(phon_dec_input)  # , "p")
         phon_ar_mask = self.generate_triangular_mask(phon_dec_input.shape[1], phon_dec_input.device)

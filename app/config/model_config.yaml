@@ -1,22 +1,12 @@
-num_epochs: 100
-batch_size_train: 64
-batch_size_val: 64
 d_model: 64
 d_embedding: 1
 nhead: 2
-pathway: 'o2p'
+pathway: o2p
 test: False
-train_test_split: 1.0
-save_every: 1
 seed: 1337
-learning_rate: 0.0001
 num_phon_enc_layers: 1
 num_orth_enc_layers: 1
 num_mixing_enc_layers: 1
 num_phon_dec_layers: 1
 num_orth_dec_layers: 1
-device: cpu #cpu #cuda
-model_artifacts_dir: 'models'
-model_id: 
-max_nb_steps: 20
 test_filenames:  
