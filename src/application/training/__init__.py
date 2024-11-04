@@ -1,4 +1,1 @@
 from src.application.training.training_pipeline import TrainingPipeline
-from src.application.training.o2p_training_pipeline import O2PModelPipeline
-from src.application.training.op2op_training_pipeline import OP2OPModelPipeline
-from src.application.training.p2o_training_pipeline import P2OModelPipeline

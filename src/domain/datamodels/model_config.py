@@ -14,7 +14,6 @@ class ModelConfig(BaseModel):
     nhead: int = Field(default=2)
     d_embedding: int = Field(default=1)
     seed: int = Field(default=1337)
-    pathway: str = Field(default="o2p")
     test_filenames: Optional[List[str]] = Field(default=None)
 
     @model_validator(mode="before")
@@ -35,13 +34,6 @@ class ModelConfig(BaseModel):
         nhead = info.data.get("nhead")
         if nhead is not None and v % nhead != 0:
             raise ValueError("d_model must be divisible by nhead")
-        return v
-
-    @field_validator("pathway")
-    def validate_pathway(cls, v):
-        allowed_pathways = ["o2p", "p2o", "op2op"]
-        if v not in allowed_pathways:
-            raise ValueError(f"Invalid pathway: {v}. Allowed: {allowed_pathways}")
         return v
 
     @model_validator(mode="after")

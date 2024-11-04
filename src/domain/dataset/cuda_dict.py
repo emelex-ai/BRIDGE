@@ -41,7 +41,7 @@ class CUDADict(dict):
     #         logger.error(f"Unsupported data type {type(data)} encountered. Expected list or torch.Tensor.")
     #         raise TypeError(f"Unsupported data type {type(data)}. Expected list or torch.Tensor.")
 
-    def to(self, device):
+    def to(self, device: torch.device):
         output = {}
         for key in self.keys():
             batches = self[key]

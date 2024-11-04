@@ -1,8 +1,6 @@
 d_model: 64
 d_embedding: 1
 nhead: 2
-pathway: o2p
-test: False
 seed: 1337
 num_phon_enc_layers: 1
 num_orth_enc_layers: 1
@@ -10,3 +8,4 @@ num_mixing_enc_layers: 1
 num_phon_dec_layers: 1
 num_orth_dec_layers: 1
 test_filenames:  
+test: False
