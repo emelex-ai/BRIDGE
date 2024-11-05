@@ -10,37 +10,6 @@ class CUDADict(dict):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    # def to(self, device: torch.device) -> Dict:
-    #     output = {}
-
-    #     # Iterate through dictionary items
-    #     for key, batches in self.items():
-    #         if isinstance(batches, list):
-    #             # Handle list of lists or list of tensors
-    #             try:
-    #                 output[key] = self._move_to_device(batches, device)
-    #             except Exception as e:
-    #                 logger.error(f"Error processing key '{key}': {e}")
-    #                 raise
-    #         elif isinstance(batches, torch.Tensor):
-    #             # Handle single tensor
-    #             output[key] = batches.to(device)
-    #         else:
-    #             logger.error(f"Invalid type for key '{key}'. Expected list or torch.Tensor but got {type(batches)}.")
-    #             raise TypeError(f"Value for key '{key}' must be a list or a torch.Tensor.")
-
-    #     return output
-
-    # def _move_to_device(self, data: Union[List, torch.Tensor], device: torch.device) -> Union[List, torch.Tensor]:
-    #     """Helper function to recursively move data to the specified device."""
-    #     if isinstance(data, list):
-    #         return [self._move_to_device(item, device) for item in data]
-    #     elif isinstance(data, torch.Tensor):
-    #         return data.to(device)
-    #     else:
-    #         logger.error(f"Unsupported data type {type(data)} encountered. Expected list or torch.Tensor.")
-    #         raise TypeError(f"Unsupported data type {type(data)}. Expected list or torch.Tensor.")
-
     def to(self, device: torch.device):
         output = {}
         for key in self.keys():

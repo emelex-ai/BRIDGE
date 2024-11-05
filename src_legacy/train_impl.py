@@ -1,5 +1,5 @@
-from src_temp.wandb_wrapper import WandbWrapper, MyRun
-from src_temp.model import Model
+from src_legacy.wandb_wrapper import WandbWrapper, MyRun
+from src_legacy.model import Model
 from typing import List, Tuple, Dict, Any, Union
 import torch as pt
 import time

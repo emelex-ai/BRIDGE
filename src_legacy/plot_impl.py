@@ -1,5 +1,5 @@
-from src_temp.wandb_wrapper import WandbWrapper
-from src_temp.dataset import ConnTextULDataset
+from src_legacy.wandb_wrapper import WandbWrapper
+from src_legacy.dataset import ConnTextULDataset
 
 # from src.train_impl import get_starting_model_epoch
 # from torch.utils.data import DataLoader, Subset

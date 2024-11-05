@@ -144,7 +144,8 @@ class TrainingPipeline:
         # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
         #     with record_function("model_forward"):
         logits = self.forward(orthography, phonology)
-
+        print(logits)
+        exit(1)
         # print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
 
         # Compute loss
