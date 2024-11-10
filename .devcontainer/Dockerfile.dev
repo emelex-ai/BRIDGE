@@ -4,24 +4,32 @@ FROM nvidia/cuda:12.6.2-cudnn-devel-ubuntu22.04
 # Set the working directory
 WORKDIR /app
 
-# Set non-interactive mode to avoid prompts during apt-get
+# Set environment variable to avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install dependencies and Python 3.12 from deadsnakes PPA (if available)
+# Install dependencies and add the deadsnakes PPA for Python 3.12
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    build-essential libffi-dev git curl \
-    software-properties-common && \
-    add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get install -y --no-install-recommends software-properties-common && \
+    add-apt-repository ppa:deadsnakes/ppa -y && \
     apt-get update && \
-    apt-get install -y \
-    python3.12 python3.12-dev python3.12-distutils python3-pip && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    libffi-dev \
+    git \
+    python3.12 \
+    python3.12-dev \
+    python3.12-distutils \
+    curl && \
     rm -rf /var/lib/apt/lists/*
 
-# Create a symlink to ensure python3 points to Python 3.12
+# Symlink python3.12 as the default python
 RUN ln -s /usr/bin/python3.12 /usr/bin/python
 
-# Install CUDA Toolkit (which includes CUPTI)
+# Install pip for Python 3.12 directly with get-pip.py
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12 && \
+    python3.12 -m pip install --upgrade pip setuptools wheel
+
+# Install CUDA Toolkit (includes CUPTI) and GCC for compilation
 RUN apt-get update && \
     apt-get install -y cuda-toolkit-12-0 gcc && \
     rm -rf /var/lib/apt/lists/*
@@ -29,15 +37,17 @@ RUN apt-get update && \
 # Install Poetry
 RUN curl -sSL https://install.python-poetry.org | python3.12 - && \
     ls -la /root/.local/bin
-
-# Add Poetry to PATH manually
+# Add Poetry to PATH
 ENV PATH="${PATH}:/root/.local/bin"
 
-# Copy poetry files and install dependencies
+# Copy Poetry files for dependency installation
 COPY pyproject.toml /app/
-RUN poetry env use /usr/bin/python3.12
-RUN poetry config virtualenvs.create false \
-    && poetry install --no-root
 
-# Copy the rest of the application
+# Configure Poetry to use the system environment (no virtualenv)
+RUN poetry config virtualenvs.create false
+
+# Install dependencies without interaction
+RUN poetry install --no-root --no-interaction
+
+# Copy the rest of the application code
 COPY . /app
