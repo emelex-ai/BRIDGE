@@ -16,7 +16,7 @@ dependencies:
   - ncurses=6.4
   - openssl=3.0.15
   - pip=24.2
-  - python=3.10 
+  - python=3.12.7
   - readline=8.2
   - setuptools=75.1.0
   - sqlite=3.45.3
@@ -31,11 +31,13 @@ dependencies:
       - charset-normalizer==3.4.0
       - click==8.1.7
       - docker-pycreds==0.4.0
+      - exceptiongroup==1.2.2
       - filelock==3.16.1
       - fsspec==2024.9.0
       - gitdb==4.0.11
       - gitpython==3.1.43
       - idna==3.10
+      - iniconfig==2.0.0
       - jinja2==3.1.4
       - joblib==1.4.2
       - markupsafe==3.0.1
@@ -55,12 +57,16 @@ dependencies:
       - nvidia-nccl-cu12==2.20.5
       - nvidia-nvjitlink-cu12==12.6.77
       - nvidia-nvtx-cu12==12.1.105
+      - packaging==24.1
       - pandas==2.1.2
       - platformdirs==4.3.6
+      - pluggy==1.5.0
       - protobuf==5.28.2
       - psutil==6.0.0
       - pydantic==2.9.2
       - pydantic-core==2.23.4
+      - pytest==8.3.3
+      - pytest-mock==3.14.0
       - python-dateutil==2.9.0.post0
       - python-stdnum==1.20
       - pytz==2024.2
@@ -72,11 +78,12 @@ dependencies:
       - six==1.16.0
       - smmap==5.0.1
       - sympy==1.13.3
-      - torch==2.4.1 
+      - tomli==2.0.2
+      - torch==2.4.1
       - tqdm==4.66.5
       - triton==3.0.0
       - typing-extensions==4.12.2
       - tzdata==2024.2
       - urllib3==2.2.3
       - wandb==0.18.3
-      - git+https://github.com/mathnathan/Traindata.git  # Ensure this is the correct repo
+      - git+https://github.com/mathnathan/Traindata.git

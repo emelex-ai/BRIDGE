@@ -53,11 +53,11 @@ The previous comments will create a new virtual environment  based on the existi
 
 The specification for a model is provided via a config file. The acceptable
 values for the config file are outlined in the table below. To launch a
-training run based on the parameters in a config file named `config.yaml`
+training run based on the parameters in a config file named `training_config.yaml`
 run the following code
 
 ```shell
-python -m src.main --config config.yaml
+python app/bin/main.py
 ```
 
 # Development with Dev Container
@@ -70,7 +70,7 @@ This project supports development within a Docker container via a Dev Container.
 2. Ensure that the [Dev Container](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) VS Code extension is installed (ms-vscode-remote.remote-containers)
 3. Open the ConnTextUL project in Visual Studio Code.
 4. When prompted, choose to reopen the project in a container. (Or Shift+CMD+P and select Dev Containers: Rebuild Container)
-5. VS Code (and the Dev Containers extension) will build the container based on the provided Dockerfile and the devcontainer.json file, run the image on your local machine using Docker Desktop, and then connect your local version of VS Code to the one running in the Docker container. [See here](https://code.visualstudio.com/docs/devcontainers/containers) for details.
+5. VS Code (and the Dev Containers extension) will build the container based on the provided Dockerfile and the devcontainer.json file, run the image on your local machine using Docker Desktop, and then connect your local version of VS Code to the one running in the Docker container. [See here](https://code.visuaPlstudio.com/docs/devcontainers/containers) for details.
 6. Once the build is complete, you will have access to a fully configured development environment.
 
 ## Using Dev Container
