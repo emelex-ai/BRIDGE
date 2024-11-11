@@ -18,10 +18,10 @@ class Model(nn.Module):
         self.nhead: int = model_config.nhead
 
         # Initialize embeddings and position embeddings
-        self.orthography_embedding = nn.Embedding(dataset_config.orthographic_vocabulary_size, self.d_model).to(device)
-        self.orth_position_embedding = nn.Embedding(self.max_orth_seq_len, self.d_model).to(device)
-        self.phonology_embedding = nn.Embedding(dataset_config.phonological_vocabulary_size, self.d_model).to(device)
-        self.phon_position_embedding = nn.Embedding(self.max_phon_seq_len, self.d_model).to(device)
+        self.orthography_embedding = nn.Embedding(dataset_config.orthographic_vocabulary_size, self.d_model)
+        self.orth_position_embedding = nn.Embedding(self.max_orth_seq_len, self.d_model)
+        self.phonology_embedding = nn.Embedding(dataset_config.phonological_vocabulary_size, self.d_model)
+        self.phon_position_embedding = nn.Embedding(self.max_phon_seq_len, self.d_model)
 
         self.global_embedding = nn.Parameter(
             torch.randn((1, self.d_embedding, self.d_model), device=device) / self.d_model**0.5, requires_grad=True
@@ -30,39 +30,37 @@ class Model(nn.Module):
         # Encoders and decoders on device
         self.orthography_encoder = Encoder(
             d_model=self.d_model, nhead=self.nhead, num_layers=model_config.num_orth_enc_layers
-        ).to(device)
+        )
         self.phonology_encoder = Encoder(
             d_model=self.d_model, nhead=self.nhead, num_layers=model_config.num_phon_enc_layers
-        ).to(device)
+        )
         self.transformer_mixer = Encoder(
             d_model=self.d_model, nhead=self.nhead, num_layers=model_config.num_mixing_enc_layers
-        ).to(device)
+        )
 
         # Multihead attentions and layer norms
         self.gp_multihead_attention = nn.MultiheadAttention(
             embed_dim=self.d_model, num_heads=self.nhead, batch_first=True
-        ).to(device)
+        )
         self.pg_multihead_attention = nn.MultiheadAttention(
             embed_dim=self.d_model, num_heads=self.nhead, batch_first=True
-        ).to(device)
-        self.gp_layer_norm = nn.LayerNorm(self.d_model).to(device)
-        self.pg_layer_norm = nn.LayerNorm(self.d_model).to(device)
+        )
+        self.gp_layer_norm = nn.LayerNorm(self.d_model)
+        self.pg_layer_norm = nn.LayerNorm(self.d_model)
 
         # Decoders and output layers
         self.orthography_decoder = Decoder(
             d_model=self.d_model, nhead=self.nhead, num_layers=model_config.num_orth_dec_layers
-        ).to(device)
+        )
         self.phonology_decoder = Decoder(
             d_model=self.d_model, nhead=self.nhead, num_layers=model_config.num_phon_dec_layers
-        ).to(device)
+        )
         self.linear_orthography_decoder = nn.Linear(self.d_model, dataset_config.orthographic_vocabulary_size).to(
             device
         )
         self.linear_phonology_decoder = nn.Linear(
             self.d_model, 2 * (dataset_config.phonological_vocabulary_size - 1)
-        ).to(device)
-
-        self.to(self.device)
+        )
 
     # Helper functions
     def embed_orth_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
