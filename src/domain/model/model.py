@@ -27,7 +27,6 @@ class Model(nn.Module):
             torch.randn((1, self.d_embedding, self.d_model), device=device) / self.d_model**0.5, requires_grad=True
         )
 
-        # Encoders and decoders on device
         self.orthography_encoder = Encoder(
             d_model=self.d_model, nhead=self.nhead, num_layers=model_config.num_orth_enc_layers
         )
@@ -55,12 +54,8 @@ class Model(nn.Module):
         self.phonology_decoder = Decoder(
             d_model=self.d_model, nhead=self.nhead, num_layers=model_config.num_phon_dec_layers
         )
-        self.linear_orthography_decoder = nn.Linear(self.d_model, dataset_config.orthographic_vocabulary_size).to(
-            device
-        )
-        self.linear_phonology_decoder = nn.Linear(
-            self.d_model, 2 * (dataset_config.phonological_vocabulary_size - 1)
-        )
+        self.linear_orthography_decoder = nn.Linear(self.d_model, dataset_config.orthographic_vocabulary_size)
+        self.linear_phonology_decoder = nn.Linear(self.d_model, 2 * (dataset_config.phonological_vocabulary_size - 1))
 
     # Helper functions
     def embed_orth_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
