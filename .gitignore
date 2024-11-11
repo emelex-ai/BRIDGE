@@ -1,5 +1,5 @@
 *.pth
-*.log
+*.log*
 wandb/**
 *.cache/
 *.pyc
@@ -15,3 +15,4 @@ venv/
 .coverage
 */.DS_Store
 */.ipynb_checkpoints
+*.lock
