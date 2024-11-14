@@ -61,6 +61,14 @@ class TrainingPipeline:
                 orth_dec_input=orthography["dec_input_ids"],
                 orth_dec_pad_mask=orthography["dec_pad_mask"],
             )
+        elif self.training_config.training_pathway == "p2p":
+            return self.model(
+                task="p2p",
+                phon_enc_input=phonology["enc_input_ids"],
+                phon_enc_pad_mask=phonology["enc_pad_mask"],
+                phon_dec_input=phonology["dec_input_ids"],
+                phon_dec_pad_mask=phonology["dec_pad_mask"],
+            )
 
     def compute_loss(
         self, logits: Dict[str, torch.Tensor], orthography: Dict[str, torch.Tensor], phonology: Dict[str, torch.Tensor]
@@ -70,7 +78,7 @@ class TrainingPipeline:
         phon_loss = None
 
         # Calculate phon_loss if applicable
-        if self.training_config.training_pathway in ["o2p", "op2op"]:
+        if self.training_config.training_pathway in ["o2p", "op2op", "p2p"]:
             phon_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(logits["phon"], phonology["targets"])
 
         # Calculate orth_loss if applicable
@@ -96,7 +104,7 @@ class TrainingPipeline:
         phonology: Dict[str, torch.Tensor],
     ) -> dict:
 
-        if self.training_config.training_pathway in ["o2p", "op2op"]:
+        if self.training_config.training_pathway in ["o2p", "op2op", "p2p"]:
             phon_pred = torch.argmax(logits["phon"], dim=1)
             phon_true = phonology["targets"]
             phon_valid_mask = phon_true != 2
