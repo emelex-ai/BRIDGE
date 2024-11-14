@@ -258,8 +258,8 @@ class ConnTextULDataset(Dataset):
                 )
 
         self.words = final_words
-        self.cmudict = self.phonology_tokenizer.traindata.cmudict
-        self.convert_numeric_prediction = self.phonology_tokenizer.traindata.convert_numeric_prediction
+        self.cmudict = self.phonology_tokenizer.traindata.get("cmudict")
+        self.convert_numeric_prediction = self.phonology_tokenizer.traindata.get("convert_numeric_prediction")
 
     # ----------------------------------------------------------------------
     def read_orthographic_data(self):
