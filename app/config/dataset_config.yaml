@@ -1,4 +1,5 @@
-dataset_filepath: 'data.csv'
+dataset_filename: 'input_data.pkl'
+num_phon_reps: 31
 orthographic_vocabulary_size: 
 phonological_vocabulary_size: 
 max_orth_seq_len: 0

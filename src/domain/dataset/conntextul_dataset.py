@@ -31,10 +31,10 @@ class ConnTextULDataset(Dataset):
         self.device = torch.device(device)
 
         # Load and clean orthographic data
-        self.words = self.read_orthographic_data()
+        self.input_data = self.read_orthographic_phonologic_data()
 
         # Initialize phonemizer and character tokenizer
-        self.phonemizer = self.read_phonology_data(self.words)
+        self.phonemizer = self.read_phonology_data(dataset_config)
         self.dataset_config.phonological_vocabulary_size = self.phonemizer.get_vocabulary_size()
         list_of_characters = sorted(set(c for word in self.words for c in word))
         self.character_tokenizer = CharacterTokenizer(list_of_characters)
@@ -46,18 +46,30 @@ class ConnTextULDataset(Dataset):
         # Precompute all encodings and transfer them to the specified device
         self.data = self.encode(self.words)
 
-    def read_orthographic_data(self) -> pd.Series:
+    def read_orthographic_phonologic_data(self, filename) -> dict:
         """
-        Reads and cleans orthographic data (word list) from the dataset.
+        Reads orthographic and phonologic (word list) from the dataset.
 
         Returns:
-            pd.Series: Series of words in lowercase format.
+            dict[str, WordData]: Dictionary with words as keys and their processed data as values.
+            Each word's data includes count, phoneme representation, phoneme shape, and orthographic representation.
+            {
+                "word": {
+                    count: int,
+                    phoneme: tuple[np.array, np.array],  # result of np.where
+                    phoneme_shape: tuple[int, int],
+                    orthograph: np.array
+                },
+                "word2": {}
+                ...
+            }
         """
-        dataset = pd.read_csv(self.dataset_filepath)
-        dataset.dropna(subset=["word_raw"], inplace=True)
-        return dataset["word_raw"].str.lower()
+        with open(filename) as f:
+            input_data = pickle.load(f)
 
-    def read_phonology_data(self, words: pd.Series) -> Phonemizer:
+        return input_data
+
+    def read_phonology_data(self, dataset_config: DatasetConfig) -> Phonemizer:
         """
         Reads or creates a phonology tokenizer from cached data, saving to cache if created.
 
@@ -80,7 +92,7 @@ class ConnTextULDataset(Dataset):
                 phonemizer = pickle.load(f)
             logger.info(f"Phonemizer data loaded from: {cache_path}")
         else:
-            phonemizer = Phonemizer(words.tolist())
+            phonemizer = Phonemizer(dataset_config)
             with open(cache_path, "wb") as f:
                 pickle.dump(phonemizer, f)
             logger.info(f"Created cache folder for phonemizer: {cache_path}")
