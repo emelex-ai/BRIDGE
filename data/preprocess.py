@@ -42,7 +42,7 @@ def input_data(
             {
                 "word": {
                     count: int,
-                    phoneme: tuple[np.array, np.array],
+                    phoneme: tuple[np.array, np.array], # result of np.where
                     phoneme_shape: tuple[int, int],
                     orthograph: np.array
                 },
