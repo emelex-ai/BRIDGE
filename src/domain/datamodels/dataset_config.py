@@ -6,7 +6,7 @@ import os
 
 class DatasetConfig(BaseModel):
     dataset_filepath: str = Field(description="")
-    num_phon_reps: PositiveInt = Field(default=0, description="Number of phonological representations")
+    dimension_phon_repr: PositiveInt = Field(default=0, description="Length of vector of the phonological representation")
     orthographic_vocabulary_size: Optional[int] = Field(default=None, description="Orthographic Vocabulary Size")
     phonological_vocabulary_size: Optional[int] = Field(default=None, description="Phonological Vocabulary Size")
     max_orth_seq_len: Optional[int] = Field(default=0, description="")
