@@ -140,10 +140,15 @@ class Phonemizer:
         self.targets = {}
 
         for word, data in input_data.items():
+            # Reconstruct phonemes from data in the input file (compressed with np.where)
+            # For example, for the word test, the phoneme tuple in input_data["test"] is
+            # 'phoneme': (array([0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 3, 3]),
+            #             array([ 2,  6, 14, 15, 21, 23, 24, 29,  2,  7,  2,  6]))
+            # which represents a total of 4 phonemes, resulting in the following word representation
+            # word_phon = [tensor([2, 6]), tensor([14, 15, 21, 23, 24, 29]), tensor([2, 7]), tensor([2, 6])]
+            word_phon = []
             phoneme_index = data["phoneme"][0]
             phoneme_features = data["phoneme"][1]
-
-            word_phon = []
             for i in np.unique(phoneme_index):
                 mask = phoneme_index == i
                 word_phon.append(torch.tensor(phoneme_features[mask], dtype=torch.long))
@@ -194,8 +199,13 @@ class Phonemizer:
                 max_length = max(max_length, len(enc_input))
             # Now that we know the max length of this batch, we pad the encoder and decoder input token list with PAD tokens
             for epv, dpv in zip(enc_input_ids, dec_input_ids):
-                epv.extend([torch.tensor([self.extra_token["PAD"]])] * (max_length - len(epv)))
-                dpv.extend([torch.tensor([self.extra_token["PAD"]])] * (max_length - 1 - len(dpv)))
+                epv.extend(
+                    [torch.tensor([self.extra_token["PAD"]])] * (max_length - len(epv))
+                )
+                dpv.extend(
+                    [torch.tensor([self.extra_token["PAD"]])]
+                    * (max_length - 1 - len(dpv))
+                )
             # We then include padding, or indices in the targets to be passed to the 'ignore_index' parameter in the CrossEntropyLoss
             # Since each phonological vector is either on or off, it is a binary classification problem, so valid labels are either 0, or 1.
             # We will include labels of '2' where the padding is in the target vectors
@@ -206,7 +216,9 @@ class Phonemizer:
                     (
                         tv,
                         torch.tensor(
-                            [[2] * 33] * (max_length - 1 - len(tv)), dtype=torch.long
+                            [[2] * self.phonemizer_dim - 1]
+                            * (max_length - 1 - len(tv)),
+                            dtype=torch.long,
                         ),
                     )
                 )
@@ -232,8 +244,8 @@ class Phonemizer:
         # dec_pad_mask = torch.tensor([1])
 
         # Ensure that the number of tokens matches the number of boolean values in the mask
-        assert len(enc_input_ids) == len(
-            enc_pad_mask
+        assert (
+            len(enc_input_ids) == len(enc_pad_mask)
         ), f"tokens is length {len(enc_input_ids)}, enc_pad_mask is length {len(enc_pad_mask)}. They must be equal"
 
         # Do we need to pad the targets? We do to convert it to a tensor which is needed for the CrossEntropy criterion
@@ -267,7 +279,6 @@ class ConnTextULDataset(Dataset):
         self,
         config,
     ):
-
         self.config = config
         self.dataset_filename = self.config.dataset_filename
         tmp_words = self.read_orthographic_data()
@@ -301,7 +312,6 @@ class ConnTextULDataset(Dataset):
 
     # ----------------------------------------------------------------------
     def read_orthographic_data(self):
-
         # Read the dataset (path already made absolute in main.py)
         dataset = pd.read_csv(self.dataset_filename)
         dataset.dropna(inplace=True, axis="rows")
