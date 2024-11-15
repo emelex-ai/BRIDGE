@@ -15,9 +15,9 @@ def test_initialization(phonemizer_instance):
     # Check if PAD token is set correctly
     assert phonemizer_instance.PAD == 33
     # Check if traindata, enc_inputs, dec_inputs, and targets are dictionaries
-    # assert isinstance(phonemizer_instance.enc_inputs, dict)
-    # assert isinstance(phonemizer_instance.dec_inputs, dict)
-    # assert isinstance(phonemizer_instance.targets, dict)
+    assert isinstance(phonemizer_instance.enc_inputs, dict)
+    assert isinstance(phonemizer_instance.dec_inputs, dict)
+    assert isinstance(phonemizer_instance.targets, dict)
 
 
 def test_len(phonemizer_instance):
