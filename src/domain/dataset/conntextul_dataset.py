@@ -30,11 +30,13 @@ class ConnTextULDataset(Dataset):
         self.dataset_filepath = dataset_config.dataset_filepath
         self.device = torch.device(device)
 
-        # Load and clean orthographic data
-        self.input_data = self.read_orthographic_phonologic_data()
+        # Load input data containing orthographic and phonologic
+        # representations of words to be used during training
+        input_data = self.read_orthographic_phonologic_data()
+        self.words = sorted(input_data.keys())
 
         # Initialize phonemizer and character tokenizer
-        self.phonemizer = self.read_phonology_data(dataset_config)
+        self.phonemizer = self.read_phonology_data(input_data)
         self.dataset_config.phonological_vocabulary_size = self.phonemizer.get_vocabulary_size()
         list_of_characters = sorted(set(c for word in self.words for c in word))
         self.character_tokenizer = CharacterTokenizer(list_of_characters)
@@ -46,30 +48,30 @@ class ConnTextULDataset(Dataset):
         # Precompute all encodings and transfer them to the specified device
         self.data = self.encode(self.words)
 
-    def read_orthographic_phonologic_data(self, filename) -> dict:
+    def read_orthographic_phonologic_data(self) -> dict:
         """
-        Reads orthographic and phonologic (word list) from the dataset.
+        Reads orthographic and phonologic from the input dataset.
 
         Returns:
             dict[str, WordData]: Dictionary with words as keys and their processed data as values.
-            Each word's data includes count, phoneme representation, phoneme shape, and orthographic representation.
-            {
-                "word": {
-                    count: int,
-                    phoneme: tuple[np.array, np.array],  # result of np.where
-                    phoneme_shape: tuple[int, int],
-                    orthograph: np.array
-                },
-                "word2": {}
-                ...
-            }
+                Each word's data includes count, phoneme representation, phoneme shape, and orthographic representation.
+                {
+                    "word": {
+                        count: int,
+                        phoneme: tuple[np.array, np.array],  # result of np.where
+                        phoneme_shape: tuple[int, int],
+                        orthograph: np.array
+                    },
+                    "word2": {}
+                    ...
+                }
         """
-        with open(filename) as f:
+        with open(self.dataset_filepath, "rb") as f:
             input_data = pickle.load(f)
 
         return input_data
 
-    def read_phonology_data(self, dataset_config: DatasetConfig) -> Phonemizer:
+    def read_phonology_data(self, input_data: dict) -> Phonemizer:
         """
         Reads or creates a phonology tokenizer from cached data, saving to cache if created.
 
@@ -92,7 +94,7 @@ class ConnTextULDataset(Dataset):
                 phonemizer = pickle.load(f)
             logger.info(f"Phonemizer data loaded from: {cache_path}")
         else:
-            phonemizer = Phonemizer(dataset_config)
+            phonemizer = Phonemizer(input_data, self.dataset_config.dimension_phon_repr)
             with open(cache_path, "wb") as f:
                 pickle.dump(phonemizer, f)
             logger.info(f"Created cache folder for phonemizer: {cache_path}")
