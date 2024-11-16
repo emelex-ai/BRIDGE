@@ -1,18 +1,16 @@
 from src.domain.dataset import CUDADict
-from traindata import Traindata
 from typing import List, Union
 import numpy as np
 import logging
 import torch
-import pickle
 
 
 logger = logging.getLogger(__name__)
 
 
 class Phonemizer:
-    def __init__(self, input_data: dict, phoneme_reps_dim: int):
-        self.phoneme_reps_dim = phoneme_reps_dim
+    def __init__(self, input_data: dict, dimension_phon_repr: int):
+        self.phoneme_reps_dim = dimension_phon_repr
         self.extra_token = {
             "BOS": self.phoneme_reps_dim + 0,
             "EOS": self.phoneme_reps_dim + 1,
@@ -40,22 +38,22 @@ class Phonemizer:
                 word_phon.append(torch.tensor(phoneme_features[mask], dtype=torch.long))
 
             # The encoder receives the entire phonological vector with the BOS and EOS tokens
-            self.enc_inputs[word] = (
+            enc_inputs[word] = (
                 [torch.tensor([self.extra_token["BOS"]])]
                 + word_phon
                 + [torch.tensor([self.extra_token["EOS"]])]
             )
 
             # The decoder received the entire phonological vectors including the BOS token, but not the EOS token
-            self.dec_inputs[word] = [
+            dec_inputs[word] = [
                 torch.tensor([self.extra_token["BOS"]])
             ] + word_phon
 
             # The target for the decoder is all phonological vectors including the EOS token, but excluding the BOS token
-            self.targets[word] = [
+            targets[word] = [
                 # targets are one-hot encoded (PAD token not included)
-                torch.isin(torch.arange(self.phonemizer_dim - 1), phon).to(torch.int)
-                for phon in (word_phon + [torch.tensor([self.extra_token["EOS"]])])
+                torch.isin(torch.arange(self.phonemizer_dim - 1), phon).long()
+                for phon in word_phon + [torch.tensor([self.extra_token["EOS"]])]
             ]
 
         return enc_inputs, dec_inputs, targets
@@ -75,7 +73,7 @@ class Phonemizer:
 
             enc_input_ids.append(enc_input)
             dec_input_ids.append(dec_input)
-            targets.append(torch.tensor(target.copy(), dtype=torch.long))
+            targets.append(target)
 
             max_length = max(max_length, len(enc_input))
 
@@ -86,9 +84,9 @@ class Phonemizer:
         for i in range(len(targets)):
             targets[i] = torch.cat(
                 (
-                    targets[i],
+                    torch.stack(targets[i]),
                     torch.tensor(
-                        [[2] * self.phonemizer_dim - 1]
+                        [[2] * (self.phonemizer_dim - 1)]
                         * (max_length - 1 - len(targets[i])),
                         dtype=torch.long,
                     ),
