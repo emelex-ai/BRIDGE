@@ -1,5 +1,5 @@
 from src_legacy.wandb_wrapper import WandbWrapper
-from src_legacy.dataset import ConnTextULDataset
+from src_legacy.dataset import BridgeDataset
 from src_legacy.train_impl import get_starting_model_epoch
 from typing import List, Tuple, Dict, Any, Union
 import src_legacy.train_impl as train_impl
@@ -23,7 +23,7 @@ def run_code_sweep(args_dct: Dict):
     run = wandb.init(name=wandb_name, config=args_dct)
 
     config = run.config
-    dataset = ConnTextULDataset(config)
+    dataset = BridgeDataset(config)
     results = run_code_impl(run, dataset, model_id)
 
     # config is no longer needed except for possible testing. So no harm done
@@ -34,7 +34,7 @@ def run_code_sweep(args_dct: Dict):
 # ----------------------------------------------------------------------
 def run_code(run, model_id):
     config = run.config
-    dataset = ConnTextULDataset(config)
+    dataset = BridgeDataset(config)
     results = run_code_impl(run, dataset, model_id)
     config.metrics = results
     wandb.finish()

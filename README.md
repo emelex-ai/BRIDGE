@@ -68,7 +68,7 @@ This project supports development within a Docker container via a Dev Container.
 
 1. Ensure [Docker Desktop](https://www.docker.com/products/docker-desktop/) is installed and running on your system.
 2. Ensure that the [Dev Container](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) VS Code extension is installed (ms-vscode-remote.remote-containers)
-3. Open the ConnTextUL project in Visual Studio Code.
+3. Open the BRIDGE project in Visual Studio Code.
 4. When prompted, choose to reopen the project in a container. (Or Shift+CMD+P and select Dev Containers: Rebuild Container)
 5. VS Code (and the Dev Containers extension) will build the container based on the provided Dockerfile and the devcontainer.json file, run the image on your local machine using Docker Desktop, and then connect your local version of VS Code to the one running in the Docker container. [See here](https://code.visuaPlstudio.com/docs/devcontainers/containers) for details.
 6. Once the build is complete, you will have access to a fully configured development environment.
