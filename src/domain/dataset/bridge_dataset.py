@@ -11,13 +11,18 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class ConnTextULDataset(Dataset):
+class BridgeDataset(Dataset):
     """
-    ConnTextULDataset for Matt's Phonological Feature Vectors.
+    BridgeDataset for Matt's Phonological Feature Vectors.
     Uses (31, 32, 33) to represent ('[BOS]', '[EOS]', '[PAD]').
     """
 
-    def __init__(self, dataset_config: DatasetConfig, cache_path: str = "data/.cache", device: torch.device = "cpu"):
+    def __init__(
+        self,
+        dataset_config: DatasetConfig,
+        cache_path: str = "data/.cache",
+        device: torch.device = "cpu",
+    ):
         """
         Initializes the dataset, precomputes encodings, and loads data onto the specified device.
 
@@ -30,15 +35,21 @@ class ConnTextULDataset(Dataset):
         self.dataset_filepath = dataset_config.dataset_filepath
         self.device = torch.device(device)
 
-        # Load and clean orthographic data
-        self.words = self.read_orthographic_data()
+        # Load input data containing orthographic and phonologic
+        # representations of words to be used during training
+        input_data = self.read_orthographic_phonologic_data()
+        self.words = sorted(input_data.keys())
 
         # Initialize phonemizer and character tokenizer
-        self.phonemizer = self.read_phonology_data(self.words)
-        self.dataset_config.phonological_vocabulary_size = self.phonemizer.get_vocabulary_size()
+        self.phonemizer = self.read_phonology_data(input_data)
+        self.dataset_config.phonological_vocabulary_size = (
+            self.phonemizer.get_vocabulary_size()
+        )
         list_of_characters = sorted(set(c for word in self.words for c in word))
         self.character_tokenizer = CharacterTokenizer(list_of_characters)
-        self.dataset_config.orthographic_vocabulary_size = self.character_tokenizer.get_vocabulary_size()
+        self.dataset_config.orthographic_vocabulary_size = (
+            self.character_tokenizer.get_vocabulary_size()
+        )
 
         # Finalize word data to filter and determine max sequence lengths
         self.finalize_word_data()
@@ -46,18 +57,30 @@ class ConnTextULDataset(Dataset):
         # Precompute all encodings and transfer them to the specified device
         self.data = self.encode(self.words)
 
-    def read_orthographic_data(self) -> pd.Series:
+    def read_orthographic_phonologic_data(self) -> dict:
         """
-        Reads and cleans orthographic data (word list) from the dataset.
+        Reads orthographic and phonologic from the input dataset.
 
         Returns:
-            pd.Series: Series of words in lowercase format.
+            dict[str, WordData]: Dictionary with words as keys and their processed data as values.
+                Each word's data includes count, phoneme representation, phoneme shape, and orthographic representation.
+                {
+                    "word": {
+                        count: int,
+                        phoneme: tuple[np.array, np.array],  # result of np.where
+                        phoneme_shape: tuple[int, int],
+                        orthograph: np.array
+                    },
+                    "word2": {}
+                    ...
+                }
         """
-        dataset = pd.read_csv(self.dataset_filepath)
-        dataset.dropna(subset=["word_raw"], inplace=True)
-        return dataset["word_raw"].str.lower()
+        with open(self.dataset_filepath, "rb") as f:
+            input_data = pickle.load(f)
 
-    def read_phonology_data(self, words: pd.Series) -> Phonemizer:
+        return input_data
+
+    def read_phonology_data(self, input_data: dict) -> Phonemizer:
         """
         Reads or creates a phonology tokenizer from cached data, saving to cache if created.
 
@@ -80,7 +103,7 @@ class ConnTextULDataset(Dataset):
                 phonemizer = pickle.load(f)
             logger.info(f"Phonemizer data loaded from: {cache_path}")
         else:
-            phonemizer = Phonemizer(words.tolist())
+            phonemizer = Phonemizer(input_data, self.dataset_config.dimension_phon_repr)
             with open(cache_path, "wb") as f:
                 pickle.dump(phonemizer, f)
             logger.info(f"Created cache folder for phonemizer: {cache_path}")
@@ -107,8 +130,13 @@ class ConnTextULDataset(Dataset):
                 final_words.append(word)
 
                 # Update max phonological and orthographic sequence lengths
-                max_phon_seq_len = max(max_phon_seq_len, len(phonology["enc_pad_mask"][0]))
-                max_orth_seq_len = max(max_orth_seq_len, len(self.character_tokenizer.encode(word)["enc_input_ids"][0]))
+                max_phon_seq_len = max(
+                    max_phon_seq_len, len(phonology["enc_pad_mask"][0])
+                )
+                max_orth_seq_len = max(
+                    max_orth_seq_len,
+                    len(self.character_tokenizer.encode(word)["enc_input_ids"][0]),
+                )
 
         # Save updated max sequence lengths to the configuration
         self.dataset_config.max_phon_seq_len = max_phon_seq_len
@@ -124,7 +152,9 @@ class ConnTextULDataset(Dataset):
         """
         return len(self.words)
 
-    def __getitem__(self, idx: Union[int, slice, str]) -> Dict[str, Dict[str, torch.Tensor]]:
+    def __getitem__(
+        self, idx: Union[int, slice, str]
+    ) -> Dict[str, Dict[str, torch.Tensor]]:
         """
         Retrieves precomputed data for the given index.
 
@@ -139,10 +169,16 @@ class ConnTextULDataset(Dataset):
         """
         if isinstance(idx, int):
             # Wrap single index in a slice to retrieve one item
-            return {k: {sub_k: sub_v[idx : idx + 1] for sub_k, sub_v in v.items()} for k, v in self.data.items()}
+            return {
+                k: {sub_k: sub_v[idx : idx + 1] for sub_k, sub_v in v.items()}
+                for k, v in self.data.items()
+            }
         elif isinstance(idx, slice):
             # Return slice of data
-            return {k: {sub_k: sub_v[idx] for sub_k, sub_v in v.items()} for k, v in self.data.items()}
+            return {
+                k: {sub_k: sub_v[idx] for sub_k, sub_v in v.items()}
+                for k, v in self.data.items()
+            }
         elif isinstance(idx, str):
             if idx not in self.words:
                 raise ValueError(f'Word "{idx}" not found in the dataset.')
@@ -151,7 +187,9 @@ class ConnTextULDataset(Dataset):
         else:
             raise TypeError("Index must be an int, slice, or string.")
 
-    def encode(self, content_to_encode: Union[str, List[str]]) -> Dict[str, Dict[str, List[int]]]:
+    def encode(
+        self, content_to_encode: Union[str, List[str]]
+    ) -> Dict[str, Dict[str, List[int]]]:
         """
         Encodes orthographic and phonological data for given content.
 
@@ -165,11 +203,17 @@ class ConnTextULDataset(Dataset):
         if isinstance(content_to_encode, str):
             content_to_encode = [content_to_encode]  # Ensure it is wrapped in a list
 
-        orth_tokenized = self.character_tokenizer.encode(content_to_encode).to(device=self.device)
-        phon_tokenized = self.phonemizer.encode(content_to_encode).to(device=self.device)
+        orth_tokenized = self.character_tokenizer.encode(content_to_encode).to(
+            device=self.device
+        )
+        phon_tokenized = self.phonemizer.encode(content_to_encode).to(
+            device=self.device
+        )
 
         if phon_tokenized is None:
-            raise ValueError(f"Phonology encoding failed for input: {content_to_encode}")
+            raise ValueError(
+                f"Phonology encoding failed for input: {content_to_encode}"
+            )
 
         logger.info(f"Encoding done, data moved to device.")
         return {"orthography": orth_tokenized, "phonology": phon_tokenized}

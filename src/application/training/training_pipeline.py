@@ -2,7 +2,7 @@ import torch
 from tqdm import tqdm
 from typing import Dict, Any
 from src.domain.datamodels import TrainingConfig
-from src.domain.dataset import ConnTextULDataset
+from src.domain.dataset import BridgeDataset
 from src.domain.model import Model
 from typing import Dict, Union
 import time
@@ -10,12 +10,16 @@ from torch.profiler import profile, record_function, ProfilerActivity
 
 
 class TrainingPipeline:
-    def __init__(self, model: Model, training_config: TrainingConfig, dataset: ConnTextULDataset):
+    def __init__(
+        self, model: Model, training_config: TrainingConfig, dataset: BridgeDataset
+    ):
         self.training_config = training_config
         self.dataset = dataset
         self.device = torch.device(training_config.device)
         self.model = model.to(self.device)
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=training_config.learning_rate)
+        self.optimizer = torch.optim.AdamW(
+            self.model.parameters(), lr=training_config.learning_rate
+        )
         self.train_slices, self.val_slices = self.create_data_slices()
 
     def create_data_slices(self):
@@ -26,7 +30,9 @@ class TrainingPipeline:
         ]
         val_slices = [
             slice(i, min(i + self.training_config.batch_size_val, len(self.dataset)))
-            for i in range(cutpoint, len(self.dataset), self.training_config.batch_size_val)
+            for i in range(
+                cutpoint, len(self.dataset), self.training_config.batch_size_val
+            )
         ]
         return train_slices, val_slices
 
@@ -71,7 +77,10 @@ class TrainingPipeline:
             )
 
     def compute_loss(
-        self, logits: Dict[str, torch.Tensor], orthography: Dict[str, torch.Tensor], phonology: Dict[str, torch.Tensor]
+        self,
+        logits: Dict[str, torch.Tensor],
+        orthography: Dict[str, torch.Tensor],
+        phonology: Dict[str, torch.Tensor],
     ) -> Dict[str, Union[torch.Tensor, None]]:
         # Initialize losses to None
         orth_loss = None
@@ -79,11 +88,15 @@ class TrainingPipeline:
 
         # Calculate phon_loss if applicable
         if self.training_config.training_pathway in ["o2p", "op2op", "p2p"]:
-            phon_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(logits["phon"], phonology["targets"])
+            phon_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(
+                logits["phon"], phonology["targets"]
+            )
 
         # Calculate orth_loss if applicable
         if self.training_config.training_pathway in ["p2o", "op2op"]:
-            orth_loss = torch.nn.CrossEntropyLoss(ignore_index=4)(logits["orth"], orthography["enc_input_ids"][:, 1:])
+            orth_loss = torch.nn.CrossEntropyLoss(ignore_index=4)(
+                logits["orth"], orthography["enc_input_ids"][:, 1:]
+            )
 
         # Calculate the combined loss, summing only non-None losses
         total_loss = sum(loss for loss in [orth_loss, phon_loss] if loss is not None)
@@ -111,12 +124,17 @@ class TrainingPipeline:
             masked_phon_true = phon_true[phon_valid_mask]
             masked_phon_pred = phon_pred[phon_valid_mask]
             correct_features = (masked_phon_pred == masked_phon_true).sum()
-            phon_feature_accuracy = correct_features.float() / phon_valid_mask.sum().float()
+            phon_feature_accuracy = (
+                correct_features.float() / phon_valid_mask.sum().float()
+            )
             phoneme_wise_mask = phon_pred == phon_true
             phoneme_wise_accuracy = phoneme_wise_mask.all(dim=-1).sum() / (
                 masked_phon_true.shape[0] / phon_true.shape[-1]
             )
-            word_accuracies = [word[target != 2].all().int() for word, target in zip(phoneme_wise_mask, phon_true)]
+            word_accuracies = [
+                word[target != 2].all().int()
+                for word, target in zip(phoneme_wise_mask, phon_true)
+            ]
             phon_word_accuracy = sum(word_accuracies) / len(word_accuracies)
 
             metrics = {
@@ -132,7 +150,9 @@ class TrainingPipeline:
             masked_orth_true = orth_true[orth_valid_mask]
             masked_orth_pred = orth_pred[orth_valid_mask]
             correct_matches = (masked_orth_pred == masked_orth_true).sum()
-            letter_wise_accuracy = correct_matches.float() / orth_valid_mask.sum().float()
+            letter_wise_accuracy = (
+                correct_matches.float() / orth_valid_mask.sum().float()
+            )
             orth_pred[~orth_valid_mask] = 4
             word_wise_mask = orth_pred == orth_true
             orth_word_accuracy = word_wise_mask.all(dim=1).float().mean()
@@ -173,7 +193,9 @@ class TrainingPipeline:
 
         for step, batch_slice in enumerate(progress_bar):
             metrics = self.single_step(batch_slice)
-            progress_bar.set_postfix({key: f"{value:.4f}" for key, value in metrics.items()})
+            progress_bar.set_postfix(
+                {key: f"{value:.4f}" for key, value in metrics.items()}
+            )
 
         metrics.update(
             {
@@ -192,7 +214,9 @@ class TrainingPipeline:
         with torch.no_grad():
             for step, batch_slice in enumerate(progress_bar):
                 metrics = self.single_step(batch_slice)
-                progress_bar.set_postfix({key: f"{value:.4f}" for key, value in metrics.items()})
+                progress_bar.set_postfix(
+                    {key: f"{value:.4f}" for key, value in metrics.items()}
+                )
 
         metrics.update(
             {
@@ -212,7 +236,9 @@ class TrainingPipeline:
 
     def save_model(self, epoch: int) -> None:
         if epoch % self.training_config.save_every == 0:
-            model_path = f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}.pth"
+            model_path = (
+                f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}.pth"
+            )
             torch.save(
                 {
                     "model_state_dict": self.model.state_dict(),

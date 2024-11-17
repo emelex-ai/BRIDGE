@@ -1,5 +1,4 @@
 from src.domain.dataset import CUDADict
-from traindata import Traindata
 from typing import List, Union
 import numpy as np
 import logging
@@ -10,37 +9,56 @@ logger = logging.getLogger(__name__)
 
 
 class Phonemizer:
-    def __init__(self, wordlist: List[str], phonpath: str = "data/phonreps.csv"):
-        self.PAD = 33  # Token for padding
+    def __init__(self, input_data: dict, dimension_phon_repr: int):
+        self.phoneme_reps_dim = dimension_phon_repr
+        self.extra_token = {
+            "BOS": self.phoneme_reps_dim + 0,
+            "EOS": self.phoneme_reps_dim + 1,
+            "PAD": self.phoneme_reps_dim + 2,
+        }
+        self.phonemizer_dim = self.phoneme_reps_dim + len(self.extra_token)
 
-        # Initialize training data
-        self.traindata = Traindata(
-            wordlist,
-            phonpath=phonpath,
-            terminals=True,
-            oneletter=True,
-            verbose=False,
-        ).traindata
+        self.enc_inputs, self.dec_inputs, self.targets = self._prepare_data(input_data)
 
-        self.enc_inputs, self.dec_inputs, self.targets = self._prepare_data()
-
-    def _prepare_data(self) -> Union[dict, dict, dict]:
+    def _prepare_data(self, input_data) -> Union[dict, dict, dict]:
         enc_inputs, dec_inputs, targets = {}, {}, {}
 
-        for length, data in self.traindata.items():
-            for word_num, (phon_vec_sos, phon_vec_eos) in enumerate(zip(data["phonSOS"], data["phonEOS"])):
-                word = data["wordlist"][word_num]
+        for word, data in input_data.items():
+            # Reconstruct phonemes from data in the input file (compressed with np.where)
+            # For example, for the word test, the phoneme tuple in input_data["test"] is
+            # 'phoneme': (array([0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 3, 3]),
+            #             array([ 2,  6, 14, 15, 21, 23, 24, 29,  2,  7,  2,  6]))
+            # which represents a total of 4 phonemes, resulting in the following word representation
+            # word_phon = [tensor([2, 6]), tensor([14, 15, 21, 23, 24, 29]), tensor([2, 7]), tensor([2, 6])]
+            word_phon = []
+            phoneme_index = data["phoneme"][0]
+            phoneme_features = data["phoneme"][1]
+            for i in np.unique(phoneme_index):
+                mask = phoneme_index == i
+                word_phon.append(torch.tensor(phoneme_features[mask], dtype=torch.long))
 
-                enc_inputs[word] = [torch.tensor(np.where(vec)[0], dtype=torch.long) for vec in phon_vec_sos] + [
-                    torch.tensor([32])
-                ]
-                dec_inputs[word] = [torch.tensor(np.where(vec)[0], dtype=torch.long) for vec in phon_vec_sos]
-                targets[word] = phon_vec_eos
+            # The encoder receives the entire phonological vector with the BOS and EOS tokens
+            enc_inputs[word] = (
+                [torch.tensor([self.extra_token["BOS"]])]
+                + word_phon
+                + [torch.tensor([self.extra_token["EOS"]])]
+            )
+
+            # The decoder received the entire phonological vectors including the BOS token, but not the EOS token
+            dec_inputs[word] = [
+                torch.tensor([self.extra_token["BOS"]])
+            ] + word_phon
+
+            # The target for the decoder is all phonological vectors including the EOS token, but excluding the BOS token
+            targets[word] = [
+                # targets are one-hot encoded (PAD token not included)
+                torch.isin(torch.arange(self.phonemizer_dim - 1), phon).long()
+                for phon in word_phon + [torch.tensor([self.extra_token["EOS"]])]
+            ]
 
         return enc_inputs, dec_inputs, targets
 
     def encode(self, wordlist: List[str]) -> CUDADict:
-
         enc_input_ids, dec_input_ids, targets = [], [], []
         max_length = 0
 
@@ -55,24 +73,37 @@ class Phonemizer:
 
             enc_input_ids.append(enc_input)
             dec_input_ids.append(dec_input)
-            targets.append(torch.tensor(target.copy(), dtype=torch.long))
+            targets.append(target)
 
             max_length = max(max_length, len(enc_input))
 
         for epv, dpv in zip(enc_input_ids, dec_input_ids):
-            epv.extend([torch.tensor([self.PAD])] * (max_length - len(epv)))
-            dpv.extend([torch.tensor([self.PAD])] * (max_length - 1 - len(dpv)))
+            epv.extend([torch.tensor([self.extra_token["PAD"]])] * (max_length - len(epv)))
+            dpv.extend([torch.tensor([self.extra_token["PAD"]])] * (max_length - 1 - len(dpv)))
 
         for i in range(len(targets)):
             targets[i] = torch.cat(
-                (targets[i], torch.tensor([[2] * 33] * (max_length - 1 - len(targets[i])), dtype=torch.long))
+                (
+                    torch.stack(targets[i]),
+                    torch.tensor(
+                        [[2] * (self.phonemizer_dim - 1)]
+                        * (max_length - 1 - len(targets[i])),
+                        dtype=torch.long,
+                    ),
+                )
             )
 
         enc_pad_mask = torch.tensor(
-            [[all(val == torch.tensor([self.PAD])) for val in token] for token in enc_input_ids]
+            [
+                [all(val == torch.tensor([self.extra_token["PAD"]])) for val in token]
+                for token in enc_input_ids
+            ]
         )
         dec_pad_mask = torch.tensor(
-            [[all(val == torch.tensor([self.PAD])) for val in token] for token in dec_input_ids]
+            [
+                [all(val == torch.tensor([self.extra_token["PAD"]])) for val in token]
+                for token in dec_input_ids
+            ]
         )
 
         return CUDADict(
@@ -92,6 +123,5 @@ class Phonemizer:
             output[i, token] = 1
         return output
 
-    # TODO: why is this hard coded?
     def get_vocabulary_size(self):
-        return 34
+        return self.phonemizer_dim

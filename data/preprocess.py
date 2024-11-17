@@ -42,7 +42,7 @@ def input_data(
             {
                 "word": {
                     count: int,
-                    phoneme: tuple[np.array, np.array],
+                    phoneme: tuple[np.array, np.array],  # result of np.where
                     phoneme_shape: tuple[int, int],
                     orthograph: np.array
                 },
@@ -85,8 +85,8 @@ def input_data(
 def main(input_file="data/data.csv", output_file="data/input_data.pkl"):
     logging.info(f"Reading data from {input_file}")
     try:
-        with pd.read_csv(input_file) as df:
-            words = [str(w).lower() for w in df["word_raw"]]
+        df = pd.read_csv(input_file)
+        words = [str(w).lower() for w in df["word_raw"]]
     except FileNotFoundError:
         logging.error(f"Input file {input_file} not found")
         return
