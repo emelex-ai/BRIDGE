@@ -5,7 +5,6 @@ This module processes word data, extracts phonetic and orthographic information,
 
 # Imports according to PEP8: standard library imports, related third party imports, local application/library specific imports
 # Standard library
-from collections import Counter
 import pickle
 from typing import TypedDict
 import logging
@@ -25,26 +24,29 @@ class WordData(TypedDict):
     count: int
     phoneme: tuple[np.ndarray, np.ndarray]
     phoneme_shape: tuple[int, int]
-    orthograph: np.ndarray
+    orthography: np.ndarray
 
 
 def input_data(
-    words: list[str], phonemes_path="data/phonreps.csv"
+    words: list[str], word_counts:dict, 
+#    phonemes_path="data/phonreps.csv"
+
+    phonemes_path="phonreps.csv"
 ) -> dict[str, WordData]:
     """Create the input file for the model
 
     Args:
         words (list): list of words
-
+        word_counts (dict): a dictionary. Each key, value pair is the word and its count, respectively
     Returns:
         dict[str, WordData]: Dictionary with words as keys and their processed data as values.
         Each word's data includes count, phoneme representation, phoneme shape, and orthographic representation.
             {
                 "word": {
                     count: int,
-                    phoneme: tuple[np.array, np.array],  # result of np.where
+                    phoneme: tuple[np.array, np.array], # result of np.where
                     phoneme_shape: tuple[int, int],
-                    orthograph: np.array
+                    orthography: np.array
                 },
                 "word2": {}
                 ...
@@ -53,7 +55,6 @@ def input_data(
     data = Traindata(
         words, phonpath=phonemes_path, terminals=False, oneletter=True, verbose=False
     ).traindata
-    word_counts = Counter(words)
 
     input_data = {}
     for length in data.keys():
@@ -76,7 +77,7 @@ def input_data(
                 "count": word_counts[word],
                 "phoneme": phon,
                 "phoneme_shape": phon_shp,
-                "orthograph": orth,
+                "orthography": orth,
             }
 
     return input_data
@@ -84,15 +85,32 @@ def input_data(
 
 def main(input_file="data/data.csv", output_file="data/input_data.pkl"):
     logging.info(f"Reading data from {input_file}")
+    """
     try:
-        df = pd.read_csv(input_file)
-        words = [str(w).lower() for w in df["word_raw"]]
+        with pd.read_csv(input_file) as df:
+            words = [str(w).lower() for w in df["word_raw"]]
     except FileNotFoundError:
         logging.error(f"Input file {input_file} not found")
         return
+    """
+    df = pd.read_csv(input_file)
+    words = [str(w).lower() for w in df["word_raw"]]
+    
+    word_counts = {}
+
+    # k-smoothing over frequency with k = 1
+    for _, row in df.iterrows():
+
+        count = row['count']
+        if pd.isna(count):
+            count = 1
+        else:
+            count = count + 1
+
+        word_counts[row['word_raw']] = count
 
     logging.info("Processing words")
-    data = input_data(words)
+    data = input_data(words, word_counts=word_counts)
 
     logging.info(f"Saving processed data to {output_file}")
     try:
