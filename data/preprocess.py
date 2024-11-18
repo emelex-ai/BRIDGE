@@ -28,10 +28,7 @@ class WordData(TypedDict):
 
 
 def input_data(
-    words: list[str], word_counts:dict, 
-#    phonemes_path="data/phonreps.csv"
-
-    phonemes_path="phonreps.csv"
+    words: list[str], word_counts: dict, phonemes_path="phonreps.csv"
 ) -> dict[str, WordData]:
     """Create the input file for the model
 
