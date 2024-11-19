@@ -69,7 +69,7 @@ class BridgeDataset(Dataset):
                         count: int,
                         phoneme: tuple[np.array, np.array],  # result of np.where
                         phoneme_shape: tuple[int, int],
-                        orthograph: np.array
+                        orthography: np.array
                     },
                     "word2": {}
                     ...
