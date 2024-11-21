@@ -40,7 +40,7 @@ def calculate_euclidean_distance(
 
 def calculate_cosine_distance(
     phon_true: torch.Tensor, phon_pred: torch.Tensor
-):
+) -> torch.Tensor:
     cosine_sims = torch.Tensor()
     for i in range(phon_true.shape[0]):
         true = phon_true[i].type(torch.float)
