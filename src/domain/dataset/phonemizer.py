@@ -43,14 +43,11 @@ class Phonemizer:
                 + word_phon
                 + [torch.tensor([self.extra_token["EOS"]])]
             )
-            print(word)
-            print(enc_inputs[word])
 
             # The decoder received the entire phonological vectors including the BOS token, but not the EOS token
             dec_inputs[word] = [
                 torch.tensor([self.extra_token["BOS"]])
             ] + word_phon
-            print(dec_inputs[word])
 
             # The target for the decoder is all phonological vectors including the EOS token, but excluding the BOS token
             targets[word] = [
@@ -58,8 +55,6 @@ class Phonemizer:
                 torch.isin(torch.arange(self.phonemizer_dim - 1), phon).long()
                 for phon in word_phon + [torch.tensor([self.extra_token["EOS"]])]
             ]
-            print(targets[word])
-            exit()
 
         return enc_inputs, dec_inputs, targets
 
