@@ -25,31 +25,26 @@ def calculate_phon_feature_accuracy(
     return phon_feature_accuracy
 
 def calculate_euclidean_distance(
-    phon_true: torch.Tensor, phon_pred: torch.Tensor
-):
-    distances = torch.Tensor()
-    for i in range(phon_true.shape[0]):
-        true = phon_true[i].type(torch.float)
-        pred = phon_pred[i].type(torch.float)
-        mask = true != 2
-        true_masked = true[mask].reshape((-1,true.shape[1]))
-        pred_masked = pred[mask].reshape((-1,true.shape[1]))
-        f = torch.nn.PairwiseDistance()
-        distances = torch.cat([distances, f(true_masked, pred_masked)])
+        phon_true: torch.Tensor, phon_pred: torch.Tensor
+    ) -> torch.Tensor:
+    true = phon_true.type(torch.float)
+    pred = phon_pred.type(torch.float)
+    mask = true != 2
+    true_masked = true[mask].reshape(-1, true.shape[-1])
+    pred_masked = pred[mask].reshape(-1, true.shape[-1])
+    distances = torch.nn.functional.pairwise_distance(true_masked, pred_masked)
     return torch.mean(distances)
 
 def calculate_cosine_distance(
-    phon_true: torch.Tensor, phon_pred: torch.Tensor
-) -> torch.Tensor:
-    cosine_sims = torch.Tensor()
-    for i in range(phon_true.shape[0]):
-        true = phon_true[i].type(torch.float)
-        pred = phon_pred[i].type(torch.float)
-        mask = true != 2
-        true_masked = true[mask].reshape((-1,true.shape[1]))
-        pred_masked = pred[mask].reshape((-1,true.shape[1]))
-        f = torch.nn.CosineSimilarity(dim=1)
-        cosine_sims = torch.cat([cosine_sims, f(pred_masked, true_masked)])
+        phon_true: torch.Tensor, phon_pred: torch.Tensor
+    ) -> torch.Tensor:
+    true = phon_true.type(torch.float)
+    pred = phon_pred.type(torch.float)
+    mask = true != 2
+    true_masked = true[mask].view(-1, true.size(-1))
+    pred_masked = pred[mask].view(-1, pred.size(-1))
+    f = torch.nn.CosineSimilarity(dim=1)
+    cosine_sims = f(pred_masked, true_masked)
     return torch.mean(cosine_sims)
 
 def calculate_phon_metrics(
