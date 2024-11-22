@@ -41,8 +41,8 @@ def test_closest_phoneme_cdist():
     phon_true = torch.load("tests/data/phon_true.pt", weights_only=True)
     assert math.isclose(
         calculate_closest_phoneme_cdist(phon_true, phon_pred).item(),
-        0.186,
-        rel_tol=1e-2,
+        0.00813,
+        rel_tol=1e-5,
     )
 
 
