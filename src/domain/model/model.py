@@ -2,7 +2,9 @@ from src.domain.datamodels import DatasetConfig, ModelConfig
 from src.domain.model.encoder import Encoder
 from src.domain.model.decoder import Decoder
 from torch.nn.utils.rnn import pad_sequence
+from src.utils.helper_funtions import set_seed
 from typing import Dict, List, Union
+from itertools import accumulate
 import torch.nn as nn
 import torch
 
@@ -17,6 +19,8 @@ class Model(nn.Module):
         self.max_phon_seq_len: int = dataset_config.max_phon_seq_len
         self.nhead: int = model_config.nhead
 
+        if model_config.seed:
+            set_seed(seed=model_config.seed)
         # Initialize embeddings and position embeddings
         self.orthography_embedding = nn.Embedding(dataset_config.orthographic_vocabulary_size, self.d_model)
         self.orth_position_embedding = nn.Embedding(self.max_orth_seq_len, self.d_model)
@@ -74,7 +78,7 @@ class Model(nn.Module):
         if flat_phonemes:
             padded_flat_phonemes = pad_sequence(
                 flat_phonemes, batch_first=True, padding_value=padding_value
-            )  # Shape: (B_total, F)
+            )  # Shape: (N_total, F_max)
         else:
             padded_flat_phonemes = torch.empty((0, 0), dtype=torch.long, device=self.device)
 
@@ -85,13 +89,16 @@ class Model(nn.Module):
             (batch_size, max_phon_seq_len, max_feature_len), padding_value, dtype=torch.long, device=self.device
         )
 
-        # Calculate indices to place the padded phonemes
-        for i, length in enumerate(phon_seq_lengths):
-            if length > 0:
-                tokes_tensor[i, :length, :] = padded_flat_phonemes[i * max_feature_len : i * max_feature_len + length]
+        # Compute cumulative sums of phon_seq_lengths to get indices
+        cum_lengths = [0] + list(accumulate(phon_seq_lengths))  # len(cum_lengths) = batch_size + 1
 
-        # Alternatively, use a more efficient reshaping if possible
-        # But due to variable lengths, some iteration might still be necessary
+        # Assign padded_flat_phonemes into tokes_tensor
+        for i in range(batch_size):
+            length = phon_seq_lengths[i]
+            if length > 0:
+                start_idx = cum_lengths[i]
+                end_idx = cum_lengths[i + 1]
+                tokes_tensor[i, :length, :] = padded_flat_phonemes[start_idx:end_idx]
 
         # Step 4: Perform embedding lookup
         embeddings = self.phonology_embedding(tokes_tensor)  # Shape: (B, P, F, D)
@@ -103,7 +110,8 @@ class Model(nn.Module):
         # Step 6: Compute the average embeddings over the feature dimension
         embeddings = embeddings * mask  # Zero out padding embeddings
         sum_embeddings = embeddings.sum(dim=2)  # Sum over feature dimension: (B, P, D)
-        counts = mask.sum(dim=2).clamp(min=1)  # Avoid division by zero: (B, P, 1)
+        counts = mask.sum(dim=2)  # Shape: (B, P, 1)
+        counts = counts.clamp(min=1)  # Avoid division by zero: (B, P, 1)
         avg_embeddings = sum_embeddings / counts  # Average: (B, P, D)
 
         # Step 7: Add positional embeddings
@@ -134,8 +142,11 @@ class Model(nn.Module):
 
     def embed_o2p(self, orth_enc_input, orth_enc_pad_mask):
         # Embed the orthographic input tokens
-        orthography_encoding = self.embed_orth_tokens(orth_enc_input)  # Shape: (batch_size, seq_len, d_model)
-
+        orthography = self.embed_orth_tokens(orth_enc_input)  # Shape: (batch_size, seq_len, d_model)
+        print(orthography)
+        print(orth_enc_pad_mask)
+        orthography_encoding = self.orthography_encoder(orthography, src_key_padding_mask=orth_enc_pad_mask)
+        print(orthography_encoding)
         # Expand the global embedding to match the batch size
         global_embedding = self.global_embedding.expand(
             orthography_encoding.shape[0], -1, -1
@@ -189,7 +200,6 @@ class Model(nn.Module):
         phon_token_logits = self.linear_phonology_decoder(phon_output).view(B, PC, 2, -1).transpose(1, 2)
         return {"phon": phon_token_logits}
 
-
     def embed_p(self, phon_enc_input: List[torch.Tensor], phon_enc_pad_mask: torch.Tensor):
         phonology_encoding = self.embed_phon_tokens(phon_enc_input)
         global_embedding = self.global_embedding.expand(phonology_encoding.shape[0], -1, -1)
@@ -222,7 +232,7 @@ class Model(nn.Module):
         )
         orth_token_logits = self.linear_orthography_decoder(orth_output).transpose(1, 2)
         return {"orth": orth_token_logits}
-    
+
     def forward_p2p(
         self,
         phon_enc_input: List[torch.Tensor],
