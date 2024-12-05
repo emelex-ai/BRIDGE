@@ -6,6 +6,6 @@ max_nb_steps:
 learning_rate: 0.0001
 training_pathway: p2p
 device: cpu #cpu #cuda
-save_every: 1
+save_every: 5
 model_artifacts_dir: 'src/domain/model'
 model_id: 
