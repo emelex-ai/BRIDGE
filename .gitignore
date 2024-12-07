@@ -14,5 +14,6 @@ data/.cache/
 venv/
 .coverage
 */.DS_Store
+*.DS_Store
 */.ipynb_checkpoints
 *.lock
