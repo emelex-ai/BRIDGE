@@ -97,8 +97,7 @@ def main(input_file="data/data.csv", output_file="data/input_data.pkl"):
 
     # k-smoothing over frequency with k = 1
     for _, row in df.iterrows():
-
-        count = row['count']
+        count = row["count"]
         if pd.isna(count):
             count = 1
         else:
