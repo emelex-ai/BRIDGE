@@ -3,6 +3,7 @@ from src.application.training.phon_metrics import (
     calculate_closest_phoneme_cosine,
     calculate_cosine_distance,
     calculate_euclidean_distance,
+    calculate_phon_reps_distance,
 )
 import math
 import torch
@@ -66,3 +67,8 @@ def test_closest_phoneme_cosine_identity():
     phon_true = torch.load("tests/data/phon_true.pt", weights_only=True)
     resp = calculate_closest_phoneme_cosine(phon_true, phon_true) == 1.0
     assert resp == 1.0
+
+def test_calculate_phon_reps_distance():
+    x = calculate_phon_reps_distance()
+    print(x)
+    assert False

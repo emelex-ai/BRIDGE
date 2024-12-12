@@ -1,3 +1,5 @@
+import os
+import random
 import torch
 from tqdm import tqdm
 from typing import Dict, Any
@@ -9,7 +11,8 @@ from src.domain.model import Model
 from typing import Dict, Union
 import time
 from torch.profiler import profile, record_function, ProfilerActivity
-
+import wandb
+from traindata import utilities
 
 class TrainingPipeline:
     def __init__(
@@ -20,10 +23,12 @@ class TrainingPipeline:
         self.device = torch.device(training_config.device)
         self.model = model.to(self.device)
         self.optimizer = torch.optim.AdamW(
-            self.model.parameters(), lr=training_config.learning_rate
+            self.model.parameters(), lr=training_config.learning_rate, weight_decay=training_config.weight_decay
         )
         self.train_slices, self.val_slices = self.create_data_slices()
-
+        self.phon_reps = torch.tensor(
+            utilities.phontable("data/phonreps.csv").values, dtype=torch.float,device=self.device
+        )[:-1]
     def create_data_slices(self):
         cutpoint = int(len(self.dataset) * self.training_config.train_test_split)
         train_slices = [
@@ -120,7 +125,7 @@ class TrainingPipeline:
     ) -> dict:
         metrics = {}
         if self.training_config.training_pathway in ["o2p", "op2op", "p2p"]:
-            metrics.update(calculate_phon_metrics(logits, phonology))
+            metrics.update(calculate_phon_metrics(logits, phonology, self.phon_reps))
 
         if self.training_config.training_pathway in ["op2op", "p2o"]:
             metrics.update(calculate_orth_metrics(logits, orthography))
@@ -133,7 +138,7 @@ class TrainingPipeline:
 
     
 
-    def single_step(self, batch_slice: slice) -> Dict[str, Any]:
+    def single_step(self, batch_slice: slice, calculate_metrics: bool = False) -> dict:
         batch = self.dataset[batch_slice]
         orthography, phonology = batch["orthography"], batch["phonology"]
 
@@ -151,30 +156,33 @@ class TrainingPipeline:
             metrics.get("loss").backward()
             self.optimizer.step()
             self.optimizer.zero_grad()
-
-        metrics.update(self.compute_metrics(logits, orthography, phonology))
+        if calculate_metrics:
+            metrics.update(self.compute_metrics(logits, orthography, phonology))
         return metrics
 
-    def train_single_epoch(self, epoch: int) -> float:
+    def train_single_epoch(self, epoch: int) -> dict:
         self.model.train()
         start = time.time()
+        cutpoint = int(len(self.dataset) * self.training_config.train_test_split)
+        self.dataset.shuffle(cutpoint)
         progress_bar = tqdm(self.train_slices, desc=f"Training Epoch {epoch+1}")
-
+        
         for step, batch_slice in enumerate(progress_bar):
-            metrics = self.single_step(batch_slice)
+            metrics = self.single_step(batch_slice, False)
             progress_bar.set_postfix(
                 {key: f"{value:.4f}" for key, value in metrics.items()}
             )
-
         metrics.update(
             {
                 "time_per_step": (time.time() - start) / len(self.train_slices),
                 "time_per_epoch": (time.time() - start) * len(self.train_slices),
             }
         )
-        return metrics
+        training_metrics = {"train_" + str(key): val for key, val in metrics.items()}
+        
+        return training_metrics
 
-    def validate_single_epoch(self, epoch: int) -> float:
+    def validate_single_epoch(self, epoch: int) -> dict:
         self.model.eval()
         start = time.time()
 
@@ -182,7 +190,7 @@ class TrainingPipeline:
 
         with torch.no_grad():
             for step, batch_slice in enumerate(progress_bar):
-                metrics = self.single_step(batch_slice)
+                metrics = self.single_step(batch_slice, True)
                 progress_bar.set_postfix(
                     {key: f"{value:.4f}" for key, value in metrics.items()}
                 )
@@ -197,10 +205,12 @@ class TrainingPipeline:
 
     def run_train_val_loop(self) -> None:
         for epoch in range(self.training_config.num_epochs):
-            metrices = self.train_single_epoch(epoch)
+            training_metrics = self.train_single_epoch(epoch)
             if self.val_slices:
-                metrices = self.validate_single_epoch(epoch)
-
+                metrics = self.validate_single_epoch(epoch)
+            training_metrics.update(metrics)
+            if self.training_config.use_wandb:
+                wandb.log(training_metrics)
             self.save_model(epoch)
 
     def save_model(self, epoch: int) -> None:

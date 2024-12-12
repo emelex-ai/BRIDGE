@@ -121,4 +121,4 @@ if __name__ == "__main__":
     # ideally we would have all the raw data sources
     # in the same folder, but this list was generated
     # by someone else
-    main()
+    main("data/pretraining/csvs/combined_csv.csv", "data/pretraining/combined.pkl")

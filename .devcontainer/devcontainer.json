@@ -4,7 +4,7 @@
 	"name": "Bridge Development",
 	"build": {
 		"context": "..",
-		"dockerfile": "Dockerfile.dev"
+		"dockerfile": "Dockerfile-gpu.dev"
 	},
 	"customizations": {
 		"vscode": {
@@ -29,5 +29,9 @@
 				"ms-python.vscode-pylance"
 			]
 		}
-	}
+	},
+	"runArgs": [
+    "--gpus",
+    "all"
+]
 }
