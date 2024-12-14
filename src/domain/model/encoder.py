@@ -7,7 +7,6 @@ import torch
 
 class Encoder(nn.Module):
     def __init__(self, d_model: int, nhead: int, num_layers: int) -> None:
-        set_seed(42)
         super(Encoder, self).__init__()
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model, nhead=nhead, batch_first=True, dim_feedforward=4 * d_model

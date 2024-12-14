@@ -4,7 +4,7 @@ batch_size_val: 64
 train_test_split: 0.8
 max_nb_steps: 
 learning_rate: 0.0001
-training_pathway: p2p
+training_pathway: p2o
 device: cpu #cpu #cuda
 save_every: 1
 model_artifacts_dir: 'models'
