@@ -124,10 +124,8 @@ def main(config: AttrDict):
 
         wandb_name = config.model_id
         print("wandb_name, filename: ", wandb_name)
-
+        print(project)
         run = wandb.init(
-            name=wandb_name,  # Let wandb choose the name
-            entity=entity,  # Necessary because I am in multiple teams
             project=project,
             config=config,
         )

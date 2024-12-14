@@ -329,6 +329,7 @@ class ConnTextULDataset(Dataset):
 
         if os.path.exists(pkl_file_path):
             # pkl file exists
+            print(pkl_file_path)
             with open(pkl_file_path, "rb") as f:
                 phonology_tokenizer = pickle.load(f)
         else:

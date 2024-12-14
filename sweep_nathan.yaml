@@ -10,5 +10,5 @@ parameters:
     d_embedding: {"values": [1,2,3]}
     num_epochs: {'values': [20]}
     common_num_layers: {"values": [1,2,3]}
-    learning_rate: {"values": [0.0001,0.001]}
-    which_dataset: {"values": [40479]}
+    learning_rate: {"values": [0.0001,0.001]},
+    

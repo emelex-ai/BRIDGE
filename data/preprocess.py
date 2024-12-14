@@ -85,8 +85,8 @@ def input_data(
 def main(input_file="data/data.csv", output_file="data/input_data.pkl"):
     logging.info(f"Reading data from {input_file}")
     try:
-        with pd.read_csv(input_file) as df:
-            words = [str(w).lower() for w in df["word_raw"]]
+        df = pd.read_csv(input_file)
+        words = [str(w).lower() for w in df["word_raw"]]
     except FileNotFoundError:
         logging.error(f"Input file {input_file} not found")
         return
@@ -106,4 +106,4 @@ if __name__ == "__main__":
     # ideally we would have all the raw data sources
     # in the same folder, but this list was generated
     # by someone else
-    main()
+    main("data/data_1.csv", "data/input_data_1.pkl")

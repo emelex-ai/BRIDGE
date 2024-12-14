@@ -501,7 +501,6 @@ def run_train_val_loop(gm):
     gm.model.to(gm.cc.device)
 
     metrics: List[Dict] = [{}]
-
     for epoch in range(gm.cc.num_epochs):
         print(f"\n****** {epoch=} *******")
         metrics[0] = train_single_epoch(
@@ -516,8 +515,7 @@ def run_train_val_loop(gm):
                 val_dataset_slices,
                 epoch,
             )
-            if gm.cc.max_nb_steps < 0:
-                metrics[0].update(more_metrics)
+            metrics[0].update(more_metrics)
 
         wandb.log(metrics[0])  # should not be run.log
         # run.log(metrics[0])
