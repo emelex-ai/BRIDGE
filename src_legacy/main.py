@@ -1,5 +1,5 @@
 """
-This module contains the main function for training a ConnTextUL model. It reads
+This module contains the main function for training a Bridge model. It reads
 in a configuration file, sets up the training environment, and runs the training 
 loop. 
 """
@@ -31,7 +31,7 @@ def read_args():
         2) A config file passed in, in which case the program uses the arguments in the file
     """
 
-    parser = argparse.ArgumentParser(description="Train a ConnTextUL model")
+    parser = argparse.ArgumentParser(description="Train a Bridge model")
 
     # Add arguments to the parser
     parser.add_argument("--config", type=str, help="Path to config file")
@@ -88,7 +88,9 @@ def main(config: AttrDict):
     print("==> main, after globals")
 
     if config.sweep_filepath != "":
-        assert wandb_enabled, "For a parameter sweep, Wandb must be enabled in the config file"
+        assert (
+            wandb_enabled
+        ), "For a parameter sweep, Wandb must be enabled in the config file"
 
         #################################
         # Perform parameter sweep
@@ -181,7 +183,9 @@ def load_config(config_filepath: str = None):
 
     # We make sure that the user has included all necessary keys in the config file
     for default_key in default_values.keys():
-        assert default_key in config.keys(), f"Config file must contain key: {default_key}"
+        assert (
+            default_key in config.keys()
+        ), f"Config file must contain key: {default_key}"
 
     # -- Convert relative paths to absolute paths --
     # Begin with sweep_filepath
@@ -253,12 +257,16 @@ def validate_config(config):
         "op2op",
     ], "Invalid pathway argument: must be 'o2p', 'p2o', or 'op2op'"
 
-    assert config.d_model % config.nhead == 0, "d_model must be evenly divisible by nhead"
+    assert (
+        config.d_model % config.nhead == 0
+    ), "d_model must be evenly divisible by nhead"
 
     # Ensure all absolute paths exist and point to correct files or directories
     # Begin with the sweep file
     if config.sweep_filepath:
-        assert os.path.exists(config.sweep_filepath), f"Sweep file not found: {config.sweep_filepath}"
+        assert os.path.exists(
+            config.sweep_filepath
+        ), f"Sweep file not found: {config.sweep_filepath}"
 
         # Check if the path points to an existing file
         is_file = os.path.isfile(config.sweep_filepath)
@@ -268,14 +276,22 @@ def validate_config(config):
         is_yaml_extension = file_extension in [".yaml", ".yml"]
 
         # Combine the checks in an assert statement
-        assert is_file and is_yaml_extension, f"Sweep file must be a YAML file: {config.sweep_filepath}"
+        assert (
+            is_file and is_yaml_extension
+        ), f"Sweep file must be a YAML file: {config.sweep_filepath}"
 
     # Next the model_path. This is a directory where models are stored
     os.makedirs(config.model_path, exist_ok=True)
-    assert os.path.exists(config.model_path), f"Model path not found: {config.model_path}"
-    assert os.path.isdir(config.model_path), f"Model path must be a directory: {config.model_path}"
+    assert os.path.exists(
+        config.model_path
+    ), f"Model path not found: {config.model_path}"
+    assert os.path.isdir(
+        config.model_path
+    ), f"Model path must be a directory: {config.model_path}"
     # Next the dataset_filepath
-    assert os.path.exists(config.dataset_filepath), f"Dataset file not found: {config.dataset_filepath}"
+    assert os.path.exists(
+        config.dataset_filepath
+    ), f"Dataset file not found: {config.dataset_filepath}"
     assert (os.path.isfile(config.dataset_filepath)) and (
         os.path.splitext(config.dataset_filepath)[1] == ".csv"
     ), f"Dataset file must be a CSV file: {config.dataset_filepath}"
@@ -286,9 +302,13 @@ def validate_config(config):
         relative_path = os.path.join(project_root, "data", "tests", test_filename)
         assert os.path.exists(relative_path), f"Test file not found: {relative_path}"
         # Check if the path points to a file
-        assert os.path.isfile(relative_path), f"Provided test csv, {relative_path}, is not a file"
+        assert os.path.isfile(
+            relative_path
+        ), f"Provided test csv, {relative_path}, is not a file"
         # Check if the file has a .csv extension
-        assert os.path.splitext(relative_path)[1] == ".csv", f"Test file must be a CSV file: {relative_path}"
+        assert (
+            os.path.splitext(relative_path)[1] == ".csv"
+        ), f"Test file must be a CSV file: {relative_path}"
 
     # Add other checks here as necessary
 
