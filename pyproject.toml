@@ -78,6 +78,12 @@ nvidia-nccl-cu12 = "2.20.5"
 nvidia-nvjitlink-cu12 = "12.6.77"
 nvidia-nvtx-cu12 = "12.1.105"
 
+[tool.pytest.ini_options]
+pythonpath = "."
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v -s"
+
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"

@@ -1,6 +1,8 @@
+from src.utils.helper_funtions import set_seed
 from typing import Optional
 import torch.nn as nn
 import torch
+
 
 
 class Encoder(nn.Module):

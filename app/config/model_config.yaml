@@ -1,7 +1,7 @@
 d_model: 64
 d_embedding: 1
 nhead: 2
-seed: 1337
+seed: 
 num_phon_enc_layers: 1
 num_orth_enc_layers: 1
 num_mixing_enc_layers: 1

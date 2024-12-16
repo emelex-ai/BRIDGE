@@ -13,7 +13,7 @@ class ModelConfig(BaseModel):
     d_model: int = Field(default=64)
     nhead: int = Field(default=2)
     d_embedding: int = Field(default=1)
-    seed: int = Field(default=1337)
+    seed: Optional[int] = Field(default=None)
     test_filenames: Optional[List[str]] = Field(default=None)
 
     @model_validator(mode="before")

@@ -2,6 +2,10 @@ from datetime import datetime
 import getpass
 import os
 
+import torch
+import random
+import numpy as np
+
 
 def get_project_root():
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -47,3 +51,11 @@ def handle_model_continuation(training_config):
     print(f"New run: {model_file_name}")
 
     return model_id, model_file_name
+
+
+def set_seed(seed: int):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
