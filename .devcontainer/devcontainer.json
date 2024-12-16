@@ -8,6 +8,15 @@
 	},
 	"customizations": {
 		"vscode": {
+			"settings": {
+                "python.defaultInterpreterPath": "/usr/local/bin/python",
+                "python.testing.pytestEnabled": true,
+                "python.testing.unittestEnabled": false,
+                "editor.formatOnSave": true,
+                "[python]": {
+                    "editor.defaultFormatter": "ms-python.black-formatter"
+                }
+            },
 			"extensions": [
 				"ms-python.python",
 				"ms-azuretools.vscode-docker",
