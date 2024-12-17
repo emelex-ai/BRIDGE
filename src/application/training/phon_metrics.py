@@ -1,8 +1,6 @@
 import torch
 from traindata import utilities
-phon_reps = torch.tensor(
-    utilities.phontable("data/phonreps.csv").values, dtype=torch.float
-)[:-1]
+
 
 
 def calculate_phon_word_accuracy(phon_true, phoneme_wise_mask):
@@ -54,7 +52,7 @@ def calculate_euclidean_distance(
 
 
 def calculate_closest_phoneme_cdist(
-    phon_true: torch.Tensor, phon_pred: torch.Tensor, norm=2
+    phon_true: torch.Tensor, phon_pred: torch.Tensor, phon_reps: torch.Tensor, norm=2
 ):
     '''
     Finds the p norm closest phoneme to the model's output, and compares this to the target phoneme
@@ -75,7 +73,7 @@ def calculate_closest_phoneme_cdist(
 
 
 def calculate_closest_phoneme_cosine(
-    phon_true: torch.Tensor, phon_pred: torch.Tensor, eps=1e-8
+    phon_true: torch.Tensor, phon_pred: torch.Tensor, phon_reps: torch.Tensor, eps=1e-8
 ):
     '''
     Finds the closest phoneme to the model's output using cosine distance, and compares this to the target phoneme
@@ -120,7 +118,7 @@ def calculate_cosine_distance(
 
 
 def calculate_phon_metrics(
-    logits: dict[str, torch.Tensor], phonology: dict[str, torch.Tensor]
+    logits: dict[str, torch.Tensor], phonology: dict[str, torch.Tensor], phon_reps: torch.Tensor
 ) -> dict[str, float]:
     phon_pred = torch.argmax(logits["phon"], dim=1)
     phon_true = phonology["targets"]
@@ -137,9 +135,9 @@ def calculate_phon_metrics(
         phon_true, masked_phon_true, phoneme_wise_mask
     )
     phon_word_accuracy = calculate_phon_word_accuracy(phon_true, phoneme_wise_mask)
-    closest_phoneme = calculate_closest_phoneme_cdist(phon_true, phon_pred, 1)
-    closest_phoneme_2 = calculate_closest_phoneme_cdist(phon_true, phon_pred, 2)
-    closest_phoneme_cosine = calculate_closest_phoneme_cosine(phon_true, phon_pred)
+    closest_phoneme = calculate_closest_phoneme_cdist(phon_true, phon_pred, phon_reps, 1)
+    closest_phoneme_2 = calculate_closest_phoneme_cdist(phon_true, phon_pred, phon_reps, 2)
+    closest_phoneme_cosine = calculate_closest_phoneme_cosine(phon_true, phon_pred, phon_reps)
     return {
         "phon_cosine_similarity": cosine_accuracy.item(),
         "phon_euclidean_distance": euclidean_distance.item(),
@@ -150,3 +148,11 @@ def calculate_phon_metrics(
         "closest_phoneme_l2_accuracy": closest_phoneme_2.item(),
         "closest_phoneme_cosine_accuracy": closest_phoneme_cosine.item(),
     }
+
+def calculate_phon_reps_distance():
+    phon_reps = torch.tensor(
+            utilities.phontable("data/phonreps.csv").values, dtype=torch.float
+    )[:-1]
+    resp = torch.cdist(phon_reps, phon_reps, p=1)
+    for item in resp:
+        print(torch.sort(item)[0])

@@ -1,5 +1,6 @@
 import os
 import pickle
+import random
 import torch
 import pandas as pd
 from typing import List, Union, Dict
@@ -217,3 +218,14 @@ class BridgeDataset(Dataset):
 
         logger.info(f"Encoding done, data moved to device.")
         return {"orthography": orth_tokenized, "phonology": phon_tokenized}
+
+    def shuffle(
+        self, cutoff: int
+    ):
+        """Split the data by the cutoff point, shuffle the elements before the cutoff point, and reassemble the data"""
+        data_items = list(self.data.items())
+        shuffled_data = data_items[:cutoff]
+        random.shuffle(shuffled_data)
+        data_items = shuffled_data + data_items[cutoff:]
+        # Recreate the data dict
+        self.data = {k: {sub_k: sub_v for sub_k, sub_v in v.items()} for k, v in data_items}
