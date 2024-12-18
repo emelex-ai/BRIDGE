@@ -8,6 +8,6 @@ training_pathway: p2p
 device: cuda #cpu #cuda
 save_every: 5
 model_artifacts_dir: 'models'
-use_wandb: true
+use_wandb: false
 weight_decay: 0.1
 model_id: 
