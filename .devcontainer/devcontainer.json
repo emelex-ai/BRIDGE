@@ -4,7 +4,7 @@
 	"name": "Bridge Development",
 	"build": {
 		"context": "..",
-		"dockerfile": "Dockerfile.dev"
+		"dockerfile": "Dockerfile-gpu.dev"
 	},
 	"customizations": {
 		"vscode": {
@@ -46,5 +46,9 @@
 				"hbenl.vscode-test-explorer"
 			]
 		}
-	}
+	},
+	"runArgs": [
+    "--gpus",
+    "all"
+]
 }

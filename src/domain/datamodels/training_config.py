@@ -17,6 +17,9 @@ class TrainingConfig(BaseModel):
     save_every: int = Field(default=1)
     model_artifacts_dir: str = Field(default="models")
     model_id: Optional[str] = Field(default=None)
+    use_wandb: bool = Field(default=False)
+    weight_decay: float = Field(default=0.0)
+
 
 
     @model_validator(mode="before")
