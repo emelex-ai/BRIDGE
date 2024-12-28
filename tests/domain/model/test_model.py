@@ -80,22 +80,22 @@ def test_generate_triangular_mask(model: Model):
     assert torch.allclose(mask, expected_output, atol=1e-5), "Output does not match expected values."
 
 
-def test_embed_o2p(model: Model):
+def test_embed_o(model: Model):
     model.eval()
-    with open("tests/domain/model/data/embed_o2p_test_data.pkl", "rb") as f:
+    with open("tests/domain/model/data/embed_o_test_data.pkl", "rb") as f:
         data = pickle.load(f)
 
     orth_enc_input = data["orth_enc_input"]
     orth_enc_pad_mask = data["orth_enc_pad_mask"]
     expected_output = data["output"]
 
-    output = model.embed_o2p(orth_enc_input, orth_enc_pad_mask)
+    output = model.embed_o(orth_enc_input, orth_enc_pad_mask)
     assert torch.allclose(output, expected_output, atol=1e-5), "Output does not match expected values."
 
 
 def test_embed_p(model: Model):
     model.eval()
-    with open("tests/domain/model/data/embed_p2o_test_data.pkl", "rb") as f:
+    with open("tests/domain/model/data/embed_p_test_data.pkl", "rb") as f:
         data = pickle.load(f)
 
     phon_enc_input = data["phon_enc_input"]
@@ -106,10 +106,10 @@ def test_embed_p(model: Model):
     assert torch.allclose(output, expected_output, atol=1e-5), "Output does not match expected values."
 
 
-def test_embed_op2op(model: Model):
+def test_embed_op(model: Model):
     model.eval()
 
-    with open("tests/domain/model/data/embed_op2op_test_data.pkl", "rb") as f:
+    with open("tests/domain/model/data/embed_op_test_data.pkl", "rb") as f:
         data = pickle.load(f)
 
     orth_enc_input = data["orth_enc_input"]
@@ -118,7 +118,7 @@ def test_embed_op2op(model: Model):
     phon_enc_pad_mask = data["phon_enc_pad_mask"]
     expected_output = data["output"]
 
-    output = model.embed_op2op(orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask)
+    output = model.embed_op(orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask)
     assert torch.allclose(output, expected_output, atol=1e-5), "Output does not match expected values."
 
 
