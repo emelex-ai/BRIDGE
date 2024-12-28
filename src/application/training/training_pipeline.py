@@ -14,10 +14,9 @@ from torch.profiler import profile, record_function, ProfilerActivity
 import wandb
 from traindata import utilities
 
+
 class TrainingPipeline:
-    def __init__(
-        self, model: Model, training_config: TrainingConfig, dataset: BridgeDataset
-    ):
+    def __init__(self, model: Model, training_config: TrainingConfig, dataset: BridgeDataset):
         self.training_config = training_config
         self.dataset = dataset
         self.device = torch.device(training_config.device)
@@ -27,8 +26,9 @@ class TrainingPipeline:
         )
         self.train_slices, self.val_slices = self.create_data_slices()
         self.phon_reps = torch.tensor(
-            utilities.phontable("data/phonreps.csv").values, dtype=torch.float,device=self.device
+            utilities.phontable("data/phonreps.csv").values, dtype=torch.float, device=self.device
         )[:-1]
+
     def create_data_slices(self):
         cutpoint = int(len(self.dataset) * self.training_config.train_test_split)
         train_slices = [
@@ -37,9 +37,7 @@ class TrainingPipeline:
         ]
         val_slices = [
             slice(i, min(i + self.training_config.batch_size_val, len(self.dataset)))
-            for i in range(
-                cutpoint, len(self.dataset), self.training_config.batch_size_val
-            )
+            for i in range(cutpoint, len(self.dataset), self.training_config.batch_size_val)
         ]
         return train_slices, val_slices
 
@@ -95,15 +93,11 @@ class TrainingPipeline:
 
         # Calculate phon_loss if applicable
         if self.training_config.training_pathway in ["o2p", "op2op", "p2p"]:
-            phon_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(
-                logits["phon"], phonology["targets"]
-            )
+            phon_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(logits["phon"], phonology["targets"])
 
         # Calculate orth_loss if applicable
         if self.training_config.training_pathway in ["p2o", "op2op"]:
-            orth_loss = torch.nn.CrossEntropyLoss(ignore_index=4)(
-                logits["orth"], orthography["enc_input_ids"][:, 1:]
-            )
+            orth_loss = torch.nn.CrossEntropyLoss(ignore_index=4)(logits["orth"], orthography["enc_input_ids"][:, 1:])
 
         # Calculate the combined loss, summing only non-None losses
         total_loss = sum(loss for loss in [orth_loss, phon_loss] if loss is not None)
@@ -131,12 +125,6 @@ class TrainingPipeline:
             metrics.update(calculate_orth_metrics(logits, orthography))
 
         return metrics
-
-
-
-    
-
-    
 
     def single_step(self, batch_slice: slice, calculate_metrics: bool = False) -> dict:
         batch = self.dataset[batch_slice]
@@ -169,9 +157,7 @@ class TrainingPipeline:
         total_metrics = {}
         for step, batch_slice in enumerate(progress_bar):
             metrics = self.single_step(batch_slice, False)
-            progress_bar.set_postfix(
-                {key: f"{value:.4f}" for key, value in metrics.items()}
-            )
+            progress_bar.set_postfix({key: f"{value:.4f}" for key, value in metrics.items()})
             if not total_metrics:
                 total_metrics = metrics
             else:
@@ -185,9 +171,7 @@ class TrainingPipeline:
                 "time_per_epoch": (time.time() - start) * len(self.train_slices),
             }
         )
-        training_metrics = {"train_" + str(key): val for key, val in total_metrics.items()}
-        
-        return training_metrics
+        return {"train_" + str(key): val for key, val in total_metrics.items()}
 
     def validate_single_epoch(self, epoch: int) -> dict:
         self.model.eval()
@@ -199,9 +183,7 @@ class TrainingPipeline:
             total_metrics = {}
             for step, batch_slice in enumerate(progress_bar):
                 metrics = self.single_step(batch_slice, True)
-                progress_bar.set_postfix(
-                    {key: f"{value:.4f}" for key, value in metrics.items()}
-                )
+                progress_bar.set_postfix({key: f"{value:.4f}" for key, value in metrics.items()})
                 if not total_metrics:
                     total_metrics = metrics
                 else:
@@ -215,23 +197,21 @@ class TrainingPipeline:
                 "time_per_epoch": (time.time() - start) * len(self.val_slices),
             }
         )
-        return total_metrics
+        return {"valid_" + str(key): val for key, val in total_metrics.items()}
 
-    def run_train_val_loop(self) -> None:
+    def run_train_val_loop(self, run_name: str):
         for epoch in range(self.training_config.num_epochs):
             training_metrics = self.train_single_epoch(epoch)
             if self.val_slices:
                 metrics = self.validate_single_epoch(epoch)
             training_metrics.update(metrics)
-            if self.training_config.use_wandb:
-                wandb.log(training_metrics)
-            self.save_model(epoch)
+            self.save_model(epoch, run_name)
+            yield training_metrics
 
-    def save_model(self, epoch: int) -> None:
-        if epoch % self.training_config.save_every == 0:
-            model_path = (
-                f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}.pth"
-            )
+    def save_model(self, epoch: int, run_name: str) -> None:
+        if (epoch + 1) % self.training_config.save_every == 0:
+
+            model_path = f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}.pth"
             torch.save(
                 {
                     "model_state_dict": self.model.state_dict(),

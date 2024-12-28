@@ -15,12 +15,9 @@ class TrainingConfig(BaseModel):
     learning_rate: float = Field(default=0.001)
     training_pathway: str = Field(default="o2p")
     save_every: int = Field(default=1)
-    model_artifacts_dir: str = Field(default="models")
-    model_id: Optional[str] = Field(default=None)
-    use_wandb: bool = Field(default=False)
+    model_artifacts_dir: str = Field(default="model_artifacts")
     weight_decay: float = Field(default=0.0)
-
-
+    use_wandb: bool = Field(default=False) #TODO: remove this
 
     @model_validator(mode="before")
     def convert_paths(cls, values):
