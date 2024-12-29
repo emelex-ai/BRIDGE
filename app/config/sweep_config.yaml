@@ -1,0 +1,27 @@
+program: app/bin/pretraining_sweep.py
+method: bayes
+name: sweep_pretraining_0
+metric:
+  goal: minimize
+  name: loss
+parameters:
+  batch_size_train:
+    values: [32, 64]
+  batch_size_val:
+    values: [32, 64]
+  d_model:
+    values: [128]
+  d_embedding:
+    values: [1]
+  num_epochs:
+    values: [100]
+  learning_rate:
+    values: [0.0001, 0.001]
+  num_phon_enc_layers:
+    values: [8, 16, 32]
+  num_phon_dec_layers:
+    values: [2, 4, 8, 16, 32]
+  nhead:
+    values: [8, 16, 32]
+  weight_decay:
+    values: [0.01, 0.1]
