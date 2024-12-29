@@ -140,3 +140,19 @@ class WandbWrapper(Singleton):
         logger.info("Running W&B sweep with ID: %s", self.sweep_id)
         wandb.agent(self.sweep_id, function=agent_function, count=count)
         logger.info("Sweep execution completed")
+
+    def get_config(self):
+        """
+        Retrieve the current WandB config.
+        :return: Dictionary containing configuration parameters.
+        """
+        if not self.is_enabled:
+            logger.warning("W&B is disabled. Config retrieval not supported.")
+            return {}
+
+        if self.run is None:
+            logger.error("Attempted to retrieve config without an active W&B run.")
+            raise RuntimeError("W&B run not initialized. Call start_run() first.")
+
+        logger.debug("Retrieving W&B config.")
+        return dict(wandb.config)

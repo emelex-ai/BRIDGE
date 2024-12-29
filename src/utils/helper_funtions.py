@@ -19,7 +19,7 @@ def get_user():
     return getpass.getuser().replace("_", "")
 
 
-def get_next_run_name(model_artifacts_dir="model_artifacts"):
+def get_run_name(model_artifacts_dir="model_artifacts"):
     """
     Generate a unique run name based on the current date. If the date has changed, restart numbering from 001;
     otherwise, increment the last run number.
