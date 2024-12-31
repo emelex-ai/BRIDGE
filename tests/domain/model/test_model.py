@@ -53,7 +53,9 @@ def test_embed_orth_tokens(model: Model):
     input = data["input"]
     expected_output = data["output"]
     output = model.embed_orth_tokens(input)
-    assert torch.allclose(output, expected_output, atol=1e-5), "Output does not match expected values."
+    assert torch.allclose(
+        output, expected_output, atol=1e-5
+    ), "Output does not match expected values."
 
 
 def test_embed_phon_tokens(model: Model):
@@ -65,19 +67,25 @@ def test_embed_phon_tokens(model: Model):
     expected_output = data["output"]
 
     output = model.embed_phon_tokens(input)
-    assert torch.allclose(output, expected_output, atol=1e-5), "Output does not match expected values."
+    assert torch.allclose(
+        output, expected_output, atol=1e-5
+    ), "Output does not match expected values."
 
 
 def test_generate_triangular_mask(model: Model):
     model.eval()
-    with open("tests/domain/model/data/generate_triangular_mask_test_data.pkl", "rb") as f:
+    with open(
+        "tests/domain/model/data/generate_triangular_mask_test_data.pkl", "rb"
+    ) as f:
         data = pickle.load(f)
 
     input = data["input"]
     expected_output = data["output"]
 
     mask = model.generate_triangular_mask(input.shape[1])
-    assert torch.allclose(mask, expected_output, atol=1e-5), "Output does not match expected values."
+    assert torch.allclose(
+        mask, expected_output, atol=1e-5
+    ), "Output does not match expected values."
 
 
 def test_embed_o(model: Model):
@@ -90,7 +98,9 @@ def test_embed_o(model: Model):
     expected_output = data["output"]
 
     output = model.embed_o(orth_enc_input, orth_enc_pad_mask)
-    assert torch.allclose(output, expected_output, atol=1e-5), "Output does not match expected values."
+    assert torch.allclose(
+        output, expected_output, atol=1e-5
+    ), "Output does not match expected values."
 
 
 def test_embed_p(model: Model):
@@ -103,7 +113,9 @@ def test_embed_p(model: Model):
     expected_output = data["output"]
 
     output = model.embed_p(phon_enc_input, phon_enc_pad_mask)
-    assert torch.allclose(output, expected_output, atol=1e-5), "Output does not match expected values."
+    assert torch.allclose(
+        output, expected_output, atol=1e-5
+    ), "Output does not match expected values."
 
 
 def test_embed_op(model: Model):
@@ -118,8 +130,12 @@ def test_embed_op(model: Model):
     phon_enc_pad_mask = data["phon_enc_pad_mask"]
     expected_output = data["output"]
 
-    output = model.embed_op(orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask)
-    assert torch.allclose(output, expected_output, atol=1e-5), "Output does not match expected values."
+    output = model.embed_op(
+        orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask
+    )
+    assert torch.allclose(
+        output, expected_output, atol=1e-5
+    ), "Output does not match expected values."
 
 
 def test_forward_op2op(model: Model):
@@ -189,7 +205,6 @@ def test_forward_p2o(model: Model):
     with open("tests/domain/model/data/forward_p2o_test_data.pkl", "rb") as file:
         data = pickle.load(file)
 
-
     orth_dec_input = data["orth_dec_input"]
     orth_dec_pad_mask = data["orth_dec_pad_mask"]
     phon_enc_input = data["phon_enc_input"]
@@ -207,3 +222,64 @@ def test_forward_p2o(model: Model):
     assert torch.allclose(
         output["orth"], expected_orth_token_logits_output, atol=1e-5
     ), "Output does not match expected values."
+
+
+def test_forward_p2p(model: Model, dataset_config):
+    """We do not have access to p2p test data from the legacy code as it was
+    not implemented. Therefore, our tests here simply ensure that the code runs,
+    output shapes are as expected and the output is a tensor."""
+    model.eval()
+    with open("tests/domain/model/data/forward_op2op_test_data.pkl", "rb") as file:
+        data = pickle.load(file)
+
+    phon_enc_input = data["phon_enc_input"]
+    phon_enc_pad_mask = data["phon_enc_pad_mask"]
+    phon_dec_input = data["phon_dec_input"]
+    phon_dec_pad_mask = data["phon_dec_pad_mask"]
+
+    output = model.forward_p2p(
+        phon_enc_input,
+        phon_enc_pad_mask,
+        phon_dec_input,
+        phon_dec_pad_mask,
+    )
+
+    assert isinstance(output, dict), f"Expected output to be dict, got {type(output)}"
+    assert "phon" in output, f"Expected 'phon' key in output. Keys: {output.keys()}"
+    assert isinstance(
+        output["phon"], torch.Tensor
+    ), f"Expected output['phon'] to be tensor, got {type(output['phon'])}"
+    # Shape should be (batch_size, 2, max_phon_seq_len, phonological_vocabulary_size - 1)
+    # where 2 is because this is a binary classification problem, and the minus 1 is because
+    # padding tokens are removed from the targets and output predictions
+    size = torch.Size(
+        [
+            len(phon_dec_input),  # batch_size
+            2,  # binary classification
+            len(phon_dec_input[0]),  # max_phon_seq_len
+            dataset_config.phonological_vocabulary_size - 1,
+        ]
+    )
+    assert (
+        output["phon"].shape == size
+    ), f"Shape mismatch: got {output['phon'].shape}, expected {size}"
+
+
+def test_gpu_availability():
+    """Test GPU availability and basic tensor operations."""
+    from src.utils.device import device_manager
+
+    # Create test tensor
+    x = device_manager.create_tensor([[1.0, 2.0], [3.0, 4.0]])
+    y = device_manager.create_tensor([[5.0, 6.0], [7.0, 8.0]])
+
+    # Perform computation
+    z = torch.matmul(x, y)
+
+    # Ensure computation was done on the right device
+    assert z.device.type == device_manager.device.type
+    device_manager.synchronize()  # Ensure computation is complete
+
+    # Test basic operations
+    result = z.cpu().numpy()  # Move back to CPU for comparison
+    assert result.shape == (2, 2)

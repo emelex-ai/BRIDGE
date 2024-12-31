@@ -16,17 +16,23 @@ from traindata import utilities
 
 
 class TrainingPipeline:
-    def __init__(self, model: Model, training_config: TrainingConfig, dataset: BridgeDataset):
+    def __init__(
+        self, model: Model, training_config: TrainingConfig, dataset: BridgeDataset
+    ):
         self.training_config = training_config
         self.dataset = dataset
         self.device = torch.device(training_config.device)
         self.model = model.to(self.device)
         self.optimizer = torch.optim.AdamW(
-            self.model.parameters(), lr=training_config.learning_rate, weight_decay=training_config.weight_decay
+            self.model.parameters(),
+            lr=training_config.learning_rate,
+            weight_decay=training_config.weight_decay,
         )
         self.train_slices, self.val_slices = self.create_data_slices()
         self.phon_reps = torch.tensor(
-            utilities.phontable("data/phonreps.csv").values, dtype=torch.float, device=self.device
+            utilities.phontable("data/phonreps.csv").values,
+            dtype=torch.float,
+            device=self.device,
         )[:-1]
 
     def create_data_slices(self):
@@ -37,13 +43,15 @@ class TrainingPipeline:
         ]
         val_slices = [
             slice(i, min(i + self.training_config.batch_size_val, len(self.dataset)))
-            for i in range(cutpoint, len(self.dataset), self.training_config.batch_size_val)
+            for i in range(
+                cutpoint, len(self.dataset), self.training_config.batch_size_val
+            )
         ]
         return train_slices, val_slices
 
     def forward(
-        self, orthography: Dict[str, torch.Tensor], phonology: Dict[str, torch.Tensor]
-    ) -> Dict[str, torch.Tensor]:
+        self, orthography: dict[str, torch.Tensor], phonology: dict[str, torch.Tensor]
+    ) -> dict[str, torch.Tensor]:
         if self.training_config.training_pathway == "o2p":
             return self.model(
                 task="o2p",
@@ -83,21 +91,25 @@ class TrainingPipeline:
 
     def compute_loss(
         self,
-        logits: Dict[str, torch.Tensor],
-        orthography: Dict[str, torch.Tensor],
-        phonology: Dict[str, torch.Tensor],
-    ) -> Dict[str, Union[torch.Tensor, None]]:
+        logits: dict[str, torch.Tensor],
+        orthography: dict[str, torch.Tensor],
+        phonology: dict[str, torch.Tensor],
+    ) -> dict[str, Union[torch.Tensor, None]]:
         # Initialize losses to None
         orth_loss = None
         phon_loss = None
 
         # Calculate phon_loss if applicable
         if self.training_config.training_pathway in ["o2p", "op2op", "p2p"]:
-            phon_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(logits["phon"], phonology["targets"])
+            phon_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(
+                logits["phon"], phonology["targets"]
+            )
 
         # Calculate orth_loss if applicable
         if self.training_config.training_pathway in ["p2o", "op2op"]:
-            orth_loss = torch.nn.CrossEntropyLoss(ignore_index=4)(logits["orth"], orthography["enc_input_ids"][:, 1:])
+            orth_loss = torch.nn.CrossEntropyLoss(ignore_index=4)(
+                logits["orth"], orthography["enc_input_ids"][:, 1:]
+            )
 
         # Calculate the combined loss, summing only non-None losses
         total_loss = sum(loss for loss in [orth_loss, phon_loss] if loss is not None)
@@ -113,9 +125,9 @@ class TrainingPipeline:
 
     def compute_metrics(
         self,
-        logits: Dict[str, torch.Tensor],
-        orthography: Dict[str, torch.Tensor],
-        phonology: Dict[str, torch.Tensor],
+        logits: dict[str, torch.Tensor],
+        orthography: dict[str, torch.Tensor],
+        phonology: dict[str, torch.Tensor],
     ) -> dict:
         metrics = {}
         if self.training_config.training_pathway in ["o2p", "op2op", "p2p"]:
@@ -157,7 +169,9 @@ class TrainingPipeline:
         total_metrics = {}
         for step, batch_slice in enumerate(progress_bar):
             metrics = self.single_step(batch_slice, False)
-            progress_bar.set_postfix({key: f"{value:.4f}" for key, value in metrics.items()})
+            progress_bar.set_postfix(
+                {key: f"{value:.4f}" for key, value in metrics.items()}
+            )
             if not total_metrics:
                 total_metrics = metrics
             else:
@@ -183,7 +197,9 @@ class TrainingPipeline:
             total_metrics = {}
             for step, batch_slice in enumerate(progress_bar):
                 metrics = self.single_step(batch_slice, True)
-                progress_bar.set_postfix({key: f"{value:.4f}" for key, value in metrics.items()})
+                progress_bar.set_postfix(
+                    {key: f"{value:.4f}" for key, value in metrics.items()}
+                )
                 if not total_metrics:
                     total_metrics = metrics
                 else:
@@ -211,7 +227,9 @@ class TrainingPipeline:
     def save_model(self, epoch: int, run_name: str) -> None:
         if (epoch + 1) % self.training_config.save_every == 0:
 
-            model_path = f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}.pth"
+            model_path = (
+                f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}.pth"
+            )
             torch.save(
                 {
                     "model_state_dict": self.model.state_dict(),
