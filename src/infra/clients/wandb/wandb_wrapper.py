@@ -1,107 +1,158 @@
-from src.application.shared import Singleton
-from addict import Dict as AttrDict
-import logging
 import wandb
+import logging
+from src.application.shared import Singleton
 
 logger = logging.getLogger(__name__)
 
 
-class MyRun:
-    """A proxy class to handle the `run` variable when wandb is disabled."""
-
-    def __init__(self, config=None):
-        self.config = config
-
-    def watch(self, *args, **kwargs):
-        if WandbWrapper().is_wandb_on and WandbWrapper().run:
-            WandbWrapper().run.watch(*args, **kwargs)
-
-    def id(self):
-        if WandbWrapper().is_wandb_on and WandbWrapper().run:
-            return WandbWrapper().run.id
-
-    def log(self, *args, **kwargs):
-        pass  # Disabled
-
-    def finish(self, *args, **kwargs):
-        pass  # Disabled
-
-
-class MyTable:
-    """A mock object to return when calling wandb.Table() when disabled."""
-
-    def add_data(self, *args, **kwargs):
-        pass  # Disabled
-
-
-class MyPlot:
-    """A mock object to return when calling wandb.Plot() when disabled."""
-
-    def histogram(self, *args, **kwargs):
-        return 0  # Disabled
-
-    def line(self, *args, **kwargs):
-        return 0  # Disabled
-
-    def scatter(self, *args, **kwargs):
-        return 0  # Disabled
-
-
 class WandbWrapper(Singleton):
-    """
-    A wrapper around wandb to allow for it to be disabled.
-    """
+    def __init__(self, project_name, entity=None, config=None, is_enabled=True):
+        """
+        Initialize the W&B wrapper.
 
-    def __init__(self, is_wandb_on: bool = False, is_sweep: bool = False, config: AttrDict = None):
-        self.is_wandb_on = False
-        self.is_sweep = False
+        :param project_name: Name of the W&B project.
+        :param entity: W&B entity (username or team).
+        :param config: Dictionary of hyperparameters to log.
+        :param is_enabled: Flag to enable or disable W&B integration.
+        """
+        self.project_name = project_name
+        self.entity = entity
+        self.config = config or {}
+        self.is_enabled = is_enabled
         self.run = None
-        self.my_run = MyRun()
-        self.my_table = MyTable()
-        self.my_plot = MyPlot()
-        self.config = AttrDict()
+        self.sweep_id = None
 
-        self.is_wandb_on = is_wandb_on
-        self.is_sweep = is_sweep
-        self.config = AttrDict(config) if config else AttrDict({})
-
-    def init(self, *args, **kwargs):
-        if self.is_wandb_on:
-            self.run = wandb.init(*args, **kwargs)
-            logger.info("Initialized wandb with real run.")
-            return self.run
+        if self.is_enabled:
+            logger.info("WandbWrapper initialized with project_name: %s, entity: %s", project_name, entity)
         else:
-            self.my_run.config = self.config
-            logger.info("Initialized with mocked run (wandb disabled).")
-            return self.my_run
+            logger.info("WandbWrapper initialized in disabled mode.")
 
-    def log(self, *args, **kwargs):
-        if self.is_wandb_on and self.run:
-            self.run.log(*args, **kwargs)
-            logger.debug("Logged to wandb.")
+    def start_run(self, run_name=None, config_updates=None):
+        """
+        Start a W&B run.
+
+        :param run_name: Optional name for the run.
+        :param config_updates: Dictionary of additional config updates.
+        """
+        if not self.is_enabled:
+            logger.info("W&B is disabled. Skipping start_run.")
+            return
+
+        logger.info("Starting W&B run with name: %s", run_name)
+        self.run = wandb.init(
+            project=self.project_name,
+            entity=self.entity,
+            name=run_name,
+            config={**self.config, **(config_updates or {})},
+        )
+        logger.info("W&B run started")
+
+    def log_metrics(self, metrics, step=None):
+        """
+        Log metrics to the current W&B run.
+
+        :param metrics: Dictionary of metrics to log.
+        :param step: Optional step number.
+        """
+        if not self.is_enabled:
+            logger.debug("W&B is disabled. Skipping log_metrics.")
+            return
+
+        if self.run is None:
+            logger.error("Attempted to log metrics without an active W&B run")
+            raise RuntimeError("W&B run not initialized. Call start_run() first.")
+        logger.debug("Logging metrics: %s at step: %s", metrics, step)
+        wandb.log(metrics, step=step)
+
+    def log_artifact(self, artifact_name, artifact_type, files):
+        """
+        Log an artifact (e.g., model checkpoints, datasets).
+
+        :param artifact_name: Name of the artifact.
+        :param artifact_type: Type of the artifact (e.g., 'model', 'dataset').
+        :param files: Path(s) to the files to include in the artifact.
+        """
+        if not self.is_enabled:
+            logger.info("W&B is disabled. Skipping log_artifact.")
+            return
+
+        if self.run is None:
+            logger.error("Attempted to log artifact without an active W&B run")
+            raise RuntimeError("W&B run not initialized. Call start_run() first.")
+
+        logger.info("Logging artifact: %s of type: %s", artifact_name, artifact_type)
+        artifact = wandb.Artifact(artifact_name, type=artifact_type)
+        if isinstance(files, str):
+            artifact.add_file(files)
+        elif isinstance(files, list):
+            for file in files:
+                artifact.add_file(file)
         else:
-            logger.debug("Logging skipped as wandb is disabled.")
+            logger.error("Invalid files parameter: %s", files)
+            raise ValueError("Files should be a string or a list of strings.")
 
-    def watch(self, *args, **kwargs):
-        if self.is_wandb_on and self.run:
-            self.run.watch(*args, **kwargs)
-            logger.debug("Watching model in wandb.")
-        else:
-            logger.debug("Model watch skipped as wandb is disabled.")
+        self.run.log_artifact(artifact)
+        logger.info("Artifact logged successfully")
 
-    def Table(self, *args, **kwargs):
-        if self.is_wandb_on and self.run:
-            return wandb.Table(*args, **kwargs)
-        else:
-            return self.my_table
+    def end_run(self):
+        """
+        End the current W&B run.
+        """
+        if not self.is_enabled:
+            logger.info("W&B is disabled. Skipping end_run.")
+            return
 
-    def login(self):
-        if self.is_wandb_on and self.run:
-            wandb.login()
+        if self.run is not None:
+            logger.info("Ending W&B run")
+            wandb.finish()
+            self.run = None
+            logger.info("W&B run ended successfully")
 
-    def finish(self):
-        if self.is_wandb_on and self.run:
-            self.run.finish()
-            logger.info("Finished wandb run.")
-        else:
-            logger.info("Mock finish called, wandb disabled.")
+    def create_sweep(self, sweep_config):
+        """
+        Create a W&B sweep.
+
+        :param sweep_config: Dictionary containing the sweep configuration.
+        """
+        if not self.is_enabled:
+            logger.info("W&B is disabled. Skipping create_sweep.")
+            return
+
+        logger.info("Creating W&B sweep with configuration: %s", sweep_config)
+        self.sweep_id = wandb.sweep(sweep_config, project=self.project_name, entity=self.entity)
+        logger.info("Sweep created with ID: %s", self.sweep_id)
+
+    def run_sweep(self, agent_function, count=None):
+        """
+        Run a W&B sweep using a specified agent function.
+
+        :param agent_function: Function to execute for each sweep run.
+        :param count: Number of runs to execute (default: None for unlimited).
+        """
+        if not self.is_enabled:
+            logger.info("W&B is disabled. Skipping run_sweep.")
+            return
+
+        if not self.sweep_id:
+            logger.error("No sweep ID found. Create a sweep first using create_sweep().")
+            raise RuntimeError("Sweep not initialized. Call create_sweep() first.")
+
+        logger.info("Running W&B sweep with ID: %s", self.sweep_id)
+        wandb.agent(self.sweep_id, function=agent_function, count=count)
+        logger.info("Sweep execution completed")
+
+    def get_config(self):
+        """
+        Retrieve the current WandB config.
+        :return: Dictionary containing configuration parameters.
+        """
+        if not self.is_enabled:
+            logger.warning("W&B is disabled. Config retrieval not supported.")
+            return {}
+
+        if self.run is None:
+            logger.error("Attempted to retrieve config without an active W&B run.")
+            raise RuntimeError("W&B run not initialized. Call start_run() first.")
+
+        logger.debug("Retrieving W&B config.")
+        return dict(wandb.config)

@@ -1,13 +1,10 @@
 num_epochs: 1000
-batch_size_train: 32
-batch_size_val: 32
+batch_size_train: 64
+batch_size_val: 64
 train_test_split: 0.8
-max_nb_steps: 
 learning_rate: 0.001
 training_pathway: p2p
-device: cuda #cpu #cuda
+device: 'cpu' # Leave empty for auto detection
 save_every: 5
-model_artifacts_dir: 'models'
-use_wandb: false
+model_artifacts_dir: 'model_artifacts'
 weight_decay: 0.1
-model_id: 
