@@ -17,7 +17,7 @@ class TrainingConfig(BaseModel):
     save_every: int = Field(default=1)
     model_artifacts_dir: str = Field(default="model_artifacts")
     weight_decay: float = Field(default=0.0)
-    use_wandb: bool = Field(default=False)  # TODO: remove this
+
 
     @model_validator(mode="before")
     def convert_paths(cls, values):

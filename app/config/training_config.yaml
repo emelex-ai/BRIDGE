@@ -8,4 +8,3 @@ device: 'cpu' # Leave empty for auto detection
 save_every: 5
 model_artifacts_dir: 'model_artifacts'
 weight_decay: 0.1
-use_wandb: true
