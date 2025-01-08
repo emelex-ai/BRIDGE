@@ -1,182 +1,241 @@
-# Authors:
- - Nathan Crock
- - Gordon Erlebacher
-## Date: 2023-09-18
 
-# Installation
+# BRIDGE
 
-## Install poetry
-### Linux
+**BRIDGE** is a computational model for naming printed words, designed to address gaps in understanding the cognitive processes underlying reading development. While simulations have been influential in basic science, they have struggled to influence applied research and educational practice (Seidenberg, Cooper Borkenhagen, & Kearns, 2020). This is partly due to the limited research on modeling learning processes associated with knowledge of long words and connected text (Perry, Ziegler, & Zorzi, 2010; Cooper Borkenhagen, 2023). BRIDGE introduces a novel approach by mapping orthographic (written) and phonological (spoken) representations—of potentially unbounded length—into a unified global embedding using cross-attention mechanisms within the connectionist modeling “triangle” paradigm (Seidenberg & McClelland, 1989). This architecture enhances our ability to explore how orthographic and phonological modalities combine in a shared representation, especially for longer words. Additionally, BRIDGE provides the flexibility to selectively activate specific modalities (orthography and phonology), enabling unique investigations into how different training regimens influence learning to read. Positioned at the intersection of cognitive neuroscience and educational technology, BRIDGE aims to deliver new insights and practical tools for both experimental research and classroom applications.
 
-Install directly from poetry's website:
-```
+
+---
+
+## Table of Contents
+1. [Installation](#installation)  
+   - [Install Poetry](#install-poetry)  
+   - [Create the Environment](#create-the-environment)
+2. [Running the Code](#running-the-code)  
+3. [Configuration Files](#configuration-files)  
+4. [Development with Dev Container](#development-with-dev-container)    
+5. [SSH into Lab Machines](#how-to-ssh-into-any-of-the-labs-machines)  
+6. [Authors](#authors)  
+
+---
+
+## Installation
+
+### Install Poetry
+
+**Poetry** is used to manage dependencies and the Python environment.
+
+#### Linux
+```bash
 curl -sSL https://install.python-poetry.org | python3 -
 ```
 
-### macOS
-
-Install directly from poetry's website:
-
-```
+#### macOS
+```bash
 curl -sSL https://install.python-poetry.org | python3 -
 ```
-or install using `brew`:
-```
+Or via Homebrew:
+```bash
 brew install poetry
 ```
-### Windows
 
-The application is currently only developed and tested on Unix-like system.
+#### Windows
+> **Note**: Currently, this project is only tested on Unix-like systems (Linux/macOS). Windows support is untested.
 
-### Validate
-
-YValidate that `poetry` is correctly installed—after reinitializing the shell or using `source ~/.bashrc`—with `poetry --version`.
-
-If it's not working, make sure `~/.local/bin` is included in your `$PATH`, by adding the following line:
+#### Validate Installation
+Ensure Poetry is installed:
+```bash
+poetry --version
 ```
+If not, make sure `~/.local/bin` is in your `PATH`:
+```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
-to your shell configuration (`~/.bashrc` or `~/.zshrc`).
 
-## Create the environment
+### Create the Environment
 
-Now, once into our project folder, steps use our existing `project.toml` file to create a poetry shell.
+1. Navigate to the project folder:
+   ```bash
+   cd BRIDGE
+   ```
+2. Create and activate a Poetry environment:
+   ```bash
+   poetry shell
+   poetry install
+   ```
 
-```
-poetry shell
-poetry install
-```
+---
 
-The previous comments will create a new virtual environment  based on the existing `pyproject.toml` file and install the required dependencies.
+## Running the Code
 
-# Running the code
-
-The specification for a model is provided via a config file. The acceptable
-values for the config file are outlined in the table below. To launch a
-training run based on the parameters in a config file named `training_config.yaml`
-run the following code
-
-```shell
+The BRIDGE training workflow is controlled by configuration files. To launch a training run, execute:
+```bash
 python app/bin/main.py
 ```
+Parameters such as datasets, model settings, and training configurations are managed through YAML files (see [Configuration Files](#configuration-files)).
 
-# Development with Dev Container
+---
 
-This project supports development within a Docker container via a Dev Container. This ensures a consistent development environment and avoids the need to install project dependencies directly on your machine.
+## Configuration Files
 
-## Setup
+The BRIDGE project uses multiple YAML configuration files located in `BRIDGE/app/config` to handle datasets, models, training, and logging. Below are the details:
 
-1. Ensure [Docker Desktop](https://www.docker.com/products/docker-desktop/) is installed and running on your system.
-2. Ensure that the [Dev Container](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) VS Code extension is installed (ms-vscode-remote.remote-containers)
-3. Open the BRIDGE project in Visual Studio Code.
-4. When prompted, choose to reopen the project in a container. (Or Shift+CMD+P and select Dev Containers: Rebuild Container)
-5. VS Code (and the Dev Containers extension) will build the container based on the provided Dockerfile and the devcontainer.json file, run the image on your local machine using Docker Desktop, and then connect your local version of VS Code to the one running in the Docker container. [See here](https://code.visuaPlstudio.com/docs/devcontainers/containers) for details.
-6. Once the build is complete, you will have access to a fully configured development environment.
+### 1. `dataset_config.yaml`
 
-## Using Dev Container
+| Parameter                     | Type    | Description                                                                 |
+|-------------------------------|---------|-----------------------------------------------------------------------------|
+| `dataset_filepath`            | str     | Path to the primary dataset file.                                          |
+| `dimension_phon_repr`         | int     | Dimensionality of the phonological representation.                         |
+| `orthographic_vocabulary_size`| int     | Size of the orthographic vocabulary.                                       |
+| `phonological_vocabulary_size`| int     | Size of the phonological vocabulary.                                       |
+| `max_orth_seq_len`            | int     | Maximum sequence length for orthography.                                   |
+| `max_phon_seq_len`            | int     | Maximum sequence length for phonology.                                     |
 
-1. All dependencies are pre-installed in the container.
-2. Extensions listed in devcontainer.json are automatically available.
-3. Use VS Code's terminal and editor to write and execute code in the containerized environment.
+---
 
-----------------------------------------------------------------------
-# ISSUES:
-- I cannot see metric graphs on wandb. I cannot figure out the error. Possibly it
-is related to something in the WandbWrapper class.
+### 2. `model_config.yaml`
 
-- Sweep, wandb with no sweep, and no wandb are all working.
-----------------------------------------------------------------------
-# Unit Tests
+| Parameter                 | Type   | Description                                                                 |
+|---------------------------|--------|-----------------------------------------------------------------------------|
+| `d_model`                 | int    | Dimensionality of internal model components (e.g., embeddings, layers). Must be divisible by `nhead`. |
+| `d_embedding`             | int    | Dimensionality of global embeddings.                                        |
+| `nhead`                   | int    | Number of attention heads in transformer layers.                            |
+| `seed`                    | int    | Random seed for reproducibility.                                            |
+| `num_phon_enc_layers`     | int    | Number of transformer layers in the phonology encoder.                      |
+| `num_orth_enc_layers`     | int    | Number of transformer layers in the orthography encoder.                    |
+| `num_mixing_enc_layers`   | int    | Number of transformer layers in the mixing encoder.                         |
+| `num_phon_dec_layers`     | int    | Number of transformer layers in the phonology decoder.                      |
+| `num_orth_dec_layers`     | int    | Number of transformer layers in the orthography decoder.                    |
 
-2023-10-01
-Test new run with d_model=128 and d_model=64  (output files should be different). Run in test mode for 5 epochs.
+---
 
-----------------------------------------------------------------------
-Config file parameters:
+### 3. `training_config.yaml`
 
-| Command Line Argument | Argument  | Type  |
-|-----------------------|-----------|-------|
-| --config              | name of YAML file containing training configuration data | str |
+| Parameter              | Type    | Description                                                                 |
+|------------------------|---------|-----------------------------------------------------------------------------|
+| `num_epochs`           | int     | Number of epochs for training.                                              |
+| `batch_size_train`     | int     | Batch size for training.                                                    |
+| `batch_size_val`       | int     | Batch size for validation.                                                  |
+| `train_test_split`     | float   | Fraction of data used for training.                                         |
+| `learning_rate`        | float   | Learning rate for the optimizer.                                            |
+| `training_pathway`     | str     | Training pathway to use (`p2p`, `o2p`, etc.).                               |
+| `device`               | str     | Device to run training on (`'cpu'` or `'gpu'`).                             |
+| `save_every`           | int     | Save model checkpoints every N epochs.                                      |
+| `model_artifacts_dir`  | str     | Directory to save model artifacts.                                          |
+| `weight_decay`         | float   | Weight decay parameter for regularization.                                  |
 
-----------------------------------------------------------------------
-Configuration options:
+---
 
-| YAML Config Options   | Type | Description |
-|-----------------------|------|-------------|
-| device                | str  | specify device to run on 'cpu' or 'gpu' |
-| project               | str  | wandb project name |
-| num_epochs            | int  | nb of epochs to run |
-| batch_size_train      | int  | batch size during training |
-| batch_size_val        | int  | batch size during validation |
-| num_phon_enc_layers   | int  | number of layers in phonology encoder transformer block |
-| num_orth_enc_layers   | int  | number of layers in orthography encoder transformer block |
-| num_mixing_enc_layers | int  | number of layers in mixing encoder transformer block |
-| num_phon_dec_layers   | int  | number of layers in phonology decoder transformer block |
-| num_orth_dec_layers   | int  | number of layers in orthography decoder transformer block |
-| learning_rate         | float| learning rate |
-| d_model               | int  | Dimensionality of internal model components (embedding, linear and transformer layers). Must be evenly divisble by nhead |
-| nhead                 | int  | number of attention heads |
-| wandb                 | bool | use Weights & Biases |
-| train_test_split      | float| fraction of data in training set. Leave at 1.0 is using test_filenames |
-| sweep_filepath        | str  | yaml file name for W&B sweep run |
-| d_embedding           | int  | Global embedding dimension |
-| seed                  | int  | random seed for repeatability |
-| model_path            | str  | path to model checkpoint files |
-| pathway               | str  | particular pathway to be trained 'o2p', 'p2o', or 'op2op' |
-| save_every            | int  | Save data every 'save_every' number of epochs |
-| dataset_filepath      | str  | The name of the csv file in the data folder that contains the data to train on. (must be in `data/` directory) |
-| max_nb_steps          | int  | The maximum number of steps to take per epoch. Good for testing |
-| test_filenames        | list | A list of csv files to test the model on once per epoch. (must be in `data/test/` directory) |
+### 4. `sweep_config.yaml`
 
-----------------------------------------------------------------------
+| Parameter         | Type    | Description                                                                 |
+|-------------------|---------|-----------------------------------------------------------------------------|
+| `program`         | str     | Path to the sweep script.                                                   |
+| `method`          | str     | Sweep method (`bayes`, `grid`, or `random`).                                |
+| `name`            | str     | Name of the sweep.                                                          |
+| `metric`          | dict    | Sweep optimization metric with `goal` (e.g., `minimize`) and `name`.        |
+| `parameters`      | dict    | Parameter grid for the sweep, including batch sizes, learning rates, etc.   |
 
-# How to SSH into any of the lab's machine
+---
 
-Machines in the Computational Science's laboratory likely contain better hardware than what is available on one's own local machine. For that reason, it would
-be a good idea to run extensive simulations on them. One might also have the urge to change the code, modify the code base or test minor changes in one of the files.
-To perform an ssh jump into any of the machines one requires the following:
+### 5. `wandb_config.yaml`
 
-- An FSU ID
-- That ID's password
+| Parameter         | Type    | Description                                                                 |
+|-------------------|---------|-----------------------------------------------------------------------------|
+| `project`         | str     | Name of the W&B project for logging.                                        |
+| `entity`          | str     | W&B entity or team name.                                                    |
+| `is_enabled`      | bool    | Whether W&B logging is enabled.                                             |
 
-The steps that must be taken for a simple ssh jump are the following:
+---
 
-1. Open any terminal
-2. Type the following ```ssh <FSU_ID>@pamd.sc.fsu.edu```
-3. You will then be prompted to input your account password, linked to that ID (It is the same password with which you access MyFsu)
-4. You will be ssh'ed into the _pamd_ virtual space. From here, you are able to jump into any machine
-5. Type the following ```ssh <machine_name>```
-6. You will be prompted to type in your password once more. Type it in.
+## Development with Dev Container
 
-To jump into the machine using VSCODE, and to have any element on it available on VSCode (as long as it is openable):
-1. Open the .ssh folder of your machine
-2. Create a file named _config_
-3. In the file named _config_, type in the following:
-```
-Host pamd
-    HostName pamd.sc.fsu.edu
-    User <your FSUID>
-    Port 22
+This repository supports development using [Dev Containers](https://code.visualstudio.com/docs/devcontainers/containers) in Visual Studio Code, which ensures a consistent and reproducible environment for development.
 
-Host spock
-    HostName <desired machine>
-    User gm23k
-    ProxyJump <your FSUID>
-    Port 22
-```
-4. Open VSCode
-5. Open the bottom-left remote connections selector
-6. Select 'Connect to Host'
-7. Select '+ Add New SSH Host...'
-8. Type the following: ```ssh <machine_name>```
-9. Select the correct config file that you have just created
-10. Close VSCode
-11. Open VSCode once more
-12. Open the bottom-left remote connections selector
-13. Select the machine name that you wish to SSH in, which will now be shown
-14. Enter your password however many times it requests it
+### Features of the Dev Container Setup
 
-----------------------------------------------------------------------
+1. **Dynamic Platform Detection**:
+   - The script `detect-platform.sh` dynamically determines whether a CPU-based or GPU-based Dockerfile should be used (`Dockerfile.cpu.dev` or `Dockerfile.gpu.dev`).
+   - The selected platform configuration is saved in `.devcontainer/platform-config.json`.
 
-2023-07-08
-Dependencies: torch, addict
+2. **Custom VS Code Configuration**:
+   - Includes Python-specific settings, such as:
+     - Default Python interpreter set to `/usr/local/bin/python`.
+     - Auto-discovery of `pytest` for testing.
+     - Auto-formatting with `Black`.
+   - Extensions pre-installed in the container:
+     - Python (e.g., `ms-python.python`, `ms-python.black-formatter`, `ms-toolsai.jupyter`).
+     - Docker (e.g., `ms-azuretools.vscode-docker`).
+     - GitHub (e.g., `GitHub.copilot`, `GitHub.pull-request-github`).
+     - Jupyter Notebook support.
+
+3. **Container User and Environment Variables**:
+   - The container runs as the root user.
+   - Includes `PYTHONPATH` set to the container's workspace folder.
+
+4. **Testing Framework**:
+   - Configured to use `pytest` with arguments:
+     - Tests are discovered in the `tests/` folder.
+     - Run in verbose mode with detailed output.
+
+### Setup Instructions
+
+1. **Install Required Tools**:
+   - Install [Docker Desktop](https://www.docker.com/products/docker-desktop) and ensure it is running.
+   - Install the [Dev Containers VS Code Extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers).
+
+2. **Clone the Repository**:
+   ```bash
+   git clone <repository_url>
+   cd BRIDGE
+   ```
+
+3. **Open in VS Code**:
+   - Open the project folder in VS Code.
+   - Reopen the project in a Dev Container:
+     - Either accept the prompt to reopen in a container.
+     - Or manually select "Reopen in Container" from the Command Palette (`Shift + Cmd + P` or `Ctrl + Shift + P`).
+
+4. **Build and Initialize**:
+   - During initialization, the container detects the platform (CPU/GPU) and configures the environment accordingly.
+   - You will see logs confirming the setup:
+     - Example: `Container created for platform: ...`.
+
+5. **Development in the Container**:
+   - Use the integrated terminal to run commands like:
+     ```bash
+     poetry install
+     poetry shell
+     pytest tests
+     ```
+
+6. **Custom Dockerfile**:
+   - CPU Development: Dockerfile.cpu.dev.
+   - GPU Development: Dockerfile.gpu.dev.
+
+### Using Dev Container
+
+- All dependencies are pre-installed in the container.  
+- Use VS Code’s integrated terminal to run commands (`poetry shell`, etc.).  
+---
+
+## How to SSH into Any of the Lab's Machines
+
+To access lab machines with better hardware for simulations:
+
+1. SSH into the lab gateway:
+   ```bash
+   ssh <FSU_ID>@pamd.sc.fsu.edu
+   ```
+2. From there, SSH into specific machines:
+   ```bash
+   ssh <machine_name>
+   ```
+
+To set up VS Code SSH access, use a `.ssh/config` file with jump host settings.
+
+## Authors
+
+- Nathan Crock  
+- Gordon Erlebacher
+
+---
