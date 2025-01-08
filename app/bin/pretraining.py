@@ -23,16 +23,21 @@ def pretrain():
     training_config_handler = TrainingConfigHandler(config_filepath="app/config/training_config.yaml")
     training_config: TrainingConfig = training_config_handler.get_config()
     training_config.training_pathway = "p2p"
+    training_config.device = "cpu"
     dataset_config_handler = DatasetConfigHandler(config_filepath="app/config/dataset_config.yaml")
     dataset_config: DatasetConfig = dataset_config_handler.get_config()
 
     model_config_handler = ModelConfigHandler(config_filepath="app/config/model_config.yaml")
     model_config_handler.print_config()
     model_config: ModelConfig = model_config_handler.get_config()
+
     if model_config.seed:
         TrainingPipeline.set_seed(model_config.seed)
-
-    for i in range(1,50):
+     
+    wandb.login()
+    for i in range(13,50):
+        wandb.init(project="BRIDGE"
+        , name=f"pretraining_{i}", config = {"model_id": f"pretraining_{i}"})
         if not os.path.exists(f"models/pretraining/{i}"):
             os.mkdir(f"models/pretraining/{i}")
         training_config.model_artifacts_dir = f'models/pretraining/{i}'

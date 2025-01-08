@@ -22,7 +22,7 @@ class BridgeDataset(Dataset):
         self,
         dataset_config: DatasetConfig,
         cache_path: str = "data/.cache",
-        device: torch.device = "cpu",
+        device: torch.device = "cuda",
     ):
         """
         Initializes the dataset, precomputes encodings, and loads data onto the specified device.

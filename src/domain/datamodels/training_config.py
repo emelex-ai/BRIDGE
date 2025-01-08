@@ -6,7 +6,7 @@ import torch
 
 
 class TrainingConfig(BaseModel):
-    device: str = Field(default="cpu")
+    device: str = Field(default="cuda")
     num_epochs: int = Field(default=2)
     batch_size_train: int = Field(default=32)
     batch_size_val: int = Field(default=32)

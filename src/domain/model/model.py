@@ -10,7 +10,7 @@ import torch
 
 
 class Model(nn.Module):
-    def __init__(self, model_config: ModelConfig, dataset_config: DatasetConfig, device: torch.device = "cpu") -> None:
+    def __init__(self, model_config: ModelConfig, dataset_config: DatasetConfig, device: torch.device = "cuda") -> None:
         super().__init__()
         self.device = device
         self.d_model: int = model_config.d_model

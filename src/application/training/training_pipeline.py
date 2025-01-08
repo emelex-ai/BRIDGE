@@ -222,7 +222,7 @@ class TrainingPipeline:
             training_metrics = self.train_single_epoch(epoch)
             if self.val_slices:
                 metrics = self.validate_single_epoch(epoch)
-            training_metrics.update(metrics)
+                training_metrics.update(metrics)
             if self.training_config.use_wandb:
                 wandb.log(training_metrics)
             self.save_model(epoch)
