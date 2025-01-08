@@ -23,10 +23,6 @@ class BridgeDataset(Dataset):
         dataset_config: DatasetConfig,
         device: str,
         cache_path: str = "data/.cache",
-<<<<<<< HEAD
-        device: torch.device = "cuda",
-=======
->>>>>>> main
     ):
         """
         Initializes the dataset, precomputes encodings, and loads data onto the specified device.
@@ -223,23 +219,13 @@ class BridgeDataset(Dataset):
         logger.info(f"Encoding done, data moved to device.")
         return {"orthography": orth_tokenized, "phonology": phon_tokenized}
 
-<<<<<<< HEAD
-    def shuffle(
-        self, cutoff: int
-    ):
-=======
     def shuffle(self, cutoff: int):
->>>>>>> main
         """Split the data by the cutoff point, shuffle the elements before the cutoff point, and reassemble the data"""
         data_items = list(self.data.items())
         shuffled_data = data_items[:cutoff]
         random.shuffle(shuffled_data)
         data_items = shuffled_data + data_items[cutoff:]
         # Recreate the data dict
-<<<<<<< HEAD
-        self.data = {k: {sub_k: sub_v for sub_k, sub_v in v.items()} for k, v in data_items}
-=======
         self.data = {
             k: {sub_k: sub_v for sub_k, sub_v in v.items()} for k, v in data_items
         }
->>>>>>> main

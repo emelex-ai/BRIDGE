@@ -8,6 +8,6 @@ training_pathway: p2p
 device: cpu #cpu #cuda
 save_every: 50
 model_artifacts_dir: 'models'
-use_wandb: true
+use_wandb: false
 weight_decay: 0.01
-model_id: 
+checkpoint_path: 'model_artifacts/pretraining/14/model_epoch_449.pth'

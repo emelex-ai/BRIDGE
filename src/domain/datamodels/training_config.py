@@ -17,6 +17,7 @@ class TrainingConfig(BaseModel):
     save_every: int = Field(default=1)
     model_artifacts_dir: str = Field(default="model_artifacts")
     weight_decay: float = Field(default=0.0)
+    checkpoint_path: Optional[str] = Field(default=None)
 
 
     @model_validator(mode="before")
