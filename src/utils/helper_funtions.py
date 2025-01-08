@@ -57,46 +57,9 @@ def get_run_name(model_artifacts_dir="model_artifacts"):
     return run_name
 
 
-<<<<<<< HEAD
-def get_model_file_name(model_id: str, epoch_num: int):
-    file_name = f"{model_id}_chkpt{epoch_num:03d}.pth"
-    return f"{file_name}"
-
-
-def setup_new_run():
-    model_id = get_new_model_id()
-    model_file_name = get_model_file_name(model_id, 0)
-    return model_id, model_file_name
-
-
-def handle_model_continuation(training_config):
-    ##############################
-    #  This function will be used to handle the scenario where we wish
-    #  to continue training an existing model. This is not yet implemented.
-    ##############################
-
-    # TODO: Add logic here to handle continuation of a model
-
-    # For now, setup new simulation with new model_id
-
-    model_id, model_file_name = setup_new_run()
-    if not training_config.model_id:
-        training_config.model_id = model_id
-
-    print(f"New run: {model_file_name}")
-
-    return model_id, model_file_name
-
-
-=======
->>>>>>> main
 def set_seed(seed: int):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
-<<<<<<< HEAD
         torch.cuda.manual_seed_all(seed)
-=======
-        torch.cuda.manual_seed_all(seed)
->>>>>>> main

@@ -1,4 +1,4 @@
-num_epochs: 1001
+num_epochs: 1000
 batch_size_train: 64
 batch_size_val: 64
 train_test_split: 1
