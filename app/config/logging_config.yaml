@@ -41,6 +41,6 @@ handlers:
         mode: a
 
 root:
-    level: DEBUG
+    level: INFO
     handlers: [console_handler, info_file_handler, debug_file_handler, error_file_handler]
     propagate: no

@@ -13,6 +13,10 @@ import time
 from torch.profiler import profile, record_function, ProfilerActivity
 import wandb
 from traindata import utilities
+<<<<<<< HEAD
+=======
+
+>>>>>>> main
 
 class TrainingPipeline:
     def __init__(
@@ -23,12 +27,26 @@ class TrainingPipeline:
         self.device = torch.device(training_config.device)
         self.model = model.to(self.device)
         self.optimizer = torch.optim.AdamW(
+<<<<<<< HEAD
             self.model.parameters(), lr=training_config.learning_rate, weight_decay=training_config.weight_decay
         )
         self.train_slices, self.val_slices = self.create_data_slices()
         self.phon_reps = torch.tensor(
             utilities.phontable("data/phonreps.csv").values, dtype=torch.float,device=self.device
         )[:-1]
+=======
+            self.model.parameters(),
+            lr=training_config.learning_rate,
+            weight_decay=training_config.weight_decay,
+        )
+        self.train_slices, self.val_slices = self.create_data_slices()
+        self.phon_reps = torch.tensor(
+            utilities.phontable("data/phonreps.csv").values,
+            dtype=torch.float,
+            device=self.device,
+        )[:-1]
+
+>>>>>>> main
     def create_data_slices(self):
         cutpoint = int(len(self.dataset) * self.training_config.train_test_split)
         train_slices = [
@@ -44,8 +62,8 @@ class TrainingPipeline:
         return train_slices, val_slices
 
     def forward(
-        self, orthography: Dict[str, torch.Tensor], phonology: Dict[str, torch.Tensor]
-    ) -> Dict[str, torch.Tensor]:
+        self, orthography: dict[str, torch.Tensor], phonology: dict[str, torch.Tensor]
+    ) -> dict[str, torch.Tensor]:
         if self.training_config.training_pathway == "o2p":
             return self.model(
                 task="o2p",
@@ -85,10 +103,10 @@ class TrainingPipeline:
 
     def compute_loss(
         self,
-        logits: Dict[str, torch.Tensor],
-        orthography: Dict[str, torch.Tensor],
-        phonology: Dict[str, torch.Tensor],
-    ) -> Dict[str, Union[torch.Tensor, None]]:
+        logits: dict[str, torch.Tensor],
+        orthography: dict[str, torch.Tensor],
+        phonology: dict[str, torch.Tensor],
+    ) -> dict[str, Union[torch.Tensor, None]]:
         # Initialize losses to None
         orth_loss = None
         phon_loss = None
@@ -119,9 +137,9 @@ class TrainingPipeline:
 
     def compute_metrics(
         self,
-        logits: Dict[str, torch.Tensor],
-        orthography: Dict[str, torch.Tensor],
-        phonology: Dict[str, torch.Tensor],
+        logits: dict[str, torch.Tensor],
+        orthography: dict[str, torch.Tensor],
+        phonology: dict[str, torch.Tensor],
     ) -> dict:
         metrics = {}
         if self.training_config.training_pathway in ["o2p", "op2op", "p2p"]:
@@ -132,12 +150,15 @@ class TrainingPipeline:
 
         return metrics
 
+<<<<<<< HEAD
 
 
     
 
     
 
+=======
+>>>>>>> main
     def single_step(self, batch_slice: slice, calculate_metrics: bool = False) -> dict:
         batch = self.dataset[batch_slice]
         orthography, phonology = batch["orthography"], batch["phonology"]
@@ -185,9 +206,13 @@ class TrainingPipeline:
                 "time_per_epoch": (time.time() - start) * len(self.train_slices),
             }
         )
+<<<<<<< HEAD
         training_metrics = {"train_" + str(key): val for key, val in total_metrics.items()}
         
         return training_metrics
+=======
+        return {"train_" + str(key): val for key, val in total_metrics.items()}
+>>>>>>> main
 
     def validate_single_epoch(self, epoch: int) -> dict:
         self.model.eval()
@@ -215,20 +240,31 @@ class TrainingPipeline:
                 "time_per_epoch": (time.time() - start) * len(self.val_slices),
             }
         )
+<<<<<<< HEAD
         return total_metrics
+=======
+        return {"valid_" + str(key): val for key, val in total_metrics.items()}
+>>>>>>> main
 
-    def run_train_val_loop(self) -> None:
+    def run_train_val_loop(self, run_name: str):
         for epoch in range(self.training_config.num_epochs):
             training_metrics = self.train_single_epoch(epoch)
             if self.val_slices:
                 metrics = self.validate_single_epoch(epoch)
+<<<<<<< HEAD
                 training_metrics.update(metrics)
             if self.training_config.use_wandb:
                 wandb.log(training_metrics)
             self.save_model(epoch)
+=======
+            training_metrics.update(metrics)
+            self.save_model(epoch, run_name)
+            yield training_metrics
 
-    def save_model(self, epoch: int) -> None:
-        if epoch % self.training_config.save_every == 0:
+    def save_model(self, epoch: int, run_name: str) -> None:
+        if (epoch + 1) % self.training_config.save_every == 0:
+>>>>>>> main
+
             model_path = (
                 f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}.pth"
             )
@@ -240,10 +276,3 @@ class TrainingPipeline:
                 },
                 model_path,
             )
-
-    @staticmethod
-    def set_seed(seed: int) -> None:
-        """Set seed for reproducibility"""
-        torch.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-        torch.backends.cudnn.deterministic = True

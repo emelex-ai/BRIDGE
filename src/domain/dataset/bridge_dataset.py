@@ -3,7 +3,7 @@ import pickle
 import random
 import torch
 import pandas as pd
-from typing import List, Union, Dict
+from typing import List, Union
 from torch.utils.data import Dataset
 from src.domain.datamodels import DatasetConfig
 from src.domain.dataset import Phonemizer, CharacterTokenizer
@@ -21,8 +21,12 @@ class BridgeDataset(Dataset):
     def __init__(
         self,
         dataset_config: DatasetConfig,
+        device: str,
         cache_path: str = "data/.cache",
+<<<<<<< HEAD
         device: torch.device = "cuda",
+=======
+>>>>>>> main
     ):
         """
         Initializes the dataset, precomputes encodings, and loads data onto the specified device.
@@ -155,7 +159,7 @@ class BridgeDataset(Dataset):
 
     def __getitem__(
         self, idx: Union[int, slice, str]
-    ) -> Dict[str, Dict[str, torch.Tensor]]:
+    ) -> dict[str, dict[str, torch.Tensor]]:
         """
         Retrieves precomputed data for the given index.
 
@@ -166,7 +170,7 @@ class BridgeDataset(Dataset):
                 - str: Specific word (must be in the dataset)
 
         Returns:
-            Dict[str, Dict[str, torch.Tensor]]: Encoded orthographic and phonological data for the specified index.
+            dict[str, dict[str, torch.Tensor]]: Encoded orthographic and phonological data for the specified index.
         """
         if isinstance(idx, int):
             # Wrap single index in a slice to retrieve one item
@@ -190,7 +194,7 @@ class BridgeDataset(Dataset):
 
     def encode(
         self, content_to_encode: Union[str, List[str]]
-    ) -> Dict[str, Dict[str, List[int]]]:
+    ) -> dict[str, dict[str, List[int]]]:
         """
         Encodes orthographic and phonological data for given content.
 
@@ -198,7 +202,7 @@ class BridgeDataset(Dataset):
             content_to_encode (Union[str, List[str]]): Content to encode; can be a single word or a list of words.
 
         Returns:
-            Dict[str, Dict[str, List[int]]]: Encoded orthographic and phonological data.
+            dict[str, dict[str, List[int]]]: Encoded orthographic and phonological data.
         """
         logger.info(f"Encoding orthography and phonology.")
         if isinstance(content_to_encode, str):
@@ -219,13 +223,23 @@ class BridgeDataset(Dataset):
         logger.info(f"Encoding done, data moved to device.")
         return {"orthography": orth_tokenized, "phonology": phon_tokenized}
 
+<<<<<<< HEAD
     def shuffle(
         self, cutoff: int
     ):
+=======
+    def shuffle(self, cutoff: int):
+>>>>>>> main
         """Split the data by the cutoff point, shuffle the elements before the cutoff point, and reassemble the data"""
         data_items = list(self.data.items())
         shuffled_data = data_items[:cutoff]
         random.shuffle(shuffled_data)
         data_items = shuffled_data + data_items[cutoff:]
         # Recreate the data dict
+<<<<<<< HEAD
         self.data = {k: {sub_k: sub_v for sub_k, sub_v in v.items()} for k, v in data_items}
+=======
+        self.data = {
+            k: {sub_k: sub_v for sub_k, sub_v in v.items()} for k, v in data_items
+        }
+>>>>>>> main

@@ -14,6 +14,7 @@ class ModelConfig(BaseModel):
     nhead: int = Field(default=2)
     d_embedding: int = Field(default=1)
     seed: Optional[int] = Field(default=None)
+<<<<<<< HEAD
     test_filenames: Optional[List[str]] = Field(default=None)
 
     @model_validator(mode="before")
@@ -29,6 +30,9 @@ class ModelConfig(BaseModel):
 
         return values
 
+=======
+    
+>>>>>>> main
     @field_validator("d_model")
     def validate_d_model(cls, v, info: ValidationInfo):
         nhead = info.data.get("nhead")
@@ -36,14 +40,6 @@ class ModelConfig(BaseModel):
             raise ValueError("d_model must be divisible by nhead")
         return v
 
-    @model_validator(mode="after")
-    def validate_paths(self):
-        if self.test_filenames:
-            for filename in self.test_filenames:
-                if not os.path.exists(filename):
-                    raise FileNotFoundError(f"Test file not found: {filename}")
-
-        return self
 
     class Config:
         protected_namespaces = ()

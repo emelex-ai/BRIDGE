@@ -2,10 +2,17 @@
 // README at: https://github.com/devcontainers/templates/tree/main/src/docker-existing-dockerfile
 {
 	"name": "Bridge Development",
+	"initializeCommand": [
+		"bash",
+		"-c",
+		"chmod +x .devcontainer/detect-platform.sh && ./.devcontainer/detect-platform.sh > .devcontainer/platform-config.json && echo 'Platform detection complete'"
+	],
 	"build": {
 		"context": "..",
-		"dockerfile": "Dockerfile-gpu.dev"
+		"dockerfile": "${localEnv:DOCKERFILE:Dockerfile.cpu.dev}"
 	},
+	"updateContentCommand": "export DOCKERFILE=$(jq -r .dockerfile .devcontainer/platform-config.json) && export PLATFORM_ARGS=$(jq -r .platformArgs .devcontainer/platform-config.json)",
+	"onCreateCommand": "echo 'Container created for platform: '$(uname -a)",
 	"customizations": {
 		"vscode": {
 			"settings": {
@@ -14,7 +21,10 @@
 				"python.testing.unittestEnabled": false,
 				"python.testing.nosetestsEnabled": false,
 				"python.testing.pytestArgs": [
-					"tests"
+					"tests",
+					"-v",
+					"-s",
+					"--no-header"
 				],
 				"python.testing.autoTestDiscoverOnSaveEnabled": true,
 				"editor.formatOnSave": true,
@@ -41,14 +51,14 @@
 				"ms-vscode.remote-repositories",
 				"vscodevim.vim",
 				"ms-python.vscode-pylance",
-				"ms-python.test-adapter-converter",
 				"LittleFoxTeam.vscode-python-test-adapter",
 				"hbenl.vscode-test-explorer"
 			]
 		}
 	},
-	"runArgs": [
-    "--gpus",
-    "all"
-]
+	"runArgs": "${localEnv:PLATFORM_ARGS}",
+	"remoteUser": "root",
+	"containerEnv": {
+		"PYTHONPATH": "${containerWorkspaceFolder}"
+	}
 }

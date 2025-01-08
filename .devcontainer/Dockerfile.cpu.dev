@@ -1,0 +1,41 @@
+# Dockerfile-cpu.dev
+#
+# Base development environment for CPU-only systems
+# This Dockerfile creates a foundation that other specialized environments can build upon.
+# It includes all necessary development tools and Python packages, configured to run
+# efficiently on CPU architectures.
+
+FROM python:3.12-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies and development tools
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    git \
+    libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry for dependency management
+RUN curl -sSL https://install.python-poetry.org | python3.12 -
+
+# Add Poetry to PATH
+ENV PATH="${PATH}:/root/.local/bin"
+
+# Configure Poetry to not create virtual environments
+RUN poetry config virtualenvs.create false
+
+# Copy dependency files
+COPY pyproject.toml poetry.lock* ./
+
+# Install dependencies
+RUN poetry install --no-root --no-interaction
+
+# Copy the rest of the application code
+COPY . .
+
+# Set Python path
+ENV PYTHONPATH="${PYTHONPATH}:/app"
