@@ -53,13 +53,9 @@ def test_embed_orth_tokens(model: Model):
     input = data["input"]
     expected_output = data["output"]
     output = model.embed_orth_tokens(input)
-<<<<<<< HEAD
-    assert torch.allclose(output, expected_output, atol=1e-5), "Output does not match expected values."
-=======
     assert torch.allclose(
         output, expected_output, atol=1e-5
     ), "Output does not match expected values."
->>>>>>> main
 
 
 def test_embed_phon_tokens(model: Model):
@@ -71,38 +67,22 @@ def test_embed_phon_tokens(model: Model):
     expected_output = data["output"]
 
     output = model.embed_phon_tokens(input)
-<<<<<<< HEAD
-    assert torch.allclose(output, expected_output, atol=1e-5), "Output does not match expected values."
-=======
     assert torch.allclose(
         output, expected_output, atol=1e-5
     ), "Output does not match expected values."
->>>>>>> main
 
 
 def test_generate_triangular_mask(model: Model):
     model.eval()
-<<<<<<< HEAD
-    with open("tests/domain/model/data/generate_triangular_mask_test_data.pkl", "rb") as f:
-=======
     with open(
         "tests/domain/model/data/generate_triangular_mask_test_data.pkl", "rb"
     ) as f:
->>>>>>> main
         data = pickle.load(f)
 
     input = data["input"]
     expected_output = data["output"]
 
     mask = model.generate_triangular_mask(input.shape[1])
-<<<<<<< HEAD
-    assert torch.allclose(mask, expected_output, atol=1e-5), "Output does not match expected values."
-
-
-def test_embed_o2p(model: Model):
-    model.eval()
-    with open("tests/domain/model/data/embed_o2p_test_data.pkl", "rb") as f:
-=======
     assert torch.allclose(
         mask, expected_output, atol=1e-5
     ), "Output does not match expected values."
@@ -111,31 +91,21 @@ def test_embed_o2p(model: Model):
 def test_embed_o(model: Model):
     model.eval()
     with open("tests/domain/model/data/embed_o_test_data.pkl", "rb") as f:
->>>>>>> main
         data = pickle.load(f)
 
     orth_enc_input = data["orth_enc_input"]
     orth_enc_pad_mask = data["orth_enc_pad_mask"]
     expected_output = data["output"]
 
-<<<<<<< HEAD
-    output = model.embed_o2p(orth_enc_input, orth_enc_pad_mask)
-    assert torch.allclose(output, expected_output, atol=1e-5), "Output does not match expected values."
-=======
     output = model.embed_o(orth_enc_input, orth_enc_pad_mask)
     assert torch.allclose(
         output, expected_output, atol=1e-5
     ), "Output does not match expected values."
->>>>>>> main
 
 
 def test_embed_p(model: Model):
     model.eval()
-<<<<<<< HEAD
-    with open("tests/domain/model/data/embed_p2o_test_data.pkl", "rb") as f:
-=======
     with open("tests/domain/model/data/embed_p_test_data.pkl", "rb") as f:
->>>>>>> main
         data = pickle.load(f)
 
     phon_enc_input = data["phon_enc_input"]
@@ -143,15 +113,6 @@ def test_embed_p(model: Model):
     expected_output = data["output"]
 
     output = model.embed_p(phon_enc_input, phon_enc_pad_mask)
-<<<<<<< HEAD
-    assert torch.allclose(output, expected_output, atol=1e-5), "Output does not match expected values."
-
-
-def test_embed_op2op(model: Model):
-    model.eval()
-
-    with open("tests/domain/model/data/embed_op2op_test_data.pkl", "rb") as f:
-=======
     assert torch.allclose(
         output, expected_output, atol=1e-5
     ), "Output does not match expected values."
@@ -161,7 +122,6 @@ def test_embed_op(model: Model):
     model.eval()
 
     with open("tests/domain/model/data/embed_op_test_data.pkl", "rb") as f:
->>>>>>> main
         data = pickle.load(f)
 
     orth_enc_input = data["orth_enc_input"]
@@ -170,17 +130,12 @@ def test_embed_op(model: Model):
     phon_enc_pad_mask = data["phon_enc_pad_mask"]
     expected_output = data["output"]
 
-<<<<<<< HEAD
-    output = model.embed_op2op(orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask)
-    assert torch.allclose(output, expected_output, atol=1e-5), "Output does not match expected values."
-=======
     output = model.embed_op(
         orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask
     )
     assert torch.allclose(
         output, expected_output, atol=1e-5
     ), "Output does not match expected values."
->>>>>>> main
 
 
 def test_forward_op2op(model: Model):
@@ -250,10 +205,6 @@ def test_forward_p2o(model: Model):
     with open("tests/domain/model/data/forward_p2o_test_data.pkl", "rb") as file:
         data = pickle.load(file)
 
-<<<<<<< HEAD
-
-=======
->>>>>>> main
     orth_dec_input = data["orth_dec_input"]
     orth_dec_pad_mask = data["orth_dec_pad_mask"]
     phon_enc_input = data["phon_enc_input"]
@@ -271,8 +222,6 @@ def test_forward_p2o(model: Model):
     assert torch.allclose(
         output["orth"], expected_orth_token_logits_output, atol=1e-5
     ), "Output does not match expected values."
-<<<<<<< HEAD
-=======
 
 
 def test_forward_p2p(model: Model, dataset_config):
@@ -334,4 +283,3 @@ def test_gpu_availability():
     # Test basic operations
     result = z.cpu().numpy()  # Move back to CPU for comparison
     assert result.shape == (2, 2)
->>>>>>> main
