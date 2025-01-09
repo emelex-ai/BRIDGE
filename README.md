@@ -12,7 +12,6 @@
 2. [Running the Code](#running-the-code)  
 3. [Configuration Files](#configuration-files)  
 4. [Development with Dev Container](#development-with-dev-container)    
-5. [SSH into Lab Machines](#how-to-ssh-into-any-of-the-labs-machines)  
 6. [Authors](#authors)
 7. [Dataset](#dataset)
 
@@ -217,21 +216,6 @@ This repository supports development using [Dev Containers](https://code.visuals
 - All dependencies are pre-installed in the container.  
 - Use VS Code’s integrated terminal to run commands (`poetry shell`, etc.).  
 ---
-
-## How to SSH into Any of the Lab's Machines
-
-To access lab machines with better hardware for simulations:
-
-1. SSH into the lab gateway:
-   ```bash
-   ssh <FSU_ID>@pamd.sc.fsu.edu
-   ```
-2. From there, SSH into specific machines:
-   ```bash
-   ssh <machine_name>
-   ```
-
-To set up VS Code SSH access, use a `.ssh/config` file with jump host settings.
 
 ## Authors
 
