@@ -1,0 +1,21 @@
+FROM python:3.12
+
+WORKDIR /app
+
+# Install Poetry
+# RUN curl -sSL https://install.python-poetry.org | python3.12 -
+
+# # # Add Poetry to PATH
+# ENV PATH="${PATH}:/root/.local/bin"
+
+# # # Copy Poetry files for dependency installation
+# COPY pyproject.toml /app/
+
+# # # Configure Poetry to use the system environment (no virtualenv)
+# RUN poetry config virtualenvs.create false
+
+# # # Install dependencies without interaction
+# RUN poetry install --no-root --no-interaction
+
+# # # Copy the rest of the application code
+# COPY . /app

@@ -402,6 +402,7 @@ class Model(nn.Module):
         phon_token_logits = self.linear_phonology_decoder(phon_output)
         orth_token_logits = orth_token_logits.transpose(1, 2)
         phon_token_logits = phon_token_logits.view(B, PC, 2, -1).transpose(1, 2)
+        # print(orth_token_logits)
         return {"orth": orth_token_logits, "phon": phon_token_logits}
 
     def ortho_sample(
