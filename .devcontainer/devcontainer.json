@@ -13,13 +13,13 @@
 	},
 	"updateContentCommand": "export DOCKERFILE=$(jq -r .dockerfile .devcontainer/platform-config.json) && export PLATFORM_ARGS=$(jq -r .platformArgs .devcontainer/platform-config.json)",
 	"onCreateCommand": "echo 'Container created for platform: '$(uname -a)",
+	"postCreateCommand": "uv sync --frozen --no-install-project",
 	"customizations": {
 		"vscode": {
 			"settings": {
-				"python.defaultInterpreterPath": "/usr/local/bin/python",
+				"python.defaultInterpreterPath": ".venv/bin/python",
 				"python.testing.pytestEnabled": true,
 				"python.testing.unittestEnabled": false,
-				"python.testing.nosetestsEnabled": false,
 				"python.testing.pytestArgs": [
 					"tests",
 					"-v",
@@ -50,9 +50,7 @@
 				"ms-vscode-remote.vscode-remote-extensionpack",
 				"ms-vscode.remote-repositories",
 				"vscodevim.vim",
-				"ms-python.vscode-pylance",
-				"LittleFoxTeam.vscode-python-test-adapter",
-				"hbenl.vscode-test-explorer"
+				"ms-python.vscode-pylance"
 			]
 		}
 	},

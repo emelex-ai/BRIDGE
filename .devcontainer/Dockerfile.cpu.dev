@@ -14,28 +14,13 @@ WORKDIR /app
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
+    jq \
     curl \
     git \
-    libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Poetry for dependency management
-RUN curl -sSL https://install.python-poetry.org | python3.12 -
-
-# Add Poetry to PATH
-ENV PATH="${PATH}:/root/.local/bin"
-
-# Configure Poetry to not create virtual environments
-RUN poetry config virtualenvs.create false
-
-# Copy dependency files
-COPY pyproject.toml poetry.lock* ./
-
-# Install dependencies
-RUN poetry install --no-root --no-interaction
+# install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Copy the rest of the application code
 COPY . .
-
-# Set Python path
-ENV PYTHONPATH="${PYTHONPATH}:/app"

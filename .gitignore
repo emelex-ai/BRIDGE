@@ -1,6 +1,7 @@
 *.pth
 *.log*
 wandb/**
+.pytest_cache
 *.cache/
 *.pyc
 .tox/**
@@ -16,5 +17,4 @@ venv/
 */.DS_Store
 *.DS_Store
 */.ipynb_checkpoints
-*.lock
 *.env

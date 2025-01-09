@@ -42,6 +42,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     software-properties-common \
     gnupg \
+    jq \
     wget && \
     add-apt-repository ppa:deadsnakes/ppa -y && \
     apt-get update && \
@@ -86,6 +87,3 @@ RUN poetry install --no-root --no-interaction --with gpu
 
 # Copy the rest of the application code
 COPY . .
-
-# Set Python path
-ENV PYTHONPATH="${PYTHONPATH}:/app"
