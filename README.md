@@ -217,12 +217,6 @@ This repository supports development using [Dev Containers](https://code.visuals
 - Use VS Code’s integrated terminal to run commands (`poetry shell`, etc.).  
 ---
 
-## Authors
-
-- Nathan Crock  
-- Gordon Erlebacher
-- Uzair Mughal
-
 ## Dataset
 <!-- TODO -->
 ---
