@@ -237,6 +237,7 @@ To set up VS Code SSH access, use a `.ssh/config` file with jump host settings.
 
 - Nathan Crock  
 - Gordon Erlebacher
+- Uzair Mughal
 
 ## Dataset
 <!-- TODO -->
