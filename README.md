@@ -279,4 +279,6 @@ The example shows:
 - 4 phonemes with 31 dimensions (`phoneme_shape`)
 - Non-zero values in sparse matrix format (`phoneme`)
 - Letter indices in `orthography` (h=8, e=5, l=12, l=12, o=15)
+
+For a detailed example on how to create an input file from a list of words, refer to `data/preprocess.py`.
 ---
