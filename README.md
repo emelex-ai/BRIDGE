@@ -6,12 +6,12 @@
 ---
 
 ## Table of Contents
-1. [Installation](#installation)  
-   - [Install Poetry](#install-poetry)  
+1. [Installation](#installation)
+   - [Install Poetry](#install-poetry)
    - [Create the Environment](#create-the-environment)
-2. [Running the Code](#running-the-code)  
-3. [Configuration Files](#configuration-files)  
-4. [Development with Dev Container](#development-with-dev-container)    
+2. [Running the Code](#running-the-code)
+3. [Configuration Files](#configuration-files)
+4. [Development with Dev Container](#development-with-dev-container)
 6. [Authors](#authors)
 7. [Dataset](#dataset)
 
@@ -213,10 +213,70 @@ This repository supports development using [Dev Containers](https://code.visuals
 
 ### Using Dev Container
 
-- All dependencies are pre-installed in the container.  
-- Use VS Code’s integrated terminal to run commands (`poetry shell`, etc.).  
+- All dependencies are pre-installed in the container.
+- Use VS Code’s integrated terminal to run commands (`poetry shell`, etc.).
 ---
 
 ## Dataset
-<!-- TODO -->
+
+The input dataset is structured as a dictionary where each word entry contains count information, phoneme representation, phoneme shape, and orthographic representation.
+
+```
+{
+    "word": {
+        "count": int,                         # Word frequency
+        "phoneme": tuple[np.array, np.array], # Sparse matrix indices (result of np.where())
+        "phoneme_shape": tuple[int, int],     # Phoneme dimensions
+        "orthography": np.array               # Letter indices
+    },
+    "word2" : {},
+    "word3" : {},
+    ...,
+}
+```
+
+The expected input file is a pickle file of the datasets dictionary.
+
+### Orthographic Representation
+The orthographic tokenizer converts letters to ascending integer values and includes special tokens:
+
+- `[BOS]`: Beginning of sentence
+- `[EOS]`: End of sentence
+- `[CLS]`: Classification
+- `[UNK]`: Unknown
+- `[PAD]`: Padding
+
+### Phonological Representation
+The phonological structure uses the ARPAbet scheme with:
+
+- 31 dimensions for phoneme characterization
+- 3 special tokens
+  - `[BOS]`: Beginning of sentence
+  - `[EOS]`: End of sentence
+  - `[PAD]`: Padding
+- Phonemes identified using CMU Pronouncing Dictionary
+- One-hot encoding vectors of total length 34
+
+Note: the phonological representations used in BRIDGE are based on the [Traindata](https://github.com/MCooperBorkenhagen/Traindata) implementation, which is *currently* limited to English.
+
+### Example
+
+For the word "hello" with frequency 25:
+
+```
+{
+    'count': 25,
+    'phoneme': (
+        array([0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3]),
+        array([ 5,  7, 14, 16, 21,  2, 10, 14, 14, 17, 19, 24, 26, 28, 29])
+    ),
+    'phoneme_shape': (4, 31),
+    'orthography': array([ 8,  5, 12, 12, 15])
+}
+```
+
+The example shows:
+- 4 phonemes with 31 dimensions (`phoneme_shape`)
+- Non-zero values in sparse matrix format (`phoneme`)
+- Letter indices in `orthography` (h=8, e=5, l=12, l=12, o=15)
 ---
