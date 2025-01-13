@@ -7,16 +7,15 @@ import os
 
 class TrainingConfig(BaseModel):
     device: Optional[str] = Field(default=device_manager.device.type)
-    num_epochs: int = Field(default=2)
-    batch_size_train: int = Field(default=32)
-    batch_size_val: int = Field(default=32)
-    train_test_split: float = Field(default=0.8)
-    max_nb_steps: Optional[int] = Field(default=None)
-    learning_rate: float = Field(default=0.001)
-    training_pathway: str = Field(default="o2p")
-    save_every: int = Field(default=1)
-    model_artifacts_dir: str = Field(default="model_artifacts")
-    weight_decay: float = Field(default=0.0)
+    num_epochs: int = Field(default=2, description="Number of epochs to train the model.")
+    batch_size_train: int = Field(default=32, description="Batch size for training.")
+    batch_size_val: int = Field(default=32, description="Batch size for validation.")
+    train_test_split: float = Field(default=0.8, description="Fraction of data to use for training.")
+    learning_rate: float = Field(default=0.001, description="Learning rate for the optimizer.")
+    training_pathway: str = Field(default="o2p", description="Training pathway: o2p, p2o, op2op, p2p.")
+    save_every: int = Field(default=1, description="Save model every n epochs.")
+    model_artifacts_dir: str = Field(default="model_artifacts", description="Directory to save model artifacts.")
+    weight_decay: float = Field(default=0.0, description="Weight decay for the optimizer.")
 
 
     @model_validator(mode="before")

@@ -5,12 +5,18 @@ import os
 
 
 class DatasetConfig(BaseModel):
-    dataset_filepath: str = Field(description="")
-    dimension_phon_repr: PositiveInt = Field(default=0, description="Length of vector of the phonological representation")
-    orthographic_vocabulary_size: Optional[int] = Field(default=None, description="Orthographic Vocabulary Size")
-    phonological_vocabulary_size: Optional[int] = Field(default=None, description="Phonological Vocabulary Size")
-    max_orth_seq_len: Optional[int] = Field(default=0, description="")
-    max_phon_seq_len: Optional[int] = Field(default=0, description="")
+    dataset_filepath: str = Field(description="Path to the primary dataset file.")
+    dimension_phon_repr: PositiveInt = Field(description="Dimensionality of the phonological representation.")
+    orthographic_vocabulary_size: Optional[PositiveInt] = Field(
+        default=None, description="Size of the orthographic vocabulary."
+    )
+    phonological_vocabulary_size: Optional[PositiveInt] = Field(
+        default=None, description="Size of the phonological vocabulary."
+    )
+    max_orth_seq_len: Optional[PositiveInt] = Field(
+        default=None, description="Maximum sequence length for orthography."
+    )
+    max_phon_seq_len: Optional[PositiveInt] = Field(default=None, description="Maximum sequence length for phonology.")
 
     @model_validator(mode="before")
     def convert_paths(cls, values):
@@ -27,10 +33,3 @@ class DatasetConfig(BaseModel):
         if not os.path.exists(self.dataset_filepath):
             raise FileNotFoundError(f"Dataset file not found: {self.dataset_filepath}")
         return self
-
-    def validate_vocab_sizes(self):
-        """Ensure vocabulary sizes are set before they are accessed."""
-        if self.orthographic_vocabulary_size is None:
-            raise ValueError("Orthographic vocabulary size must be set before using this configuration.")
-        if self.phonological_vocabulary_size is None:
-            raise ValueError("Phonological vocabulary size must be set before using this configuration.")
