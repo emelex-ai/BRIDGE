@@ -18,3 +18,5 @@ venv/
 */.ipynb_checkpoints
 *.lock
 *.env
+model_artifacts
+.devcontainer/platform-config.json
