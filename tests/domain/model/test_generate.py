@@ -2,7 +2,14 @@ import pytest
 import pickle
 import torch
 from pathlib import Path
-from src.domain.datamodels import DatasetConfig, ModelConfig
+from src.domain.datamodels import (
+    DatasetConfig,
+    ModelConfig,
+    GenerationOutput,
+    OrthographicEncoding,
+    PhonologicalEncoding,
+    BridgeEncoding,
+)
 from src.domain.model import Model
 
 
@@ -115,6 +122,7 @@ def dataset_config():
     """
     return DatasetConfig(
         dataset_filepath="data.csv",  # Placeholder path
+        dimension_phon_repr=31,
         orthographic_vocabulary_size=49,
         phonological_vocabulary_size=34,
         max_orth_seq_len=100,
@@ -158,7 +166,7 @@ def test_o2p_basic_generation(model, o2p_sample_input):
     Tests basic functionality of o2p generation pathway.
     Verifies output structure and shapes.
     """
-    output = model.generate(
+    output = model._generate(
         pathway="o2p",
         orth_enc_input=o2p_sample_input["orth_enc_input"],
         orth_enc_pad_mask=o2p_sample_input["orth_enc_pad_mask"],
@@ -216,14 +224,14 @@ def test_o2p_deterministic_consistency(model, o2p_sample_input):
     given the same input.
     """
     # Generate twice with same input
-    output1 = model.generate(
+    output1 = model._generate(
         pathway="o2p",
         orth_enc_input=o2p_sample_input["orth_enc_input"],
         orth_enc_pad_mask=o2p_sample_input["orth_enc_pad_mask"],
         deterministic=True,
     )
 
-    output2 = model.generate(
+    output2 = model._generate(
         pathway="o2p",
         orth_enc_input=o2p_sample_input["orth_enc_input"],
         orth_enc_pad_mask=o2p_sample_input["orth_enc_pad_mask"],
@@ -251,7 +259,7 @@ def test_o2p_stochastic_sampling(model, o2p_sample_input):
     num_samples = 5
     outputs = []
     for _ in range(num_samples):
-        output = model.generate(
+        output = model._generate(
             pathway="o2p",
             orth_enc_input=o2p_sample_input["orth_enc_input"],
             orth_enc_pad_mask=o2p_sample_input["orth_enc_pad_mask"],
@@ -285,7 +293,7 @@ def test_o2p_batch_consistency(model, dataset_config):
     single_mask = torch.zeros_like(single_input, dtype=torch.bool)
 
     # Generate with single sample
-    single_output = model.generate(
+    single_output = model._generate(
         pathway="o2p",
         orth_enc_input=single_input,
         orth_enc_pad_mask=single_mask,
@@ -297,7 +305,7 @@ def test_o2p_batch_consistency(model, dataset_config):
     batch_mask = single_mask.repeat(3, 1)
 
     # Generate with batch
-    batch_output = model.generate(
+    batch_output = model._generate(
         pathway="o2p",
         orth_enc_input=batch_input,
         orth_enc_pad_mask=batch_mask,
@@ -326,7 +334,7 @@ def test_o2p_input_validation(model):
     """
     # Test missing required input
     with pytest.raises(ValueError, match="Expected 2D input tensor"):
-        model.generate(
+        model._generate(
             pathway="o2p",
             orth_enc_input=torch.randn(3),  # 1D tensor
             orth_enc_pad_mask=torch.zeros(1, 5, dtype=torch.bool),
@@ -335,7 +343,7 @@ def test_o2p_input_validation(model):
 
     # Test mismatched shapes
     with pytest.raises(ValueError, match="Input and mask shapes must match"):
-        model.generate(
+        model._generate(
             pathway="o2p",
             orth_enc_input=torch.randint(0, 10, (2, 5)),
             orth_enc_pad_mask=torch.zeros(2, 6, dtype=torch.bool),
@@ -346,7 +354,7 @@ def test_o2p_input_validation(model):
     with pytest.raises(
         ValueError, match="orth_enc_pad_mask must have dtype torch.bool"
     ):
-        model.generate(
+        model._generate(
             pathway="o2p",
             orth_enc_input=torch.randint(0, 10, (2, 5)),
             orth_enc_pad_mask=torch.zeros(2, 6),  # should be torch.bool
@@ -359,7 +367,7 @@ def test_p2o_basic_generation(model, p2o_sample_input):
     Tests basic functionality of p2o generation pathway.
     Verifies output structure and shapes.
     """
-    output = model.generate(
+    output = model._generate(
         pathway="p2o",
         orth_enc_input=None,
         orth_enc_pad_mask=None,
@@ -411,7 +419,7 @@ def test_p2o_deterministic_consistency(model, p2o_sample_input):
     given the same input.
     """
     # Generate twice with same input
-    output1 = model.generate(
+    output1 = model._generate(
         pathway="p2o",
         orth_enc_input=None,
         orth_enc_pad_mask=None,
@@ -420,7 +428,7 @@ def test_p2o_deterministic_consistency(model, p2o_sample_input):
         deterministic=True,
     )
 
-    output2 = model.generate(
+    output2 = model._generate(
         pathway="p2o",
         orth_enc_input=None,
         orth_enc_pad_mask=None,
@@ -451,7 +459,7 @@ def test_p2o_stochastic_sampling(model, p2o_sample_input):
     num_samples = 5
     outputs = []
     for _ in range(num_samples):
-        output = model.generate(
+        output = model._generate(
             pathway="p2o",
             orth_enc_input=None,
             orth_enc_pad_mask=None,
@@ -485,7 +493,7 @@ def test_p2o_input_validation(model, dataset_config):
     with pytest.raises(
         ValueError, match="p2o pathway expects orthographic inputs.*to be None"
     ):
-        model.generate(
+        model._generate(
             pathway="p2o",
             orth_enc_input=torch.randn(2, 5),  # Should be None
             orth_enc_pad_mask=None,
@@ -495,7 +503,7 @@ def test_p2o_input_validation(model, dataset_config):
 
     # Test with invalid phonological input structure
     with pytest.raises(TypeError, match="phon_enc_input must be a list of lists"):
-        model.generate(
+        model._generate(
             pathway="p2o",
             orth_enc_input=None,
             orth_enc_pad_mask=None,
@@ -505,7 +513,7 @@ def test_p2o_input_validation(model, dataset_config):
 
     # Test with invalid padding mask type
     with pytest.raises(TypeError, match="phon_enc_pad_mask must be a boolean tensor"):
-        model.generate(
+        model._generate(
             pathway="p2o",
             orth_enc_input=None,
             orth_enc_pad_mask=None,
@@ -516,7 +524,7 @@ def test_p2o_input_validation(model, dataset_config):
     # Test with mismatched batch sizes
     wrong_size_mask = torch.zeros((3, 3), dtype=torch.bool)  # Wrong batch size
     with pytest.raises(ValueError, match="Batch size mismatch"):
-        model.generate(
+        model._generate(
             pathway="p2o",
             orth_enc_input=None,
             orth_enc_pad_mask=None,
@@ -534,7 +542,7 @@ def test_p2o_batch_consistency(model, dataset_config):
     single_mask = torch.zeros((1, 3), dtype=torch.bool)
 
     # Generate with single sample
-    single_output = model.generate(
+    single_output = model._generate(
         pathway="p2o",
         orth_enc_input=None,
         orth_enc_pad_mask=None,
@@ -548,7 +556,7 @@ def test_p2o_batch_consistency(model, dataset_config):
     batch_mask = torch.zeros((3, 3), dtype=torch.bool)
 
     # Generate with batch
-    batch_output = model.generate(
+    batch_output = model._generate(
         pathway="p2o",
         orth_enc_input=None,
         orth_enc_pad_mask=None,
@@ -580,7 +588,7 @@ def test_p2p_basic_generation(model, p2p_sample_input):
     3. Maintain proper feature vector structure
     4. Handle special tokens (BOS, EOS, PAD)
     """
-    output = model.generate(
+    output = model._generate(
         pathway="p2p",
         orth_enc_input=None,
         orth_enc_pad_mask=None,
@@ -634,7 +642,7 @@ def test_p2p_deterministic_consistency(model, p2p_sample_input):
     given the same input for the p2p pathway.
     """
     # Generate twice with same input
-    output1 = model.generate(
+    output1 = model._generate(
         pathway="p2p",
         orth_enc_input=None,
         orth_enc_pad_mask=None,
@@ -643,7 +651,7 @@ def test_p2p_deterministic_consistency(model, p2p_sample_input):
         deterministic=True,
     )
 
-    output2 = model.generate(
+    output2 = model._generate(
         pathway="p2p",
         orth_enc_input=None,
         orth_enc_pad_mask=None,
@@ -678,7 +686,7 @@ def test_p2p_stochastic_sampling(model, p2p_sample_input):
     num_samples = 5
     outputs = []
     for _ in range(num_samples):
-        output = model.generate(
+        output = model._generate(
             pathway="p2p",
             orth_enc_input=None,
             orth_enc_pad_mask=None,
@@ -727,7 +735,7 @@ def test_p2p_batch_consistency(model, dataset_config):
     single_mask = torch.zeros((1, 4), dtype=torch.bool)  # Mask for single sample
 
     # Generate with single sample first
-    single_output = model.generate(
+    single_output = model._generate(
         pathway="p2p",
         orth_enc_input=None,
         orth_enc_pad_mask=None,
@@ -741,7 +749,7 @@ def test_p2p_batch_consistency(model, dataset_config):
     batch_mask = torch.zeros((3, 4), dtype=torch.bool)  # Mask for batch
 
     # Generate with batched input
-    batch_output = model.generate(
+    batch_output = model._generate(
         pathway="p2p",
         orth_enc_input=None,
         orth_enc_pad_mask=None,
@@ -805,7 +813,7 @@ def test_p2p_input_validation(model, dataset_config):
     with pytest.raises(
         ValueError, match="p2p pathway expects orthographic inputs.*to be None"
     ):
-        model.generate(
+        model._generate(
             pathway="p2p",
             orth_enc_input=torch.randn(2, 5),  # Should be None
             orth_enc_pad_mask=None,
@@ -815,7 +823,7 @@ def test_p2p_input_validation(model, dataset_config):
 
     # Test with missing phonological input
     with pytest.raises(ValueError, match="p2p pathway requires phonological inputs"):
-        model.generate(
+        model._generate(
             pathway="p2p",
             orth_enc_input=None,
             orth_enc_pad_mask=None,
@@ -833,7 +841,7 @@ def test_p2p_input_validation(model, dataset_config):
     with pytest.raises(
         ValueError, match="Feature indices must be less than vocabulary size"
     ):
-        model.generate(
+        model._generate(
             pathway="p2p",
             orth_enc_input=None,
             orth_enc_pad_mask=None,
@@ -868,7 +876,7 @@ def test_o2o_basic_generation(model, dataset_config):
     orth_enc_pad_mask = torch.zeros_like(orth_enc_input, dtype=torch.bool)
 
     # Generate sequences
-    output = model.generate(
+    output = model._generate(
         pathway="o2o",
         orth_enc_input=orth_enc_input,
         orth_enc_pad_mask=orth_enc_pad_mask,
@@ -928,7 +936,7 @@ def test_o2o_deterministic_consistency(model, dataset_config):
     orth_enc_pad_mask = torch.zeros_like(orth_enc_input, dtype=torch.bool)
 
     # Generate twice with same input
-    output1 = model.generate(
+    output1 = model._generate(
         pathway="o2o",
         orth_enc_input=orth_enc_input,
         orth_enc_pad_mask=orth_enc_pad_mask,
@@ -937,7 +945,7 @@ def test_o2o_deterministic_consistency(model, dataset_config):
         deterministic=True,
     )
 
-    output2 = model.generate(
+    output2 = model._generate(
         pathway="o2o",
         orth_enc_input=orth_enc_input,
         orth_enc_pad_mask=orth_enc_pad_mask,
@@ -963,7 +971,7 @@ def test_o2o_input_validation(model):
     """
     # Test with missing orthographic input
     with pytest.raises(ValueError, match="o2o pathway requires orthographic inputs"):
-        model.generate(
+        model._generate(
             pathway="o2o",
             orth_enc_input=None,
             orth_enc_pad_mask=None,
@@ -975,7 +983,7 @@ def test_o2o_input_validation(model):
     with pytest.raises(
         ValueError, match="o2o pathway expects phonological inputs.*to be None"
     ):
-        model.generate(
+        model._generate(
             pathway="o2o",
             orth_enc_input=torch.randint(0, 10, (2, 5)),
             orth_enc_pad_mask=torch.zeros((2, 5), dtype=torch.bool),
@@ -990,7 +998,7 @@ def test_o2o_input_validation(model):
     with pytest.raises(
         ValueError, match="Input tokens must be less than vocabulary size"
     ):
-        model.generate(
+        model._generate(
             pathway="o2o",
             orth_enc_input=invalid_input,
             orth_enc_pad_mask=torch.zeros_like(invalid_input, dtype=torch.bool),
@@ -1018,7 +1026,7 @@ def test_o2o_batch_consistency(model, dataset_config):
     single_mask = torch.zeros_like(single_input, dtype=torch.bool)
 
     # Generate with single sample first
-    single_output = model.generate(
+    single_output = model._generate(
         pathway="o2o",
         orth_enc_input=single_input,
         orth_enc_pad_mask=single_mask,
@@ -1032,7 +1040,7 @@ def test_o2o_batch_consistency(model, dataset_config):
     batch_mask = single_mask.repeat(3, 1)
 
     # Generate with batched input
-    batch_output = model.generate(
+    batch_output = model._generate(
         pathway="o2o",
         orth_enc_input=batch_input,
         orth_enc_pad_mask=batch_mask,
@@ -1091,7 +1099,7 @@ def test_o2o_stochastic_sampling(model, dataset_config):
     num_samples = 5
     outputs = []
     for _ in range(num_samples):
-        output = model.generate(
+        output = model._generate(
             pathway="o2o",
             orth_enc_input=orth_enc_input,
             orth_enc_pad_mask=orth_enc_pad_mask,
@@ -1174,7 +1182,7 @@ def test_op2op_input_validation(model, dataset_config):
 
     # Test missing orthographic input
     with pytest.raises(ValueError, match="op2op pathway requires orthographic inputs"):
-        model.generate(
+        model._generate(
             pathway="op2op",
             orth_enc_input=None,
             orth_enc_pad_mask=valid_orth_mask,
@@ -1184,7 +1192,7 @@ def test_op2op_input_validation(model, dataset_config):
 
     # Test missing phonological input
     with pytest.raises(ValueError, match="op2op pathway requires phonological inputs"):
-        model.generate(
+        model._generate(
             pathway="op2op",
             orth_enc_input=valid_orth_input,
             orth_enc_pad_mask=valid_orth_mask,
@@ -1194,7 +1202,7 @@ def test_op2op_input_validation(model, dataset_config):
 
     # Test invalid orthographic input type
     with pytest.raises(TypeError, match="orth_enc_input must be a torch.Tensor"):
-        model.generate(
+        model._generate(
             pathway="op2op",
             orth_enc_input=[1, 2, 3],  # Wrong type
             orth_enc_pad_mask=valid_orth_mask,
@@ -1206,7 +1214,7 @@ def test_op2op_input_validation(model, dataset_config):
     with pytest.raises(
         ValueError, match="orth_enc_pad_mask must have dtype torch.bool"
     ):
-        model.generate(
+        model._generate(
             pathway="op2op",
             orth_enc_input=valid_orth_input,
             orth_enc_pad_mask=torch.zeros_like(
@@ -1229,7 +1237,7 @@ def test_op2op_input_validation(model, dataset_config):
     with pytest.raises(
         ValueError, match="Orthographic input sequence length .* exceeds maximum"
     ):
-        model.generate(
+        model._generate(
             pathway="op2op",
             orth_enc_input=long_orth_input,
             orth_enc_pad_mask=long_orth_mask,
@@ -1248,7 +1256,7 @@ def test_op2op_input_validation(model, dataset_config):
     mismatched_orth_mask = torch.zeros_like(mismatched_orth_input, dtype=torch.bool)
 
     with pytest.raises(ValueError, match="Batch size mismatch"):
-        model.generate(
+        model._generate(
             pathway="op2op",
             orth_enc_input=mismatched_orth_input,
             orth_enc_pad_mask=mismatched_orth_mask,
@@ -1271,7 +1279,7 @@ def test_op2op_input_validation(model, dataset_config):
     with pytest.raises(
         ValueError, match="Feature indices must be less than vocabulary size"
     ):
-        model.generate(
+        model._generate(
             pathway="op2op",
             orth_enc_input=valid_orth_input,
             orth_enc_pad_mask=valid_orth_mask,
@@ -1290,7 +1298,7 @@ def test_op2op_input_validation(model, dataset_config):
     with pytest.raises(
         ValueError, match="Orthographic tokens must be less than vocabulary size"
     ):
-        model.generate(
+        model._generate(
             pathway="op2op",
             orth_enc_input=invalid_orth_input,
             orth_enc_pad_mask=valid_orth_mask,
@@ -1338,7 +1346,7 @@ def test_op2op_basic_generation(model, dataset_config):
     phon_enc_pad_mask = torch.zeros((batch_size, phon_seq_len), dtype=torch.bool)
 
     # Generate sequences
-    output = model.generate(
+    output = model._generate(
         pathway="op2op",
         orth_enc_input=orth_enc_input,
         orth_enc_pad_mask=orth_enc_pad_mask,
@@ -1414,7 +1422,7 @@ def test_op2op_deterministic_consistency(model, dataset_config):
     phon_enc_pad_mask = torch.zeros((batch_size, 3), dtype=torch.bool)
 
     # Generate twice with same input
-    output1 = model.generate(
+    output1 = model._generate(
         pathway="op2op",
         orth_enc_input=orth_enc_input,
         orth_enc_pad_mask=orth_enc_pad_mask,
@@ -1423,7 +1431,7 @@ def test_op2op_deterministic_consistency(model, dataset_config):
         deterministic=True,
     )
 
-    output2 = model.generate(
+    output2 = model._generate(
         pathway="op2op",
         orth_enc_input=orth_enc_input,
         orth_enc_pad_mask=orth_enc_pad_mask,
@@ -1476,7 +1484,7 @@ def test_op2op_stochastic_sampling(model, dataset_config):
     num_samples = 5
     outputs = []
     for _ in range(num_samples):
-        output = model.generate(
+        output = model._generate(
             pathway="op2op",
             orth_enc_input=orth_enc_input,
             orth_enc_pad_mask=orth_enc_pad_mask,
@@ -1535,7 +1543,7 @@ def test_op2op_batch_consistency(model, dataset_config):
     single_phon_mask = torch.zeros((1, 3), dtype=torch.bool)
 
     # Generate with single sample
-    single_output = model.generate(
+    single_output = model._generate(
         pathway="op2op",
         orth_enc_input=single_orth_input,
         orth_enc_pad_mask=single_orth_mask,
@@ -1551,7 +1559,7 @@ def test_op2op_batch_consistency(model, dataset_config):
     batch_phon_mask = single_phon_mask.repeat(3, 1)
 
     # Generate with batch
-    batch_output = model.generate(
+    batch_output = model._generate(
         pathway="op2op",
         orth_enc_input=batch_orth_input,
         orth_enc_pad_mask=batch_orth_mask,
@@ -1588,3 +1596,209 @@ def test_op2op_batch_consistency(model, dataset_config):
         assert torch.equal(
             t1, t2
         ), "Single sample phonological output differs from batch processing"
+
+
+def test_generate_wrapper_basic_functionality(model, dataset_config):
+    """
+    Tests that the generate wrapper correctly processes a simple orthographic to
+    phonological (o2p) generation case with valid inputs.
+    """
+    # Create a simple BridgeEncoding with valid data
+    orth_encoding = OrthographicEncoding(
+        enc_input_ids=torch.tensor(
+            [[0, 5, 8, 1]], device=model.device
+        ),  # Simple sequence with BOS(0) and EOS(1)
+        enc_pad_mask=torch.zeros((1, 4), dtype=torch.bool, device=model.device),
+        dec_input_ids=torch.tensor([[0, 5, 8]], device=model.device),
+        dec_pad_mask=torch.zeros((1, 3), dtype=torch.bool, device=model.device),
+    )
+
+    phon_encoding = PhonologicalEncoding(
+        enc_input_ids=[
+            [
+                torch.tensor([31], device=model.device),  # BOS
+                torch.tensor([1, 6], device=model.device),
+                torch.tensor([32], device=model.device),  # EOS
+            ]
+        ],
+        enc_pad_mask=torch.zeros((1, 3), dtype=torch.bool, device=model.device),
+        dec_input_ids=[
+            [
+                torch.tensor([31], device=model.device),
+                torch.tensor([1, 6], device=model.device),
+            ]
+        ],
+        dec_pad_mask=torch.zeros((1, 2), dtype=torch.bool, device=model.device),
+        targets=torch.zeros(
+            (1, 2, dataset_config.phonological_vocabulary_size - 1), device=model.device
+        ),
+    )
+
+    encodings = BridgeEncoding(orthographic=orth_encoding, phonological=phon_encoding)
+
+    output = model.generate(encodings, pathway="o2p")
+
+    # Validate output structure matches GenerationOutput model
+    assert isinstance(output, GenerationOutput)
+    assert isinstance(output.global_encoding, torch.Tensor)
+    assert output.phon_tokens is not None
+    assert output.orth_tokens is None  # Should be None for o2p pathway
+
+    # Validate tensor dimensions
+    assert output.global_encoding.size(0) == 1  # Batch size
+    assert output.global_encoding.size(1) == model.model_config.d_embedding
+    assert output.global_encoding.size(2) == model.model_config.d_model
+
+
+def test_generate_wrapper_pathway_routing(model, dataset_config):
+    """
+    Tests that the generate wrapper correctly routes different pathways
+    to produce appropriate outputs.
+    """
+    # Create minimal valid encodings
+    orth_enc = OrthographicEncoding(
+        enc_input_ids=torch.tensor([[0, 1]], device=model.device),
+        enc_pad_mask=torch.zeros((1, 2), dtype=torch.bool, device=model.device),
+        dec_input_ids=torch.tensor([[0]], device=model.device),
+        dec_pad_mask=torch.zeros((1, 1), dtype=torch.bool, device=model.device),
+    )
+
+    phon_enc = PhonologicalEncoding(
+        enc_input_ids=[
+            [
+                torch.tensor([31], device=model.device),
+                torch.tensor([32], device=model.device),
+            ]
+        ],
+        enc_pad_mask=torch.zeros((1, 2), dtype=torch.bool, device=model.device),
+        dec_input_ids=[[torch.tensor([31], device=model.device)]],
+        dec_pad_mask=torch.zeros((1, 1), dtype=torch.bool, device=model.device),
+        targets=torch.zeros(
+            (1, 1, dataset_config.phonological_vocabulary_size - 1), device=model.device
+        ),
+    )
+
+    encodings = BridgeEncoding(orthographic=orth_enc, phonological=phon_enc)
+
+    # Test each pathway produces expected output structure
+    pathways_and_expectations = [
+        ("o2p", {"phon": True, "orth": False}),
+        ("p2o", {"phon": False, "orth": True}),
+        ("op2op", {"phon": True, "orth": True}),
+        ("p2p", {"phon": True, "orth": False}),
+        ("o2o", {"phon": False, "orth": True}),
+    ]
+
+    for pathway, expects in pathways_and_expectations:
+        output = model.generate(encodings, pathway=pathway)
+
+        # Validate correct modality presence
+        has_phon = output.phon_tokens is not None
+        has_orth = output.orth_tokens is not None
+
+        assert (
+            has_phon == expects["phon"]
+        ), f"Pathway {pathway}: Expected phon_tokens {'present' if expects['phon'] else 'absent'}"
+        assert (
+            has_orth == expects["orth"]
+        ), f"Pathway {pathway}: Expected orth_tokens {'present' if expects['orth'] else 'absent'}"
+
+
+def test_generate_wrapper_deterministic_consistency(model, dataset_config):
+    """
+    Tests that the generate wrapper maintains deterministic behavior
+    when the deterministic flag is set.
+    """
+    # Create test encodings
+    orth_enc = OrthographicEncoding(
+        enc_input_ids=torch.tensor([[0, 5, 8, 1]], device=model.device),
+        enc_pad_mask=torch.zeros((1, 4), dtype=torch.bool, device=model.device),
+        dec_input_ids=torch.tensor([[0, 5, 8]], device=model.device),
+        dec_pad_mask=torch.zeros((1, 3), dtype=torch.bool, device=model.device),
+    )
+
+    phon_enc = PhonologicalEncoding(
+        enc_input_ids=[
+            [
+                torch.tensor([31], device=model.device),
+                torch.tensor([1, 6], device=model.device),
+                torch.tensor([32], device=model.device),
+            ]
+        ],
+        enc_pad_mask=torch.zeros((1, 3), dtype=torch.bool, device=model.device),
+        dec_input_ids=[
+            [
+                torch.tensor([31], device=model.device),
+                torch.tensor([1, 6], device=model.device),
+            ]
+        ],
+        dec_pad_mask=torch.zeros((1, 2), dtype=torch.bool, device=model.device),
+        targets=torch.zeros(
+            (1, 2, dataset_config.phonological_vocabulary_size - 1), device=model.device
+        ),
+    )
+
+    encodings = BridgeEncoding(orthographic=orth_enc, phonological=phon_enc)
+
+    # Generate twice with deterministic=True
+    output1 = model.generate(encodings, pathway="op2op", deterministic=True)
+    output2 = model.generate(encodings, pathway="op2op", deterministic=True)
+
+    # Outputs should be identical
+    assert torch.equal(output1.global_encoding, output2.global_encoding)
+
+    if output1.orth_tokens is not None:
+        assert torch.equal(output1.orth_tokens, output2.orth_tokens)
+
+    if output1.phon_tokens is not None:
+        for b in range(len(output1.phon_tokens)):
+            for t1, t2 in zip(output1.phon_tokens[b], output2.phon_tokens[b]):
+                assert torch.equal(t1, t2)
+
+
+def test_generate_wrapper_error_handling(model, dataset_config):
+    """
+    Tests that the generate wrapper properly handles invalid inputs
+    and provides meaningful error messages.
+    """
+    # Test with invalid pathway
+    orth_enc = OrthographicEncoding(
+        enc_input_ids=torch.tensor([[0, 1]], device=model.device),
+        enc_pad_mask=torch.zeros((1, 2), dtype=torch.bool, device=model.device),
+        dec_input_ids=torch.tensor([[0]], device=model.device),
+        dec_pad_mask=torch.zeros((1, 1), dtype=torch.bool, device=model.device),
+    )
+
+    phon_enc = PhonologicalEncoding(
+        enc_input_ids=[
+            [
+                torch.tensor([31], device=model.device),
+                torch.tensor([32], device=model.device),
+            ]
+        ],
+        enc_pad_mask=torch.zeros((1, 2), dtype=torch.bool, device=model.device),
+        dec_input_ids=[[torch.tensor([31], device=model.device)]],
+        dec_pad_mask=torch.zeros((1, 1), dtype=torch.bool, device=model.device),
+        targets=torch.zeros(
+            (1, 1, dataset_config.phonological_vocabulary_size - 1), device=model.device
+        ),
+    )
+
+    encodings = BridgeEncoding(orthographic=orth_enc, phonological=phon_enc)
+
+    with pytest.raises(ValueError, match="Invalid pathway"):
+        model.generate(encodings, pathway="invalid_pathway")
+
+    # Test with mismatched batch sizes
+    bad_orth_enc = OrthographicEncoding(
+        enc_input_ids=torch.tensor(
+            [[0, 1], [0, 1]], device=model.device
+        ),  # Batch size 2
+        enc_pad_mask=torch.zeros((2, 2), dtype=torch.bool, device=model.device),
+        dec_input_ids=torch.tensor([[0], [0]], device=model.device),
+        dec_pad_mask=torch.zeros((2, 1), dtype=torch.bool, device=model.device),
+    )
+
+    with pytest.raises(ValueError, match="Batch size mismatch"):
+        bad_encodings = BridgeEncoding(orthographic=bad_orth_enc, phonological=phon_enc)
+        model.generate(bad_encodings)

@@ -14,6 +14,7 @@ from torch.profiler import profile, record_function, ProfilerActivity
 import wandb
 from traindata import utilities
 
+
 class TrainingPipeline:
     def __init__(
         self, model: Model, training_config: TrainingConfig, dataset: BridgeDataset
@@ -36,8 +37,6 @@ class TrainingPipeline:
         self.start_epoch = 0
         if training_config.checkpoint_path:
             self.load_model(training_config.checkpoint_path)
-        
-
 
     def create_data_slices(self):
         cutpoint = int(len(self.dataset) * self.training_config.train_test_split)
@@ -236,16 +235,17 @@ class TrainingPipeline:
             )
             torch.save(
                 {
+                    "model_config": self.model.model_config,
+                    "dataset_config": self.model.dataset_config,
                     "model_state_dict": self.model.state_dict(),
                     "optimizer_state_dict": self.optimizer.state_dict(),
                     "epoch": epoch,
                 },
                 model_path,
             )
-    
+
     def load_model(self, model_path: str):
         checkpoint = torch.load(model_path)
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.start_epoch = checkpoint["epoch"]
-

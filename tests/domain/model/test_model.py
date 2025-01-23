@@ -15,6 +15,7 @@ def dataset_config():
     """Fixture for mock DatasetConfig."""
     return DatasetConfig(
         dataset_filepath="data.csv",
+        dimension_phon_repr=31,
         orthographic_vocabulary_size=49,
         phonological_vocabulary_size=34,
         max_orth_seq_len=100,

@@ -2,7 +2,7 @@ from src.domain.datamodels import DatasetConfig, ModelConfig
 from src.domain.model.encoder import Encoder
 from src.domain.model.decoder import Decoder
 from src.utils.helper_funtions import set_seed
-from src.domain.model.datamodels import GenerationOutput
+from src.domain.datamodels import BridgeEncoding, GenerationOutput
 from typing import Any, Literal
 import torch.nn as nn
 import torch
@@ -13,12 +13,12 @@ class Model(nn.Module):
         self,
         model_config: ModelConfig,
         dataset_config: DatasetConfig,
-        device: str,
+        device: str | None = None,
     ) -> None:
         super().__init__()
         self.model_config = model_config
         self.dataset_config = dataset_config
-        self.device = torch.device(device)
+        self.device = torch.device(device) if device else "cpu"
 
         if self.model_config.seed:
             set_seed(seed=self.model_config.seed)
@@ -653,7 +653,7 @@ class Model(nn.Module):
             "phon_tokens": generated_phon_tokens,
         }
 
-    def generate(
+    def _generate(
         self,
         pathway: Literal["o2p", "p2o", "op2op", "p2p", "o2o"],
         orth_enc_input: torch.Tensor | None = None,
@@ -661,7 +661,7 @@ class Model(nn.Module):
         phon_enc_input: list[list[torch.Tensor]] | None = None,
         phon_enc_pad_mask: torch.Tensor | None = None,
         deterministic: bool = False,
-    ) -> GenerationOutput:
+    ) -> dict[str, Any]:
         """
         Generates either orthographic tokens or phonological features (or both),
         depending on the chosen pathway.
@@ -869,6 +869,76 @@ class Model(nn.Module):
 
             return output
 
+    def generate(
+        self,
+        encodings: BridgeEncoding,
+        pathway: Literal["o2p", "p2o", "op2op", "p2p", "o2o"],
+        deterministic: bool = False,
+    ) -> GenerationOutput:
+        """
+        High-level generation interface that works with unified encoding objects.
+
+        This method provides a simplified interface to the model's generation capabilities,
+        automatically extracting the appropriate tensors from the encoding object based
+        on the selected pathway. It handles all the complexity of routing the correct
+        inputs to the underlying generation mechanism.
+
+        Args:
+            encodings: A BridgeEncoding object containing both orthographic and
+                    phonological representations.
+            pathway: The generation pathway to use. Defaults to "o2p" (orthographic
+                    to phonological).
+            deterministic: Whether to use deterministic (greedy) or stochastic sampling.
+                        Defaults to False (stochastic).
+
+        Returns:
+            A GenerationOutput object containing the generated sequences and associated
+            probability distributions.
+
+        Raises:
+            ValueError: If the selected pathway is incompatible with the provided encodings
+                    or if any required encoding components are missing.
+        """
+        # Extract appropriate tensors based on pathway
+        if pathway in ["o2p", "o2o", "op2op"]:
+            if encodings.orthographic is None:
+                raise ValueError(f"Pathway {pathway} requires orthographic encodings")
+            orth_enc_input = encodings.orthographic.enc_input_ids
+            orth_enc_pad_mask = encodings.orthographic.enc_pad_mask
+        else:
+            orth_enc_input = None
+            orth_enc_pad_mask = None
+
+        if pathway in ["p2o", "p2p", "op2op"]:
+            if encodings.phonological is None:
+                raise ValueError(f"Pathway {pathway} requires phonological encodings")
+            phon_enc_input = encodings.phonological.enc_input_ids
+            phon_enc_pad_mask = encodings.phonological.enc_pad_mask
+        else:
+            phon_enc_input = None
+            phon_enc_pad_mask = None
+
+        # Call the underlying generate function
+        generation_results = self._generate(
+            pathway=pathway,
+            orth_enc_input=orth_enc_input,
+            orth_enc_pad_mask=orth_enc_pad_mask,
+            phon_enc_input=phon_enc_input,
+            phon_enc_pad_mask=phon_enc_pad_mask,
+            deterministic=deterministic,
+        )
+
+        # Package the results into our validated GenerationOutput model
+        # The model's validators will ensure everything is consistent
+        return GenerationOutput(
+            global_encoding=generation_results["global_encoding"],
+            orth_probs=generation_results.get("orth_probs"),
+            orth_tokens=generation_results.get("orth_tokens"),
+            phon_probs=generation_results.get("phon_probs"),
+            phon_vecs=generation_results.get("phon_vecs"),
+            phon_tokens=generation_results.get("phon_tokens"),
+        )
+
     def _validate_generate_input(
         self,
         pathway: str,
@@ -886,6 +956,8 @@ class Model(nn.Module):
         3. Dimensions and shapes are consistent
         4. Device placement is correct
         """
+        if pathway not in ["o2p", "p2o", "op2op", "p2p", "o2o"]:
+            raise ValueError(f"Invalid pathway: {pathway}")
 
         # Add sequence length validation for phonological input
         if phon_enc_input is not None:
