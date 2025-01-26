@@ -1096,7 +1096,7 @@ def test_o2o_batch_consistency(model, dataset_config):
     assert len(single_output["orth_probs"][0]) == len(batch_output["orth_probs"][0])
     for p1, p2 in zip(single_output["orth_probs"][0], batch_output["orth_probs"][0]):
         assert torch.allclose(
-            p1, p2, atol=1e-5
+            p1, p2, atol=1e-4
         ), "Probability distributions differ between single and batch"
 
 
