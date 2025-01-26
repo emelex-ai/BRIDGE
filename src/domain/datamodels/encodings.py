@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, ItemsView
 from pydantic import BaseModel, Field, model_validator
 import torch
 
@@ -141,6 +141,60 @@ class BridgeEncoding(BaseModel):
     orthographic: OrthographicEncoding
     phonological: PhonologicalEncoding
 
+    class Config:
+        arbitrary_types_allowed = True
+
+    def __getitem__(self, idx) -> tuple[dict, dict]:
+        """Access corresponding items from both encodings at the given index.
+
+        Args:
+            idx: Integer index into the batch
+
+        Returns:
+            A tuple of (orthographic_item, phonological_item) where each item
+            is a dictionary containing the relevant tensors/features for that modality
+        """
+        # Extract orthographic components
+        orth_item = {
+            "enc_input_ids": self.orthographic.enc_input_ids[idx],
+            "enc_pad_mask": self.orthographic.enc_pad_mask[idx],
+            "dec_input_ids": self.orthographic.dec_input_ids[idx],
+            "dec_pad_mask": self.orthographic.dec_pad_mask[idx],
+        }
+
+        # Extract phonological components
+        phon_item = {
+            "enc_input_ids": self.phonological.enc_input_ids[idx],
+            "enc_pad_mask": self.phonological.enc_pad_mask[idx],
+            "dec_input_ids": self.phonological.dec_input_ids[idx],
+            "dec_pad_mask": self.phonological.dec_pad_mask[idx],
+            "targets": self.phonological.targets[idx],
+        }
+
+        return orth_item, phon_item
+
+    def items(self) -> ItemsView[str, dict[str, torch.Tensor]]:
+        """
+        Implements dictionary-like items() method, returning an items view of the data.
+        This allows the BridgeEncoding to be used anywhere a dictionary is expected.
+        """
+        data_dict = {
+            "orthographic": {
+                "enc_input_ids": self.orthographic.enc_input_ids,
+                "enc_pad_mask": self.orthographic.enc_pad_mask,
+                "dec_input_ids": self.orthographic.dec_input_ids,
+                "dec_pad_mask": self.orthographic.dec_pad_mask,
+            },
+            "phonological": {
+                "enc_input_ids": self.phonological.enc_input_ids,
+                "enc_pad_mask": self.phonological.enc_pad_mask,
+                "dec_input_ids": self.phonological.dec_input_ids,
+                "dec_pad_mask": self.phonological.dec_pad_mask,
+                "targets": self.phonological.targets,
+            },
+        }
+        return data_dict.items()
+
     @model_validator(mode="after")
     def validate_consistency(self) -> "BridgeEncoding":
         # Validate batch sizes match between orthographic and phonological
@@ -166,6 +220,3 @@ class BridgeEncoding(BaseModel):
             )
 
         return self
-
-    class Config:
-        arbitrary_types_allowed = True

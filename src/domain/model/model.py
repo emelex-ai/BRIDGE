@@ -18,7 +18,7 @@ class Model(nn.Module):
         super().__init__()
         self.model_config = model_config
         self.dataset_config = dataset_config
-        self.device = torch.device(device) if device else "cpu"
+        self.device = torch.device(device) if device else torch.device("cpu")
 
         if self.model_config.seed:
             set_seed(seed=self.model_config.seed)
@@ -1176,7 +1176,7 @@ class Model(nn.Module):
                 )
 
             # Validate feature indices are within vocabulary bounds
-            max_feature_idx = self.dataset_config.phonological_vocabulary_size - 1
+            max_feature_idx = self.dataset_config.phonological_vocabulary_size
             if any(
                 torch.any(features >= max_feature_idx)
                 for batch_item in phon_enc_input
