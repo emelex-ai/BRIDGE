@@ -99,11 +99,6 @@ def test_embed_o(model: Model):
     expected_output = data["output"]
 
     output = model.embed_o(orth_enc_input, orth_enc_pad_mask)
-
-    torch.set_printoptions(precision=15)
-    print(output[0][0][:5])
-    print(expected_output[0][0][:5])
-
     assert torch.allclose(
         output, expected_output, atol=1e-2
     ), "Output does not match expected values."
