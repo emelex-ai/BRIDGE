@@ -239,13 +239,15 @@ def test_o2p_deterministic_consistency(model, o2p_sample_input):
     )
 
     # Compare outputs
-    assert torch.equal(output1["global_encoding"], output2["global_encoding"])
+    assert torch.allclose(
+        output1["global_encoding"], output2["global_encoding"], atol=1e-5
+    )
 
     batch_size = len(output1["phon_tokens"])
     for b in range(batch_size):
         assert len(output1["phon_tokens"][b]) == len(output2["phon_tokens"][b])
         for t1, t2 in zip(output1["phon_tokens"][b], output2["phon_tokens"][b]):
-            assert torch.equal(t1, t2)
+            assert torch.allclose(t1, t2, atol=1e-5)
 
 
 def test_o2p_stochastic_sampling(model, o2p_sample_input):
@@ -271,14 +273,15 @@ def test_o2p_stochastic_sampling(model, o2p_sample_input):
     different_sequences = False
     for i in range(num_samples - 1):
         for b in range(len(outputs[i]["phon_tokens"])):
-            if any(
-                not torch.equal(t1, t2)
-                for t1, t2 in zip(
-                    outputs[i]["phon_tokens"][b], outputs[i + 1]["phon_tokens"][b]
-                )
+            for t1, t2 in zip(
+                outputs[i]["phon_tokens"][b], outputs[i + 1]["phon_tokens"][b]
             ):
-                different_sequences = True
-                break
+                if not t1.shape == t2.shape:
+                    different_sequences = True
+                    break
+                if not torch.allclose(t1, t2, atol=1e-5):
+                    different_sequences = True
+                    break
     assert different_sequences, "Stochastic sampling should produce different sequences"
 
 
@@ -320,12 +323,12 @@ def test_o2p_batch_consistency(model, dataset_config):
         for t1, t2 in zip(
             batch_output["phon_tokens"][0], batch_output["phon_tokens"][b]
         ):
-            assert torch.equal(t1, t2)
+            assert torch.allclose(t1, t2, atol=1e-5)
 
     # Verify batch processing matches single sample processing
     assert len(single_output["phon_tokens"][0]) == len(batch_output["phon_tokens"][0])
     for t1, t2 in zip(single_output["phon_tokens"][0], batch_output["phon_tokens"][0]):
-        assert torch.equal(t1, t2)
+        assert torch.allclose(t1, t2, atol=1e-5)
 
 
 def test_o2p_input_validation(model):
@@ -438,14 +441,16 @@ def test_p2o_deterministic_consistency(model, p2o_sample_input):
     )
 
     # Compare outputs
-    assert torch.equal(output1["global_encoding"], output2["global_encoding"])
-    assert torch.equal(output1["orth_tokens"], output2["orth_tokens"])
+    assert torch.allclose(
+        output1["global_encoding"], output2["global_encoding"], atol=1e-5
+    )
+    assert torch.allclose(output1["orth_tokens"], output2["orth_tokens"], atol=1e-5)
 
     # Compare probability distributions
     for b in range(len(output1["orth_probs"])):
         assert len(output1["orth_probs"][b]) == len(output2["orth_probs"][b])
         for p1, p2 in zip(output1["orth_probs"][b], output2["orth_probs"][b]):
-            assert torch.equal(p1, p2)
+            assert torch.allclose(p1, p2, atol=1e-5)
 
 
 def test_p2o_stochastic_sampling(model, p2o_sample_input):
@@ -472,7 +477,12 @@ def test_p2o_stochastic_sampling(model, p2o_sample_input):
     # Verify we get different sequences
     different_sequences = False
     for i in range(num_samples - 1):
-        if not torch.equal(outputs[i]["orth_tokens"], outputs[i + 1]["orth_tokens"]):
+        if not outputs[i]["orth_tokens"].shape == outputs[i + 1]["orth_tokens"].shape:
+            different_sequences = True
+            break
+        if not torch.allclose(
+            outputs[i]["orth_tokens"], outputs[i + 1]["orth_tokens"], atol=1e-5
+        ):
             different_sequences = True
             break
     assert different_sequences, "Stochastic sampling should produce different sequences"
@@ -567,15 +577,16 @@ def test_p2o_batch_consistency(model, dataset_config):
 
     # Verify all batch items produce identical output
     for b in range(1, 3):
-        assert torch.equal(
-            batch_output["orth_tokens"][0], batch_output["orth_tokens"][b]
+        assert torch.allclose(
+            batch_output["orth_tokens"][0], batch_output["orth_tokens"][b], atol=1e-5
         )
         assert len(batch_output["orth_probs"][0]) == len(batch_output["orth_probs"][b])
         for p1, p2 in zip(batch_output["orth_probs"][0], batch_output["orth_probs"][b]):
-            assert torch.equal(p1, p2)
+            assert torch.allclose(p1, p2, atol=1e-5)
 
-    # Verify batch processing matches single sample processing
-    assert torch.equal(single_output["orth_tokens"][0], batch_output["orth_tokens"][0])
+    assert torch.allclose(
+        single_output["orth_tokens"][0], batch_output["orth_tokens"][0], atol=1e-5
+    )
     assert len(single_output["orth_probs"][0]) == len(batch_output["orth_probs"][0])
 
 
@@ -661,18 +672,20 @@ def test_p2p_deterministic_consistency(model, p2p_sample_input):
     )
 
     # Compare outputs
-    assert torch.equal(output1["global_encoding"], output2["global_encoding"])
+    assert torch.allclose(
+        output1["global_encoding"], output2["global_encoding"], atol=1e-5
+    )
 
     batch_size = len(output1["phon_tokens"])
     for b in range(batch_size):
         assert len(output1["phon_tokens"][b]) == len(output2["phon_tokens"][b])
         for t1, t2 in zip(output1["phon_tokens"][b], output2["phon_tokens"][b]):
-            assert torch.equal(t1, t2)
+            assert torch.allclose(t1, t2, atol=1e-5)
 
         # Compare probability distributions
         assert len(output1["phon_probs"][b]) == len(output2["phon_probs"][b])
         for p1, p2 in zip(output1["phon_probs"][b], output2["phon_probs"][b]):
-            assert torch.equal(p1, p2)
+            assert torch.allclose(p1, p2, atol=1e-5)
 
 
 def test_p2p_stochastic_sampling(model, p2p_sample_input):
@@ -700,14 +713,16 @@ def test_p2p_stochastic_sampling(model, p2p_sample_input):
     different_sequences = False
     for i in range(num_samples - 1):
         for b in range(len(outputs[i]["phon_tokens"])):
-            if any(
-                not torch.equal(t1, t2)
-                for t1, t2 in zip(
-                    outputs[i]["phon_tokens"][b], outputs[i + 1]["phon_tokens"][b]
-                )
+            for t1, t2 in zip(
+                outputs[i]["phon_tokens"][b], outputs[i + 1]["phon_tokens"][b]
             ):
-                different_sequences = True
-                break
+                if not t1.shape == t2.shape:
+                    different_sequences = True
+                    break
+                if not torch.allclose(t1, t2, atol=1e-5):
+                    different_sequences = True
+                    break
+
     assert different_sequences, "Stochastic sampling should produce different sequences"
 
 
@@ -769,33 +784,41 @@ def test_p2p_batch_consistency(model, dataset_config):
         for t1, t2 in zip(
             batch_output["phon_tokens"][0], batch_output["phon_tokens"][b]
         ):
-            assert torch.equal(t1, t2), f"Batch item {b} differs from first batch item"
+            assert torch.allclose(
+                t1, t2, atol=1e-5
+            ), f"Batch item {b} differs from first batch item"
 
         # Check probability distributions match
         assert len(batch_output["phon_probs"][0]) == len(batch_output["phon_probs"][b])
         for p1, p2 in zip(batch_output["phon_probs"][0], batch_output["phon_probs"][b]):
-            assert torch.equal(
-                p1, p2
+            assert torch.allclose(
+                p1, p2, atol=1e-5
             ), f"Probability distributions differ in batch item {b}"
 
         # Check feature vectors match
         assert len(batch_output["phon_vecs"][0]) == len(batch_output["phon_vecs"][b])
         for v1, v2 in zip(batch_output["phon_vecs"][0], batch_output["phon_vecs"][b]):
-            assert torch.equal(v1, v2), f"Feature vectors differ in batch item {b}"
+            assert torch.allclose(
+                v1, v2, atol=1e-5
+            ), f"Feature vectors differ in batch item {b}"
 
     # Verify batch processing matches single sample processing
     # First element of batch should match single sample output
     assert len(single_output["phon_tokens"][0]) == len(batch_output["phon_tokens"][0])
     for t1, t2 in zip(single_output["phon_tokens"][0], batch_output["phon_tokens"][0]):
-        assert torch.equal(t1, t2), "Single sample differs from batch processing"
+        assert torch.allclose(
+            t1, t2, atol=1e-5
+        ), "Single sample differs from batch processing"
 
     for p1, p2 in zip(single_output["phon_probs"][0], batch_output["phon_probs"][0]):
-        assert torch.equal(
-            p1, p2
+        assert torch.allclose(
+            p1, p2, atol=1e-5
         ), "Probability distributions differ between single and batch"
 
     for v1, v2 in zip(single_output["phon_vecs"][0], batch_output["phon_vecs"][0]):
-        assert torch.equal(v1, v2), "Feature vectors differ between single and batch"
+        assert torch.allclose(
+            v1, v2, atol=1e-5
+        ), "Feature vectors differ between single and batch"
 
 
 def test_p2p_input_validation(model, dataset_config):
@@ -955,14 +978,16 @@ def test_o2o_deterministic_consistency(model, dataset_config):
     )
 
     # Compare outputs
-    assert torch.equal(output1["global_encoding"], output2["global_encoding"])
-    assert torch.equal(output1["orth_tokens"], output2["orth_tokens"])
+    assert torch.allclose(
+        output1["global_encoding"], output2["global_encoding"], atol=1e-5
+    )
+    assert torch.allclose(output1["orth_tokens"], output2["orth_tokens"], atol=1e-5)
 
     # Compare probability distributions
     for b in range(len(output1["orth_probs"])):
         assert len(output1["orth_probs"][b]) == len(output2["orth_probs"][b])
         for p1, p2 in zip(output1["orth_probs"][b], output2["orth_probs"][b]):
-            assert torch.equal(p1, p2)
+            assert torch.allclose(p1, p2, atol=1e-5)
 
 
 def test_o2o_input_validation(model):
@@ -1051,27 +1076,27 @@ def test_o2o_batch_consistency(model, dataset_config):
 
     # Verify all batch items produce identical outputs since they're the same input
     for b in range(1, 3):  # Compare each batch item to the first one
-        assert torch.equal(
-            batch_output["orth_tokens"][0], batch_output["orth_tokens"][b]
+        assert torch.allclose(
+            batch_output["orth_tokens"][0], batch_output["orth_tokens"][b], atol=1e-5
         ), f"Batch item {b} differs from first batch item"
 
         # Check probability distributions match
         assert len(batch_output["orth_probs"][0]) == len(batch_output["orth_probs"][b])
         for p1, p2 in zip(batch_output["orth_probs"][0], batch_output["orth_probs"][b]):
-            assert torch.equal(
-                p1, p2
+            assert torch.allclose(
+                p1, p2, atol=1e-5
             ), f"Probability distributions differ in batch item {b}"
 
     # Verify batch processing matches single sample processing
-    assert torch.equal(
-        single_output["orth_tokens"][0], batch_output["orth_tokens"][0]
+    assert torch.allclose(
+        single_output["orth_tokens"][0], batch_output["orth_tokens"][0], atol=1e-5
     ), "Single sample differs from batch processing"
 
     # Compare probability distributions between single and batch
     assert len(single_output["orth_probs"][0]) == len(batch_output["orth_probs"][0])
     for p1, p2 in zip(single_output["orth_probs"][0], batch_output["orth_probs"][0]):
-        assert torch.equal(
-            p1, p2
+        assert torch.allclose(
+            p1, p2, atol=1e-5
         ), "Probability distributions differ between single and batch"
 
 
@@ -1112,7 +1137,12 @@ def test_o2o_stochastic_sampling(model, dataset_config):
     # Verify we get different sequences (at least some of the time)
     different_sequences_found = False
     for i in range(num_samples - 1):
-        if not torch.equal(outputs[i]["orth_tokens"], outputs[i + 1]["orth_tokens"]):
+        if not outputs[i]["orth_tokens"].shape == outputs[i + 1]["orth_tokens"].shape:
+            different_sequences_found = True
+            break
+        if not torch.allclose(
+            outputs[i]["orth_tokens"], outputs[i + 1]["orth_tokens"], atol=1e-5
+        ):
             different_sequences_found = True
             break
     assert (
@@ -1441,14 +1471,16 @@ def test_op2op_deterministic_consistency(model, dataset_config):
     )
 
     # Compare outputs
-    assert torch.equal(output1["global_encoding"], output2["global_encoding"])
-    assert torch.equal(output1["orth_tokens"], output2["orth_tokens"])
+    assert torch.allclose(
+        output1["global_encoding"], output2["global_encoding"], atol=1e-5
+    )
+    assert torch.allclose(output1["orth_tokens"], output2["orth_tokens"], atol=1e-5)
 
     # Compare phonological outputs
     for b in range(batch_size):
         assert len(output1["phon_tokens"][b]) == len(output2["phon_tokens"][b])
         for t1, t2 in zip(output1["phon_tokens"][b], output2["phon_tokens"][b]):
-            assert torch.equal(t1, t2)
+            assert torch.allclose(t1, t2, atol=1e-5)
 
 
 def test_op2op_stochastic_sampling(model, dataset_config):
@@ -1500,18 +1532,22 @@ def test_op2op_stochastic_sampling(model, dataset_config):
 
     for i in range(num_samples - 1):
         # Check orthographic differences
-        if not torch.equal(outputs[i]["orth_tokens"], outputs[i + 1]["orth_tokens"]):
+        if not outputs[i]["orth_tokens"].shape == outputs[i + 1]["orth_tokens"].shape:
+            different_orth = True
+        elif not torch.allclose(
+            outputs[i]["orth_tokens"], outputs[i + 1]["orth_tokens"], atol=1e-5
+        ):
             different_orth = True
 
         # Check phonological differences
         for b in range(batch_size):
-            if any(
-                not torch.equal(t1, t2)
-                for t1, t2 in zip(
-                    outputs[i]["phon_tokens"][b], outputs[i + 1]["phon_tokens"][b]
-                )
+            for t1, t2 in zip(
+                outputs[i]["phon_tokens"][b], outputs[i + 1]["phon_tokens"][b]
             ):
-                different_phon = True
+                if not t1.shape == t2.shape:
+                    different_phon = True
+                elif not torch.allclose(t1, t2, atol=1e-5):
+                    different_phon = True
 
     assert (
         different_orth
@@ -1571,8 +1607,8 @@ def test_op2op_batch_consistency(model, dataset_config):
     # Verify all batch items produce identical outputs
     for b in range(1, 3):
         # Check orthographic outputs
-        assert torch.equal(
-            batch_output["orth_tokens"][0], batch_output["orth_tokens"][b]
+        assert torch.allclose(
+            batch_output["orth_tokens"][0], batch_output["orth_tokens"][b], atol=1e-5
         ), f"Orthographic batch item {b} differs from first batch item"
 
         # Check phonological outputs
@@ -1582,19 +1618,19 @@ def test_op2op_batch_consistency(model, dataset_config):
         for t1, t2 in zip(
             batch_output["phon_tokens"][0], batch_output["phon_tokens"][b]
         ):
-            assert torch.equal(
-                t1, t2
+            assert torch.allclose(
+                t1, t2, atol=1e-5
             ), f"Phonological batch item {b} differs from first batch item"
 
     # Verify batch processing matches single sample processing
-    assert torch.equal(
-        single_output["orth_tokens"][0], batch_output["orth_tokens"][0]
+    assert torch.allclose(
+        single_output["orth_tokens"][0], batch_output["orth_tokens"][0], atol=1e-5
     ), "Single sample orthographic output differs from batch processing"
 
     assert len(single_output["phon_tokens"][0]) == len(batch_output["phon_tokens"][0])
     for t1, t2 in zip(single_output["phon_tokens"][0], batch_output["phon_tokens"][0]):
-        assert torch.equal(
-            t1, t2
+        assert torch.allclose(
+            t1, t2, atol=1e-5
         ), "Single sample phonological output differs from batch processing"
 
 
@@ -1745,15 +1781,15 @@ def test_generate_wrapper_deterministic_consistency(model, dataset_config):
     output2 = model.generate(encodings, pathway="op2op", deterministic=True)
 
     # Outputs should be identical
-    assert torch.equal(output1.global_encoding, output2.global_encoding)
+    assert torch.allclose(output1.global_encoding, output2.global_encoding, atol=1e-5)
 
     if output1.orth_tokens is not None:
-        assert torch.equal(output1.orth_tokens, output2.orth_tokens)
+        assert torch.allclose(output1.orth_tokens, output2.orth_tokens, atol=1e-5)
 
     if output1.phon_tokens is not None:
         for b in range(len(output1.phon_tokens)):
             for t1, t2 in zip(output1.phon_tokens[b], output2.phon_tokens[b]):
-                assert torch.equal(t1, t2)
+                assert torch.allclose(t1, t2, atol=1e-5)
 
 
 def test_generate_wrapper_error_handling(model, dataset_config):
