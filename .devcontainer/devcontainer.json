@@ -51,8 +51,6 @@
 				"ms-vscode.remote-repositories",
 				"vscodevim.vim",
 				"ms-python.vscode-pylance",
-				"LittleFoxTeam.vscode-python-test-adapter",
-				"hbenl.vscode-test-explorer"
 			]
 		}
 	},
