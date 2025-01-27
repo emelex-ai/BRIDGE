@@ -3,8 +3,6 @@ Module containing helper functions to convert a list of words into input files f
 This module processes word data, extracts phonetic and orthographic information, and prepares it for model input.
 """
 
-# Imports according to PEP8: standard library imports, related third party imports, local application/library specific imports
-# Standard library
 import pickle
 from typing import TypedDict
 import logging
@@ -28,7 +26,7 @@ class WordData(TypedDict):
 
 
 def input_data(
-    words: list[str], word_counts: dict, phonemes_path="phonreps.csv"
+    words: list[str], word_counts: dict, phonemes_path: str
 ) -> dict[str, WordData]:
     """Create the input file for the model
 
@@ -42,8 +40,7 @@ def input_data(
                 "word": {
                     count: int,
                     phoneme: tuple[np.array, np.array], # result of np.where
-                    phoneme_shape: tuple[int, int],
-                    orthography: np.array
+                    phoneme_shape: tuple[int, int]
                 },
                 "word2": {}
                 ...
@@ -55,32 +52,30 @@ def input_data(
 
     input_data = {}
     for length in data.keys():
-        for word, phon, orth in zip(
+        for word, phon in zip(
             data[length]["wordlist"],
             data[length]["phon"],
-            data[length]["orth"],
         ):
             # store only non-zero phonemes
             # and the shape of the phoneme matrix
             phon_shp = phon.shape
             phon = np.where(phon)
 
-            # remove orthographic padding
-            orth = orth.flatten()
-            orth = orth[orth != 0]
-
             # add to dictionary
             input_data[word] = {
                 "count": word_counts[word],
                 "phoneme": phon,
                 "phoneme_shape": phon_shp,
-                "orthography": orth,
             }
 
     return input_data
 
 
-def main(input_file="data/data.csv", output_file="data/input_data.pkl"):
+def main(
+    input_file="data/data.csv",
+    output_file="data/input_data.pkl",
+    phonemes_path="data/phonreps.csv",
+):
     logging.info(f"Reading data from {input_file}")
     """
     try:
@@ -92,22 +87,22 @@ def main(input_file="data/data.csv", output_file="data/input_data.pkl"):
     """
     df = pd.read_csv(input_file)
     words = [str(w).lower() for w in df["word_raw"]]
-    
+
     word_counts = {}
 
     # k-smoothing over frequency with k = 1
     for _, row in df.iterrows():
 
-        count = row['count']
+        count = row["count"]
         if pd.isna(count):
             count = 1
         else:
             count = count + 1
 
-        word_counts[row['word_raw']] = count
+        word_counts[row["word_raw"]] = count
 
     logging.info("Processing words")
-    data = input_data(words, word_counts=word_counts)
+    data = input_data(words, word_counts, phonemes_path)
 
     logging.info(f"Saving processed data to {output_file}")
     try:
@@ -121,4 +116,5 @@ if __name__ == "__main__":
     # ideally we would have all the raw data sources
     # in the same folder, but this list was generated
     # by someone else
+    # main()
     main("data/pretraining/csvs/combined_csv.csv", "data/pretraining/combined.pkl")

@@ -227,7 +227,6 @@ The input dataset is structured as a dictionary where each word entry contains c
         "count": int,                         # Word frequency
         "phoneme": tuple[np.array, np.array], # Sparse matrix indices (result of np.where())
         "phoneme_shape": tuple[int, int],     # Phoneme dimensions
-        "orthography": np.array               # Letter indices
     },
     "word2" : {},
     "word3" : {},
@@ -236,15 +235,6 @@ The input dataset is structured as a dictionary where each word entry contains c
 ```
 
 The expected input file is a pickle file of the datasets dictionary.
-
-### Orthographic Representation
-The orthographic tokenizer converts letters to ascending integer values and includes special tokens:
-
-- `[BOS]`: Beginning of sentence
-- `[EOS]`: End of sentence
-- `[CLS]`: Classification
-- `[UNK]`: Unknown
-- `[PAD]`: Padding
 
 ### Phonological Representation
 The phonological structure uses the ARPAbet scheme with:
@@ -270,15 +260,13 @@ For the word "hello" with frequency 25:
         array([0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3]),
         array([ 5,  7, 14, 16, 21,  2, 10, 14, 14, 17, 19, 24, 26, 28, 29])
     ),
-    'phoneme_shape': (4, 31),
-    'orthography': array([ 8,  5, 12, 12, 15])
+    'phoneme_shape': (4, 31)
 }
 ```
 
 The example shows:
 - 4 phonemes with 31 dimensions (`phoneme_shape`)
 - Non-zero values in sparse matrix format (`phoneme`)
-- Letter indices in `orthography` (h=8, e=5, l=12, l=12, o=15)
 
 For a detailed example on how to create an input file from a list of words, refer to `data/preprocess.py`.
 ---
