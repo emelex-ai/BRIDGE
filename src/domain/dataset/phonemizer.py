@@ -1,4 +1,5 @@
 from src.domain.dataset import CUDADict
+from src.domain.datamodels import DatasetConfig
 from typing import List, Union
 import numpy as np
 import logging
@@ -9,14 +10,14 @@ logger = logging.getLogger(__name__)
 
 
 class Phonemizer:
-    def __init__(self, input_data: dict, dimension_phon_repr: int):
-        self.phoneme_reps_dim = dimension_phon_repr
+    def __init__(self, input_data: dict, dataset_config: DatasetConfig):
         self.extra_token = {
-            "BOS": self.phoneme_reps_dim + 0,
-            "EOS": self.phoneme_reps_dim + 1,
-            "PAD": self.phoneme_reps_dim + 2,
+            "BOS": dataset_config.dimension_phon_repr + 0,
+            "EOS": dataset_config.dimension_phon_repr + 1,
+            "PAD": dataset_config.dimension_phon_repr + 2,
         }
-        self.phonemizer_dim = self.phoneme_reps_dim + len(self.extra_token)
+        self.phonemizer_dim = dataset_config.dimension_phon_repr + len(self.extra_token)
+        self.max_phon_seq_len = dataset_config.max_phon_seq_len
 
         self.enc_inputs, self.dec_inputs, self.targets = self._prepare_data(input_data)
 
@@ -45,9 +46,7 @@ class Phonemizer:
             )
 
             # The decoder received the entire phonological vectors including the BOS token, but not the EOS token
-            dec_inputs[word] = [
-                torch.tensor([self.extra_token["BOS"]])
-            ] + word_phon
+            dec_inputs[word] = [torch.tensor([self.extra_token["BOS"]])] + word_phon
 
             # The target for the decoder is all phonological vectors including the EOS token, but excluding the BOS token
             targets[word] = [
@@ -78,8 +77,12 @@ class Phonemizer:
             max_length = max(max_length, len(enc_input))
 
         for epv, dpv in zip(enc_input_ids, dec_input_ids):
-            epv.extend([torch.tensor([self.extra_token["PAD"]])] * (max_length - len(epv)))
-            dpv.extend([torch.tensor([self.extra_token["PAD"]])] * (max_length - 1 - len(dpv)))
+            epv.extend(
+                [torch.tensor([self.extra_token["PAD"]])] * (max_length - len(epv))
+            )
+            dpv.extend(
+                [torch.tensor([self.extra_token["PAD"]])] * (max_length - 1 - len(dpv))
+            )
 
         for i in range(len(targets)):
             targets[i] = torch.cat(

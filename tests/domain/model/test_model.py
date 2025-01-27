@@ -14,7 +14,7 @@ import torch
 def dataset_config():
     """Fixture for mock DatasetConfig."""
     return DatasetConfig(
-        dataset_filepath="data.csv",
+        dataset_filepath="data.csv",  # TODO: Should be a pkl file
         dimension_phon_repr=31,
         orthographic_vocabulary_size=49,
         phonological_vocabulary_size=34,

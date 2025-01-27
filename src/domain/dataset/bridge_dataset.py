@@ -163,7 +163,7 @@ class BridgeDataset(Dataset):
                 phonemizer = pickle.load(f)
             logger.info(f"Phonemizer data loaded from: {cache_path}")
         else:
-            phonemizer = Phonemizer(input_data, self.dataset_config.dimension_phon_repr)
+            phonemizer = Phonemizer(input_data, self.dataset_config)
             with open(cache_path, "wb") as f:
                 pickle.dump(phonemizer, f)
             logger.info(f"Created cache folder for phonemizer: {cache_path}")
@@ -232,6 +232,8 @@ class BridgeDataset(Dataset):
         """
         if isinstance(idx, int):
             # Wrap single index in a slice to retrieve one item
+            if idx < 0 or idx >= len(self.words):
+                raise IndexError(f"Index {idx} out of range: [0,{len(self.words)}].")
             return {
                 k: {sub_k: sub_v[idx : idx + 1] for sub_k, sub_v in v.items()}
                 for k, v in self.data.items()

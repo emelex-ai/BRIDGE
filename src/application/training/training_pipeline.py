@@ -143,7 +143,7 @@ class TrainingPipeline:
 
     def single_step(self, batch_slice: slice, calculate_metrics: bool = False) -> dict:
         batch = self.dataset[batch_slice]
-        orthography, phonology = batch["orthography"], batch["phonology"]
+        orthography, phonology = batch["orthographic"], batch["phonological"]
 
         # Forward pass
         # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
