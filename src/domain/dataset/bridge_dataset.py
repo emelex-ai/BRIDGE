@@ -3,7 +3,7 @@ import pickle
 import random
 import torch
 import pandas as pd
-from typing import List, Union
+from typing import Union
 from torch.utils.data import Dataset
 from src.domain.datamodels import DatasetConfig
 from src.domain.datamodels.encodings import (
@@ -11,7 +11,7 @@ from src.domain.datamodels.encodings import (
     PhonologicalEncoding,
     BridgeEncoding,
 )
-from src.domain.dataset import Phonemizer, CharacterTokenizer
+from src.domain.dataset import PhonemeTokenizer, CharacterTokenizer
 import logging
 from typing import Literal
 
@@ -20,10 +20,6 @@ logger = logging.getLogger(__name__)
 
 
 class BridgeDataset(Dataset):
-    """
-    BridgeDataset for Matt's Phonological Feature Vectors.
-    Uses (31, 32, 33) to represent ('[BOS]', '[EOS]', '[PAD]').
-    """
 
     def __init__(
         self,
@@ -36,7 +32,8 @@ class BridgeDataset(Dataset):
 
         Args:
             dataset_config (DatasetConfig): Configuration object for the dataset.
-            cache_path (str): Directory path to store or load cached phonology data.
+            device (str, optional): Device to load the data onto. Defaults to None.
+            cache_path (str, optional): Directory path to store or load cached phonology data.
         """
         self.cache_path = cache_path
         self.dataset_config = dataset_config
@@ -48,74 +45,15 @@ class BridgeDataset(Dataset):
         input_data = self.read_orthographic_phonologic_data()
         self.words = sorted(input_data.keys())
 
-        # Initialize phonemizer and character tokenizer
-        self.phonemizer = self.read_phonology_data(input_data)
-        list_of_characters = sorted(set(c for word in self.words for c in word))
-        self.character_tokenizer = CharacterTokenizer(list_of_characters)
+        # Initialize phoneme and character tokenizer
+        self.phoneme_tokenizer = self.read_phonology_data(input_data)
+        self.character_tokenizer = CharacterTokenizer(device=self.device)
 
         # Finalize word data to filter and determine max sequence lengths
         self.finalize_word_data()
 
         # Precompute all encodings and transfer them to the specified device
         self.data = self.encode(self.words)
-
-    def _validate_dataset_config(
-        self,
-        max_phon_seq_len: int,
-        max_orth_seq_len: int,
-        phon_vocab_size: int,
-        orth_vocab_size: int,
-    ) -> None:
-        """
-        Validate and update the DatasetConfig based on the provided values.
-
-        This function updates the corresponding values in the DatasetConfig if they are currently set to None.
-        It also checks if any of the provided values exceed the maximum values defined in the DatasetConfig.
-
-        Args:
-            max_phon_seq_len (int): The maximum phonological sequence length in the dataset.
-            max_orth_seq_len (int): The maximum orthographic sequence length in the dataset.
-            phon_vocab_size (int): The size of the phonological vocabulary.
-            orth_vocab_size (int): The size of the orthographic vocabulary.
-
-        Raises:
-            ValueError: If any of the provided values exceed the corresponding maximum values defined in the DatasetConfig.
-        """
-        # Update the DatasetConfig values if they are currently set to None
-        # Pydantic model already validates input data...
-        if self.dataset_config.max_phon_seq_len is None:
-            self.dataset_config.max_phon_seq_len = max_phon_seq_len
-        if self.dataset_config.max_orth_seq_len is None:
-            self.dataset_config.max_orth_seq_len = max_orth_seq_len
-        if self.dataset_config.phonological_vocabulary_size is None:
-            self.dataset_config.phonological_vocabulary_size = phon_vocab_size
-        if self.dataset_config.orthographic_vocabulary_size is None:
-            self.dataset_config.orthographic_vocabulary_size = orth_vocab_size
-
-        # Check if any of the provided values exceed the maximum values defined in the DatasetConfig
-        if max_phon_seq_len > self.dataset_config.max_phon_seq_len:
-            raise ValueError(
-                f"Maximum phonological sequence length in dataset ({max_phon_seq_len}) "
-                f"exceeds the maximum defined in DatasetConfig ({self.dataset_config.max_phon_seq_len})."
-            )
-        if max_orth_seq_len > self.dataset_config.max_orth_seq_len:
-            raise ValueError(
-                f"Maximum orthographic sequence length in dataset ({max_orth_seq_len}) "
-                f"exceeds the maximum defined in DatasetConfig ({self.dataset_config.max_orth_seq_len})."
-            )
-        if (
-            phon_vocab_size - len(self.phonemizer.extra_token)
-            > self.dataset_config.phonological_vocabulary_size
-        ):
-            raise ValueError(
-                f"Phonological vocabulary size ({phon_vocab_size}) "
-                f"exceeds the size defined in DatasetConfig ({self.dataset_config.phonological_vocabulary_size})."
-            )
-        if orth_vocab_size > self.dataset_config.orthographic_vocabulary_size:
-            raise ValueError(
-                f"Orthographic vocabulary size ({orth_vocab_size}) "
-                f"exceeds the size defined in DatasetConfig ({self.dataset_config.orthographic_vocabulary_size})."
-            )
 
     def read_orthographic_phonologic_data(self) -> dict:
         """
@@ -140,7 +78,7 @@ class BridgeDataset(Dataset):
 
         return input_data
 
-    def read_phonology_data(self, input_data: dict) -> Phonemizer:
+    def read_phonology_data(self, input_data: dict) -> PhonemeTokenizer:
         """
         Reads or creates a phonology tokenizer from cached data, saving to cache if created.
 
@@ -148,7 +86,7 @@ class BridgeDataset(Dataset):
             words (pd.Series): Series of words to encode.
 
         Returns:
-            Phonemizer: Initialized phonemizer object.
+            PhonemeTokenizer: Initialized phoneme tokenizer object.
         """
         if not os.path.exists(self.cache_path):
             os.makedirs(self.cache_path, exist_ok=True)
@@ -157,18 +95,18 @@ class BridgeDataset(Dataset):
         cache_file = f"{dataset_name}_phonology.pkl"
         cache_path = os.path.join(self.cache_path, cache_file)
 
-        # Load phonemizer from cache if available, otherwise initialize and cache it
+        # Load phoneme tokenizer from cache if available, otherwise initialize and cache it
         if os.path.exists(cache_path):
             with open(cache_path, "rb") as f:
-                phonemizer = pickle.load(f)
-            logger.info(f"Phonemizer data loaded from: {cache_path}")
+                phoneme_tokenizer = pickle.load(f)
+            logger.info(f"PhonemeTokenizer data loaded from: {cache_path}")
         else:
-            phonemizer = Phonemizer(input_data, self.dataset_config)
+            phoneme_tokenizer = PhonemeTokenizer(device=self.device)
             with open(cache_path, "wb") as f:
-                pickle.dump(phonemizer, f)
-            logger.info(f"Created cache folder for phonemizer: {cache_path}")
+                pickle.dump(phoneme_tokenizer, f)
+            logger.info(f"Created cache folder for phoneme_tokenizer: {cache_path}")
 
-        return phonemizer
+        return phoneme_tokenizer
 
     def finalize_word_data(self) -> None:
         """
@@ -176,8 +114,6 @@ class BridgeDataset(Dataset):
         """
         logger.info("Finalizing words list.")
         final_words = []
-        max_phon_seq_len = 0
-        max_orth_seq_len = 0
 
         for word in self.words:
             # Skip empty or invalid entries
@@ -185,25 +121,13 @@ class BridgeDataset(Dataset):
                 continue
 
             # Encode phonology; if valid, update sequence lengths
-            phonology = self.phonemizer.encode([word])
+            phonology = self.phoneme_tokenizer.encode([word])
             if phonology:  # Ensure the word is valid in the phoneme dictionary
                 final_words.append(word)
 
-                # Calculate max phonological and orthographic sequence lengths
-                max_phon_seq_len = max(
-                    max_phon_seq_len, len(phonology["enc_pad_mask"][0])
-                )
-                max_orth_seq_len = max(
-                    max_orth_seq_len,
-                    len(self.character_tokenizer.encode(word)["enc_input_ids"][0]),
-                )
-
-        phon_vocab_size = self.phonemizer.get_vocabulary_size()
+        phon_vocab_size = self.phoneme_tokenizer.get_vocabulary_size()
         orth_vocab_size = self.character_tokenizer.get_vocabulary_size()
 
-        self._validate_dataset_config(
-            max_phon_seq_len, max_orth_seq_len, phon_vocab_size, orth_vocab_size
-        )
         self.words = final_words
 
     def __len__(self) -> int:
@@ -281,12 +205,12 @@ class BridgeDataset(Dataset):
 
         # Encode using both tokenizers
         orthographic_encoding = self.character_tokenizer.encode(words)
-        phonological_encoding = self.phonemizer.encode(words)
+        phonological_encoding = self.phoneme_tokenizer.encode(words)
 
         # Validate phonological encoding succeeded
         if phonological_encoding is None:
             failed_words = [
-                w for w in words if self.phonemizer.enc_inputs.get(w) is None
+                w for w in words if self.phoneme_tokenizer.enc_inputs.get(w) is None
             ]
             raise ValueError(
                 f"Phonological encoding failed for words: {failed_words}. "

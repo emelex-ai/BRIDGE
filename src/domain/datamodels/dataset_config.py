@@ -1,12 +1,15 @@
 from pydantic import BaseModel, Field, model_validator, PositiveInt
 from src.utils.helper_funtions import get_project_root
+from pathlib import PosixPath
 import os
 
 
 class DatasetConfig(BaseModel):
-    dataset_filepath: str = Field(description="")
-    dimension_phon_repr: PositiveInt = Field(
-        description="Length of vector of the phonological representation"
+    dataset_filepath: str | PosixPath = Field(description="")
+    dimension_phon_repr: PositiveInt | None = Field(
+        default=None,
+        gt=0,
+        description="Length of vector of the phonological representation",
     )
     orthographic_vocabulary_size: PositiveInt | None = Field(
         default=None, gt=0, description="Orthographic Vocabulary Size"
