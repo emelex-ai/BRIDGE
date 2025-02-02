@@ -1,9 +1,10 @@
-from pydantic import BaseModel, Field, model_validator, PositiveInt
+from pydantic import BaseModel, Field, model_validator, PositiveInt, ConfigDict
 from src.utils.helper_funtions import get_project_root
 import os
 
 
 class DatasetConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
     dataset_filepath: str = Field(description="")
     dimension_phon_repr: PositiveInt = Field(
         description="Length of vector of the phonological representation"
