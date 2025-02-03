@@ -10,4 +10,4 @@ save_every: 50
 model_artifacts_dir: 'models'
 use_wandb: false
 weight_decay: 0.01
-checkpoint_path: 'models/pretraining/1/model_epoch_950.pth'
+checkpoint_path: 'models/pretraining/1/model_epoch_50.pth'

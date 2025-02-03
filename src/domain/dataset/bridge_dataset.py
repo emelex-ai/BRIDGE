@@ -178,6 +178,7 @@ class BridgeDataset(Dataset):
         final_words = []
         max_phon_seq_len = 0
         max_orth_seq_len = 0
+        
 
         for word in self.words:
             # Skip empty or invalid entries
@@ -187,6 +188,12 @@ class BridgeDataset(Dataset):
             # Encode phonology; if valid, update sequence lengths
             phonology = self.phonemizer.encode([word])
             if phonology:  # Ensure the word is valid in the phoneme dictionary
+                if self.dataset_config.max_phon_seq_len is not None:
+                    if len(phonology["enc_pad_mask"][0]) > self.dataset_config.max_phon_seq_len:
+                        continue
+                if self.dataset_config.max_orth_seq_len is not None:
+                    if len(self.character_tokenizer.encode(word)["enc_input_ids"][0]) > self.dataset_config.max_orth_seq_len:
+                        continue
                 final_words.append(word)
 
                 # Calculate max phonological and orthographic sequence lengths
