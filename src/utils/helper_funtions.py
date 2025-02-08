@@ -63,3 +63,15 @@ def set_seed(seed: int):
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
+
+def load_model_config(checkpoint_path):
+    checkpoint = torch.load(checkpoint_path)
+
+    return {
+        "model_config": vars(checkpoint["model_config"]),
+        "dataset_config": vars(checkpoint["dataset_config"]),
+        "model_state_dict": checkpoint["model_state_dict"],
+        "optimizer_state_dict": checkpoint["optimizer_state_dict"],
+        "epoch": checkpoint["epoch"],
+    }

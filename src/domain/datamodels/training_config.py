@@ -34,7 +34,7 @@ class TrainingConfig(BaseModel):
 
     @field_validator("training_pathway")
     def validate_pathway(cls, v: str) -> str:
-        allowed_training_pathways = ["o2p", "p2o", "op2op", "p2p"]
+        allowed_training_pathways = ["o2p", "p2o", "op2op", "p2p", "o2o"]
         if v not in allowed_training_pathways:
             raise ValueError(
                 f"Invalid pathway: {v}. Allowed: {allowed_training_pathways}"
