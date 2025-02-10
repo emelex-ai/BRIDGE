@@ -231,7 +231,7 @@ class TrainingPipeline:
         if (epoch + 1) % self.training_config.save_every == 0:
 
             model_path = (
-                f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}.pth"
+                f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch+1}.pth"
             )
             torch.save(
                 {

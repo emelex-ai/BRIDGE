@@ -963,7 +963,7 @@ class Model(nn.Module):
                 )
 
             # Validate feature indices are within vocabulary bounds
-            max_feature_idx = self.dataset_config.phonological_vocabulary_size - 1
+            max_feature_idx = self.dataset_config.phonological_vocabulary_size
             if any(
                 torch.any(features >= max_feature_idx)
                 for batch_item in phon_enc_input
@@ -1294,7 +1294,7 @@ class Model(nn.Module):
                 )
 
             # Validate phonological feature indices are within vocabulary bounds
-            max_feature_idx = self.dataset_config.phonological_vocabulary_size - 1
+            max_feature_idx = self.dataset_config.phonological_vocabulary_size
             if any(
                 torch.any(features >= max_feature_idx)
                 for batch_item in phon_enc_input

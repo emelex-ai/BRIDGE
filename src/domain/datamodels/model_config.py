@@ -12,7 +12,7 @@ import os
 
 
 class ModelConfig(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    # model_config = ConfigDict(frozen=True)
     num_phon_enc_layers: int = Field(default=2)
     num_orth_enc_layers: int = Field(default=2)
     num_mixing_enc_layers: int = Field(default=2)
@@ -29,6 +29,3 @@ class ModelConfig(BaseModel):
         if nhead is not None and v % nhead != 0:
             raise ValueError("d_model must be divisible by nhead")
         return v
-
-    class Config:
-        protected_namespaces = ()

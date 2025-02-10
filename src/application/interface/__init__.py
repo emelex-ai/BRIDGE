@@ -1,0 +1,1 @@
+from src.application.interface.bridge_interface import BridgeInference

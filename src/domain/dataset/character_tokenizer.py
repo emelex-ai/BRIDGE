@@ -32,20 +32,13 @@ class CharacterTokenizer:
         # Ensure the input is either a string or a list of strings
         if isinstance(list_of_strings, str):
             list_of_strings = [list_of_strings]
-        elif not isinstance(list_of_strings, list) or not all(
-            isinstance(s, str) for s in list_of_strings
-        ):
+        elif not isinstance(list_of_strings, list) or not all(isinstance(s, str) for s in list_of_strings):
             logger.error("Input must be a string or a list of strings")
             raise TypeError("Input must be a string or a list of strings")
 
         max_length = max(len(s) for s in list_of_strings)
 
-        enc_pad = (
-            lambda s: ["[BOS]"]
-            + list(s)
-            + ["[EOS]"]
-            + ["[PAD]"] * (max_length - len(s))
-        )
+        enc_pad = lambda s: ["[BOS]"] + list(s) + ["[EOS]"] + ["[PAD]"] * (max_length - len(s))
         dec_pad = lambda s: ["[BOS]"] + list(s) + ["[PAD]"] * (max_length - len(s))
 
         # Create encoded and decoder-padded string lists
@@ -53,17 +46,13 @@ class CharacterTokenizer:
         dec_strings = [dec_pad(s) for s in list_of_strings]
 
         # Initialize tensors for encoded input
-        enc_input_ids = torch.zeros(
-            (len(enc_strings), 2 + max_length), dtype=torch.long
-        )
+        enc_input_ids = torch.zeros((len(enc_strings), 2 + max_length), dtype=torch.long)
         for i, enc_str in enumerate(enc_strings):
             for j, ch in enumerate(enc_str):
                 enc_input_ids[i, j] = self.char_2_idx.get(ch, self.char_2_idx["[UNK]"])
 
         # Initialize tensors for decoder input
-        dec_input_ids = torch.zeros(
-            (len(dec_strings), 1 + max_length), dtype=torch.long
-        )
+        dec_input_ids = torch.zeros((len(dec_strings), 1 + max_length), dtype=torch.long)
         for i, dec_str in enumerate(dec_strings):
             for j, ch in enumerate(dec_str):
                 dec_input_ids[i, j] = self.char_2_idx.get(ch, self.char_2_idx["[UNK]"])
@@ -88,7 +77,14 @@ class CharacterTokenizer:
                     [
                         self.idx_2_char[i]
                         for i in ints
-                        if self.idx_2_char[i] not in ["[PAD]", "[BOS]", "[EOS]"]
+                        if self.idx_2_char[i]
+                        not in [
+                            "[BOS]",
+                            "[EOS]",
+                            "[CLS]",
+                            "[UNK]",
+                            "[PAD]",
+                        ]
                     ]
                 )
                 for ints in list_of_ints

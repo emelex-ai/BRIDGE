@@ -6,7 +6,7 @@ import os
 
 
 class TrainingConfig(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    # model_config = ConfigDict(frozen=True)
     device: Optional[str] = Field(default=device_manager.device.type)
     num_epochs: int = Field(default=2)
     batch_size_train: int = Field(default=32)
@@ -60,6 +60,3 @@ class TrainingConfig(BaseModel):
                 f"Model directory not found: {self.model_artifacts_dir}"
             )
         return self
-
-    class Config:
-        protected_namespaces = ()

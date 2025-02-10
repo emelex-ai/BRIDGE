@@ -1,0 +1,123 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;700&display=swap');
+
+body, html {
+    font-family: 'Poppins', sans-serif;
+    background: linear-gradient(135deg, #f0f4f8, #d9e2ec);
+    margin: 0;
+    padding: 0;
+}
+
+.gradio-container {
+    background: transparent;
+}
+
+.main-header {
+    text-align: center;
+    margin: 20px 0;
+    color: #333;
+    font-size: 2.6rem; /* Slightly decreased for balance */
+    font-weight: 700;
+}
+
+/* Completely remove borders and shadow */
+.description-box {
+    background: #ffffff;
+    padding: 20px;
+    border-radius: 10px;
+    border: none !important; /* Remove any border */
+    box-shadow: none !important; /* Remove shadow */
+    font-size: 1.1rem; /* Leave this unchanged */
+    line-height: 1.6;
+}
+
+/* Increase font size for Input & Output labels */
+.gradio-container label {
+    font-size: 1.5rem !important; /* Increased */
+    font-weight: 600;
+    color: #333;
+}
+
+/* Remove border and increase font size for input and output boxes */
+.gr-textbox input, .gr-textbox textarea {
+    font-size: 1.5rem !important; /* Increased */
+    padding: 16px !important;
+    border: none !important; /* Removed gray border */
+    background: white !important;
+}
+
+/* Ensure output text is larger */
+.gr-textbox textarea {
+    font-size: 1.5rem !important; /* Increased */
+    padding: 16px !important;
+    border: none !important; /* Remove gray border */
+    background: white !important;
+}
+
+/* Force radio button size */
+input[type="radio"] {
+    appearance: none !important;
+    width: 14px !important; /* Smaller size */
+    height: 14px !important; /* Smaller size */
+    border-radius: 50% !important;
+    border: 2px solid #007bff !important;
+    transition: 0.2s all ease-in-out !important;
+    display: inline-block !important;
+    vertical-align: middle !important;
+    margin-right: 5px !important;
+    cursor: pointer !important;
+}
+
+/* Ensure checked radio button has correct color */
+input[type="radio"]:checked {
+    background-color: #007bff !important;
+}
+
+/* Force radio button label size */
+.gr-radio label, .gradio-container label {
+    font-size: 1rem !important; /* Smaller text */
+    font-weight: 500 !important;
+    padding-left: 6px !important;
+    cursor: pointer !important;
+}
+
+/* Increase font size for buttons */
+.gr-button {
+    background-color: #007bff !important;
+    border: none !important;
+    border-radius: 10px !important;
+    color: #fff !important;
+    padding: 18px 32px !important; /* Increased */
+    font-size: 1.5rem !important; /* Increased */
+    transition: background-color 0.3s ease !important;
+}
+
+.gr-button:hover {
+    background-color: #0056b3 !important;
+}
+
+/* Adjust spacing between UI elements */
+.gr-row {
+    padding: 14px 0;
+}
+
+
+/* Completely remove any border, padding, and background from the gradio container */
+.html-container {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    padding: 0px !important;
+}
+
+/* Prevent wrapping in table headers and cells */
+.gradio-container table th,
+.gradio-container table td {
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+}
+
+/* Increase column width to fit longer headers */
+.gradio-container table th {
+    min-width: 140px !important; /* Adjust as needed */
+}
