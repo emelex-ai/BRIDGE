@@ -1,0 +1,4 @@
+training_metrics: true
+validation_metrics: true
+mode: "csv"
+filename: "results/training1.csv"

@@ -10,6 +10,7 @@ from src.application.handlers import (
     WandbConfigHandler,
     LoggingConfigHandler,
     TrainModelHandler,
+    MetricsConfigHandler
 )
 
 
@@ -20,6 +21,8 @@ def load_configs():
         "model_config": ModelConfigHandler,
         "dataset_config": DatasetConfigHandler,
         "training_config": TrainingConfigHandler,
+        "metrics_config": MetricsConfigHandler
+        
     }
     configs = {}
     for key, handler_cls in handlers.items():

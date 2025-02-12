@@ -4,3 +4,4 @@ from src.application.handlers.model_config_handler import ModelConfigHandler
 from src.application.handlers.wandb_config_handler import WandbConfigHandler
 from src.application.handlers.train_model_handler import TrainModelHandler
 from src.application.handlers.training_config_handler import TrainingConfigHandler
+from src.application.handlers.metrics_config_handler import MetricsConfigHandler

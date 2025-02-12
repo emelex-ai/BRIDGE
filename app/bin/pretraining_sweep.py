@@ -2,6 +2,7 @@ import sys
 import os
 
 
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
 from src.application.handlers import (
@@ -11,6 +12,7 @@ from src.application.handlers import (
     WandbConfigHandler,
     LoggingConfigHandler,
     TrainModelHandler,
+    MetricsConfigHandler
 )
 import yaml
 
@@ -21,6 +23,7 @@ def load_configs():
         "model_config": ModelConfigHandler,
         "dataset_config": DatasetConfigHandler,
         "training_config": TrainingConfigHandler,
+        "metrics_config": MetricsConfigHandler
     }
     configs = {}
     for key, handler_cls in handlers.items():

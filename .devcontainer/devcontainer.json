@@ -2,11 +2,11 @@
 // README at: https://github.com/devcontainers/templates/tree/main/src/docker-existing-dockerfile
 {
 	"name": "Bridge Development",
-	"initializeCommand": [
-		"bash",
-		"-c",
-		"chmod +x .devcontainer/detect-platform.sh && ./.devcontainer/detect-platform.sh > .devcontainer/platform-config.json && echo 'Platform detection complete'"
-	],
+	// "initializeCommand": [
+	// 	"bash",
+	// 	"-c",
+	// 	"chmod +x .devcontainer/detect-platform.sh && ./.devcontainer/detect-platform.sh > .devcontainer/platform-config.json && echo 'Platform detection complete'"
+	// ],
 	"build": {
 		"context": "..",
 		"dockerfile": "${localEnv:DOCKERFILE:Dockerfile.cpu.dev}"
