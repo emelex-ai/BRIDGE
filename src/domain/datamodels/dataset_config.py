@@ -4,7 +4,6 @@ import os
 
 
 class DatasetConfig(BaseModel):
-    model_config = ConfigDict(frozen=True)
     dataset_filepath: str = Field(description="")
     dimension_phon_repr: PositiveInt = Field(
         description="Length of vector of the phonological representation"
