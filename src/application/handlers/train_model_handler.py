@@ -1,5 +1,5 @@
 from src.domain.datamodels import ModelConfig, DatasetConfig, TrainingConfig, WandbConfig
-from src.utils.helper_funtions import get_run_name, set_seed
+from src.utils.helper_functions import get_run_name, set_seed
 from src.application.training import TrainingPipeline
 from src.infra.clients.wandb import WandbWrapper
 from src.domain.dataset import BridgeDataset

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, model_validator, field_validator
-from src.utils.helper_funtions import get_project_root
+from src.utils.helper_functions import get_project_root
 from src.utils.device import device_manager
 from typing import Optional
 import os

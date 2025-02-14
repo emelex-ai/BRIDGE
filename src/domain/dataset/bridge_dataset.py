@@ -1,250 +1,297 @@
+"""
+BridgeDataset: A dataset class for managing orthographic and phonological data using
+the unified BridgeEncoding dataclass and BridgeTokenizer for processing.
+"""
+
 import os
 import pickle
 import random
-import torch
-import pandas as pd
-from typing import Union
-from torch.utils.data import Dataset
-from src.domain.datamodels import DatasetConfig
-from src.domain.datamodels.encodings import (
-    OrthographicEncoding,
-    PhonologicalEncoding,
-    BridgeEncoding,
-)
-from src.domain.dataset import PhonemeTokenizer, CharacterTokenizer
 import logging
-from typing import Literal
+from typing import Union, Optional, Dict, Any
+from pathlib import Path
+import torch
+from collections import OrderedDict
+from functools import lru_cache
 
+from src.domain.datamodels import DatasetConfig, BridgeEncoding
+from src.domain.dataset import BridgeTokenizer
 
 logger = logging.getLogger(__name__)
 
 
-class BridgeDataset(Dataset):
+class BridgeDataset:
+    """
+    Dataset class managing orthographic and phonological representations of words.
+    Uses BridgeTokenizer for unified tokenization and BridgeEncoding for data storage.
+    """
 
     def __init__(
         self,
         dataset_config: DatasetConfig,
-        device: str | None = None,
-        cache_path: str | None = "data/.cache",
+        device: Optional[str] = None,
+        cache_path: Optional[str] = "data/.cache",
+        cache_size: int = 1000,
     ):
         """
-        Initializes the dataset, precomputes encodings, and loads data onto the specified device.
+        Initialize the dataset with configuration and setup tokenization.
 
         Args:
-            dataset_config (DatasetConfig): Configuration object for the dataset.
-            device (str, optional): Device to load the data onto. Defaults to None.
-            cache_path (str, optional): Directory path to store or load cached phonology data.
+            dataset_config: Configuration object containing dataset parameters
+            device: Optional device specification for tensor placement
+            cache_path: Optional path for caching tokenized data
+            cache_size: Maximum number of encodings to keep in memory
         """
         self.cache_path = cache_path
         self.dataset_config = dataset_config
+
+        # Initialize device - prioritize config device over parameter
+        self.device = torch.device(
+            dataset_config.device
+            if hasattr(dataset_config, "device")
+            else (device if device else "cpu")
+        )
+
+        # Initialize tokenizer with matching device
+        self.tokenizer = BridgeTokenizer(
+            device=self.device,
+            phoneme_cache_size=getattr(dataset_config, "phoneme_cache_size", 10000),
+        )
+
+        # Setup LRU cache for encodings
+        self.encoding_cache = OrderedDict()
+        self.max_cache_size = cache_size
+
+        # Load and process the raw data
         self.dataset_filepath = dataset_config.dataset_filepath
-        self.device = torch.device(device) if device else "cpu"
+        self._load_and_process_data()
 
-        # Load input data containing orthographic and phonologic
-        # representations of words to be used during training
-        input_data = self.read_orthographic_phonologic_data()
-        self.words = sorted(input_data.keys())
+        # Create cache directory if needed
+        if cache_path and not os.path.exists(cache_path):
+            os.makedirs(cache_path, exist_ok=True)
 
-        # Initialize phoneme and character tokenizer
-        self.phoneme_tokenizer = self.read_phonology_data(input_data)
-        self.character_tokenizer = CharacterTokenizer(device=self.device)
-
-        # Finalize word data to filter and determine max sequence lengths
-        self.finalize_word_data()
-
-        # Precompute all encodings and transfer them to the specified device
-        self.data = self.encode(self.words)
-
-    def read_orthographic_phonologic_data(self) -> dict:
+    def _load_and_process_data(self) -> None:
         """
-        Reads orthographic and phonologic from the input dataset.
-
-        Returns:
-            dict[str, WordData]: Dictionary with words as keys and their processed data as values.
-                Each word's data includes count, phoneme representation, phoneme shape, and orthographic representation.
-                {
-                    "word": {
-                        count: int,
-                        phoneme: tuple[np.array, np.array],  # result of np.where
-                        phoneme_shape: tuple[int, int],
-                        orthography: np.array
-                    },
-                    "word2": {}
-                    ...
-                }
+        Load raw data from file and process it using the BridgeTokenizer.
+        Implements efficient data loading and validation.
         """
-        with open(self.dataset_filepath, "rb") as f:
-            input_data = pickle.load(f)
+        logger.info(f"Loading data from {self.dataset_filepath}")
+        try:
+            with open(self.dataset_filepath, "rb") as f:
+                raw_data = pickle.load(f)
 
-        return input_data
+            if not isinstance(raw_data, dict):
+                raise ValueError("Dataset file must contain a dictionary")
 
-    def read_phonology_data(self, input_data: dict) -> PhonemeTokenizer:
+            # Validate and sort words for deterministic ordering
+            valid_words = []
+            for word in sorted(raw_data.keys()):
+                if not isinstance(word, str):
+                    logger.warning(f"Skipping invalid word entry: {word}")
+                    continue
+
+                # Pre-encode first word to validate structure
+                if not valid_words:
+                    test_encoding = self._encode_single_word(word)
+                    if test_encoding is None:
+                        logger.warning("Initial encoding validation failed")
+                        continue
+
+                valid_words.append(word)
+
+            self.words = valid_words
+            logger.info(f"Successfully loaded {len(self.words)} valid words")
+
+        except Exception as e:
+            logger.error(f"Error loading dataset: {e}")
+            raise
+
+    @lru_cache(maxsize=128)
+    def _encode_single_word(self, word: str) -> Optional[BridgeEncoding]:
         """
-        Reads or creates a phonology tokenizer from cached data, saving to cache if created.
+        Encode a single word using the tokenizer with caching.
 
         Args:
-            words (pd.Series): Series of words to encode.
+            word: Word to encode
 
         Returns:
-            PhonemeTokenizer: Initialized phoneme tokenizer object.
+            BridgeEncoding object or None if encoding fails
         """
-        if not os.path.exists(self.cache_path):
-            os.makedirs(self.cache_path, exist_ok=True)
+        try:
+            encoding = self.tokenizer.encode(word)
+            if encoding is not None:
+                # Ensure encoding is on correct device
+                return encoding.to(self.device)
+            return None
+        except Exception as e:
+            logger.error(f"Error encoding word '{word}': {e}")
+            return None
 
-        dataset_name = os.path.splitext(os.path.basename(self.dataset_filepath))[0]
-        cache_file = f"{dataset_name}_phonology.pkl"
-        cache_path = os.path.join(self.cache_path, cache_file)
-
-        # Load phoneme tokenizer from cache if available, otherwise initialize and cache it
-        if os.path.exists(cache_path):
-            with open(cache_path, "rb") as f:
-                phoneme_tokenizer = pickle.load(f)
-            logger.info(f"PhonemeTokenizer data loaded from: {cache_path}")
-        else:
-            phoneme_tokenizer = PhonemeTokenizer(device=self.device)
-            with open(cache_path, "wb") as f:
-                pickle.dump(phoneme_tokenizer, f)
-            logger.info(f"Created cache folder for phoneme_tokenizer: {cache_path}")
-
-        return phoneme_tokenizer
-
-    def finalize_word_data(self) -> None:
+    def _get_encoding(self, word: str) -> Optional[BridgeEncoding]:
         """
-        Processes words to filter out invalid entries and calculates maximum sequence lengths for orthography and phonology.
+        Get encoding for a word, using cache when available.
+
+        Args:
+            word: Word to retrieve encoding for
+
+        Returns:
+            BridgeEncoding object or None if not available
         """
-        logger.info("Finalizing words list.")
-        final_words = []
+        # Check in-memory cache first
+        if word in self.encoding_cache:
+            return self.encoding_cache[word]
 
-        for word in self.words:
-            # Skip empty or invalid entries
-            if not word:
-                continue
+        # Encode word if not in cache
+        encoding = self._encode_single_word(word)
+        if encoding is not None:
+            # Update cache with LRU policy
+            if len(self.encoding_cache) >= self.max_cache_size:
+                self.encoding_cache.popitem(last=False)
+            self.encoding_cache[word] = encoding
 
-            # Encode phonology; if valid, update sequence lengths
-            phonology = self.phoneme_tokenizer.encode([word])
-            if phonology:  # Ensure the word is valid in the phoneme dictionary
-                final_words.append(word)
-
-        phon_vocab_size = self.phoneme_tokenizer.get_vocabulary_size()
-        orth_vocab_size = self.character_tokenizer.get_vocabulary_size()
-
-        self.words = final_words
+        return encoding
 
     def __len__(self) -> int:
-        """
-        Returns the length of the dataset.
-
-        Returns:
-            int: Number of words in the dataset.
-        """
+        """Return the number of valid words in the dataset."""
         return len(self.words)
 
-    def __getitem__(
-        self, idx: Union[int, slice, str]
-    ) -> dict[str, dict[str, torch.Tensor]]:
+    def __getitem__(self, idx: Union[int, slice, str]) -> Dict[str, Dict[str, Any]]:
         """
-        Retrieves precomputed data for the given index.
+        Retrieve encoded data for specified index or slice.
+        Maintains compatibility with training pipeline expectations.
 
         Args:
-            idx (Union[int, slice, str]): Index of the item to retrieve.
-                - int: Single word
-                - slice: Range of words
-                - str: Specific word (must be in the dataset)
+            idx: Can be:
+                - int: Single word index
+                - slice: Range of word indices
+                - str: Specific word
 
         Returns:
-            dict[str, dict[str, torch.Tensor]]: Encoded orthographic and phonological data for the specified index.
+            Dictionary containing orthographic and phonological encodings
         """
         if isinstance(idx, int):
-            # Wrap single index in a slice to retrieve one item
             if idx < 0 or idx >= len(self.words):
-                raise IndexError(f"Index {idx} out of range: [0,{len(self.words)}].")
-            return {
-                k: {sub_k: sub_v[idx : idx + 1] for sub_k, sub_v in v.items()}
-                for k, v in self.data.items()
-            }
+                raise IndexError(f"Index {idx} out of range [0, {len(self.words)})")
+
+            word = self.words[idx]
+            encoding = self._get_encoding(word)
+            if encoding is None:
+                raise RuntimeError(f"Failed to encode word: {word}")
+
+            # Convert single encoding to batch format
+            return encoding.to_dict()
+
         elif isinstance(idx, slice):
-            # Return slice of data
-            return {
-                k: {sub_k: sub_v[idx] for sub_k, sub_v in v.items()}
-                for k, v in self.data.items()
-            }
+            selected_words = self.words[idx]
+            encodings = []
+
+            for word in selected_words:
+                encoding = self._get_encoding(word)
+                if encoding is None:
+                    raise RuntimeError(f"Failed to encode word: {word}")
+                encodings.append(encoding)
+
+            if not encodings:
+                raise ValueError("No valid encodings in slice")
+
+            # Merge encodings into batch
+            return self._format_batch_encodings(encodings)
+
         elif isinstance(idx, str):
             if idx not in self.words:
-                raise ValueError(f'Word "{idx}" not found in the dataset.')
-            word_index = self.words.index(idx)
-            return self.__getitem__(word_index)
+                raise KeyError(f"Word '{idx}' not found in dataset")
+
+            encoding = self._get_encoding(idx)
+            if encoding is None:
+                raise RuntimeError(f"Failed to encode word: {idx}")
+
+            return encoding.to_dict()
+
         else:
-            raise TypeError("Index must be an int, slice, or string.")
+            raise TypeError(f"Invalid index type: {type(idx)}")
 
-    def encode(self, words: Union[str, list[str]]) -> BridgeEncoding:
+    def _format_batch_encodings(
+        self, encodings: list[BridgeEncoding]
+    ) -> Dict[str, Dict[str, Any]]:
         """
-        Encodes a list of words into both orthographic and phonological representations.
-
-        This method provides a unified interface to encode words for both modalities,
-        properly packaging the outputs into validated Pydantic models. It ensures
-        consistency between the orthographic and phonological representations,
-        including matching batch sizes and device placement.
+        Format a list of BridgeEncodings into training pipeline batch format.
 
         Args:
-            words: A word or list of words to encode. Words should be a valid string that
-                exists in the phonological vocabularies (CMUDict).
+            encodings: List of BridgeEncoding objects
 
         Returns:
-            BridgeEncoding containing both orthographic and phonological encodings
-            in their respective Pydantic model containers.
-
-        Raises:
-            ValueError: If any word is not found in the phonological dictionary
-            TypeError: If input is not a list of strings
+            Dictionary with batched tensor data
         """
-        # Input validation
-        if isinstance(words, str):
-            words = [words]
-        if not isinstance(words, list) or not all(isinstance(w, str) for w in words):
-            raise TypeError("Input must be a list of strings")
+        if not encodings:
+            raise ValueError("No encodings to format")
 
-        # Encode using both tokenizers
-        orthographic_encoding = self.character_tokenizer.encode(words)
-        phonological_encoding = self.phoneme_tokenizer.encode(words)
+        # Convert first encoding to dict to initialize structure
+        batch = encodings[0].to_dict()
 
-        # Validate phonological encoding succeeded
-        if phonological_encoding is None:
-            failed_words = [
-                w for w in words if self.phoneme_tokenizer.enc_inputs.get(w) is None
-            ]
-            raise ValueError(
-                f"Phonological encoding failed for words: {failed_words}. "
-                "These words were not found in the phonological dictionary."
-            )
+        # Stack subsequent encodings
+        for encoding in encodings[1:]:
+            enc_dict = encoding.to_dict()
 
-        # Package into Pydantic models
-        orthographic = OrthographicEncoding(
-            enc_input_ids=orthographic_encoding["enc_input_ids"],
-            enc_pad_mask=orthographic_encoding["enc_pad_mask"],
-            dec_input_ids=orthographic_encoding["dec_input_ids"],
-            dec_pad_mask=orthographic_encoding["dec_pad_mask"],
-        )
+            # Stack orthographic tensors
+            for key in batch["orthographic"]:
+                if isinstance(batch["orthographic"][key], torch.Tensor):
+                    batch["orthographic"][key] = torch.cat(
+                        [batch["orthographic"][key], enc_dict["orthographic"][key]]
+                    )
 
-        phonological = PhonologicalEncoding(
-            enc_input_ids=phonological_encoding["enc_input_ids"],
-            enc_pad_mask=phonological_encoding["enc_pad_mask"],
-            dec_input_ids=phonological_encoding["dec_input_ids"],
-            dec_pad_mask=phonological_encoding["dec_pad_mask"],
-            targets=phonological_encoding["targets"],
-        )
+            # Stack phonological tensors
+            for key in batch["phonological"]:
+                if key in ["enc_input_ids", "dec_input_ids"]:
+                    # These are lists of lists of tensors
+                    batch["phonological"][key].extend(enc_dict["phonological"][key])
+                else:
+                    batch["phonological"][key] = torch.cat(
+                        [batch["phonological"][key], enc_dict["phonological"][key]]
+                    )
 
-        # Create and return combined output
-        # The BridgeEncoding constructor will validate consistency
-        # between orthographic and phonological components
-        return BridgeEncoding(orthographic=orthographic, phonological=phonological)
+        return batch
 
-    def shuffle(self, cutoff: int):
-        """Split the data by the cutoff point, shuffle the elements before the cutoff point, and reassemble the data"""
-        data_items = list(self.data.items())
-        shuffled_data = data_items[:cutoff]
-        random.shuffle(shuffled_data)
-        data_items = shuffled_data + data_items[cutoff:]
-        # Recreate the data dict
-        self.data = {
-            k: {sub_k: sub_v for sub_k, sub_v in v.items()} for k, v in data_items
-        }
+    def shuffle(self, cutoff: int) -> None:
+        """
+        Shuffle the dataset up to the specified cutoff point.
+        Maintains cache consistency during shuffling.
+
+        Args:
+            cutoff: Index to shuffle up to (exclusive)
+        """
+        if cutoff > len(self.words):
+            raise ValueError(f"Cutoff {cutoff} exceeds dataset size {len(self.words)}")
+
+        # Store original order for validation
+        original_words = self.words.copy()
+
+        # Shuffle words up to cutoff
+        shuffled_section = self.words[:cutoff]
+        random.shuffle(shuffled_section)
+        self.words = shuffled_section + self.words[cutoff:]
+
+        # Validate no words were lost
+        assert len(self.words) == len(original_words)
+        assert set(self.words) == set(original_words)
+
+        # Clear cache since order changed
+        self.encoding_cache.clear()
+
+    def to(self, device: torch.device) -> None:
+        """
+        Move dataset to specified device.
+        Updates both tokenizer and cached encodings.
+
+        Args:
+            device: Target device
+        """
+        if device == self.device:
+            return
+
+        self.device = device
+        self.tokenizer = self.tokenizer.to(device)
+
+        # Move cached encodings to new device
+        new_cache = OrderedDict()
+        for word, encoding in self.encoding_cache.items():
+            new_cache[word] = encoding.to(device)
+        self.encoding_cache = new_cache

@@ -1,7 +1,7 @@
 from src.domain.datamodels import DatasetConfig, ModelConfig
 from src.domain.model.encoder import Encoder
 from src.domain.model.decoder import Decoder
-from src.utils.helper_funtions import set_seed
+from src.utils.helper_functions import set_seed
 from src.domain.datamodels import BridgeEncoding, GenerationOutput
 from typing import Any, Literal
 import torch.nn as nn
@@ -963,7 +963,7 @@ class Model(nn.Module):
                 )
 
             # Validate feature indices are within vocabulary bounds
-            max_feature_idx = self.dataset_config.phonological_vocabulary_size - 1
+            max_feature_idx = self.dataset_config.phonological_vocabulary_size
             if any(
                 torch.any(features >= max_feature_idx)
                 for batch_item in phon_enc_input
@@ -1294,7 +1294,7 @@ class Model(nn.Module):
                 )
 
             # Validate phonological feature indices are within vocabulary bounds
-            max_feature_idx = self.dataset_config.phonological_vocabulary_size - 1
+            max_feature_idx = self.dataset_config.phonological_vocabulary_size
             if any(
                 torch.any(features >= max_feature_idx)
                 for batch_item in phon_enc_input

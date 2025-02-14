@@ -1,11 +1,13 @@
 from typing import Union
-import pandas as pd
-import numpy as np
-import torch
 import logging
+import os
+
 from nltk.corpus import cmudict
+import pandas as pd
+import torch
+
 from src.domain.dataset import CUDADict
-from src.domain.datamodels import DatasetConfig
+from src.utils.helper_functions import get_project_root
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +33,16 @@ class PhonemeTokenizer:
         )
 
         # Load phonetic representations from config
-        self.phonreps = pd.read_csv("data/phonreps.csv")
+        self.phonreps = pd.read_csv(
+            os.path.join(get_project_root(), "data/phonreps.csv")
+        )
         self.phonreps.set_index("phone", inplace=True)
         self.base_dim = len(self.phonreps.columns)
 
-        # Convert phonreps to numpy for faster lookup
-        self.phonreps_array = self.phonreps.values
+        # Convert phonreps to PyTorch tensor for faster lookup
+        self.phonreps_array = torch.tensor(
+            self.phonreps.values, dtype=torch.float, device=self.device
+        )
         self.phonreps_index = {p: i for i, p in enumerate(self.phonreps.index)}
 
         # Load CMU dict and clean problematic entries
@@ -56,13 +62,13 @@ class PhonemeTokenizer:
         }
         self.vocabulary_size = self.base_dim + len(self.special_token_dims)
 
-        # Pre-compute special token vectors
+        # Pre-compute special token vectors as PyTorch tensors
         self.special_vecs = {
-            token: np.array([dim], dtype=np.int64)
+            token: torch.tensor([dim], dtype=torch.long, device=self.device)
             for token, dim in self.special_token_dims.items()
         }
 
-        # Efficient cache using numpy arrays
+        # Efficient cache using PyTorch tensors
         self.vector_cache = {}
         self.max_cache_size = max_cache_size
 
@@ -94,7 +100,7 @@ class PhonemeTokenizer:
                 result.append("[SPC]")
         return result
 
-    def _get_phoneme_indices(self, phoneme: str) -> np.ndarray:
+    def _get_phoneme_indices(self, phoneme: str) -> torch.Tensor:
         """Get active feature indices for a phoneme."""
         if phoneme in self.vector_cache:
             return self.vector_cache[phoneme]
@@ -106,7 +112,10 @@ class PhonemeTokenizer:
         # Get phoneme feature vector
         if phoneme in self.phonreps_index:
             idx = self.phonreps_index[phoneme]
-            active_indices = np.where(self.phonreps_array[idx] == 1)[0]
+            # Find indices where features are active (1)
+            active_indices = torch.nonzero(
+                self.phonreps_array[idx] == 1, as_tuple=True
+            )[0].to(dtype=torch.long)
 
             # Cache management
             if len(self.vector_cache) >= self.max_cache_size:
@@ -129,7 +138,6 @@ class PhonemeTokenizer:
                 return None
             word_phonemes.append(phonemes)
 
-        # Rest of the method remains unchanged
         batch_size = len(words)
         max_length = max(len(p) for p in word_phonemes)
         enc_length = max_length + 2  # Add BOS, EOS
@@ -141,7 +149,10 @@ class PhonemeTokenizer:
 
         # Prepare target tensors - will be full binary vectors
         targets = torch.full(
-            (batch_size, dec_length, self.vocabulary_size), 2, dtype=torch.long
+            (batch_size, dec_length, self.vocabulary_size),
+            2,
+            dtype=torch.long,
+            device=self.device,
         )
 
         for i, phoneme_seq in enumerate(word_phonemes):
@@ -170,23 +181,23 @@ class PhonemeTokenizer:
                 targets[i, j].fill_(0)  # Clear the 2's for this position
                 targets[i, j, indices] = 1  # Set active features to 1
 
-        # Create padding masks efficiently and move to device
-        enc_pad_mask = torch.arange(enc_length, device=self.device).expand(
+        # Create padding masks efficiently
+        seq_lengths = torch.tensor(
+            [len(p) + 2 for p in word_phonemes], device=self.device
+        )
+        position_indices = torch.arange(enc_length, device=self.device).expand(
             batch_size, enc_length
         )
-        enc_pad_mask = enc_pad_mask >= torch.tensor(
-            [len(p) + 2 for p in word_phonemes], device=self.device
-        ).unsqueeze(1)
 
-        dec_pad_mask = torch.arange(dec_length, device=self.device).expand(
+        enc_pad_mask = position_indices >= seq_lengths.unsqueeze(1)
+
+        # For decoder mask, use sequence length + 1 (BOS only, no EOS)
+        dec_seq_lengths = seq_lengths - 1
+        dec_position_indices = torch.arange(dec_length, device=self.device).expand(
             batch_size, dec_length
         )
-        dec_pad_mask = dec_pad_mask >= torch.tensor(
-            [len(p) + 1 for p in word_phonemes], device=self.device
-        ).unsqueeze(1)
 
-        # Move targets to device
-        targets = targets.to(self.device)
+        dec_pad_mask = dec_position_indices >= dec_seq_lengths.unsqueeze(1)
 
         return CUDADict(
             {
@@ -198,18 +209,23 @@ class PhonemeTokenizer:
             }
         )
 
-    # decode and get_vocabulary_size methods remain unchanged
     def decode(self, indices_batch: list[list[int]]) -> torch.Tensor:
         """Convert feature indices to sparse one-hot vectors."""
         batch_size = len(indices_batch)
-        values = torch.ones(sum(len(indices) for indices in indices_batch))
+
+        # Convert all inputs to tensors
+        lengths = torch.tensor(
+            [len(indices) for indices in indices_batch], device=self.device
+        )
+        values = torch.ones(lengths.sum(), device=self.device)
 
         # Build sparse tensor indices
         row_indices = torch.repeat_interleave(
-            torch.arange(batch_size),
-            torch.tensor([len(indices) for indices in indices_batch]),
+            torch.arange(batch_size, device=self.device), lengths
         )
-        col_indices = torch.cat([torch.tensor(idx) for idx in indices_batch])
+        col_indices = torch.cat(
+            [torch.tensor(idx, device=self.device) for idx in indices_batch]
+        )
 
         indices = torch.stack([row_indices, col_indices])
         return torch.sparse_coo_tensor(

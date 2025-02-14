@@ -35,7 +35,7 @@ orth_vocab_size. It will also construct the PhonemeTokenizer's
 
 import torch
 import logging
-from src.domain.dataset import CUDADict
+from src.domain.datamodels import BridgeEncoding
 from src.domain.dataset.character_tokenizer import CharacterTokenizer
 from src.domain.dataset.phoneme_tokenizer import PhonemeTokenizer
 
@@ -78,7 +78,7 @@ class BridgeTokenizer:
             f"Phonological: {self.phoneme_tokenizer.get_vocabulary_size()}"
         )
 
-    def encode(self, text: str | list[str]) -> CUDADict | None:
+    def encode(self, text: str | list[str]) -> BridgeEncoding | None:
         """
         Encode text using both tokenizers and return combined results.
 
@@ -86,7 +86,7 @@ class BridgeTokenizer:
             text: Single string or list of strings to encode
 
         Returns:
-            CUDADict containing both orthographic and phonological encodings,
+            BridgeEncoding containing both orthographic and phonological encodings,
             or None if phonological encoding fails
         """
         # Get orthographic encoding
@@ -102,23 +102,18 @@ class BridgeTokenizer:
             )
             return None
 
-        # Combine both encodings into a nested dictionary structure
-        return CUDADict(
-            {
-                "orthographic": {
-                    "enc_input_ids": ortho_encoding["enc_input_ids"],
-                    "dec_input_ids": ortho_encoding["dec_input_ids"],
-                    "enc_pad_mask": ortho_encoding["enc_pad_mask"],
-                    "dec_pad_mask": ortho_encoding["dec_pad_mask"],
-                },
-                "phonological": {
-                    "enc_input_ids": phono_encoding["enc_input_ids"],
-                    "dec_input_ids": phono_encoding["dec_input_ids"],
-                    "enc_pad_mask": phono_encoding["enc_pad_mask"],
-                    "dec_pad_mask": phono_encoding["dec_pad_mask"],
-                    "targets": phono_encoding["targets"],
-                },
-            }
+        # Combine both encodings into an instance of BridgeEncoding
+        return BridgeEncoding(
+            orth_enc_ids=ortho_encoding["enc_input_ids"],
+            orth_enc_mask=ortho_encoding["enc_pad_mask"],
+            orth_dec_ids=ortho_encoding["dec_input_ids"],
+            orth_dec_mask=ortho_encoding["dec_pad_mask"],
+            phon_enc_ids=phono_encoding["enc_input_ids"],
+            phon_dec_ids=phono_encoding["dec_input_ids"],
+            phon_enc_mask=phono_encoding["enc_pad_mask"],
+            phon_dec_mask=phono_encoding["dec_pad_mask"],
+            phon_targets=phono_encoding["targets"],
+            device=self.device,
         )
 
     def decode(

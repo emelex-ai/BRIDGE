@@ -1,27 +1,17 @@
-from pydantic import BaseModel, Field, model_validator, PositiveInt
-from src.utils.helper_funtions import get_project_root
+from pydantic import BaseModel, Field, model_validator
+from src.utils.device import device_manager
+from src.utils.helper_functions import get_project_root
 from pathlib import PosixPath
 import os
 
 
 class DatasetConfig(BaseModel):
     dataset_filepath: str | PosixPath = Field(description="")
-    dimension_phon_repr: PositiveInt | None = Field(
-        default=None,
-        gt=0,
-        description="Length of vector of the phonological representation",
+    device: str | None = Field(
+        default=device_manager.device.type, description="Device to use for processing"
     )
-    orthographic_vocabulary_size: PositiveInt | None = Field(
-        default=None, gt=0, description="Orthographic Vocabulary Size"
-    )
-    phonological_vocabulary_size: PositiveInt | None = Field(
-        default=None, gt=0, description="Phonological Vocabulary Size"
-    )
-    max_orth_seq_len: PositiveInt | None = Field(
-        default=None, gt=0, description="Maximum length of the orthographic sequence"
-    )
-    max_phon_seq_len: PositiveInt | None = Field(
-        default=None, gt=0, description="Maximum length of the phonological sequence"
+    phoneme_cache_size: int = Field(
+        default=10000, description="Max cache size for phoneme tokenizer"
     )
 
     @model_validator(mode="before")

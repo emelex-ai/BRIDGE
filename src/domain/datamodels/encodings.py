@@ -1,222 +1,302 @@
-from typing import Annotated, ItemsView
-from pydantic import BaseModel, Field, model_validator
+"""
+BridgeEncoding: A high-performance data structure for managing orthographic and phonological encodings.
+Uses slots and frozen dataclasses for optimal memory usage and access speed.
+"""
+
+from dataclasses import dataclass
+from typing import Any, Union, Optional
 import torch
+import functools
 
 
-def validate_tensor(v: torch.Tensor, name: str) -> torch.Tensor:
-    """Validates a tensor exists and has correct basic properties."""
-    if not isinstance(v, torch.Tensor):
-        raise ValueError(f"{name} must be a torch.Tensor")
-    if v.dim() != 2:
-        raise ValueError(f"{name} must be 2-dimensional (batch × sequence)")
-    return v
+@dataclass(frozen=True, slots=True)
+class BridgeEncoding:
+    """
+    Unified container for orthographic and phonological encodings.
 
+    This class is immutable (frozen) and uses slots for better memory usage
+    and faster attribute access. All tensor operations maintain device consistency.
 
-def validate_bool_tensor(v: torch.Tensor, name: str) -> torch.Tensor:
-    """Additional validation for boolean mask tensors."""
-    v = validate_tensor(v, name)
-    if v.dtype != torch.bool:
-        raise ValueError(f"{name} must have dtype torch.bool")
-    return v
+    Attributes:
+        orth_enc_ids: Tensor[batch_size, seq_len] - Orthographic encoder input IDs
+        orth_enc_mask: Tensor[batch_size, seq_len] - Orthographic encoder padding mask
+        orth_dec_ids: Tensor[batch_size, seq_len] - Orthographic decoder input IDs
+        orth_dec_mask: Tensor[batch_size, seq_len] - Orthographic decoder padding mask
+        phon_enc_ids: list[list[Tensor]] - Phonological encoder feature tensors
+        phon_enc_mask: Tensor[batch_size, seq_len] - Phonological encoder padding mask
+        phon_dec_ids: list[list[Tensor]] - Phonological decoder feature tensors
+        phon_dec_mask: Tensor[batch_size, seq_len] - Phonological decoder padding mask
+        phon_targets: Tensor[batch_size, seq_len, num_features] - Target phonological features
+        device: torch.device - Device all tensors reside on
+    """
 
+    orth_enc_ids: torch.Tensor
+    orth_enc_mask: torch.Tensor
+    orth_dec_ids: torch.Tensor
+    orth_dec_mask: torch.Tensor
+    phon_enc_ids: list[list[torch.Tensor]]
+    phon_enc_mask: torch.Tensor
+    phon_dec_ids: list[list[torch.Tensor]]
+    phon_dec_mask: torch.Tensor
+    phon_targets: torch.Tensor
+    device: torch.device
 
-def validate_id_tensor(v: torch.Tensor, name: str) -> torch.Tensor:
-    """Additional validation for token ID tensors."""
-    v = validate_tensor(v, name)
-    if v.dtype not in [torch.long, torch.int]:
-        raise ValueError(f"{name} must have dtype torch.long or torch.int")
-    if torch.any(v < 0):
-        raise ValueError(f"{name} cannot contain negative indices")
-    return v
+    def __post_init__(self):
+        """Validate tensor properties and ensure consistency."""
+        # Use object.__setattr__ since the class is frozen
+        object.__setattr__(self, "device", self.orth_enc_ids.device)
 
+        self._validate_tensor_properties()
+        self._validate_batch_consistency()
+        self._validate_device_consistency()
 
-class OrthographicEncoding(BaseModel):
-    """Encodes orthographic (character-level) inputs and masks."""
+    def _validate_tensor_properties(self):
+        """Validate individual tensor properties."""
+        # Validate orthographic tensors
+        for name, tensor in [
+            ("orth_enc_ids", self.orth_enc_ids),
+            ("orth_dec_ids", self.orth_dec_ids),
+        ]:
+            if not isinstance(tensor, torch.Tensor):
+                raise ValueError(f"{name} must be a torch.Tensor")
+            if tensor.dim() != 2:
+                raise ValueError(f"{name} must be 2-dimensional (batch × sequence)")
+            if tensor.dtype not in [torch.long, torch.int]:
+                raise ValueError(f"{name} must have dtype torch.long or torch.int")
+            if torch.any(tensor < 0):
+                raise ValueError(f"{name} cannot contain negative indices")
 
-    enc_input_ids: Annotated[torch.Tensor, Field(validate_default=True)]
-    enc_pad_mask: Annotated[torch.Tensor, Field(validate_default=True)]
-    dec_input_ids: Annotated[torch.Tensor, Field(validate_default=True)]
-    dec_pad_mask: Annotated[torch.Tensor, Field(validate_default=True)]
+        # Validate padding masks
+        for name, tensor in [
+            ("orth_enc_mask", self.orth_enc_mask),
+            ("orth_dec_mask", self.orth_dec_mask),
+            ("phon_enc_mask", self.phon_enc_mask),
+            ("phon_dec_mask", self.phon_dec_mask),
+        ]:
+            if not isinstance(tensor, torch.Tensor):
+                raise ValueError(f"{name} must be a torch.Tensor")
+            if tensor.dim() != 2:
+                raise ValueError(f"{name} must be 2-dimensional")
+            if tensor.dtype != torch.bool:
+                raise ValueError(f"{name} must have dtype torch.bool")
 
-    @model_validator(mode="after")
-    def validate_tensors(self) -> "OrthographicEncoding":
-        # Validate individual tensor properties
-        self.enc_input_ids = validate_id_tensor(self.enc_input_ids, "enc_input_ids")
-        self.dec_input_ids = validate_id_tensor(self.dec_input_ids, "dec_input_ids")
-        self.enc_pad_mask = validate_bool_tensor(self.enc_pad_mask, "enc_pad_mask")
-        self.dec_pad_mask = validate_bool_tensor(self.dec_pad_mask, "dec_pad_mask")
-
-        # Validate shape consistency
-        if self.enc_input_ids.shape != self.enc_pad_mask.shape:
-            raise ValueError("enc_input_ids and enc_pad_mask must have same shape")
-        if self.dec_input_ids.shape != self.dec_pad_mask.shape:
-            raise ValueError("dec_input_ids and dec_pad_mask must have same shape")
-
-        # Validate device consistency
-        devices = {
-            t.device
-            for t in [
-                self.enc_input_ids,
-                self.enc_pad_mask,
-                self.dec_input_ids,
-                self.dec_pad_mask,
-            ]
-        }
-        if len(devices) > 1:
-            raise ValueError("All tensors must be on the same device")
-
-        return self
-
-    class Config:
-        arbitrary_types_allowed = True
-
-
-class PhonologicalEncoding(BaseModel):
-    """Encodes phonological (feature-level) inputs and masks."""
-
-    enc_input_ids: list[list[torch.Tensor]]
-    enc_pad_mask: Annotated[torch.Tensor, Field(validate_default=True)]
-    dec_input_ids: list[list[torch.Tensor]]
-    dec_pad_mask: Annotated[torch.Tensor, Field(validate_default=True)]
-    targets: Annotated[torch.Tensor, Field(validate_default=True)]
-
-    @model_validator(mode="after")
-    def validate_structure(self) -> "PhonologicalEncoding":
-        # Validate masks
-        self.enc_pad_mask = validate_bool_tensor(self.enc_pad_mask, "enc_pad_mask")
-        self.dec_pad_mask = validate_bool_tensor(self.dec_pad_mask, "dec_pad_mask")
+        # Validate phonological feature tensors
+        for name, tensor_list in [
+            ("phon_enc_ids", self.phon_enc_ids),
+            ("phon_dec_ids", self.phon_dec_ids),
+        ]:
+            if not isinstance(tensor_list, list):
+                raise ValueError(f"{name} must be a list of lists of tensors")
+            if not all(isinstance(batch, list) for batch in tensor_list):
+                raise ValueError(f"Each batch in {name} must be a list")
+            if not all(
+                isinstance(t, torch.Tensor) for batch in tensor_list for t in batch
+            ):
+                raise ValueError(
+                    f"All elements in {name} must be torch.Tensor got {type(tensor_list[0][0])}"
+                )
 
         # Validate targets tensor
-        if not isinstance(self.targets, torch.Tensor):
-            raise ValueError("targets must be a torch.Tensor")
-        if self.targets.dim() != 3:  # batch × sequence × features
-            raise ValueError("targets must be 3-dimensional")
+        if not isinstance(self.phon_targets, torch.Tensor):
+            raise ValueError("phon_targets must be a torch.Tensor")
+        if self.phon_targets.dim() != 3:
+            raise ValueError(
+                "phon_targets must be 3-dimensional (batch × sequence × features)"
+            )
 
-        # Validate input structure
-        if not isinstance(self.enc_input_ids, list) or not all(
-            isinstance(x, list) for x in self.enc_input_ids
-        ):
-            raise ValueError("enc_input_ids must be a list of lists of tensors")
-        if not isinstance(self.dec_input_ids, list) or not all(
-            isinstance(x, list) for x in self.dec_input_ids
-        ):
-            raise ValueError("dec_input_ids must be a list of lists of tensors")
+    def _validate_batch_consistency(self):
+        """Ensure all components have consistent batch sizes."""
+        batch_size = self.orth_enc_ids.size(0)
 
-        # Validate all inner elements are tensors
-        for batch in self.enc_input_ids + self.dec_input_ids:
-            if not all(isinstance(t, torch.Tensor) for t in batch):
-                raise ValueError("All elements must be torch.Tensor")
+        # Check all tensor batch dimensions match
+        tensors_to_check = [
+            ("orth_enc_mask", self.orth_enc_mask),
+            ("orth_dec_ids", self.orth_dec_ids),
+            ("orth_dec_mask", self.orth_dec_mask),
+            ("phon_enc_mask", self.phon_enc_mask),
+            ("phon_dec_mask", self.phon_dec_mask),
+            ("phon_targets", self.phon_targets),
+        ]
 
-        # Validate batch sizes match
-        batch_size = len(self.enc_input_ids)
-        if (
-            len(self.dec_input_ids) != batch_size
-            or self.enc_pad_mask.size(0) != batch_size
-            or self.dec_pad_mask.size(0) != batch_size
-            or self.targets.size(0) != batch_size
-        ):
-            raise ValueError("Batch sizes must match across all components")
+        for name, tensor in tensors_to_check:
+            if tensor.size(0) != batch_size:
+                raise ValueError(
+                    f"Batch size mismatch: {name} has size {tensor.size(0)}, "
+                    f"expected {batch_size}"
+                )
 
-        # Validate device consistency
-        devices = {
-            self.enc_pad_mask.device,
-            self.dec_pad_mask.device,
-            self.targets.device,
-        }
-        for batch in self.enc_input_ids + self.dec_input_ids:
+        # Check phonological feature lists
+        if len(self.phon_enc_ids) != batch_size:
+            raise ValueError(
+                f"Batch size mismatch: phon_enc_ids has {len(self.phon_enc_ids)} "
+                f"batches, expected {batch_size}"
+            )
+        if len(self.phon_dec_ids) != batch_size:
+            raise ValueError(
+                f"Batch size mismatch: phon_dec_ids has {len(self.phon_dec_ids)} "
+                f"batches, expected {batch_size}"
+            )
+
+    def _validate_device_consistency(self):
+        """Ensure all tensors are on the same device."""
+        device = self.device
+
+        # Check regular tensors
+        tensors_to_check = [
+            self.orth_enc_ids,
+            self.orth_enc_mask,
+            self.orth_dec_ids,
+            self.orth_dec_mask,
+            self.phon_enc_mask,
+            self.phon_dec_mask,
+            self.phon_targets,
+        ]
+
+        for tensor in tensors_to_check:
+            if tensor.device != device:
+                raise ValueError(
+                    f"Device mismatch: found tensor on {tensor.device}, "
+                    f"expected {device}"
+                )
+
+        # Check phonological feature tensors
+        for batch in self.phon_enc_ids + self.phon_dec_ids:
             for tensor in batch:
-                devices.add(tensor.device)
-        if len(devices) > 1:
-            raise ValueError("All tensors must be on the same device")
+                if tensor.device != device:
+                    raise ValueError(
+                        f"Device mismatch: found phonological feature tensor on "
+                        f"{tensor.device}, expected {device}"
+                    )
 
-        return self
-
-    class Config:
-        arbitrary_types_allowed = True
-
-
-class BridgeEncoding(BaseModel):
-    """Container for both orthographic and phonological encodings."""
-
-    orthographic: OrthographicEncoding
-    phonological: PhonologicalEncoding
-
-    class Config:
-        arbitrary_types_allowed = True
-
-    def __getitem__(self, idx) -> tuple[dict, dict]:
-        """Access corresponding items from both encodings at the given index.
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], device: Optional[torch.device] = None
+    ) -> "BridgeEncoding":
+        """
+        Create a BridgeEncoding instance from a dictionary representation.
 
         Args:
-            idx: Integer index into the batch
+            data: Dictionary containing orthographic and phonological components
+            device: Optional device to place tensors on
 
         Returns:
-            A tuple of (orthographic_item, phonological_item) where each item
-            is a dictionary containing the relevant tensors/features for that modality
+            BridgeEncoding instance
         """
-        # Extract orthographic components
-        orth_item = {
-            "enc_input_ids": self.orthographic.enc_input_ids[idx],
-            "enc_pad_mask": self.orthographic.enc_pad_mask[idx],
-            "dec_input_ids": self.orthographic.dec_input_ids[idx],
-            "dec_pad_mask": self.orthographic.dec_pad_mask[idx],
-        }
+        if device is None:
+            device = torch.device("cpu")
 
-        # Extract phonological components
-        phon_item = {
-            "enc_input_ids": self.phonological.enc_input_ids[idx],
-            "enc_pad_mask": self.phonological.enc_pad_mask[idx],
-            "dec_input_ids": self.phonological.dec_input_ids[idx],
-            "dec_pad_mask": self.phonological.dec_pad_mask[idx],
-            "targets": self.phonological.targets[idx],
-        }
+        # Move tensors to device
+        orth_data = data["orthographic"]
+        phon_data = data["phonological"]
 
-        return orth_item, phon_item
+        return cls(
+            orth_enc_ids=orth_data["enc_input_ids"].to(device),
+            orth_enc_mask=orth_data["enc_pad_mask"].to(device),
+            orth_dec_ids=orth_data["dec_input_ids"].to(device),
+            orth_dec_mask=orth_data["dec_pad_mask"].to(device),
+            phon_enc_ids=[
+                [t.to(device) for t in batch] for batch in phon_data["enc_input_ids"]
+            ],
+            phon_enc_mask=phon_data["enc_pad_mask"].to(device),
+            phon_dec_ids=[
+                [t.to(device) for t in batch] for batch in phon_data["dec_input_ids"]
+            ],
+            phon_dec_mask=phon_data["dec_pad_mask"].to(device),
+            phon_targets=phon_data["targets"].to(device),
+            device=device,
+        )
 
-    def items(self) -> ItemsView[str, dict[str, torch.Tensor]]:
+    def to_dict(self) -> dict[str, Any]:
         """
-        Implements dictionary-like items() method, returning an items view of the data.
-        This allows the BridgeEncoding to be used anywhere a dictionary is expected.
+        Convert to dictionary format for compatibility with existing code.
+
+        Returns:
+            Dictionary containing orthographic and phonological components
         """
-        data_dict = {
+        return {
             "orthographic": {
-                "enc_input_ids": self.orthographic.enc_input_ids,
-                "enc_pad_mask": self.orthographic.enc_pad_mask,
-                "dec_input_ids": self.orthographic.dec_input_ids,
-                "dec_pad_mask": self.orthographic.dec_pad_mask,
+                "enc_input_ids": self.orth_enc_ids,
+                "enc_pad_mask": self.orth_enc_mask,
+                "dec_input_ids": self.orth_dec_ids,
+                "dec_pad_mask": self.orth_dec_mask,
             },
             "phonological": {
-                "enc_input_ids": self.phonological.enc_input_ids,
-                "enc_pad_mask": self.phonological.enc_pad_mask,
-                "dec_input_ids": self.phonological.dec_input_ids,
-                "dec_pad_mask": self.phonological.dec_pad_mask,
-                "targets": self.phonological.targets,
+                "enc_input_ids": self.phon_enc_ids,
+                "enc_pad_mask": self.phon_enc_mask,
+                "dec_input_ids": self.phon_dec_ids,
+                "dec_pad_mask": self.phon_dec_mask,
+                "targets": self.phon_targets,
             },
         }
-        return data_dict.items()
 
-    @model_validator(mode="after")
-    def validate_consistency(self) -> "BridgeEncoding":
-        # Validate batch sizes match between orthographic and phonological
-        orth_batch_size = self.orthographic.enc_input_ids.size(0)
-        phon_batch_size = len(self.phonological.enc_input_ids)
+    def to(self, device: torch.device) -> "BridgeEncoding":
+        """
+        Move all tensors to the specified device.
 
-        if orth_batch_size != phon_batch_size:
-            raise ValueError(
-                f"Batch size mismatch: orthographic ({orth_batch_size}) != "
-                f"phonological ({phon_batch_size})"
-            )
+        Args:
+            device: Target device
 
-        # Validate devices match
-        orth_device = self.orthographic.enc_input_ids.device
-        phon_device = (
-            self.phonological.enc_pad_mask.device
-        )  # Use any tensor from phonological
+        Returns:
+            New BridgeEncoding instance with all tensors on target device
+        """
+        return BridgeEncoding(
+            orth_enc_ids=self.orth_enc_ids.to(device),
+            orth_enc_mask=self.orth_enc_mask.to(device),
+            orth_dec_ids=self.orth_dec_ids.to(device),
+            orth_dec_mask=self.orth_dec_mask.to(device),
+            phon_enc_ids=[[t.to(device) for t in batch] for batch in self.phon_enc_ids],
+            phon_enc_mask=self.phon_enc_mask.to(device),
+            phon_dec_ids=[[t.to(device) for t in batch] for batch in self.phon_dec_ids],
+            phon_dec_mask=self.phon_dec_mask.to(device),
+            phon_targets=self.phon_targets.to(device),
+            device=device,
+        )
 
-        if orth_device != phon_device:
-            raise ValueError(
-                f"Device mismatch: orthographic ({orth_device}) != "
-                f"phonological ({phon_device})"
-            )
+    def __getitem__(self, idx: Union[int, slice]) -> dict[str, Any]:
+        """
+        Get a batch slice of the encoding.
 
-        return self
+        Args:
+            idx: Integer index or slice
+
+        Returns:
+            Dictionary containing orthographic and phonological components for the slice
+        """
+        if isinstance(idx, int):
+            return {
+                "orthographic": {
+                    "enc_input_ids": self.orth_enc_ids[idx : idx + 1],
+                    "enc_pad_mask": self.orth_enc_mask[idx : idx + 1],
+                    "dec_input_ids": self.orth_dec_ids[idx : idx + 1],
+                    "dec_pad_mask": self.orth_dec_mask[idx : idx + 1],
+                },
+                "phonological": {
+                    "enc_input_ids": self.phon_enc_ids[idx : idx + 1],
+                    "enc_pad_mask": self.phon_enc_mask[idx : idx + 1],
+                    "dec_input_ids": self.phon_dec_ids[idx : idx + 1],
+                    "dec_pad_mask": self.phon_dec_mask[idx : idx + 1],
+                    "targets": self.phon_targets[idx : idx + 1],
+                },
+            }
+        elif isinstance(idx, slice):
+            return {
+                "orthographic": {
+                    "enc_input_ids": self.orth_enc_ids[idx],
+                    "enc_pad_mask": self.orth_enc_mask[idx],
+                    "dec_input_ids": self.orth_dec_ids[idx],
+                    "dec_pad_mask": self.orth_dec_mask[idx],
+                },
+                "phonological": {
+                    "enc_input_ids": self.phon_enc_ids[idx],
+                    "enc_pad_mask": self.phon_enc_mask[idx],
+                    "dec_input_ids": self.phon_dec_ids[idx],
+                    "dec_pad_mask": self.phon_dec_mask[idx],
+                    "targets": self.phon_targets[idx],
+                },
+            }
+        else:
+            raise TypeError("Index must be int or slice")
+
+    def __len__(self) -> int:
+        """Return the batch size."""
+        return self.orth_enc_ids.size(0)
