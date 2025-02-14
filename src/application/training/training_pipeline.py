@@ -1,23 +1,24 @@
-import os
-import random
 import torch
 from tqdm import tqdm
-from typing import Dict, Any
 from src.application.training.ortho_metrics import calculate_orth_metrics
 from src.application.training.phon_metrics import calculate_phon_metrics
 from src.domain.datamodels import TrainingConfig
 from src.domain.dataset import BridgeDataset
 from src.domain.model import Model
-from typing import Dict, Union
+from typing import Union
 import time
-from torch.profiler import profile, record_function, ProfilerActivity
-import wandb
 from traindata import utilities
+
+from src.infra.metrics.metrics_logger import MetricsLogger
 
 
 class TrainingPipeline:
     def __init__(
-        self, model: Model, training_config: TrainingConfig, dataset: BridgeDataset
+        self,
+        model: Model,
+        training_config: TrainingConfig,
+        dataset: BridgeDataset,
+        metrics_logger: MetricsLogger,
     ):
         self.training_config = training_config
         self.dataset = dataset
@@ -37,6 +38,7 @@ class TrainingPipeline:
         self.start_epoch = 0
         if training_config.checkpoint_path:
             self.load_model(training_config.checkpoint_path)
+        self.metrics_logger = metrics_logger
 
     def create_data_slices(self):
         cutpoint = int(len(self.dataset) * self.training_config.train_test_split)
@@ -171,9 +173,8 @@ class TrainingPipeline:
         progress_bar = tqdm(self.train_slices, desc=f"Training Epoch {epoch+1}")
         total_metrics = {}
         for step, batch_slice in enumerate(progress_bar):
-            metrics = self.single_step(batch_slice, False)
-            progress_bar.set_postfix(
-                {key: f"{value:.4f}" for key, value in metrics.items()}
+            metrics = self.single_step(
+                batch_slice, self.metrics_logger.metrics_config.training_metrics
             )
             if not total_metrics:
                 total_metrics = metrics
@@ -199,7 +200,9 @@ class TrainingPipeline:
         with torch.no_grad():
             total_metrics = {}
             for step, batch_slice in enumerate(progress_bar):
-                metrics = self.single_step(batch_slice, True)
+                metrics = self.single_step(
+                    batch_slice, self.metrics_logger.metrics_config.validation_metrics
+                )
                 progress_bar.set_postfix(
                     {key: f"{value:.4f}" for key, value in metrics.items()}
                 )
@@ -224,6 +227,7 @@ class TrainingPipeline:
             if self.val_slices:
                 metrics = self.validate_single_epoch(epoch)
                 training_metrics.update(metrics)
+            self.metrics_logger.log_metrics(training_metrics)
             self.save_model(epoch, run_name)
             yield training_metrics
 

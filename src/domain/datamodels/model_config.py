@@ -30,5 +30,3 @@ class ModelConfig(BaseModel):
             raise ValueError("d_model must be divisible by nhead")
         return v
 
-    class Config:
-        protected_namespaces = ()
