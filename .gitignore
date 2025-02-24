@@ -20,3 +20,4 @@ venv/
 *.env
 model_artifacts
 .devcontainer/platform-config.json
+.Rproj.user
