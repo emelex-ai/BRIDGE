@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, model_validator, field_validator
+from pydantic import BaseModel, Field, model_validator, field_validator, ConfigDict
 from src.utils.helper_funtions import get_project_root
 from src.utils.device import device_manager
 from typing import Optional
@@ -18,7 +18,6 @@ class TrainingConfig(BaseModel):
     model_artifacts_dir: str = Field(default="model_artifacts")
     weight_decay: float = Field(default=0.0)
     checkpoint_path: Optional[str] = Field(default=None)
-
 
     @model_validator(mode="before")
     def convert_paths(cls, values):
@@ -61,5 +60,3 @@ class TrainingConfig(BaseModel):
             )
         return self
 
-    class Config:
-        protected_namespaces = ()

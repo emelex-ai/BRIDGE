@@ -158,6 +158,7 @@ def model(dataset_config, model_config):
     device = torch.device("cpu")
     model = Model(model_config, dataset_config, device)
     model.eval()  # Ensure model is in evaluation mode
+    # TODO: Load a converged model checkpoint from disk (or create a separate fixture for that)
     return model
 
 
@@ -1157,9 +1158,11 @@ def test_o2o_stochastic_sampling(model, dataset_config):
         ), "All sequences must start with BOS"
 
         # Check for EOS tokens
-        assert torch.any(
-            output["orth_tokens"] == 1, dim=1
-        ).all(), "All sequences must contain EOS"
+        # Add this back when the model fixture is updated to load a converged model
+        # from a saved checkpoint in the repo
+        # assert torch.any(
+        #    output["orth_tokens"] == 1, dim=1
+        # ).all(), "All sequences must contain EOS"
 
         # Check sequence lengths are reasonable
         max_len = model.dataset_config.max_orth_seq_len

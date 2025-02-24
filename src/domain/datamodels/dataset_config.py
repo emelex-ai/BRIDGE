@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, model_validator, PositiveInt
+from pydantic import BaseModel, Field, model_validator, PositiveInt, ConfigDict
 from src.utils.helper_funtions import get_project_root
 import os
 

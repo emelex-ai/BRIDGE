@@ -146,6 +146,17 @@ The BRIDGE project uses multiple YAML configuration files located in `BRIDGE/app
 
 ---
 
+### 6. `metrics_config.yaml`
+
+| Parameter            | Type    | Description                                                                 |
+|----------------------|---------|-----------------------------------------------------------------------------|
+| `training_metrics`   | bool    | Whether to log training metrics.                                            |
+| `validation_metrics` | bool    | Whether to log validation metrics.                                          |
+| `mode`               | enum    | Which metrics logger to use.                                                |
+| `filename`           | str     | Filename to use for logging if applicable                                   |
+
+---
+
 ## Development with Dev Container
 
 This repository supports development using [Dev Containers](https://code.visualstudio.com/docs/devcontainers/containers) in Visual Studio Code, which ensures a consistent and reproducible environment for development.
