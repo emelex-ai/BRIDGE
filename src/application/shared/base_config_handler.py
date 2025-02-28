@@ -1,4 +1,5 @@
 import logging
+from pydantic import BaseModel
 import yaml
 
 logger = logging.getLogger(__name__)

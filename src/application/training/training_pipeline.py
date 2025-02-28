@@ -163,6 +163,8 @@ class TrainingPipeline:
             self.optimizer.zero_grad()
         if calculate_metrics:
             metrics.update(self.compute_metrics(logits, orthography, phonology))
+        if self.metrics_logger.metrics_config.batch_metrics:
+            self.metrics_logger.log_metrics(metrics)
         return metrics
 
     def train_single_epoch(self, epoch: int) -> dict:
