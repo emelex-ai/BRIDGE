@@ -21,3 +21,4 @@ venv/
 model_artifacts
 .devcontainer/platform-config.json
 .Rproj.user
+data/into_reading/
