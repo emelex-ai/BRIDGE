@@ -817,8 +817,8 @@ class Model(nn.Module):
         inputs to the underlying generation mechanism.
 
         Args:
-            encodings: A BridgeEncoding object containing both orthographic and
-                    phonological representations.
+            encodings: A BridgeEncoding object containing orthographic and/or
+                    phonological representations, depending on the pathway.
             pathway: The generation pathway to use. Defaults to "o2p" (orthographic
                     to phonological).
             deterministic: Whether to use deterministic (greedy) or stochastic sampling.
@@ -833,23 +833,31 @@ class Model(nn.Module):
                     or if any required encoding components are missing.
         """
         # Extract appropriate tensors based on pathway
+        orth_enc_input = None
+        orth_enc_pad_mask = None
+        phon_enc_input = None
+        phon_enc_pad_mask = None
+        
+        # Handle orthographic inputs for relevant pathways
         if pathway in ["o2p", "o2o", "op2op"]:
             if encodings.orthographic is None:
                 raise ValueError(f"Pathway {pathway} requires orthographic encodings")
             orth_enc_input = encodings.orthographic.enc_input_ids
             orth_enc_pad_mask = encodings.orthographic.enc_pad_mask
-        else:
-            orth_enc_input = None
-            orth_enc_pad_mask = None
-
+        
+        # Handle phonological inputs for relevant pathways
         if pathway in ["p2o", "p2p", "op2op"]:
-            if not hasattr(encodings, "phonological"):
+            # For op2op, both are required
+            if pathway == "op2op" and encodings.phonological is None:
                 raise ValueError(f"Pathway {pathway} requires phonological encodings")
-            phon_enc_input = encodings.phonological.enc_input_ids
-            phon_enc_pad_mask = encodings.phonological.enc_pad_mask
-        else:
-            phon_enc_input = None
-            phon_enc_pad_mask = None
+                
+            # For p2o and p2p, we need phonological data
+            if pathway in ["p2o", "p2p"] and encodings.phonological is None:
+                raise ValueError(f"Pathway {pathway} requires phonological encodings")
+                
+            if encodings.phonological is not None:
+                phon_enc_input = encodings.phonological.enc_input_ids
+                phon_enc_pad_mask = encodings.phonological.enc_pad_mask
 
         # Call the underlying generate function
         generation_results = self._generate(

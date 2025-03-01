@@ -1,41 +1,26 @@
 """
-Here is what I am thinking
+The BridgeTokenizer is a wrapper class that combines orthographic (character-based) and
+phonological (phoneme-based) tokenization to support the various pathways in the BRIDGE model.
 
 Objects:
-
-CharacterTokenizer
-
-PhonemeTokenizer
-
-BridgeTokenizer
-- CharacterTokenizer
-- PhonemeTokenizer
-
-BridgeDataset
-- BridgeTokenizer
+- CharacterTokenizer: Simple tokenizer for mapping text to character indices
+- PhonemeTokenizer: More complex tokenizer that maps words to phonetic features
+- BridgeTokenizer: A wrapper around both tokenizers
 
 The CharacterTokenizer is lean and simple. It contains all of the logic for encoding
-and decoding strings into token tensors. The vocabulary size will be the number of unique
-characters it receives. No max sequence length. That will be removed by adding a context-agnostic
-postional encoding to the model (ALiBi or RoPE)
+and decoding strings into token tensors.
 
-The PhonemeTokenizer is more complex. It will require that CMUDict and the phonreps.csv.
-It will contain all logic for encoding and decoding phonemes into token tensors. Given a word
-it will look up the phonetic representation in CMUDict and then look up the vector representation
-of each phoneme in phonreps.csv. We will have a fixed number of phoneme features, so the vocabulary
-size will be known independent of the input data. Now max sequence length. That will be removed by
-adding a context-agnostic positional encoding to the model (ALiBi or RoPE)
+The PhonemeTokenizer handles mapping words to phonetic feature vectors using CMUDict
+and phonreps.csv. It requires words to exist in the CMUDict to work properly.
 
-The BridgeTokenizer will contain both the CharacterTokenizer and the PhonemeTokenizer. It will have
-a method called `build_tokenizer` that accepts a list of words. From that list of words it will 
-construct the CharacterTokenizer's char_2_idx and idx_2_char dictionaries and calculate the 
-orth_vocab_size. It will also construct the PhonemeTokenizer's 
-
+The BridgeTokenizer handles combining both encoding types into a unified format, with
+special handling for nonwords (words not in CMUDict).
 """
 
 import torch
 import logging
-from src.domain.datamodels import BridgeEncoding
+from typing import Literal, Optional, List, Union, Dict, Any
+from src.domain.datamodels.encodings import BridgeEncoding, EncodingComponent
 from src.domain.dataset.character_tokenizer import CharacterTokenizer
 from src.domain.dataset.phoneme_tokenizer import PhonemeTokenizer
 
@@ -46,6 +31,8 @@ class BridgeTokenizer:
     """
     A wrapper tokenizer that combines orthographic (character-based) and
     phonological (phoneme-based) tokenization.
+    
+    Supports filtering by modality to handle nonwords that only exist in one modality.
     """
 
     def __init__(
@@ -78,42 +65,170 @@ class BridgeTokenizer:
             f"Phonological: {self.phoneme_tokenizer.get_vocabulary_size()}"
         )
 
-    def encode(self, text: str | list[str]) -> BridgeEncoding | None:
+    def encode(
+        self, 
+        text: str | list[str], 
+        modality_filter: Literal["both", "orthography", "phonology"] = "both"
+    ) -> BridgeEncoding | None:
         """
-        Encode text using both tokenizers and return combined results.
+        Encode text using tokenizers based on the specified modality filter.
 
         Args:
             text: Single string or list of strings to encode
+            modality_filter: Which modality to encode:
+                - "both": Encode both orthography and phonology (default)
+                - "orthography": Encode only orthography, create placeholder phonology
+                - "phonology": Encode only phonology, create placeholder orthography
 
         Returns:
-            BridgeEncoding containing both orthographic and phonological encodings,
-            or None if phonological encoding fails
+            BridgeEncoding containing encodings according to the modality filter,
+            or None if encoding fails based on the filter rules
         """
-        # Get orthographic encoding
-        ortho_encoding = self.char_tokenizer.encode(text)
-
-        # Get phonological encoding - may return None for unknown words
-        phono_encoding = self.phoneme_tokenizer.encode(text)
-
-        # If phonological encoding fails, return None
-        if phono_encoding is None:
-            logger.warning(
-                "Phonological encoding failed - word not found in CMU dictionary"
+        # Validate modality filter
+        if modality_filter not in ["both", "orthography", "phonology"]:
+            raise ValueError(
+                f"Invalid modality_filter: {modality_filter}. "
+                f"Must be one of ['both', 'orthography', 'phonology']"
             )
-            return None
 
-        # Combine both encodings into an instance of BridgeEncoding
-        return BridgeEncoding(
-            orth_enc_ids=ortho_encoding["enc_input_ids"],
-            orth_enc_mask=ortho_encoding["enc_pad_mask"],
-            orth_dec_ids=ortho_encoding["dec_input_ids"],
-            orth_dec_mask=ortho_encoding["dec_pad_mask"],
-            phon_enc_ids=phono_encoding["enc_input_ids"],
-            phon_dec_ids=phono_encoding["dec_input_ids"],
-            phon_enc_mask=phono_encoding["enc_pad_mask"],
-            phon_dec_mask=phono_encoding["dec_pad_mask"],
-            phon_targets=phono_encoding["targets"],
-            device=self.device,
+        # Get orthographic encoding if needed
+        ortho_encoding = None
+        if modality_filter in ["both", "orthography"]:
+            ortho_encoding = self.char_tokenizer.encode(text)
+
+        # Get phonological encoding if needed
+        phono_encoding = None
+        if modality_filter in ["both", "phonology"]:
+            phono_encoding = self.phoneme_tokenizer.encode(text)
+            
+            # If phonological encoding fails and it's required, return None
+            if phono_encoding is None:
+                logger.warning(
+                    "Phonological encoding failed - word not found in CMU dictionary"
+                )
+                if modality_filter in ["both", "phonology"]:
+                    return None
+
+        # Build the BridgeEncoding based on the modality filter
+        if modality_filter == "both":
+            # Classic behavior - need both encodings to succeed
+            if ortho_encoding is None or phono_encoding is None:
+                return None
+                
+            # Create orthographic component
+            orthographic = EncodingComponent(
+                enc_input_ids=ortho_encoding["enc_input_ids"],
+                enc_pad_mask=ortho_encoding["enc_pad_mask"],
+                dec_input_ids=ortho_encoding["dec_input_ids"],
+                dec_pad_mask=ortho_encoding["dec_pad_mask"]
+            )
+            
+            # Create phonological component
+            phonological = EncodingComponent(
+                enc_input_ids=phono_encoding["enc_input_ids"],
+                enc_pad_mask=phono_encoding["enc_pad_mask"],
+                dec_input_ids=phono_encoding["dec_input_ids"],
+                dec_pad_mask=phono_encoding["dec_pad_mask"],
+                targets=phono_encoding["targets"]
+            )
+            
+            return BridgeEncoding(orthographic=orthographic, phonological=phonological, device=self.device)
+            
+        elif modality_filter == "orthography":
+            # Orthography-only mode for o2p pathway with nonwords
+            if ortho_encoding is None:
+                return None
+                
+            # Create orthographic component
+            orthographic = EncodingComponent(
+                enc_input_ids=ortho_encoding["enc_input_ids"],
+                enc_pad_mask=ortho_encoding["enc_pad_mask"],
+                dec_input_ids=ortho_encoding["dec_input_ids"],
+                dec_pad_mask=ortho_encoding["dec_pad_mask"]
+            )
+            
+            # Create placeholder phonological component if needed for compatibility
+            # These fields won't actually be used for o2p generation
+            batch_size = len(text) if isinstance(text, list) else 1
+            seq_len = 1  # Minimal length
+            
+            # Create placeholder phonological component with empty tensors
+            # These are just empty placeholders and won't be used by the model.generate() method
+            phonological = self._create_placeholder_phonological(batch_size, seq_len)
+            
+            return BridgeEncoding(orthographic=orthographic, phonological=phonological, device=self.device)
+            
+        elif modality_filter == "phonology":
+            # Phonology-only mode (p2o pathway)
+            if phono_encoding is None:
+                return None
+                
+            # Create placeholder orthographic component
+            batch_size = len(text) if isinstance(text, list) else 1
+            seq_len = 1  # Minimal length
+            
+            # Create placeholder orthographic component
+            orthographic = self._create_placeholder_orthographic(batch_size, seq_len)
+            
+            # Create phonological component
+            phonological = EncodingComponent(
+                enc_input_ids=phono_encoding["enc_input_ids"],
+                enc_pad_mask=phono_encoding["enc_pad_mask"],
+                dec_input_ids=phono_encoding["dec_input_ids"],
+                dec_pad_mask=phono_encoding["dec_pad_mask"],
+                targets=phono_encoding["targets"]
+            )
+            
+            return BridgeEncoding(orthographic=orthographic, phonological=phonological, device=self.device)
+
+    def _create_placeholder_phonological(self, batch_size: int, seq_len: int) -> EncodingComponent:
+        """Create a minimal phonological component for orthography-only encoding."""
+        # Create placeholder phonological tensors
+        placeholder_feature_indices = torch.tensor([33], dtype=torch.long, device=self.device)
+        
+        # Each item in each batch gets a pad token feature index
+        placeholder_enc_input_ids = [
+            [placeholder_feature_indices.clone()] for _ in range(batch_size)
+        ]
+        placeholder_dec_input_ids = [
+            [placeholder_feature_indices.clone()] for _ in range(batch_size)
+        ]
+        
+        # Create padding masks
+        placeholder_enc_pad_mask = torch.ones((batch_size, seq_len), dtype=torch.bool, device=self.device)
+        placeholder_dec_pad_mask = torch.ones((batch_size, seq_len), dtype=torch.bool, device=self.device)
+        
+        # Create target tensor
+        phon_vocab_size = self.phoneme_tokenizer.get_vocabulary_size()
+        placeholder_targets = torch.zeros(
+            (batch_size, seq_len, phon_vocab_size), 
+            dtype=torch.long, 
+            device=self.device
+        )
+        
+        return EncodingComponent(
+            enc_input_ids=placeholder_enc_input_ids,
+            enc_pad_mask=placeholder_enc_pad_mask,
+            dec_input_ids=placeholder_dec_input_ids,
+            dec_pad_mask=placeholder_dec_pad_mask,
+            targets=placeholder_targets
+        )
+        
+    def _create_placeholder_orthographic(self, batch_size: int, seq_len: int) -> EncodingComponent:
+        """Create a minimal orthographic component for phonology-only encoding."""
+        # Create placeholder orthographic tensors
+        placeholder_enc_input_ids = torch.zeros((batch_size, seq_len), dtype=torch.long, device=self.device)
+        placeholder_dec_input_ids = torch.zeros((batch_size, seq_len), dtype=torch.long, device=self.device)
+        
+        # Create padding masks
+        placeholder_enc_pad_mask = torch.ones((batch_size, seq_len), dtype=torch.bool, device=self.device)
+        placeholder_dec_pad_mask = torch.ones((batch_size, seq_len), dtype=torch.bool, device=self.device)
+        
+        return EncodingComponent(
+            enc_input_ids=placeholder_enc_input_ids,
+            enc_pad_mask=placeholder_enc_pad_mask,
+            dec_input_ids=placeholder_dec_input_ids,
+            dec_pad_mask=placeholder_dec_pad_mask
         )
 
     def decode(
