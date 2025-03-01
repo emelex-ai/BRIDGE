@@ -64,7 +64,7 @@ class TrainModelHandler:
             dataset=bridge_dataset,
             metrics_logger=metrics_logger_factory(self.metrics_config)
         )
-
+    
     def initiate_model_training(self):
         """
         Start the training process.
