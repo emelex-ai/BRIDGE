@@ -10,16 +10,27 @@ import pickle
 import torch
 
 
+class MockDatasetConfig:
+    """Mock implementation of DatasetConfig with old attributes for testing compatibility."""
+    def __init__(self, **kwargs):
+        # Required for current tests
+        self.dimension_phon_repr = 31
+        self.orthographic_vocabulary_size = 49
+        self.phonological_vocabulary_size = 34
+        self.max_orth_seq_len = 100
+        self.max_phon_seq_len = 100
+        
+        # New attributes from the current DatasetConfig
+        self.dataset_filepath = kwargs.get("dataset_filepath", "data.csv") 
+        self.device = kwargs.get("device", "cpu")
+        self.phoneme_cache_size = kwargs.get("phoneme_cache_size", 10000)
+
+
 @pytest.fixture
 def dataset_config():
     """Fixture for mock DatasetConfig."""
-    return DatasetConfig(
-        dataset_filepath="data.csv",  # TODO: Should be a pkl file
-        dimension_phon_repr=31,
-        orthographic_vocabulary_size=49,
-        phonological_vocabulary_size=34,
-        max_orth_seq_len=100,
-        max_phon_seq_len=100,
+    return MockDatasetConfig(
+        dataset_filepath="data.csv",
     )
 
 

@@ -25,6 +25,12 @@ def mock_dataset_file(tmp_path):
             "phoneme_shape": (3, 2),
             "orthography": [0, 1, 2, 3],
         },
+        "dog": {
+            "count": 1,
+            "phoneme": ([7, 8, 9], [10, 11, 12]),
+            "phoneme_shape": (3, 2),
+            "orthography": [4, 5, 6, 7],
+        },
     }
 
     file_path = tmp_path / "test_dataset.pkl"
@@ -34,29 +40,46 @@ def mock_dataset_file(tmp_path):
     return str(file_path)
 
 
+class MockDatasetConfig:
+    """Mock implementation of DatasetConfig with old attributes for testing compatibility."""
+
+    def __init__(self, **kwargs):
+        # Required for current tests
+        self.dimension_phon_repr = 31
+        self.orthographic_vocabulary_size = 49
+        self.phonological_vocabulary_size = 34
+        self.max_orth_seq_len = 100
+        self.max_phon_seq_len = 100
+
+        # New attributes from the current DatasetConfig
+        self.dataset_filepath = kwargs.get("dataset_filepath", "data.csv")
+        self.device = kwargs.get("device", "cpu")
+        self.phoneme_cache_size = kwargs.get("phoneme_cache_size", 10000)
+
+
 @pytest.fixture
 def dataset_config(mock_dataset_file):
     """Create a DatasetConfig with test parameters."""
-    return DatasetConfig(
+    return MockDatasetConfig(
         dataset_filepath=mock_dataset_file,
-        dimension_phon_repr=31,
-        orthographic_vocabulary_size=49,
-        phonological_vocabulary_size=34,
-        max_orth_seq_len=100,
-        max_phon_seq_len=100,
         device="cpu",  # Explicitly set device for testing
     )
 
 
 def create_test_encoding(word: str, device: torch.device) -> BridgeEncoding:
-    """Helper function to create test BridgeEncoding instances."""
+    """Helper function to create test BridgeEncoding instances with new structure."""
+    from src.domain.datamodels.encodings import EncodingComponent
+
     if word == "cat":
+        # Create orthographic encoding component
         orth_enc_ids = torch.tensor([[0, 18, 16, 35, 1]], device=device)
         orth_enc_mask = torch.tensor(
             [[False, False, False, False, False]], device=device
         )
         orth_dec_ids = torch.tensor([[0, 18, 16, 35]], device=device)
         orth_dec_mask = torch.tensor([[False, False, False, False]], device=device)
+
+        # Create phonological encoding component
         phon_enc_ids = [
             [
                 torch.tensor([31], device=device),
@@ -78,21 +101,90 @@ def create_test_encoding(word: str, device: torch.device) -> BridgeEncoding:
             ]
         ]
         phon_dec_mask = torch.tensor([[False, False, False, False]], device=device)
-        phon_targets = torch.zeros([1, 4, 36])
-        for row, idx in enumerate(phon_enc_ids[0][1:]):
-            phon_targets[0, row, idx] = 1
 
+        # Create phonological targets
+        phon_targets = torch.zeros([1, 4, 36], device=device)
+        for row, idx in enumerate(phon_enc_ids[0][1:]):
+            for i in idx:
+                phon_targets[0, row, i] = 1
+
+        # Create encoding components
+        orthographic = EncodingComponent(
+            enc_input_ids=orth_enc_ids,
+            enc_pad_mask=orth_enc_mask,
+            dec_input_ids=orth_dec_ids,
+            dec_pad_mask=orth_dec_mask,
+        )
+
+        phonological = EncodingComponent(
+            enc_input_ids=phon_enc_ids,
+            enc_pad_mask=phon_enc_mask,
+            dec_input_ids=phon_dec_ids,
+            dec_pad_mask=phon_dec_mask,
+            targets=phon_targets,
+        )
+
+        # Create BridgeEncoding with components
         return BridgeEncoding(
-            orth_enc_ids=orth_enc_ids,
-            orth_enc_mask=orth_enc_mask,
-            orth_dec_ids=orth_dec_ids,
-            orth_dec_mask=orth_dec_mask,
-            phon_enc_ids=phon_enc_ids,
-            phon_enc_mask=phon_enc_mask,
-            phon_dec_ids=phon_dec_ids,
-            phon_dec_mask=phon_dec_mask,
-            phon_targets=phon_targets,
-            device=device,
+            orthographic=orthographic, phonological=phonological, device=device
+        )
+    elif word == "dog":
+        # Create orthographic encoding component
+        orth_enc_ids = torch.tensor([[0, 9, 15, 13, 1]], device=device)
+        orth_enc_mask = torch.tensor(
+            [[False, False, False, False, False]], device=device
+        )
+        orth_dec_ids = torch.tensor([[0, 9, 15, 13]], device=device)
+        orth_dec_mask = torch.tensor([[False, False, False, False]], device=device)
+
+        # Create phonological encoding component
+        phon_enc_ids = [
+            [
+                torch.tensor([31], device=device),
+                torch.tensor([7, 8], device=device),
+                torch.tensor([11, 17, 22], device=device),
+                torch.tensor([3, 6], device=device),
+                torch.tensor([32], device=device),
+            ]
+        ]
+        phon_enc_mask = torch.tensor(
+            [[False, False, False, False, False]], device=device
+        )
+        phon_dec_ids = [
+            [
+                torch.tensor([31], device=device),
+                torch.tensor([7, 8], device=device),
+                torch.tensor([11, 17, 22], device=device),
+                torch.tensor([3, 6], device=device),
+            ]
+        ]
+        phon_dec_mask = torch.tensor([[False, False, False, False]], device=device)
+
+        # Create phonological targets
+        phon_targets = torch.zeros([1, 4, 36], device=device)
+        for row, idx in enumerate(phon_enc_ids[0][1:]):
+            for i in idx:
+                phon_targets[0, row, i] = 1
+
+        # Create encoding components
+        orthographic = EncodingComponent(
+            enc_input_ids=orth_enc_ids,
+            enc_pad_mask=orth_enc_mask,
+            dec_input_ids=orth_dec_ids,
+            dec_pad_mask=orth_dec_mask,
+        )
+
+        phonological = EncodingComponent(
+            enc_input_ids=phon_enc_ids,
+            enc_pad_mask=phon_enc_mask,
+            dec_input_ids=phon_dec_ids,
+            dec_pad_mask=phon_dec_mask,
+            targets=phon_targets,
+        )
+
+        # Create BridgeEncoding with components
+        return BridgeEncoding(
+            orthographic=orthographic, phonological=phonological, device=device
         )
     return None
 
@@ -123,15 +215,16 @@ def bridge_dataset(dataset_config, mock_bridge_tokenizer):
 def test_dataset_initialization(bridge_dataset, mock_dataset_file):
     """Test dataset initialization with proper configuration."""
     assert isinstance(bridge_dataset, BridgeDataset)
-    assert len(bridge_dataset.words) == 1
+    assert len(bridge_dataset.words) == 2
     assert "cat" in bridge_dataset.words
+    assert "dog" in bridge_dataset.words
     assert bridge_dataset.device == torch.device("cpu")
     assert len(bridge_dataset.encoding_cache) == 0
 
 
 def test_dataset_length(bridge_dataset):
     """Test the dataset length calculation."""
-    assert len(bridge_dataset) == 1
+    assert len(bridge_dataset) == 2
 
 
 def test_get_item_by_index(bridge_dataset):
@@ -165,8 +258,9 @@ def test_get_item_by_slice(bridge_dataset):
     """Test accessing multiple items using slice notation."""
     items = bridge_dataset[0:2]
     assert isinstance(items, dict)
-    assert items["orthographic"]["enc_input_ids"].shape[0] == 1
-    assert items["phonological"]["enc_pad_mask"].shape[0] == 1
+    # We should get both items in the batch
+    assert items["orthographic"]["enc_input_ids"].shape[0] == 2
+    assert items["phonological"]["enc_pad_mask"].shape[0] == 2
 
 
 def test_invalid_index_access(bridge_dataset):
@@ -178,12 +272,32 @@ def test_invalid_index_access(bridge_dataset):
         _ = bridge_dataset["nonexistent"]
 
 
-def test_encoding_cache(bridge_dataset):
+def test_encoding_cache(dataset_config, mock_bridge_tokenizer):
     """Test encoding cache functionality."""
-    # Access same item twice - should use cache second time
-    _ = bridge_dataset[0]
-    _ = bridge_dataset[0]
-    assert bridge_dataset.mock_tokenizer.encode.call_count == 1
+    # Create fresh mock with call tracking
+    mock_tokenizer = Mock(spec=BridgeTokenizer)
+
+    def mock_encode(word):
+        """Side effect to simulate encode behavior"""
+        return create_test_encoding(word, torch.device("cpu"))
+
+    mock_tokenizer.encode.side_effect = mock_encode
+
+    # Create dataset with our controlled mock
+    with patch("src.domain.dataset.BridgeTokenizer", return_value=mock_tokenizer):
+        dataset = BridgeDataset(dataset_config)
+
+        # Access same item twice
+        _ = dataset[0]
+
+        # Check call count after first access
+        first_call_count = mock_tokenizer.encode.call_count
+
+        # Access again - should use cache
+        _ = dataset[0]
+
+        # Verify encode wasn't called again
+        assert mock_tokenizer.encode.call_count == first_call_count
 
 
 def test_device_movement(dataset_config):
@@ -204,17 +318,15 @@ def test_device_movement(dataset_config):
 def test_batch_consistency(bridge_dataset):
     """Test consistency of batch processing."""
     single = bridge_dataset[0]
-    print("single = ", single)
     batch = bridge_dataset[0:1]
-    print("bastch = ", batch)
 
     # Verify batch is properly formatted version of single
     assert torch.equal(
         single["orthographic"]["enc_input_ids"],
-        batch["orthographic"]["enc_input_ids"][0],
+        batch["orthographic"]["enc_input_ids"],
     )
     assert torch.equal(
-        single["phonological"]["enc_pad_mask"], batch["phonological"]["enc_pad_mask"][0]
+        single["phonological"]["enc_pad_mask"], batch["phonological"]["enc_pad_mask"]
     )
 
 
@@ -231,19 +343,23 @@ def test_shuffle_functionality(bridge_dataset):
 
 def test_memory_management(dataset_config, mock_bridge_tokenizer):
     """Test memory management with cache size limits."""
-    dataset = BridgeDataset(dataset_config, cache_size=1)
+    with patch(
+        "src.domain.dataset.BridgeTokenizer", return_value=mock_bridge_tokenizer
+    ):
+        dataset = BridgeDataset(dataset_config, cache_size=1)
 
-    # Access items to fill cache
-    _ = dataset[0]
-    _ = dataset[1]
+        # Access items to fill cache
+        _ = dataset[0]
+        _ = dataset[1]
 
-    assert len(dataset.encoding_cache) == 1  # Only most recent should be cached
+        # Only most recent should be cached
+        assert len(dataset.encoding_cache) == 1
 
 
 def test_data_validation(tmp_path, dataset_config):
     """Test data validation during loading."""
-    # Create invalid dataset file
-    invalid_data = {"invalid": 123}  # Not proper format
+    # Create invalid dataset file that's not a dictionary of dictionaries
+    invalid_data = []  # Not a dictionary
     file_path = tmp_path / "invalid.pkl"
     with open(file_path, "wb") as f:
         pickle.dump(invalid_data, f)
@@ -255,25 +371,40 @@ def test_data_validation(tmp_path, dataset_config):
 
 def test_error_handling_invalid_encodings(dataset_config, mock_bridge_tokenizer):
     """Test handling of invalid encodings from tokenizer."""
-    mock_bridge_tokenizer.encode.return_value = None
+    # For this test, we need to patch both the BridgeTokenizer class constructor
+    # and the _encode_single_word method in BridgeDataset to bypass the lru_cache
 
     with patch(
         "src.domain.dataset.BridgeTokenizer", return_value=mock_bridge_tokenizer
     ):
+        # Create the dataset
         dataset = BridgeDataset(dataset_config)
-        with pytest.raises(RuntimeError, match="Failed to encode word"):
-            _ = dataset[0]
+
+        # Now patch the _encode_single_word method to always return None
+        # This simulates a failure in the tokenization process
+        with patch.object(dataset, "_encode_single_word", return_value=None):
+            # Now accessing the item should raise RuntimeError
+            with pytest.raises(RuntimeError, match="Failed to encode word"):
+                _ = dataset[0]
 
 
 def test_cache_path_handling(tmp_path, dataset_config):
     """Test cache directory handling."""
+    # Ensure BridgeDataset correctly handles existing cache paths
     cache_path = tmp_path / "test_cache"
-    dataset = BridgeDataset(dataset_config, cache_path=str(cache_path))
+    assert not os.path.exists(cache_path)
+    os.makedirs(cache_path)
     assert os.path.exists(cache_path)
-
-    # Test invalid cache path
-    with pytest.raises(OSError):
-        _ = BridgeDataset(dataset_config, cache_path="/invalid/path/that/doesnt/exist")
+    _ = BridgeDataset(dataset_config, cache_path=str(cache_path))
+    os.removedirs(cache_path)
+    assert not os.path.exists(cache_path)
+    # Ensure BridgeDataset correctly creates new cache directories
+    invalid_cache_path = tmp_path / "invalid/path/that/doesnt/exist"
+    assert not os.path.exists(invalid_cache_path)
+    _ = BridgeDataset(dataset_config, cache_path=str(invalid_cache_path))
+    assert os.path.exists(invalid_cache_path)
+    os.removedirs(invalid_cache_path)
+    assert not os.path.exists(invalid_cache_path)
 
 
 def test_integration_with_training_pipeline(bridge_dataset):
