@@ -1,6 +1,8 @@
 from src.domain.datamodels.metrics_config import MetricsConfig, OutputMode
 from abc import ABC, abstractmethod
 import torch
+
+
 class MetricsLogger(ABC):
     def __init__(self, metrics_config: MetricsConfig) -> None:
         self.metrics_config = metrics_config
@@ -15,6 +17,17 @@ class MetricsLogger(ABC):
 class STDOutMetricsLogger(MetricsLogger):
     def log_metrics(self, metrics: dict) -> None:
         print(metrics)
+
+
+class MultipleMetricsLogger(MetricsLogger):
+    def __init__(self, metrics_config: MetricsConfig, loggers: list[MetricsLogger]) -> None:
+        super().__init__(metrics_config)
+        self.loggers = loggers
+    
+    def log_metrics(self, metrics: dict) -> None:
+        for logger in self.loggers:
+            logger.log_metrics(metrics)
+
 
 
 class CSVMetricsLogger(MetricsLogger):
@@ -44,14 +57,15 @@ class CSVMetricsLogger(MetricsLogger):
 
 
 def metrics_logger_factory(metrics_config: MetricsConfig) -> MetricsLogger:
-    if metrics_config.mode == OutputMode.CSV:
+    loggers = []
+    if OutputMode.CSV in metrics_config.modes:
         if metrics_config.filename:
-            return CSVMetricsLogger(metrics_config)
+            loggers.append(CSVMetricsLogger(metrics_config))
         else:
             raise ValueError("Filename is required for CSV output mode")
-    elif metrics_config.mode == OutputMode.STDOUT:
-        return STDOutMetricsLogger(metrics_config)
+    if OutputMode.STDOUT in metrics_config.modes:
+        loggers.append(STDOutMetricsLogger(metrics_config))
     else:
-        raise ValueError(f"Unsupported output mode: {metrics_config.mode}")
-
+        raise ValueError(f"Unsupported output mode: {metrics_config.modes}")
+    return MultipleMetricsLogger(metrics_config, loggers)
         
