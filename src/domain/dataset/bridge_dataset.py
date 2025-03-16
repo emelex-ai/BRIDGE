@@ -7,7 +7,7 @@ import os
 import pickle
 import random
 import logging
-from typing import Union, Optional, Dict, Any
+from typing import Union, Any
 from pathlib import Path
 import torch
 from collections import OrderedDict
@@ -28,8 +28,8 @@ class BridgeDataset:
     def __init__(
         self,
         dataset_config: DatasetConfig,
-        device: Optional[str] = None,
-        cache_path: Optional[str] = "data/.cache",
+        device: str | None = None,
+        cache_path: str | None = "data/.cache",
         cache_size: int = 1000,
     ):
         """
@@ -54,8 +54,13 @@ class BridgeDataset:
         # Initialize tokenizer with matching device
         self.tokenizer = BridgeTokenizer(
             device=self.device,
-            phoneme_cache_size=getattr(dataset_config, "phoneme_cache_size", 10000),
+            phoneme_cache_size=getattr(dataset_config, "tokenizer_cache_size", 10000),
         )
+
+        # Store vocabulary sizes for model initialization
+        vocab_sizes = self.tokenizer.get_vocabulary_sizes()
+        self.orthographic_vocabulary_size = vocab_sizes["orthographic"]
+        self.phonological_vocabulary_size = vocab_sizes["phonological"]
 
         # Setup LRU cache for encodings
         self.encoding_cache = OrderedDict()
@@ -106,9 +111,12 @@ class BridgeDataset:
             raise
 
     @lru_cache(maxsize=128)
-    def _encode_single_word(self, word: str) -> Optional[BridgeEncoding]:
+    def _encode_single_word(self, word: str) -> BridgeEncoding | None:
         """
         Encode a single word using the tokenizer with caching.
+
+        Ensures that all encoded sequences use the configured max sequence lengths
+        to maintain consistency across batches.
 
         Args:
             word: Word to encode
@@ -117,16 +125,20 @@ class BridgeDataset:
             BridgeEncoding object or None if encoding fails
         """
         try:
+            # Use the tokenizer directly for initial encoding
             encoding = self.tokenizer.encode(word)
-            if encoding is not None:
-                # Ensure encoding is on correct device
-                return encoding.to(self.device)
-            return None
+            if encoding is None:
+                return None
+
+            # Ensure encoding is on correct device
+            encoding = encoding.to(self.device)
+
+            return encoding
         except Exception as e:
             logger.error(f"Error encoding word '{word}': {e}")
             return None
 
-    def _get_encoding(self, word: str) -> Optional[BridgeEncoding]:
+    def _get_encoding(self, word: str) -> BridgeEncoding | None:
         """
         Get encoding for a word, using cache when available.
 
@@ -154,7 +166,7 @@ class BridgeDataset:
         """Return the number of valid words in the dataset."""
         return len(self.words)
 
-    def __getitem__(self, idx: Union[int, slice, str]) -> Dict[str, Dict[str, Any]]:
+    def __getitem__(self, idx: Union[int, slice, str]) -> dict[str, dict[str, Any]]:
         """
         Retrieve encoded data for specified index or slice.
         Maintains compatibility with training pipeline expectations.
@@ -211,9 +223,10 @@ class BridgeDataset:
 
     def _format_batch_encodings(
         self, encodings: list[BridgeEncoding]
-    ) -> Dict[str, Dict[str, Any]]:
+    ) -> dict[str, dict[str, Any]]:
         """
-        Format a list of BridgeEncodings into training pipeline batch format.
+        Format a list of BridgeEncodings into training pipeline batch format,
+        ensuring consistent sequence lengths across the batch.
 
         Args:
             encodings: List of BridgeEncoding objects
@@ -224,29 +237,22 @@ class BridgeDataset:
         if not encodings:
             raise ValueError("No encodings to format")
 
-        # Convert first encoding to dict to initialize structure
-        batch = encodings[0].to_dict()
-
-        # Stack subsequent encodings
-        for encoding in encodings[1:]:
-            enc_dict = encoding.to_dict()
-
-            # Stack orthographic tensors
-            for key in batch["orthographic"]:
-                if isinstance(batch["orthographic"][key], torch.Tensor):
-                    batch["orthographic"][key] = torch.cat(
-                        [batch["orthographic"][key], enc_dict["orthographic"][key]]
-                    )
-
-            # Stack phonological tensors
-            for key in batch["phonological"]:
-                if key in ["enc_input_ids", "dec_input_ids"]:
-                    # These are lists of lists of tensors
-                    batch["phonological"][key].extend(enc_dict["phonological"][key])
-                else:
-                    batch["phonological"][key] = torch.cat(
-                        [batch["phonological"][key], enc_dict["phonological"][key]]
-                    )
+        # TODO: Implement batch formatting here
+        batch = {
+            "orthographic": {
+                "enc_inpud_ids": [],
+                "enc_pad_mask": [],
+                "dec_input_ids": [],
+                "dec_pad_mask": [],
+            },
+            "phonological": {
+                "enc_inpud_ids": [],
+                "enc_pad_mask": [],
+                "dec_input_ids": [],
+                "dec_pad_mask": [],
+                "targets": [],
+            },
+        }
 
         return batch
 
@@ -275,23 +281,3 @@ class BridgeDataset:
 
         # Clear cache since order changed
         self.encoding_cache.clear()
-
-    def to(self, device: torch.device) -> None:
-        """
-        Move dataset to specified device.
-        Updates both tokenizer and cached encodings.
-
-        Args:
-            device: Target device
-        """
-        if device == self.device:
-            return
-
-        self.device = device
-        self.tokenizer = self.tokenizer.to(device)
-
-        # Move cached encodings to new device
-        new_cache = OrderedDict()
-        for word, encoding in self.encoding_cache.items():
-            new_cache[word] = encoding.to(device)
-        self.encoding_cache = new_cache

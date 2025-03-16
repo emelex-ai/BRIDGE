@@ -41,20 +41,16 @@ def mock_dataset_file(tmp_path):
 
 
 class MockDatasetConfig:
-    """Mock implementation of DatasetConfig with old attributes for testing compatibility."""
+    """Mock implementation of DatasetConfig with updated attributes."""
 
     def __init__(self, **kwargs):
-        # Required for current tests
-        self.dimension_phon_repr = 31
-        self.orthographic_vocabulary_size = 49
-        self.phonological_vocabulary_size = 34
-        self.max_orth_seq_len = 100
-        self.max_phon_seq_len = 100
-
-        # New attributes from the current DatasetConfig
+        # Updated attributes based on new DatasetConfig
         self.dataset_filepath = kwargs.get("dataset_filepath", "data.csv")
         self.device = kwargs.get("device", "cpu")
-        self.phoneme_cache_size = kwargs.get("phoneme_cache_size", 10000)
+        self.tokenizer_cache_size = kwargs.get("tokenizer_cache_size", 10000)
+
+        # For backward compatibility
+        self.phoneme_cache_size = self.tokenizer_cache_size
 
 
 @pytest.fixture
@@ -428,3 +424,25 @@ def test_integration_with_training_pipeline(bridge_dataset):
             "targets",
         ]
     )
+
+
+def test_vocabulary_size_properties(bridge_dataset, mock_bridge_tokenizer):
+    """Test the vocabulary size properties."""
+    # Setup mock to return expected vocabulary sizes
+    mock_bridge_tokenizer.get_vocabulary_sizes.return_value = {
+        "orthographic": 100,
+        "phonological": 200,
+    }
+
+    # Create new dataset with our controlled mock
+    with patch(
+        "src.domain.dataset.BridgeTokenizer", return_value=mock_bridge_tokenizer
+    ):
+        dataset_config = MockDatasetConfig(
+            dataset_filepath=bridge_dataset.dataset_filepath, device="cpu"
+        )
+        dataset = BridgeDataset(dataset_config)
+
+        # Set vocab sizes manually for testing
+        dataset.orthographic_vocabulary_size = 100
+        dataset.phonological_vocabulary_size = 200

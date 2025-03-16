@@ -6,12 +6,12 @@ import os
 
 
 class DatasetConfig(BaseModel):
-    dataset_filepath: str | PosixPath = Field(description="")
+    dataset_filepath: str | PosixPath = Field(description="Path to dataset file")
     device: str | None = Field(
         default=device_manager.device.type, description="Device to use for processing"
     )
-    phoneme_cache_size: int = Field(
-        default=10000, description="Max cache size for phoneme tokenizer"
+    tokenizer_cache_size: int = Field(
+        default=10000, description="Max cache size for tokenizer"
     )
 
     @model_validator(mode="before")
@@ -26,6 +26,11 @@ class DatasetConfig(BaseModel):
         values["dataset_filepath"] = os.path.join(
             project_root, "data", values["dataset_filepath"]
         )
+        
+        # For backward compatibility
+        if "phoneme_cache_size" in values and "tokenizer_cache_size" not in values:
+            values["tokenizer_cache_size"] = values["phoneme_cache_size"]
+            
         return values
 
     @model_validator(mode="after")

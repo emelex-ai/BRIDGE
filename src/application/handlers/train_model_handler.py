@@ -53,7 +53,7 @@ class TrainModelHandler:
         self.pipeline = TrainingPipeline(
             model=Model(
                 model_config=self.model_config,
-                dataset_config=self.dataset_config,
+                dataset=bridge_dataset,
                 device=self.training_config.device,
             ),
             training_config=self.training_config,
