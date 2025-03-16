@@ -6,7 +6,8 @@ class OutputMode(StrEnum):
     STDOUT = "stdout"
 
 class MetricsConfig(BaseModel):
+    batch_metrics: bool
     training_metrics: bool
     validation_metrics: bool
-    mode: OutputMode
+    modes: list[OutputMode]
     filename: str | None
