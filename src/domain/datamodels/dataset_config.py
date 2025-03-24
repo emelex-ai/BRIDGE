@@ -1,5 +1,4 @@
 from pydantic import BaseModel, Field, model_validator
-from src.utils.device import device_manager
 from src.utils.helper_functions import get_project_root
 from pathlib import PosixPath
 import os
@@ -7,9 +6,6 @@ import os
 
 class DatasetConfig(BaseModel):
     dataset_filepath: str | PosixPath = Field(description="Path to dataset file")
-    device: str | None = Field(
-        default=device_manager.device.type, description="Device to use for processing"
-    )
     tokenizer_cache_size: int = Field(
         default=10000, description="Max cache size for tokenizer"
     )

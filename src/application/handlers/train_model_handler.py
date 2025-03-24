@@ -49,12 +49,11 @@ class TrainModelHandler:
         """
         Set up the training pipeline and dataset.
         """
-        bridge_dataset = BridgeDataset(dataset_config=self.dataset_config, device=self.training_config.device)
+        bridge_dataset = BridgeDataset(dataset_config=self.dataset_config)
         self.pipeline = TrainingPipeline(
             model=Model(
                 model_config=self.model_config,
                 dataset=bridge_dataset,
-                device=self.training_config.device,
             ),
             training_config=self.training_config,
             dataset=bridge_dataset,

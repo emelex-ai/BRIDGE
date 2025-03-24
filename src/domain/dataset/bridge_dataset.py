@@ -14,6 +14,7 @@ from collections import OrderedDict
 from functools import lru_cache
 
 from src.domain.datamodels import DatasetConfig, BridgeEncoding
+from src.utils.device_manager import device_manager
 from src.domain.dataset import BridgeTokenizer
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,6 @@ class BridgeDataset:
     def __init__(
         self,
         dataset_config: DatasetConfig,
-        device: str | None = None,
         cache_path: str | None = "data/.cache",
         cache_size: int = 1000,
     ):
@@ -45,15 +45,10 @@ class BridgeDataset:
         self.dataset_config = dataset_config
 
         # Initialize device - prioritize config device over parameter
-        self.device = torch.device(
-            dataset_config.device
-            if hasattr(dataset_config, "device")
-            else (device if device else "cpu")
-        )
+        self.device = device_manager.device
 
         # Initialize tokenizer with matching device
         self.tokenizer = BridgeTokenizer(
-            device=self.device,
             phoneme_cache_size=getattr(dataset_config, "tokenizer_cache_size", 10000),
         )
 
@@ -138,7 +133,28 @@ class BridgeDataset:
             logger.error(f"Error encoding word '{word}': {e}")
             return None
 
-    def _get_encoding(self, word: str) -> BridgeEncoding | None:
+    def _get_encoding_batch(self, words: list[str]) -> BridgeEncoding:
+        """
+        Get batched encodings for a list of words without caching.
+
+        Uses the tokenizer's batch encode() method to process the list of words.
+        Then, each encoding is extracted (using __getitem__) and converted to a BridgeEncoding
+        via from_dict.
+
+        Args:
+            words: List of words to encode.
+
+        Returns:
+            List of BridgeEncoding objects.
+        """
+        batch_encoding = self.tokenizer.encode(words)
+        if batch_encoding is None:
+            raise RuntimeError("Batch encoding failed for words: " + ", ".join(words))
+
+        return batch_encoding
+
+    # TODO: Work on encoding cache logic
+    def _get_encoding(self, word: Union[str, list[str]]) -> BridgeEncoding | None:
         """
         Get encoding for a word, using cache when available.
 
@@ -149,18 +165,22 @@ class BridgeDataset:
             BridgeEncoding object or None if not available
         """
         # Check in-memory cache first
-        if word in self.encoding_cache:
-            return self.encoding_cache[word]
+        # if word in self.encoding_cache:
+        #     return self.encoding_cache[word]
 
         # Encode word if not in cache
-        encoding = self._encode_single_word(word)
-        if encoding is not None:
-            # Update cache with LRU policy
-            if len(self.encoding_cache) >= self.max_cache_size:
-                self.encoding_cache.popitem(last=False)
-            self.encoding_cache[word] = encoding
+        if isinstance(word, str):
+            return self._encode_single_word(word)
+        elif isinstance(word, list):
+            return self._get_encoding_batch(word)
+        else:
+            raise TypeError("Input must be a string or a list of strings")
 
-        return encoding
+        # if encoding is not None:
+        #     # Update cache with LRU policy
+        #     if len(self.encoding_cache) >= self.max_cache_size:
+        #         self.encoding_cache.popitem(last=False)
+        #     self.encoding_cache[word] = encoding
 
     def __len__(self) -> int:
         """Return the number of valid words in the dataset."""
@@ -196,17 +216,15 @@ class BridgeDataset:
             selected_words = self.words[idx]
             encodings = []
 
-            for word in selected_words:
-                encoding = self._get_encoding(word)
-                if encoding is None:
-                    raise RuntimeError(f"Failed to encode word: {word}")
-                encodings.append(encoding)
+            encodings = self._get_encoding(selected_words)
+            if encodings is None:
+                raise RuntimeError(f"Failed to encode word: {word}")
 
             if not encodings:
                 raise ValueError("No valid encodings in slice")
 
             # Merge encodings into batch
-            return self._format_batch_encodings(encodings)
+            return encodings.to_dict()
 
         elif isinstance(idx, str):
             if idx not in self.words:
@@ -220,41 +238,6 @@ class BridgeDataset:
 
         else:
             raise TypeError(f"Invalid index type: {type(idx)}")
-
-    def _format_batch_encodings(
-        self, encodings: list[BridgeEncoding]
-    ) -> dict[str, dict[str, Any]]:
-        """
-        Format a list of BridgeEncodings into training pipeline batch format,
-        ensuring consistent sequence lengths across the batch.
-
-        Args:
-            encodings: List of BridgeEncoding objects
-
-        Returns:
-            Dictionary with batched tensor data
-        """
-        if not encodings:
-            raise ValueError("No encodings to format")
-
-        # TODO: Implement batch formatting here
-        batch = {
-            "orthographic": {
-                "enc_inpud_ids": [],
-                "enc_pad_mask": [],
-                "dec_input_ids": [],
-                "dec_pad_mask": [],
-            },
-            "phonological": {
-                "enc_inpud_ids": [],
-                "enc_pad_mask": [],
-                "dec_input_ids": [],
-                "dec_pad_mask": [],
-                "targets": [],
-            },
-        }
-
-        return batch
 
     def shuffle(self, cutoff: int) -> None:
         """

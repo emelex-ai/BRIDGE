@@ -31,7 +31,6 @@ class MockBridgeDataset:
 def mock_dataset():
     """Fixture for mock BridgeDataset."""
     return MockBridgeDataset(
-        device="cpu",
         orthographic_vocabulary_size=49,
         phonological_vocabulary_size=34
     )
@@ -56,8 +55,7 @@ def model_config():
 @pytest.fixture
 def model(mock_dataset, model_config):
     """Fixture for initializing the Model."""
-    device = torch.device("cpu")
-    return Model(model_config, mock_dataset, device)
+    return Model(model_config, mock_dataset)
 
 
 def test_embed_orth_tokens(model: Model):
@@ -109,26 +107,26 @@ def test_generate_triangular_mask(model: Model):
     assert torch.allclose(
         mask, expected_output, atol=1e-5
     ), "Output does not match expected values."
-    
-    
+
+
 def test_model_initialization_with_dataset(mock_dataset, model_config):
     """Test the model initialization with BridgeDataset."""
     # Create a model with our mock BridgeDataset
-    model = Model(model_config, mock_dataset, device="cpu")
-    
+    model = Model(model_config, mock_dataset)
+
     # Verify the model correctly obtained vocabulary sizes
     assert model.orthographic_vocabulary_size == mock_dataset.orthographic_vocabulary_size
     assert model.phonological_vocabulary_size == mock_dataset.phonological_vocabulary_size
-    
+
     # Verify hardcoded sequence lengths
-    assert model.max_orth_seq_len == 20
-    assert model.max_phon_seq_len == 20
-    
+    assert model.max_orth_seq_len == 30
+    assert model.max_phon_seq_len == 30
+
     # Verify embedding dimensions
     assert model.orthography_embedding.num_embeddings == mock_dataset.orthographic_vocabulary_size
     assert model.phonology_embedding.num_embeddings == mock_dataset.phonological_vocabulary_size
-    assert model.orth_position_embedding.num_embeddings == 20
-    assert model.phon_position_embedding.num_embeddings == 20
+    assert model.orth_position_embedding.num_embeddings == 30
+    assert model.phon_position_embedding.num_embeddings == 30
 
 
 def test_embed_o(model: Model):
@@ -350,7 +348,7 @@ def test_forward_p2p(model: Model, mock_dataset):
 
 def test_gpu_availability():
     """Test GPU availability and basic tensor operations."""
-    from src.utils.device import device_manager
+    from src.utils.device_manager import device_manager
 
     # Create test tensor
     x = device_manager.create_tensor([[1.0, 2.0], [3.0, 4.0]])

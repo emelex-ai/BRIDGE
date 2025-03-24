@@ -10,7 +10,7 @@ from src.domain.datamodels import BridgeEncoding
 @pytest.fixture
 def bridge_tokenizer():
     """Create a BridgeTokenizer instance for testing."""
-    return BridgeTokenizer(device="cpu")
+    return BridgeTokenizer()
 
 
 class TestBridgeTokenizer:

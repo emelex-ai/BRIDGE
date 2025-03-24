@@ -12,6 +12,7 @@ import functools
 @dataclass(frozen=True, slots=True)
 class EncodingComponent:
     """A component of a BridgeEncoding, representing either orthographic or phonological data."""
+
     enc_input_ids: Any  # Tensor for orth, list of lists of tensors for phon
     enc_pad_mask: torch.Tensor
     dec_input_ids: Any  # Tensor for orth, list of lists of tensors for phon
@@ -32,6 +33,7 @@ class BridgeEncoding:
         phonological: Optional[EncodingComponent] containing phonological encodings
         device: torch.device - Device all tensors reside on
     """
+
     orthographic: EncodingComponent
     phonological: Optional[EncodingComponent] = None
     device: torch.device = field(default=torch.device("cpu"))
@@ -86,10 +88,10 @@ class BridgeEncoding:
     def __post_init__(self):
         """Validate components and set device."""
         # Use object.__setattr__ since the class is frozen
-        if self.orthographic is not None and hasattr(self.orthographic.enc_input_ids, 'device'):
+        if self.orthographic is not None and hasattr(self.orthographic.enc_input_ids, "device"):
             device = self.orthographic.enc_input_ids.device
             object.__setattr__(self, "device", device)
-        
+
         if self.orthographic is not None and self.phonological is not None:
             self._validate_full_encoding()
         elif self.orthographic is not None:
@@ -114,31 +116,30 @@ class BridgeEncoding:
         # Validate individual components
         self._validate_orthographic_component(self.orthographic)
         self._validate_phonological_component(self.phonological)
-        
+
         # Validate batch sizes match
         orth_batch_size = self.orthographic.enc_input_ids.size(0)
         phon_batch_size = len(self.phonological.enc_input_ids)
-        
+
         if orth_batch_size != phon_batch_size:
             raise ValueError(
                 f"Batch size mismatch: orthographic component has {orth_batch_size} samples, "
                 f"phonological component has {phon_batch_size} samples"
             )
-        
+
         # Validate devices match
         if self.orthographic.enc_input_ids.device != self.device:
             raise ValueError(
                 f"Device mismatch: orthographic component on {self.orthographic.enc_input_ids.device}, "
                 f"expected {self.device}"
             )
-        
+
         # Check phonological device consistency
         for batch in self.phonological.enc_input_ids:
             for tensor in batch:
                 if tensor.device != self.device:
                     raise ValueError(
-                        f"Device mismatch: phonological tensor on {tensor.device}, "
-                        f"expected {self.device}"
+                        f"Device mismatch: phonological tensor on {tensor.device}, " f"expected {self.device}"
                     )
 
     def _validate_orthographic_component(self, component: EncodingComponent):
@@ -168,7 +169,7 @@ class BridgeEncoding:
                 raise ValueError(f"Orthographic {name} must be 2-dimensional")
             if tensor.dtype != torch.bool:
                 raise ValueError(f"Orthographic {name} must have dtype torch.bool")
-                
+
         # Validate batch consistency
         batch_size = component.enc_input_ids.size(0)
         tensors_to_check = [
@@ -176,12 +177,11 @@ class BridgeEncoding:
             ("dec_input_ids", component.dec_input_ids),
             ("dec_pad_mask", component.dec_pad_mask),
         ]
-        
+
         for name, tensor in tensors_to_check:
             if tensor.size(0) != batch_size:
                 raise ValueError(
-                    f"Batch size mismatch: orthographic {name} has size {tensor.size(0)}, "
-                    f"expected {batch_size}"
+                    f"Batch size mismatch: orthographic {name} has size {tensor.size(0)}, " f"expected {batch_size}"
                 )
 
     def _validate_phonological_component(self, component: EncodingComponent):
@@ -195,12 +195,8 @@ class BridgeEncoding:
                 raise ValueError(f"Phonological {name} must be a list of lists of tensors")
             if not all(isinstance(batch, list) for batch in tensor_list):
                 raise ValueError(f"Each batch in phonological {name} must be a list")
-            if not all(
-                isinstance(t, torch.Tensor) for batch in tensor_list for t in batch
-            ):
-                raise ValueError(
-                    f"All elements in phonological {name} must be torch.Tensor"
-                )
+            if not all(isinstance(t, torch.Tensor) for batch in tensor_list for t in batch):
+                raise ValueError(f"All elements in phonological {name} must be torch.Tensor")
 
         # Validate padding masks
         for name, tensor in [
@@ -219,30 +215,27 @@ class BridgeEncoding:
             if not isinstance(component.targets, torch.Tensor):
                 raise ValueError("Phonological targets must be a torch.Tensor")
             if component.targets.dim() != 3:
-                raise ValueError(
-                    "Phonological targets must be 3-dimensional (batch × sequence × features)"
-                )
-                
+                raise ValueError("Phonological targets must be 3-dimensional (batch × sequence × features)")
+
         # Validate batch consistency
         batch_size = len(component.enc_input_ids)
         tensors_to_check = [
             ("enc_pad_mask", component.enc_pad_mask),
             ("dec_pad_mask", component.dec_pad_mask),
         ]
-        
+
         for name, tensor in tensors_to_check:
             if tensor.size(0) != batch_size:
                 raise ValueError(
-                    f"Batch size mismatch: phonological {name} has size {tensor.size(0)}, "
-                    f"expected {batch_size}"
+                    f"Batch size mismatch: phonological {name} has size {tensor.size(0)}, " f"expected {batch_size}"
                 )
-                
+
         if len(component.dec_input_ids) != batch_size:
             raise ValueError(
                 f"Batch size mismatch: phonological dec_input_ids has {len(component.dec_input_ids)} batches, "
                 f"expected {batch_size}"
             )
-            
+
         if component.targets is not None and component.targets.size(0) != batch_size:
             raise ValueError(
                 f"Batch size mismatch: phonological targets has size {component.targets.size(0)}, "
@@ -250,9 +243,7 @@ class BridgeEncoding:
             )
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], device: Optional[torch.device] = None
-    ) -> "BridgeEncoding":
+    def from_dict(cls, data: dict[str, Any], device: Optional[torch.device] = None) -> "BridgeEncoding":
         """
         Create a BridgeEncoding instance from a dictionary representation.
 
@@ -269,7 +260,7 @@ class BridgeEncoding:
         # Initialize components
         orthographic = None
         phonological = None
-        
+
         # Process orthographic data if present
         if "orthographic" in data:
             orth_data = data["orthographic"]
@@ -277,24 +268,20 @@ class BridgeEncoding:
                 enc_input_ids=orth_data["enc_input_ids"].to(device),
                 enc_pad_mask=orth_data["enc_pad_mask"].to(device),
                 dec_input_ids=orth_data["dec_input_ids"].to(device),
-                dec_pad_mask=orth_data["dec_pad_mask"].to(device)
+                dec_pad_mask=orth_data["dec_pad_mask"].to(device),
             )
-            
+
         # Process phonological data if present
         if "phonological" in data:
             phon_data = data["phonological"]
             phonological = EncodingComponent(
-                enc_input_ids=[
-                    [t.to(device) for t in batch] for batch in phon_data["enc_input_ids"]
-                ],
+                enc_input_ids=[[t.to(device) for t in batch] for batch in phon_data["enc_input_ids"]],
                 enc_pad_mask=phon_data["enc_pad_mask"].to(device),
-                dec_input_ids=[
-                    [t.to(device) for t in batch] for batch in phon_data["dec_input_ids"]
-                ],
+                dec_input_ids=[[t.to(device) for t in batch] for batch in phon_data["dec_input_ids"]],
                 dec_pad_mask=phon_data["dec_pad_mask"].to(device),
-                targets=phon_data.get("targets", None)
+                targets=phon_data.get("targets", None),
             )
-            
+
             if "targets" in phon_data:
                 phonological.targets = phon_data["targets"].to(device)
 
@@ -312,7 +299,7 @@ class BridgeEncoding:
             Dictionary containing orthographic and/or phonological components
         """
         result = {}
-        
+
         if self.orthographic is not None:
             result["orthographic"] = {
                 "enc_input_ids": self.orthographic.enc_input_ids,
@@ -320,7 +307,7 @@ class BridgeEncoding:
                 "dec_input_ids": self.orthographic.dec_input_ids,
                 "dec_pad_mask": self.orthographic.dec_pad_mask,
             }
-            
+
         if self.phonological is not None:
             result["phonological"] = {
                 "enc_input_ids": self.phonological.enc_input_ids,
@@ -328,10 +315,10 @@ class BridgeEncoding:
                 "dec_input_ids": self.phonological.dec_input_ids,
                 "dec_pad_mask": self.phonological.dec_pad_mask,
             }
-            
+
             if self.phonological.targets is not None:
                 result["phonological"]["targets"] = self.phonological.targets
-                
+
         return result
 
     def to(self, device: torch.device) -> "BridgeEncoding":
@@ -346,24 +333,24 @@ class BridgeEncoding:
         """
         orthographic = None
         phonological = None
-        
+
         if self.orthographic is not None:
             orthographic = EncodingComponent(
                 enc_input_ids=self.orthographic.enc_input_ids.to(device),
                 enc_pad_mask=self.orthographic.enc_pad_mask.to(device),
                 dec_input_ids=self.orthographic.dec_input_ids.to(device),
-                dec_pad_mask=self.orthographic.dec_pad_mask.to(device)
+                dec_pad_mask=self.orthographic.dec_pad_mask.to(device),
             )
-            
+
         if self.phonological is not None:
             phonological = EncodingComponent(
                 enc_input_ids=[[t.to(device) for t in batch] for batch in self.phonological.enc_input_ids],
                 enc_pad_mask=self.phonological.enc_pad_mask.to(device),
                 dec_input_ids=[[t.to(device) for t in batch] for batch in self.phonological.dec_input_ids],
                 dec_pad_mask=self.phonological.dec_pad_mask.to(device),
-                targets=self.phonological.targets.to(device) if self.phonological.targets is not None else None
+                targets=self.phonological.targets.to(device) if self.phonological.targets is not None else None,
             )
-            
+
         return BridgeEncoding(
             orthographic=orthographic,
             phonological=phonological,
@@ -381,7 +368,7 @@ class BridgeEncoding:
             Dictionary containing orthographic and/or phonological components for the slice
         """
         result = {}
-        
+
         if self.orthographic is not None:
             if isinstance(idx, int):
                 result["orthographic"] = {
@@ -399,7 +386,7 @@ class BridgeEncoding:
                 }
             else:
                 raise TypeError("Index must be int or slice")
-                
+
         if self.phonological is not None:
             if isinstance(idx, int):
                 result["phonological"] = {
@@ -421,7 +408,7 @@ class BridgeEncoding:
                     result["phonological"]["targets"] = self.phonological.targets[idx]
             else:
                 raise TypeError("Index must be int or slice")
-                
+
         return result
 
     def __len__(self) -> int:
