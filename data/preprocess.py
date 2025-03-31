@@ -47,7 +47,7 @@ def input_data(
             }
     """
     data = Traindata(
-        words, phonpath=phonemes_path, terminals=False, oneletter=True, verbose=False
+        words, phonpath=phonemes_path, terminals=False, oneletter=False, verbose=False
     ).traindata
 
     input_data = {}
@@ -60,7 +60,7 @@ def input_data(
             # and the shape of the phoneme matrix
             phon_shp = phon.shape
             phon = np.where(phon)
-
+            print(word)
             # add to dictionary
             input_data[word] = {
                 "count": word_counts[word],
@@ -74,7 +74,7 @@ def input_data(
 def main(
     input_file="data/data.csv",
     output_file="data/input_data.pkl",
-    phonemes_path="data/phonreps.csv",
+    phonemes_path="phonreps.csv",
 ):
     logging.info(f"Reading data from {input_file}")
     """
@@ -89,7 +89,7 @@ def main(
     words = [str(w).lower() for w in df["word_raw"]]
 
     word_counts = {}
-
+    word_counts["nan"] = 1  # make sure 'nan' is accounted for
     # k-smoothing over frequency with k = 1
     for _, row in df.iterrows():
         count = row["count"]
