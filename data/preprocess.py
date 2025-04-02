@@ -26,7 +26,11 @@ class WordData(TypedDict):
 
 
 def input_data(
-    words: list[str], word_counts: dict, phonemes_path: str
+    words: list[str],
+    word_counts: dict,
+    phonemes_path: str,
+    cmudict_supplement: str = None,
+    single_letters_removed: bool = True,
 ) -> dict[str, WordData]:
     """Create the input file for the model
 
@@ -47,7 +51,12 @@ def input_data(
             }
     """
     data = Traindata(
-        words, phonpath=phonemes_path, terminals=False, oneletter=False, verbose=False
+        words,
+        cmudict_supplement=cmudict_supplement,
+        phonpath=phonemes_path,
+        terminals=False,
+        verbose=False,
+        oneletter=single_letters_removed,
     ).traindata
 
     input_data = {}
@@ -75,6 +84,8 @@ def main(
     input_file="data/data.csv",
     output_file="data/input_data.pkl",
     phonemes_path="phonreps.csv",
+    cmudict_supplement=None,
+    single_letters_removed=True,
 ):
     logging.info(f"Reading data from {input_file}")
     """
@@ -101,7 +112,13 @@ def main(
         word_counts[row["word_raw"]] = count
 
     logging.info("Processing words")
-    data = input_data(words, word_counts, phonemes_path)
+    data = input_data(
+        words,
+        word_counts,
+        phonemes_path,
+        cmudict_supplement=cmudict_supplement,
+        single_letters_removed=single_letters_removed,
+    )
 
     logging.info(f"Saving processed data to {output_file}")
     try:
