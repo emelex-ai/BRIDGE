@@ -5,6 +5,7 @@ import os
 
 
 class ModelConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
     num_phon_enc_layers: int = Field(default=2)
     num_orth_enc_layers: int = Field(default=2)
     num_mixing_enc_layers: int = Field(default=2)
@@ -14,7 +15,7 @@ class ModelConfig(BaseModel):
     nhead: int = Field(default=2)
     d_embedding: int = Field(default=1)
     seed: Optional[int] = Field(default=None)
-    
+
     @field_validator("d_model")
     def validate_d_model(cls, v, info: ValidationInfo):
         nhead = info.data.get("nhead")
@@ -22,6 +23,3 @@ class ModelConfig(BaseModel):
             raise ValueError("d_model must be divisible by nhead")
         return v
 
-
-    class Config:
-        protected_namespaces = ()

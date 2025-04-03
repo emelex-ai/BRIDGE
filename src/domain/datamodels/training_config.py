@@ -46,5 +46,3 @@ class TrainingConfig(BaseModel):
             raise FileNotFoundError(f"Model directory not found: {self.model_artifacts_dir}")
         return self
 
-    class Config:
-        protected_namespaces = ()

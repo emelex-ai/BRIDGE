@@ -18,6 +18,7 @@ class TrainModelHandler:
         model_config: ModelConfig,
         dataset_config: DatasetConfig,
         training_config: TrainingConfig,
+        metrics_config: MetricsConfig
     ):
         """
         Initialize the training handler with configurations.
@@ -26,6 +27,7 @@ class TrainModelHandler:
         self.model_config = model_config
         self.dataset_config = dataset_config
         self.training_config = training_config
+        self.metrics_config = metrics_config
         self.wandb_wrapper = None
         self.pipeline = None
 
@@ -57,8 +59,9 @@ class TrainModelHandler:
             ),
             training_config=self.training_config,
             dataset=bridge_dataset,
+            metrics_logger=metrics_logger_factory(self.metrics_config)
         )
-
+    
     def initiate_model_training(self):
         """
         Start the training process.

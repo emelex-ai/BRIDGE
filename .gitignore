@@ -20,3 +20,7 @@ venv/
 *.env
 model_artifacts
 .devcontainer/platform-config.json
+.Rproj.user
+results/*.pkl
+*.ipynb
+data/into_reading/

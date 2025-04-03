@@ -1,0 +1,117 @@
+---
+title: "Pretraining"
+output: html_document
+date: "2025-01-31"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+require(papaja)
+require(purrr)
+
+
+
+pretraining_by_model = read_csv('pretraining_results_1.csv')
+```
+
+```{r}
+
+files = list.files('pretraining_results_1/CSV')
+data_list = list()
+
+for (filename in files){
+  
+  df = read_csv(str_c("pretraining_results_1/CSV/", filename))
+  
+  data_list[[filename]] = df
+  
+}
+
+pretraining = list_rbind(data_list)
+```
+
+
+
+```{r}
+pretraining_by_model %>% 
+  group_by(epoch, condition) %>% 
+  summarise(M = mean(phonemewise_accuracy),
+            SD = sd(phonemewise_accuracy)) %>% 
+  ggplot(aes(epoch, M)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = M-SD, ymax = M + SD), width = 20) +
+  facet_wrap(~condition) +
+  theme_apa() +
+  labs(x = "Epoch", y = "Phonemewise accuracy (averaged over models)") +
+  theme(axis.text = element_text(angle = 60, hjust = 1))
+```
+
+
+```{r}
+
+pretraining_by_model %>% 
+  group_by(epoch, condition) %>% 
+  summarise(M = mean(wordwise_accuracy),
+            SD = sd(wordwise_accuracy)) %>% 
+  ggplot(aes(epoch, M)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = M-SD, ymax = M + SD), width = 20) +
+  facet_wrap(~condition) +
+  theme_apa() +
+  labs(x = "Epoch", y = "Wordwise accuracy (averaged over models)") +
+  theme(axis.text = element_text(angle = 60, hjust = 1))
+
+
+```
+
+
+## Data by word
+```{r}
+pretraining %>% 
+  group_by(condition, epoch) %>% 
+  summarise(featurewise_accuracy = mean(featurewise_accuracy),
+            SD = sd(featurewise_accuracy)) %>% 
+  ggplot(aes(epoch, featurewise_accuracy)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = featurewise_accuracy - SD, ymax = featurewise_accuracy + SD)) +
+  facet_wrap(~condition)
+
+```
+
+```{r}
+
+pretraining %>% 
+  filter(condition == "fry_1980") %>% 
+  #filter(str_detect(as.character(epoch), "00")) %>% 
+  ggplot(aes(epoch, featurewise_accuracy)) +
+  geom_point() +
+  geom_smooth() +
+  ylim(c(0, 1))
+
+
+pretraining %>%
+  #filter(epoch > 0) %>% 
+  group_by(word) %>% 
+  summarise(M = mean(featurewise_accuracy),
+            SD = sd(featurewise_accuracy)) %>% 
+  arrange(desc(M)) %>% 
+  mutate(rank = seq_len(n())) %>%
+  view()
+
+
+
+pretraining %>% 
+  filter(word == "aorta") %>% 
+  #filter(str_detect(as.character(epoch), "00")) %>% 
+  ggplot(aes(epoch, featurewise_accuracy)) +
+  geom_point() +
+  geom_smooth() +
+  ylim(c(0, 1))
+
+
+```
+
+

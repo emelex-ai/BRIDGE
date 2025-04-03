@@ -1,18 +1,17 @@
-import os
-import random
 import torch
 from tqdm import tqdm
-from typing import Dict, Any
 from src.application.training.ortho_metrics import calculate_orth_metrics
 from src.application.training.phon_metrics import calculate_phon_metrics
 from src.domain.datamodels import TrainingConfig
 from src.domain.dataset import BridgeDataset
 from src.domain.model import Model
-from typing import Dict, Union
+from typing import Union
 import time
 from torch.profiler import profile, record_function, ProfilerActivity
 from src.utils.device_manager import device_manager
 from traindata import utilities
+
+from src.infra.metrics.metrics_logger import MetricsLogger
 
 
 class TrainingPipeline:
@@ -36,6 +35,7 @@ class TrainingPipeline:
         self.start_epoch = 0
         if training_config.checkpoint_path:
             self.load_model(training_config.checkpoint_path)
+        self.metrics_logger = metrics_logger
 
     def create_data_slices(self):
         cutpoint = int(len(self.dataset) * self.training_config.train_test_split)
@@ -45,6 +45,7 @@ class TrainingPipeline:
         ]
         val_slices = [
             slice(i, min(i + self.training_config.batch_size_val, len(self.dataset)))
+            for i in range(cutpoint, len(self.dataset), self.training_config.batch_size_val)
             for i in range(cutpoint, len(self.dataset), self.training_config.batch_size_val)
         ]
         return train_slices, val_slices
@@ -158,6 +159,8 @@ class TrainingPipeline:
             self.optimizer.zero_grad()
         if calculate_metrics:
             metrics.update(self.compute_metrics(logits, orthography, phonology))
+        if self.metrics_logger.metrics_config.batch_metrics:
+            self.metrics_logger.log_metrics(metrics)
         return metrics
 
     def train_single_epoch(self, epoch: int) -> dict:
@@ -217,12 +220,14 @@ class TrainingPipeline:
             if self.val_slices:
                 metrics = self.validate_single_epoch(epoch)
                 training_metrics.update(metrics)
+            self.metrics_logger.log_metrics(training_metrics)
             self.save_model(epoch, run_name)
             yield training_metrics
 
     def save_model(self, epoch: int, run_name: str) -> None:
         if (epoch + 1) % self.training_config.save_every == 0:
 
+            model_path = f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}.pth"
             model_path = f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}.pth"
             torch.save(
                 {
@@ -240,3 +245,18 @@ class TrainingPipeline:
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.start_epoch = checkpoint["epoch"]
+
+    def transfer_partial_model_parameters(self, pretrained_model_path: str, module_prefixes: list[str]):
+        checkpoint = torch.load(pretrained_model_path)
+        pretrained_state = checkpoint["model_state_dict"]
+        filtered_state = {
+            k: v for k, v in pretrained_state.items() if any(k.startswith(prefix) for prefix in module_prefixes)
+        }
+
+        model_dict = self.model.state_dict()
+        model_dict.update(filtered_state)
+        self.model.load_state_dict(model_dict)
+
+        new_state = self.model.state_dict()
+        for key, pretrained_weight in filtered_state.items():
+            assert torch.equal(new_state[key], pretrained_weight), f"Weight transfer failed for {key}"
