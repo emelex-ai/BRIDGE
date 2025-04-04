@@ -7,22 +7,19 @@ from src.domain.dataset import BridgeDataset
 from src.domain.model import Model
 from typing import Union
 import time
+from torch.profiler import profile, record_function, ProfilerActivity
+from src.utils.device_manager import device_manager
 from traindata import utilities
 
 from src.infra.metrics.metrics_logger import MetricsLogger
 
 
 class TrainingPipeline:
-    def __init__(
-        self,
-        model: Model,
-        training_config: TrainingConfig,
-        dataset: BridgeDataset,
-        metrics_logger: MetricsLogger,
-    ):
+
+    def __init__(self, model: Model, training_config: TrainingConfig, dataset: BridgeDataset):
         self.training_config = training_config
         self.dataset = dataset
-        self.device = torch.device(training_config.device)
+        self.device = device_manager.device
         self.model = model.to(self.device)
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(),
@@ -48,6 +45,7 @@ class TrainingPipeline:
         ]
         val_slices = [
             slice(i, min(i + self.training_config.batch_size_val, len(self.dataset)))
+            for i in range(cutpoint, len(self.dataset), self.training_config.batch_size_val)
             for i in range(cutpoint, len(self.dataset), self.training_config.batch_size_val)
         ]
         return train_slices, val_slices
@@ -104,11 +102,15 @@ class TrainingPipeline:
 
         # Calculate phon_loss if applicable
         if self.training_config.training_pathway in ["o2p", "op2op", "p2p"]:
-            phon_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(logits["phon"], phonology["targets"])
+            phon_loss = torch.nn.CrossEntropyLoss(ignore_index=35)(
+                logits["phon"], phonology["targets"]
+            )  # Ignore [PAD] token
 
         # Calculate orth_loss if applicable
         if self.training_config.training_pathway in ["p2o", "op2op"]:
-            orth_loss = torch.nn.CrossEntropyLoss(ignore_index=4)(logits["orth"], orthography["enc_input_ids"][:, 1:])
+            orth_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(
+                logits["orth"], orthography["enc_input_ids"][:, 1:]
+            )  # Ignore [PAD] token
 
         # Calculate the combined loss, summing only non-None losses
         total_loss = sum(loss for loss in [orth_loss, phon_loss] if loss is not None)
@@ -169,7 +171,8 @@ class TrainingPipeline:
         progress_bar = tqdm(self.train_slices, desc=f"Training Epoch {epoch+1}")
         total_metrics = {}
         for step, batch_slice in enumerate(progress_bar):
-            metrics = self.single_step(batch_slice, self.metrics_logger.metrics_config.training_metrics)
+            metrics = self.single_step(batch_slice, False)
+            progress_bar.set_postfix({key: f"{value:.4f}" for key, value in metrics.items()})
             if not total_metrics:
                 total_metrics = metrics
             else:
@@ -194,7 +197,7 @@ class TrainingPipeline:
         with torch.no_grad():
             total_metrics = {}
             for step, batch_slice in enumerate(progress_bar):
-                metrics = self.single_step(batch_slice, self.metrics_logger.metrics_config.validation_metrics)
+                metrics = self.single_step(batch_slice, True)
                 progress_bar.set_postfix({key: f"{value:.4f}" for key, value in metrics.items()})
                 if not total_metrics:
                     total_metrics = metrics
@@ -224,6 +227,7 @@ class TrainingPipeline:
     def save_model(self, epoch: int, run_name: str) -> None:
         if (epoch + 1) % self.training_config.save_every == 0:
 
+            model_path = f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}.pth"
             model_path = f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}.pth"
             torch.save(
                 {

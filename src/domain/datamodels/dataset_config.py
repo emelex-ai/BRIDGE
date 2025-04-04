@@ -1,24 +1,13 @@
-from pydantic import BaseModel, Field, model_validator, PositiveInt, ConfigDict
-from src.utils.helper_funtions import get_project_root
+from pydantic import BaseModel, Field, model_validator
+from src.utils.helper_functions import get_project_root
+from pathlib import PosixPath
 import os
 
 
 class DatasetConfig(BaseModel):
-    dataset_filepath: str = Field(description="")
-    dimension_phon_repr: PositiveInt = Field(
-        description="Length of vector of the phonological representation"
-    )
-    orthographic_vocabulary_size: PositiveInt | None = Field(
-        default=None, gt=0, description="Orthographic Vocabulary Size"
-    )
-    phonological_vocabulary_size: PositiveInt | None = Field(
-        default=None, gt=0, description="Phonological Vocabulary Size"
-    )
-    max_orth_seq_len: PositiveInt | None = Field(
-        default=None, gt=0, description="Maximum length of the orthographic sequence"
-    )
-    max_phon_seq_len: PositiveInt | None = Field(
-        default=None, gt=0, description="Maximum length of the phonological sequence"
+    dataset_filepath: str | PosixPath = Field(description="Path to dataset file")
+    tokenizer_cache_size: int = Field(
+        default=10000, description="Max cache size for tokenizer"
     )
 
     @model_validator(mode="before")
@@ -33,6 +22,11 @@ class DatasetConfig(BaseModel):
         values["dataset_filepath"] = os.path.join(
             project_root, "data", values["dataset_filepath"]
         )
+        
+        # For backward compatibility
+        if "phoneme_cache_size" in values and "tokenizer_cache_size" not in values:
+            values["tokenizer_cache_size"] = values["phoneme_cache_size"]
+            
         return values
 
     @model_validator(mode="after")

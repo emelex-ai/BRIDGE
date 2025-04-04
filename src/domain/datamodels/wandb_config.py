@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field, ConfigDict
-from src.utils.helper_funtions import get_project_root
+from pydantic import BaseModel, Field, field_validator, ValidationInfo, model_validator
+from src.utils.helper_functions import get_project_root
 from typing import List, Optional
 import os
 

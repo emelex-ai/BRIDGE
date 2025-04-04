@@ -1,7 +1,5 @@
 from src.domain.datamodels import ModelConfig, DatasetConfig, TrainingConfig, WandbConfig
-from src.domain.datamodels.metrics_config import MetricsConfig
-from src.infra.metrics.metrics_logger import metrics_logger_factory
-from src.utils.helper_funtions import get_run_name, set_seed
+from src.utils.helper_functions import get_run_name, set_seed
 from src.application.training import TrainingPipeline
 from src.infra.clients.wandb import WandbWrapper
 from src.domain.dataset import BridgeDataset
@@ -53,12 +51,11 @@ class TrainModelHandler:
         """
         Set up the training pipeline and dataset.
         """
-        bridge_dataset = BridgeDataset(dataset_config=self.dataset_config, device=self.training_config.device)
+        bridge_dataset = BridgeDataset(dataset_config=self.dataset_config)
         self.pipeline = TrainingPipeline(
             model=Model(
                 model_config=self.model_config,
-                dataset_config=self.dataset_config,
-                device=self.training_config.device,
+                dataset=bridge_dataset,
             ),
             training_config=self.training_config,
             dataset=bridge_dataset,
