@@ -31,12 +31,18 @@ def input_data(
     phonemes_path: str,
     cmudict_supplement: str = None,
     single_letters_removed: bool = True,
+    arrange_in_sequence=False,
 ) -> dict[str, WordData]:
     """Create the input file for the model
 
     Args:
         words (list): list of words
         word_counts (dict): a dictionary. Each key, value pair is the word and its count, respectively
+        phonemes_path (str): a path to the phoneme representations you want to use (see also Traindata class)
+        cmudict_supplement (str): a path to the JSON that defines alternative pronunciations for specific words
+        single_letters_removed (bool): do you want words that are single letters removed?
+        arrange_in_sequence (bool): if True, payload returns words in the sequence provided rather than as a set
+
     Returns:
         dict[str, WordData]: Dictionary with words as keys and their processed data as values.
         Each word's data includes count, phoneme representation, phoneme shape, and orthographic representation.
@@ -50,14 +56,46 @@ def input_data(
                 ...
             }
     """
-    data = Traindata(
-        words,
-        cmudict_supplement=cmudict_supplement,
-        phonpath=phonemes_path,
-        terminals=False,
-        verbose=False,
-        oneletter=single_letters_removed,
-    ).traindata
+
+    if arrange_in_sequence:
+        data = {}
+        # the keys (referenced as "length" below) become the index of the word in the sequence
+        for i, word in enumerate(words):
+            print("The words object:")
+            print(words)
+
+            print("The words object is of type:")
+            print(type(words))
+
+            tmp = Traindata(
+                [word],
+                cmudict_supplement=cmudict_supplement,
+                phonpath=phonemes_path,
+                terminals=False,
+                verbose=False,
+                oneletter=single_letters_removed,
+            ).traindata
+
+            print("Printing tmp:")
+            print(tmp)
+
+            print("Printing tmp's keys lenth:")
+            print(len(tmp.keys()))
+            assert len(tmp.keys()) == 1
+            "Attempting to arrange in sequence, but traindata isn't packaged properly"
+            target = next(iter(tmp))
+            data[i] = tmp[target]
+        print("Printing data object:")
+        print(data)
+    else:
+        data = Traindata(
+            words,
+            cmudict_supplement=cmudict_supplement,
+            phonpath=phonemes_path,
+            terminals=False,
+            verbose=False,
+            oneletter=single_letters_removed,
+        ).traindata
 
     input_data = {}
     for length in data.keys():
@@ -86,6 +124,7 @@ def main(
     phonemes_path="phonreps.csv",
     cmudict_supplement=None,
     single_letters_removed=True,
+    arrange_in_sequence=False,
 ):
     logging.info(f"Reading data from {input_file}")
     """
@@ -118,6 +157,7 @@ def main(
         phonemes_path,
         cmudict_supplement=cmudict_supplement,
         single_letters_removed=single_letters_removed,
+        arrange_in_sequence=arrange_in_sequence,
     )
 
     logging.info(f"Saving processed data to {output_file}")
