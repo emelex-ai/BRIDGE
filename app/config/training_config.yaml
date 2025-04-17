@@ -1,13 +1,14 @@
-num_epochs: 50
-batch_size_train: 64
+num_epochs: 1000
+batch_size_train: 1
 batch_size_val: 64
 train_test_split: 1
 max_nb_steps: 
 learning_rate: 0.0001
-training_pathway: p2p
+training_pathway: o2p
 device: cpu #cpu #cuda
 save_every: 5
 model_artifacts_dir: 'model_artifacts'
-use_wandb: false
+use_wandb: true
 weight_decay: 0.01
-checkpoint_path: 
+checkpoint_path: "models/pretraining/9/model_epoch_950.pth"
+test_data_path: 'tests/adjusted_ewfg.pkl'

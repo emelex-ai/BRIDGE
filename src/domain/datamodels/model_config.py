@@ -12,7 +12,6 @@ import os
 
 
 class ModelConfig(BaseModel):
-    model_config = ConfigDict(frozen=True)
     num_phon_enc_layers: int = Field(default=2)
     num_orth_enc_layers: int = Field(default=2)
     num_mixing_enc_layers: int = Field(default=2)

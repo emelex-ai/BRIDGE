@@ -1,6 +1,6 @@
-dataset_filepath: 'input_data.pkl'
+dataset_filepath: 'into_reading_sequentially_arranged_repeated_1_time.pkl'
 dimension_phon_repr: 31
 orthographic_vocabulary_size: 
 phonological_vocabulary_size: 
-max_orth_seq_len: 
-max_phon_seq_len: 
+max_orth_seq_len: 18
+max_phon_seq_len: 17

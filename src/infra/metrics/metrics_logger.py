@@ -1,3 +1,4 @@
+from typing import Literal
 from src.domain.datamodels.metrics_config import MetricsConfig, OutputMode
 from abc import ABC, abstractmethod
 import torch
@@ -8,15 +9,15 @@ class MetricsLogger(ABC):
         self.metrics_config = metrics_config
 
     @abstractmethod
-    def log_metrics(self, metrics: dict) -> None:
+    def log_metrics(self, metrics: dict, level: Literal["BATCH", "EPOCH"]) -> None:
         raise NotImplementedError
     
 
 
 
 class STDOutMetricsLogger(MetricsLogger):
-    def log_metrics(self, metrics: dict) -> None:
-        print(metrics)
+    def log_metrics(self, metrics: dict, level: Literal["BATCH", "EPOCH"]) -> None:
+        print(level, metrics)
 
 
 class MultipleMetricsLogger(MetricsLogger):
@@ -24,9 +25,9 @@ class MultipleMetricsLogger(MetricsLogger):
         super().__init__(metrics_config)
         self.loggers = loggers
     
-    def log_metrics(self, metrics: dict) -> None:
+    def log_metrics(self, metrics: dict, level: Literal["BATCH", "EPOCH"]) -> None:
         for logger in self.loggers:
-            logger.log_metrics(metrics)
+            logger.log_metrics(metrics, level)
 
 
 
@@ -34,23 +35,26 @@ class CSVMetricsLogger(MetricsLogger):
     
     def __init__(self, metrics_config: MetricsConfig):
         super().__init__(metrics_config)
-        self.opened = False
+        self.opened = {
+                       "BATCH": False,
+            "EPOCH": False
+        }
 
     
-    def log_metrics(self, metrics: dict) -> None:
+    def log_metrics(self, metrics: dict, level: Literal["BATCH", "EPOCH"]) -> None:
         if not self.metrics_config.filename:
             raise ValueError("Filename is required for CSV output mode")
         for metric in metrics:
             if isinstance(metrics[metric], torch.Tensor):
                 metrics[metric] = metrics[metric].item()
         # First log should include header columns
-        if not self.opened:
-            with open(self.metrics_config.filename, "w") as f:
+        if not self.opened[level]:
+            with open(f"{self.metrics_config.filename.split(".")[0]}_{level}.{self.metrics_config.filename.split(".")[1]}", "w") as f:
                 f.write(",".join(metrics.keys()) + "\n")
                 f.write(",".join([str(v) for v in metrics.values()]) + "\n")
-            self.opened = True
+            self.opened[level] = True
         else:
-            with open(self.metrics_config.filename, "a") as f:
+            with open(f"{self.metrics_config.filename.split(".")[0]}_{level}.{self.metrics_config.filename.split(".")[1]}", "a") as f:
                 f.write(",".join([str(v) for v in metrics.values()]) + "\n")
 
             
@@ -65,7 +69,5 @@ def metrics_logger_factory(metrics_config: MetricsConfig) -> MetricsLogger:
             raise ValueError("Filename is required for CSV output mode")
     if OutputMode.STDOUT in metrics_config.modes:
         loggers.append(STDOutMetricsLogger(metrics_config))
-    else:
-        raise ValueError(f"Unsupported output mode: {metrics_config.modes}")
     return MultipleMetricsLogger(metrics_config, loggers)
         

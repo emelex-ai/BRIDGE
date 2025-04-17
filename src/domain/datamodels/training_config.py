@@ -18,6 +18,7 @@ class TrainingConfig(BaseModel):
     model_artifacts_dir: str = Field(default="model_artifacts")
     weight_decay: float = Field(default=0.0)
     checkpoint_path: Optional[str] = Field(default=None)
+    test_data_path: Optional[str] = Field(default=None)
 
     @model_validator(mode="before")
     def convert_paths(cls, values):
@@ -28,6 +29,10 @@ class TrainingConfig(BaseModel):
         )
         values["model_artifacts_dir"] = os.path.join(
             project_root, values["model_artifacts_dir"]
+        )
+        if "test_data_path" in values:
+            values["test_data_path"] = os.path.join(
+            project_root, "data", values["test_data_path"]
         )
         return values
 
@@ -58,5 +63,7 @@ class TrainingConfig(BaseModel):
             raise FileNotFoundError(
                 f"Model directory not found: {self.model_artifacts_dir}"
             )
+        if self.checkpoint_path and not os.path.exists(self.checkpoint_path):
+            raise FileNotFoundError(f"Checkpoint file not found: {self.checkpoint_path}")
         return self
 

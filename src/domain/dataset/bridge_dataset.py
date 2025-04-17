@@ -46,7 +46,7 @@ class BridgeDataset(Dataset):
         # Load input data containing orthographic and phonologic
         # representations of words to be used during training
         input_data = self.read_orthographic_phonologic_data()
-        self.words = sorted(input_data.keys())
+        self.words = list(input_data.keys())
 
         # Initialize phonemizer and character tokenizer
         self.phonemizer = self.read_phonology_data(input_data)
