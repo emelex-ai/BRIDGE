@@ -61,11 +61,6 @@ def input_data(
         data = {}
         # the keys (referenced as "length" below) become the index of the word in the sequence
         for i, word in enumerate(words):
-            print("The words object:")
-            print(words)
-
-            print("The words object is of type:")
-            print(type(words))
 
             tmp = Traindata(
                 [word],
@@ -76,17 +71,11 @@ def input_data(
                 oneletter=single_letters_removed,
             ).traindata
 
-            print("Printing tmp:")
-            print(tmp)
-
-            print("Printing tmp's keys lenth:")
-            print(len(tmp.keys()))
             assert len(tmp.keys()) == 1
             "Attempting to arrange in sequence, but traindata isn't packaged properly"
             target = next(iter(tmp))
             data[i] = tmp[target]
-        print("Printing data object:")
-        print(data)
+
     else:
         data = Traindata(
             words,
@@ -107,7 +96,7 @@ def input_data(
             # and the shape of the phoneme matrix
             phon_shp = phon.shape
             phon = np.where(phon)
-            print(word)
+
             # add to dictionary
             input_data[word] = {
                 "count": word_counts[word],
