@@ -50,6 +50,7 @@ class BridgeDataset:
         # Initialize tokenizer with matching device
         self.tokenizer = BridgeTokenizer(
             phoneme_cache_size=getattr(dataset_config, "tokenizer_cache_size", 10000),
+            custom_cmudict_path=dataset_config.custom_cmudict_path,
         )
 
         # Store vocabulary sizes for model initialization

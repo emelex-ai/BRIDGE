@@ -16,7 +16,9 @@ from src.infra.metrics.metrics_logger import MetricsLogger
 
 class TrainingPipeline:
 
-    def __init__(self, model: Model, training_config: TrainingConfig, dataset: BridgeDataset):
+    def __init__(
+        self, model: Model, training_config: TrainingConfig, dataset: BridgeDataset, metrics_logger: MetricsLogger
+    ):
         self.training_config = training_config
         self.dataset = dataset
         self.device = device_manager.device

@@ -5,6 +5,7 @@ import os
 from nltk.corpus import cmudict
 import pandas as pd
 import torch
+import json
 
 from src.domain.dataset import CUDADict
 from src.utils.helper_functions import get_project_root
@@ -19,6 +20,7 @@ class PhonemeTokenizer:
     def __init__(
         self,
         max_cache_size: int = 10000,
+        custom_cmudict_path: str | None = None,
     ):
         # Set device - defaulting to CPU if None provided
         self.device = device_manager.device
@@ -32,10 +34,26 @@ class PhonemeTokenizer:
         self.phonreps_array = torch.tensor(self.phonreps.values, dtype=torch.float, device=self.device)
         self.phonreps_index = {p: i for i, p in enumerate(self.phonreps.index)}
 
-        # Load CMU dict and clean problematic entries
-        self.pronunciation_dict = {
-            word: pron[0] for word, pron in cmudict.dict().items() if pron  # Skip empty pronunciations
-        }
+        # --- BEGIN Custom CMU-dict loading ---
+        custom_pron = {}
+        if custom_cmudict_path:
+            if os.path.isfile(custom_cmudict_path):
+                try:
+                    with open(custom_cmudict_path, "r") as f:
+                        data = json.load(f)
+                    for word, prons in data.items():
+                        if prons:
+                            # take the first pronunciation variant
+                            custom_pron[word] = prons[0]
+                except Exception as e:
+                    logger.warning(f"Failed to load custom CMU dict at {custom_cmudict_path}: {e}")
+            else:
+                logger.warning(f"Custom CMU dict not found at {custom_cmudict_path}")
+
+        # Load official CMU dict as fallback
+        fallback_pron = {word: pron[0] for word, pron in cmudict.dict().items() if pron}
+        # Merge: use custom entries where available, otherwise fallback
+        self.pronunciation_dict = {**fallback_pron, **custom_pron}
 
         # Special tokens at end of vector space - added [SPC] token
         self.special_token_dims = {

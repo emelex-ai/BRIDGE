@@ -27,6 +27,7 @@ from src.utils.device_manager import device_manager
 
 logger = logging.getLogger(__name__)
 
+
 class BridgeTokenizer:
     """
     A wrapper tokenizer that combines orthographic (character-based) and
@@ -38,12 +39,13 @@ class BridgeTokenizer:
     def __init__(
         self,
         phoneme_cache_size: int = 10000,
+        custom_cmudict_path: Optional[str] = None,
     ):
         # Initialize device
         self.device = device_manager.device
         # Initialize both tokenizers with the same device
         self.char_tokenizer = CharacterTokenizer()
-        self.phoneme_tokenizer = PhonemeTokenizer(max_cache_size=phoneme_cache_size)
+        self.phoneme_tokenizer = PhonemeTokenizer(max_cache_size=phoneme_cache_size,custom_cmudict_path=custom_cmudict_path)
 
         logger.info(
             f"BridgeTokenizer initialized on device {self.device} "

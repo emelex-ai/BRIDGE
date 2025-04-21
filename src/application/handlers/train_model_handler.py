@@ -1,7 +1,9 @@
 from src.domain.datamodels import ModelConfig, DatasetConfig, TrainingConfig, WandbConfig
 from src.utils.helper_functions import get_run_name, set_seed
 from src.application.training import TrainingPipeline
+from src.infra.metrics import metrics_logger_factory
 from src.infra.clients.wandb import WandbWrapper
+from src.domain.datamodels import MetricsConfig
 from src.domain.dataset import BridgeDataset
 from src.domain.model import Model
 import logging
@@ -18,7 +20,7 @@ class TrainModelHandler:
         model_config: ModelConfig,
         dataset_config: DatasetConfig,
         training_config: TrainingConfig,
-        metrics_config: MetricsConfig
+        metrics_config: MetricsConfig,
     ):
         """
         Initialize the training handler with configurations.
@@ -59,9 +61,9 @@ class TrainModelHandler:
             ),
             training_config=self.training_config,
             dataset=bridge_dataset,
-            metrics_logger=metrics_logger_factory(self.metrics_config)
+            metrics_logger=metrics_logger_factory(self.metrics_config),
         )
-    
+
     def initiate_model_training(self):
         """
         Start the training process.
