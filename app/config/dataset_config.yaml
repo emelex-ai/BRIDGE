@@ -1,6 +1,6 @@
-# dataset_filepath: 'gs://bridge-ml-training/datasets/pretraining/data_1.csv'
+dataset_filepath: 'gs://bridge-ml-training/datasets/pretraining/data_1.csv'
 # dataset_filepath: 'data.csv'
-dataset_filepath: 'input_data.pkl'
+# dataset_filepath: 'input_data.pkl'
 custom_cmudict_path: 'custom_cmudict.json'
 dimension_phon_repr: 31
 #orthographic_vocabulary_size: 

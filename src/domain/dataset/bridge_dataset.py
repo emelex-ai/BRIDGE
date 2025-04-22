@@ -63,9 +63,9 @@ class BridgeDataset:
         # Setup LRU cache for encodings
         self.encoding_cache = OrderedDict()
         self.max_cache_size = cache_size
-
+        self.dataset_filepath = dataset_config.dataset_filepath
         # Load raw data into a DataFrame
-        raw_df = self._load_raw_dataframe(dataset_config.dataset_filepath)
+        raw_df = self._load_raw_dataframe(self.dataset_filepath)
         # Process DataFrame into validated word list
         self.words = self._process_raw_dataframe(raw_df)
         logger.info(f"Loaded {len(self.words)} valid words.")
@@ -90,7 +90,7 @@ class BridgeDataset:
         if ext == ".pkl":
             data = pickle.load(open(path, "rb"))
             if not isinstance(data, dict):
-                raise ValueError("PKL file must contain a dict of word->entry")
+                raise ValueError("Dataset file must contain a dictionary")
             # convert dict keys to DataFrame
             return pd.DataFrame({"word_raw": list(data.keys())})
         raise ValueError(f"Unsupported data format: {ext}")

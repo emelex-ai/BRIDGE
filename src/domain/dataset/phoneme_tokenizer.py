@@ -33,7 +33,6 @@ class PhonemeTokenizer:
         # Convert phonreps to PyTorch tensor for faster lookup
         self.phonreps_array = torch.tensor(self.phonreps.values, dtype=torch.float, device=self.device)
         self.phonreps_index = {p: i for i, p in enumerate(self.phonreps.index)}
-
         # --- BEGIN Custom CMU-dict loading ---
         custom_pron = {}
         if custom_cmudict_path:

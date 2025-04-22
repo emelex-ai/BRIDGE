@@ -29,32 +29,23 @@ class TrainingPipeline:
             weight_decay=training_config.weight_decay,
         )
         self.train_slices, self.val_slices = self.create_data_slices()
-        self.phon_reps = torch.tensor(
-            utilities.phontable("data/phonreps.csv").values,
-            dtype=torch.float,
-            device=self.device,
-        )[:-1]
+        self.phon_reps = self.dataset.tokenizer.phoneme_tokenizer.phonreps_array
+
         self.start_epoch = 0
         if training_config.checkpoint_path:
             self.load_model(training_config.checkpoint_path)
         self.metrics_logger = metrics_logger
 
     def create_data_slices(self):
-        n = len(self.dataset)
-        cutpoint = int(n * self.training_config.train_test_split)
-
-        # training slices: [0:batch, batch:2*batch, … up to cutpoint)
+        cutpoint = int(len(self.dataset) * self.training_config.train_test_split)
         train_slices = [
-            slice(start, min(start + self.training_config.batch_size_train, cutpoint))
-            for start in range(0, cutpoint, self.training_config.batch_size_train)
+            slice(i, min(i + self.training_config.batch_size_train, cutpoint))
+            for i in range(0, cutpoint, self.training_config.batch_size_train)
         ]
-
-        # validation slices: [cutpoint:cutpoint+batch_val, … up to n)
         val_slices = [
-            slice(start, min(start + self.training_config.batch_size_val, n))
-            for start in range(cutpoint, n, self.training_config.batch_size_val)
+            slice(i, min(i + self.training_config.batch_size_val, len(self.dataset)))
+            for i in range(cutpoint, len(self.dataset), self.training_config.batch_size_val)
         ]
-
         return train_slices, val_slices
 
     def forward(
@@ -139,7 +130,6 @@ class TrainingPipeline:
     ) -> dict:
         metrics = {}
         if self.training_config.training_pathway in ["o2p", "op2op", "p2p"]:
-            print(logits["phon"].shape, phonology["targets"].shape, self.phon_reps.shape)
             metrics.update(calculate_phon_metrics(logits, phonology, self.phon_reps))
 
         if self.training_config.training_pathway in ["op2op", "p2o"]:
@@ -152,10 +142,7 @@ class TrainingPipeline:
         orthography, phonology = batch["orthographic"], batch["phonological"]
 
         # Forward pass
-        # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
-        #     with record_function("model_forward"):
         logits = self.forward(orthography, phonology)
-        # print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
 
         # Compute loss
         metrics = self.compute_loss(logits, orthography, phonology)
@@ -240,7 +227,7 @@ class TrainingPipeline:
             torch.save(
                 {
                     "model_config": self.model.model_config,
-                    "dataset_config": self.model.dataset_config,
+                    "dataset_config": self.dataset.dataset_config,
                     "model_state_dict": self.model.state_dict(),
                     "optimizer_state_dict": self.optimizer.state_dict(),
                     "epoch": epoch,

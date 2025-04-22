@@ -1,5 +1,5 @@
 batch_metrics: true
 training_metrics: true
 validation_metrics: true
-modes: ["csv", "stdout"]
+modes: ["csv"]
 filename: "results/training1.csv"
