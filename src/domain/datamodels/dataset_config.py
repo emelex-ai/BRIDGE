@@ -16,7 +16,10 @@ class DatasetConfig(BaseModel):
         if "dataset_filepath" not in values:
             values["dataset_filepath"] = cls.model_fields["dataset_filepath"].get_default()
 
-        values["dataset_filepath"] = os.path.join(project_root, "data", values["dataset_filepath"])
+        if "gs://" not in values["dataset_filepath"]:
+            # Convert relative paths to absolute paths
+            values["dataset_filepath"] = os.path.join(project_root, "data", values["dataset_filepath"])
+
         values["custom_cmudict_path"] = os.path.join(project_root, "data", values["custom_cmudict_path"])
 
         # For backward compatibility
@@ -27,6 +30,7 @@ class DatasetConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_paths(self):
-        if not os.path.exists(self.dataset_filepath):
-            raise FileNotFoundError(f"Dataset file not found: {self.dataset_filepath}")
+        if "gs://" not in self.dataset_filepath:
+            if not os.path.exists(self.dataset_filepath):
+                raise FileNotFoundError(f"Dataset file not found: {self.dataset_filepath}")
         return self

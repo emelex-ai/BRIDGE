@@ -40,16 +40,21 @@ class TrainingPipeline:
         self.metrics_logger = metrics_logger
 
     def create_data_slices(self):
-        cutpoint = int(len(self.dataset) * self.training_config.train_test_split)
+        n = len(self.dataset)
+        cutpoint = int(n * self.training_config.train_test_split)
+
+        # training slices: [0:batch, batch:2*batch, … up to cutpoint)
         train_slices = [
-            slice(i, min(i + self.training_config.batch_size_train, cutpoint))
-            for i in range(0, cutpoint, self.training_config.batch_size_train)
+            slice(start, min(start + self.training_config.batch_size_train, cutpoint))
+            for start in range(0, cutpoint, self.training_config.batch_size_train)
         ]
+
+        # validation slices: [cutpoint:cutpoint+batch_val, … up to n)
         val_slices = [
-            slice(i, min(i + self.training_config.batch_size_val, len(self.dataset)))
-            for i in range(cutpoint, len(self.dataset), self.training_config.batch_size_val)
-            for i in range(cutpoint, len(self.dataset), self.training_config.batch_size_val)
+            slice(start, min(start + self.training_config.batch_size_val, n))
+            for start in range(cutpoint, n, self.training_config.batch_size_val)
         ]
+
         return train_slices, val_slices
 
     def forward(
@@ -134,6 +139,7 @@ class TrainingPipeline:
     ) -> dict:
         metrics = {}
         if self.training_config.training_pathway in ["o2p", "op2op", "p2p"]:
+            print(logits["phon"].shape, phonology["targets"].shape, self.phon_reps.shape)
             metrics.update(calculate_phon_metrics(logits, phonology, self.phon_reps))
 
         if self.training_config.training_pathway in ["op2op", "p2o"]:

@@ -1,10 +1,12 @@
 from src.domain.datamodels import ModelConfig, DatasetConfig, TrainingConfig, WandbConfig
 from src.utils.helper_functions import get_run_name, set_seed
 from src.application.training import TrainingPipeline
+from src.infra.clients.gcp.gcs_client import GCSClient
 from src.infra.metrics import metrics_logger_factory
 from src.infra.clients.wandb import WandbWrapper
 from src.domain.datamodels import MetricsConfig
 from src.domain.dataset import BridgeDataset
+
 from src.domain.model import Model
 import logging
 import os
@@ -30,6 +32,7 @@ class TrainModelHandler:
         self.dataset_config = dataset_config
         self.training_config = training_config
         self.metrics_config = metrics_config
+        self.gcs_client = GCSClient()
         self.wandb_wrapper = None
         self.pipeline = None
 
@@ -53,7 +56,7 @@ class TrainModelHandler:
         """
         Set up the training pipeline and dataset.
         """
-        bridge_dataset = BridgeDataset(dataset_config=self.dataset_config)
+        bridge_dataset = BridgeDataset(dataset_config=self.dataset_config, gcs_client=self.gcs_client)
         self.pipeline = TrainingPipeline(
             model=Model(
                 model_config=self.model_config,
