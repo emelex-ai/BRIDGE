@@ -3,11 +3,12 @@ from src.application.training.phon_metrics import (
     calculate_closest_phoneme_cosine,
     calculate_cosine_distance,
     calculate_euclidean_distance,
-    calculate_phon_reps_distance,
 )
+from src.utils.helper_functions import get_project_root
 import math
 import torch
-from traindata import utilities
+import os
+import pandas as pd
 
 
 def test_cosine_distance_identity():
@@ -51,9 +52,9 @@ def test_euclidean_distance():
 
 
 def test_closest_phoneme_cdist():
-    phon_reps = torch.tensor(
-        utilities.phontable("data/phonreps.csv").values, dtype=torch.float
-    )[:-1]
+    phonreps = pd.read_csv(os.path.join(get_project_root(), "data/phonreps.csv"))
+    phonreps.set_index("phone", inplace=True)
+    phon_reps = torch.tensor(phonreps.values, dtype=torch.float)[:-1]
     phon_pred = torch.load(
         "tests/application/training/data/phon_pred.pt", weights_only=True
     )
@@ -68,9 +69,9 @@ def test_closest_phoneme_cdist():
 
 
 def test_closest_phoneme_cdist_identity():
-    phon_reps = torch.tensor(
-        utilities.phontable("data/phonreps.csv").values, dtype=torch.float
-    )[:-1]
+    phonreps = pd.read_csv(os.path.join(get_project_root(), "data/phonreps.csv"))
+    phonreps.set_index("phone", inplace=True)
+    phon_reps = torch.tensor(phonreps.values, dtype=torch.float)[:-1]
     phon_true = torch.load(
         "tests/application/training/data/phon_true.pt", weights_only=True
     )
@@ -79,9 +80,9 @@ def test_closest_phoneme_cdist_identity():
 
 
 def test_closest_phoneme_cosine():
-    phon_reps = torch.tensor(
-        utilities.phontable("data/phonreps.csv").values, dtype=torch.float
-    )[:-1]
+    phonreps = pd.read_csv(os.path.join(get_project_root(), "data/phonreps.csv"))
+    phonreps.set_index("phone", inplace=True)
+    phon_reps = torch.tensor(phonreps.values, dtype=torch.float)[:-1]
     phon_pred = torch.load(
         "tests/application/training/data/phon_pred.pt", weights_only=True
     )
@@ -97,9 +98,9 @@ def test_closest_phoneme_cosine():
 
 
 def test_closest_phoneme_cosine_identity():
-    phon_reps = torch.tensor(
-        utilities.phontable("data/phonreps.csv").values, dtype=torch.float
-    )[:-1]
+    phonreps = pd.read_csv(os.path.join(get_project_root(), "data/phonreps.csv"))
+    phonreps.set_index("phone", inplace=True)
+    phon_reps = torch.tensor(phonreps.values, dtype=torch.float)[:-1]
     phon_true = torch.load(
         "tests/application/training/data/phon_true.pt", weights_only=True
     )

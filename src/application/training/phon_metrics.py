@@ -1,5 +1,4 @@
 import torch
-from traindata import utilities
 
 
 def calculate_phon_word_accuracy(phon_true, phoneme_wise_mask):
@@ -163,12 +162,3 @@ def calculate_phon_metrics(
         "closest_phoneme_l2_accuracy": closest_phoneme_2.item(),
         "closest_phoneme_cosine_accuracy": closest_phoneme_cosine.item(),
     }
-
-
-def calculate_phon_reps_distance():
-    phon_reps = torch.tensor(
-        utilities.phontable("data/phonreps.csv").values, dtype=torch.float
-    )[:-1]
-    resp = torch.cdist(phon_reps, phon_reps, p=1)
-    for item in resp:
-        print(torch.sort(item)[0])

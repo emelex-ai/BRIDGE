@@ -258,7 +258,7 @@ The phonological structure uses the ARPAbet scheme with:
 - Phonemes identified using CMU Pronouncing Dictionary
 - One-hot encoding vectors of total length 34
 
-Note: the phonological representations used in BRIDGE are based on the [Traindata](https://github.com/MCooperBorkenhagen/Traindata) implementation, which is *currently* limited to English.
+Note: the phonological representations used in BRIDGE are based on the phonological feature vectors from the [Traindata](https://github.com/MCooperBorkenhagen/Traindata) implementation, which is *currently* limited to English.
 
 ### Example
 
