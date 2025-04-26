@@ -26,3 +26,5 @@ results/*.pkl
 data/into_reading/
 
 results/*.csv
+
+.pytest_cache/
