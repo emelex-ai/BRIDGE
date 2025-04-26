@@ -36,5 +36,7 @@ jobs:
           key: venv-${{ hashFiles('poetry.lock') }}
       - name: Install dependencies
         run: poetry install
+      - name: Download NLTK data
+        run: poetry run python -c "import nltk; nltk.download('cmudict')"
       - name: Run unit tests
         run: poetry run pytest -v
