@@ -38,11 +38,14 @@ def get_run_name(model_artifacts_dir="model_artifacts"):
     existing_runs = [
         d
         for d in os.listdir(model_artifacts_dir)
-        if os.path.isdir(os.path.join(model_artifacts_dir, d)) and d.startswith(current_date)
+        if os.path.isdir(os.path.join(model_artifacts_dir, d))
+        and d.startswith(current_date)
     ]
 
     # Extract run numbers for the current date
-    run_numbers = [int(d.split("_")[-1]) for d in existing_runs if d.split("_")[-1].isdigit()]
+    run_numbers = [
+        int(d.split("_")[-1]) for d in existing_runs if d.split("_")[-1].isdigit()
+    ]
 
     # Determine the next run number
     next_run_number = max(run_numbers, default=0) + 1

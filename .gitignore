@@ -24,3 +24,7 @@ model_artifacts
 results/*.pkl
 *.ipynb
 data/into_reading/
+
+results/*.csv
+
+.pytest_cache/

@@ -10,7 +10,7 @@ from src.application.handlers import (
     WandbConfigHandler,
     LoggingConfigHandler,
     TrainModelHandler,
-    MetricsConfigHandler
+    MetricsConfigHandler,
 )
 
 
@@ -21,13 +21,12 @@ def load_configs():
         "model_config": ModelConfigHandler,
         "dataset_config": DatasetConfigHandler,
         "training_config": TrainingConfigHandler,
-        "metrics_config": MetricsConfigHandler
-        
+        "metrics_config": MetricsConfigHandler,
     }
     configs = {}
     for key, handler_cls in handlers.items():
         handler = handler_cls(config_filepath=f"app/config/{key}.yaml")
-        #handler.print_config()
+        # handler.print_config()
         configs[key] = handler.get_config()
     return configs
 
@@ -37,7 +36,7 @@ def main():
     for dataset_num in range(19, 30):
         dataset_config = configs["dataset_config"]
         parts = dataset_config.dataset_filepath.split("/")
-        parts[-1] = f"input_data_{dataset_num}.pkl" 
+        parts[-1] = f"input_data_{dataset_num}.pkl"
         dataset_config.dataset_filepath = "/".join(parts)
         configs["dataset_config"] = dataset_config
         TrainModelHandler(**configs).initiate_model_pretraining()

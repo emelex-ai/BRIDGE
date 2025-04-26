@@ -9,13 +9,13 @@ import random
 import logging
 from typing import Union, Any
 from pathlib import Path
-import torch
 from collections import OrderedDict
 from functools import lru_cache
-
+import pandas as pd
 from src.domain.datamodels import DatasetConfig, BridgeEncoding
 from src.utils.device_manager import device_manager
 from src.domain.dataset import BridgeTokenizer
+from src.infra.clients.gcp.gcs_client import GCSClient
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,7 @@ class BridgeDataset:
     def __init__(
         self,
         dataset_config: DatasetConfig,
+        gcs_client: GCSClient,
         cache_path: str | None = "data/.cache",
         cache_size: int = 1000,
     ):
@@ -43,13 +44,14 @@ class BridgeDataset:
         """
         self.cache_path = cache_path
         self.dataset_config = dataset_config
-
+        self.gcs_client = gcs_client
         # Initialize device - prioritize config device over parameter
         self.device = device_manager.device
 
         # Initialize tokenizer with matching device
         self.tokenizer = BridgeTokenizer(
             phoneme_cache_size=getattr(dataset_config, "tokenizer_cache_size", 10000),
+            custom_cmudict_path=dataset_config.custom_cmudict_path,
         )
 
         # Store vocabulary sizes for model initialization
@@ -60,50 +62,66 @@ class BridgeDataset:
         # Setup LRU cache for encodings
         self.encoding_cache = OrderedDict()
         self.max_cache_size = cache_size
-
-        # Load and process the raw data
         self.dataset_filepath = dataset_config.dataset_filepath
-        self._load_and_process_data()
+        # Load raw data into a DataFrame
+        raw_df = self._load_raw_dataframe(self.dataset_filepath)
+        # Process DataFrame into validated word list
+        self.words = self._process_raw_dataframe(raw_df)
+        logger.info(f"Loaded {len(self.words)} valid words.")
 
         # Create cache directory if needed
         if cache_path and not os.path.exists(cache_path):
             os.makedirs(cache_path, exist_ok=True)
 
-    def _load_and_process_data(self) -> None:
+    def _load_raw_dataframe(self, path: str) -> pd.DataFrame:
         """
-        Load raw data from file and process it using the BridgeTokenizer.
-        Implements efficient data loading and validation.
+        Dispatch method to load raw data based on path scheme or extension.
+        Returns a DataFrame with a 'word_raw' column.
         """
-        logger.info(f"Loading data from {self.dataset_filepath}")
-        try:
-            with open(self.dataset_filepath, "rb") as f:
-                raw_data = pickle.load(f)
-
-            if not isinstance(raw_data, dict):
+        if path.startswith("gs://"):
+            # strip gs://<bucket>/ prefix
+            parts = path.replace("gs://", "").split("/", 1)
+            bucket, blob = parts[0], parts[1]
+            return self._read_gcs_csv(bucket, blob)
+        ext = Path(path).suffix.lower()
+        if ext == ".csv":
+            return pd.read_csv(path)
+        if ext == ".pkl":
+            data = pickle.load(open(path, "rb"))
+            if not isinstance(data, dict):
                 raise ValueError("Dataset file must contain a dictionary")
+            # convert dict keys to DataFrame
+            return pd.DataFrame({"word_raw": list(data.keys())})
+        raise ValueError(f"Unsupported data format: {ext}")
 
-            # Validate and sort words for deterministic ordering
-            valid_words = []
-            for word in sorted(raw_data.keys()):
-                if not isinstance(word, str):
-                    logger.warning(f"Skipping invalid word entry: {word}")
+    def _read_gcs_csv(self, bucket: str, blob: str) -> pd.DataFrame:
+        """Read a CSV blob from GCS into a DataFrame."""
+        return self.gcs_client.read_csv(
+            bucket_name=bucket,
+            blob_name=blob,
+            sep=",",
+            parse_dates=True,
+            dtype={"col1": str},
+        )
+
+    def _process_raw_dataframe(self, df: pd.DataFrame) -> list[str]:
+        """
+        Validate and filter 'word_raw' entries, ensuring tokenization consistency.
+        """
+        if "word_raw" not in df.columns:
+            raise KeyError("DataFrame must contain 'word_raw' column")
+        valid = []
+        for idx, word in enumerate(df["word_raw"]):
+            if not isinstance(word, str):
+                logger.warning(f"Skipping non-str entry: {word}")
+                continue
+            if idx == 0:
+                # test encoding of first valid word
+                if self._encode_single_word(word) is None:
+                    logger.warning(f"Initial encoding validation failed for {word}")
                     continue
-
-                # Pre-encode first word to validate structure
-                if not valid_words:
-                    test_encoding = self._encode_single_word(word)
-                    if test_encoding is None:
-                        logger.warning("Initial encoding validation failed")
-                        continue
-
-                valid_words.append(word)
-
-            self.words = valid_words
-            logger.info(f"Successfully loaded {len(self.words)} valid words")
-
-        except Exception as e:
-            logger.error(f"Error loading dataset: {e}")
-            raise
+            valid.append(word)
+        return valid
 
     @lru_cache(maxsize=128)
     def _encode_single_word(self, word: str) -> BridgeEncoding | None:

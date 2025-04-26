@@ -10,8 +10,6 @@ class MetricsLogger(ABC):
     @abstractmethod
     def log_metrics(self, metrics: dict) -> None:
         raise NotImplementedError
-    
-
 
 
 class STDOutMetricsLogger(MetricsLogger):
@@ -20,23 +18,23 @@ class STDOutMetricsLogger(MetricsLogger):
 
 
 class MultipleMetricsLogger(MetricsLogger):
-    def __init__(self, metrics_config: MetricsConfig, loggers: list[MetricsLogger]) -> None:
+    def __init__(
+        self, metrics_config: MetricsConfig, loggers: list[MetricsLogger]
+    ) -> None:
         super().__init__(metrics_config)
         self.loggers = loggers
-    
+
     def log_metrics(self, metrics: dict) -> None:
         for logger in self.loggers:
             logger.log_metrics(metrics)
 
 
-
 class CSVMetricsLogger(MetricsLogger):
-    
+
     def __init__(self, metrics_config: MetricsConfig):
         super().__init__(metrics_config)
         self.opened = False
 
-    
     def log_metrics(self, metrics: dict) -> None:
         if not self.metrics_config.filename:
             raise ValueError("Filename is required for CSV output mode")
@@ -53,8 +51,6 @@ class CSVMetricsLogger(MetricsLogger):
             with open(self.metrics_config.filename, "a") as f:
                 f.write(",".join([str(v) for v in metrics.values()]) + "\n")
 
-            
-
 
 def metrics_logger_factory(metrics_config: MetricsConfig) -> MetricsLogger:
     loggers = []
@@ -65,7 +61,6 @@ def metrics_logger_factory(metrics_config: MetricsConfig) -> MetricsLogger:
             raise ValueError("Filename is required for CSV output mode")
     if OutputMode.STDOUT in metrics_config.modes:
         loggers.append(STDOutMetricsLogger(metrics_config))
-    else:
+    if not loggers:
         raise ValueError(f"Unsupported output mode: {metrics_config.modes}")
     return MultipleMetricsLogger(metrics_config, loggers)
-        

@@ -1,8 +1,6 @@
-from src.utils.helper_functions import set_seed
 from typing import Optional
 import torch.nn as nn
 import torch
-
 
 
 class Encoder(nn.Module):
@@ -11,7 +9,9 @@ class Encoder(nn.Module):
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model, nhead=nhead, batch_first=True, dim_feedforward=4 * d_model
         )
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.transformer_encoder = nn.TransformerEncoder(
+            encoder_layer, num_layers=num_layers
+        )
 
     def forward(
         self,
@@ -19,5 +19,7 @@ class Encoder(nn.Module):
         src_mask: Optional[torch.Tensor] = None,
         src_key_padding_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        output = self.transformer_encoder(src, mask=src_mask, src_key_padding_mask=src_key_padding_mask)
+        output = self.transformer_encoder(
+            src, mask=src_mask, src_key_padding_mask=src_key_padding_mask
+        )
         return output

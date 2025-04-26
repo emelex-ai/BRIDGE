@@ -22,7 +22,9 @@ class CharacterTokenizer:
         self.idx_2_char = {i: ch for i, ch in enumerate(self.vocab)}
         self.vocabulary_size = len(self.vocab)
 
-        logger.info(f"CharacterTokenizer initialized with vocabulary size: {self.vocabulary_size}")
+        logger.info(
+            f"CharacterTokenizer initialized with vocabulary size: {self.vocabulary_size}"
+        )
 
     def get_vocabulary_size(self) -> int:
         return self.vocabulary_size
@@ -32,13 +34,20 @@ class CharacterTokenizer:
         # Ensure the input is either a string or a list of strings
         if isinstance(list_of_strings, str):
             list_of_strings = [list_of_strings]
-        elif not isinstance(list_of_strings, list) or not all(isinstance(s, str) for s in list_of_strings):
+        elif not isinstance(list_of_strings, list) or not all(
+            isinstance(s, str) for s in list_of_strings
+        ):
             logger.error("Input must be a string or a list of strings")
             raise TypeError("Input must be a string or a list of strings")
 
         max_length = max(len(s) for s in list_of_strings)
 
-        enc_pad = lambda s: ["[BOS]"] + list(s) + ["[EOS]"] + ["[PAD]"] * (max_length - len(s))
+        enc_pad = (
+            lambda s: ["[BOS]"]
+            + list(s)
+            + ["[EOS]"]
+            + ["[PAD]"] * (max_length - len(s))
+        )
         dec_pad = lambda s: ["[BOS]"] + list(s) + ["[PAD]"] * (max_length - len(s))
 
         # Create encoder-padded and decoder-padded string lists
@@ -46,13 +55,17 @@ class CharacterTokenizer:
         dec_strings = [dec_pad(s) for s in list_of_strings]
 
         # Initialize tensors for encoded input
-        enc_input_ids = torch.zeros((len(enc_strings), 2 + max_length), dtype=torch.long, device=self.device)
+        enc_input_ids = torch.zeros(
+            (len(enc_strings), 2 + max_length), dtype=torch.long, device=self.device
+        )
         for i, enc_str in enumerate(enc_strings):
             for j, ch in enumerate(enc_str):
                 enc_input_ids[i, j] = self.char_2_idx.get(ch, self.char_2_idx["[UNK]"])
 
         # Initialize tensors for decoder input
-        dec_input_ids = torch.zeros((len(dec_strings), 1 + max_length), dtype=torch.long, device=self.device)
+        dec_input_ids = torch.zeros(
+            (len(dec_strings), 1 + max_length), dtype=torch.long, device=self.device
+        )
         for i, dec_str in enumerate(dec_strings):
             for j, ch in enumerate(dec_str):
                 dec_input_ids[i, j] = self.char_2_idx.get(ch, self.char_2_idx["[UNK]"])
@@ -73,7 +86,13 @@ class CharacterTokenizer:
     def decode(self, list_of_ints: list[list[int]]) -> list[str]:
         try:
             decoded_strings = [
-                "".join([self.idx_2_char[i] for i in ints if self.idx_2_char[i] not in self.special_tokens])
+                "".join(
+                    [
+                        self.idx_2_char[i]
+                        for i in ints
+                        if self.idx_2_char[i] not in self.special_tokens
+                    ]
+                )
                 for ints in list_of_ints
             ]
         except KeyError as e:

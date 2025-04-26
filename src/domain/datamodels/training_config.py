@@ -1,6 +1,5 @@
 from pydantic import BaseModel, Field, model_validator, field_validator
 from src.utils.helper_functions import get_project_root
-from src.utils.device_manager import device_manager
 from typing import Optional
 import torch
 import os
@@ -23,15 +22,21 @@ class TrainingConfig(BaseModel):
     def convert_paths(cls, values):
         """Convert relative paths to absolute paths before validation occurs."""
         project_root = get_project_root()
-        values.setdefault("model_artifacts_dir", cls.model_fields["model_artifacts_dir"].get_default())
-        values["model_artifacts_dir"] = os.path.join(project_root, values["model_artifacts_dir"])
+        values.setdefault(
+            "model_artifacts_dir", cls.model_fields["model_artifacts_dir"].get_default()
+        )
+        values["model_artifacts_dir"] = os.path.join(
+            project_root, values["model_artifacts_dir"]
+        )
         return values
 
     @field_validator("training_pathway")
     def validate_pathway(cls, v: str) -> str:
         allowed_training_pathways = ["o2p", "p2o", "op2op", "p2p"]
         if v not in allowed_training_pathways:
-            raise ValueError(f"Invalid pathway: {v}. Allowed: {allowed_training_pathways}")
+            raise ValueError(
+                f"Invalid pathway: {v}. Allowed: {allowed_training_pathways}"
+            )
         return v
 
     @field_validator("train_test_split")
@@ -43,6 +48,7 @@ class TrainingConfig(BaseModel):
     @model_validator(mode="after")
     def validate_paths(self):
         if not os.path.exists(self.model_artifacts_dir):
-            raise FileNotFoundError(f"Model directory not found: {self.model_artifacts_dir}")
+            raise FileNotFoundError(
+                f"Model directory not found: {self.model_artifacts_dir}"
+            )
         return self
-

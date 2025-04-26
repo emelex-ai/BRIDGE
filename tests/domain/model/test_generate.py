@@ -115,6 +115,7 @@ def p2p_sample_input(dataset_config):
 
 class MockDatasetConfig:
     """Mock DatasetConfig with the attributes needed for tests."""
+
     def __init__(self):
         self.dataset_filepath = "data.csv"
         self.device = "cpu"
@@ -124,6 +125,7 @@ class MockDatasetConfig:
         self.phonological_vocabulary_size = 34
         self.max_orth_seq_len = 100
         self.max_phon_seq_len = 100
+
 
 @pytest.fixture
 def dataset_config():
@@ -155,66 +157,95 @@ def model_config():
 
 class MockModel:
     """Mock Model class for testing without requiring actual model initialization."""
+
     def __init__(self, model_config, dataset_config):
         self.model_config = model_config
         self.dataset_config = dataset_config
         self.device = torch.device("cpu")
         # Store seed for deterministic generation
         self.seed = 42
-        
+
     def eval(self):
         """Mock eval method."""
         pass
-        
-    def _generate(self, pathway, orth_enc_input=None, orth_enc_pad_mask=None,
-                 phon_enc_input=None, phon_enc_pad_mask=None, deterministic=True):
+
+    def _generate(
+        self,
+        pathway,
+        orth_enc_input=None,
+        orth_enc_pad_mask=None,
+        phon_enc_input=None,
+        phon_enc_pad_mask=None,
+        deterministic=True,
+    ):
         """Mock _generate method that returns a compatible output structure."""
         # Input validation
         if pathway == "o2p":
             if orth_enc_input is None:
                 raise ValueError("Expected 2D input tensor for o2p pathway")
-            if not isinstance(orth_enc_input, torch.Tensor) or orth_enc_input.dim() != 2:
+            if (
+                not isinstance(orth_enc_input, torch.Tensor)
+                or orth_enc_input.dim() != 2
+            ):
                 raise ValueError("Expected 2D input tensor")
             # Change validation order to match test expectations
             if orth_enc_pad_mask is not None and orth_enc_pad_mask.dtype != torch.bool:
                 raise ValueError("orth_enc_pad_mask must have dtype torch.bool")
-            if orth_enc_pad_mask is None or orth_enc_pad_mask.shape != orth_enc_input.shape:
+            if (
+                orth_enc_pad_mask is None
+                or orth_enc_pad_mask.shape != orth_enc_input.shape
+            ):
                 raise ValueError("Input and mask shapes must match")
             batch_size = orth_enc_input.size(0)
-            
+
         elif pathway == "p2o":
             if orth_enc_input is not None or orth_enc_pad_mask is not None:
-                raise ValueError("p2o pathway expects orthographic inputs (orth_enc_input, orth_enc_pad_mask) to be None")
+                raise ValueError(
+                    "p2o pathway expects orthographic inputs (orth_enc_input, orth_enc_pad_mask) to be None"
+                )
             if not isinstance(phon_enc_input, list):
                 raise TypeError("phon_enc_input must be a list of lists of tensors")
-            if not isinstance(phon_enc_pad_mask, torch.Tensor) or phon_enc_pad_mask.dtype != torch.bool:
+            if (
+                not isinstance(phon_enc_pad_mask, torch.Tensor)
+                or phon_enc_pad_mask.dtype != torch.bool
+            ):
                 raise TypeError("phon_enc_pad_mask must be a boolean tensor")
             if len(phon_enc_input) != phon_enc_pad_mask.size(0):
                 raise ValueError("Batch size mismatch")
             batch_size = len(phon_enc_input)
-            
+
         elif pathway == "p2p":
             if orth_enc_input is not None or orth_enc_pad_mask is not None:
-                raise ValueError("p2p pathway expects orthographic inputs (orth_enc_input, orth_enc_pad_mask) to be None")
+                raise ValueError(
+                    "p2p pathway expects orthographic inputs (orth_enc_input, orth_enc_pad_mask) to be None"
+                )
             if phon_enc_input is None:
                 raise ValueError("p2p pathway requires phonological inputs")
             # Check if feature indices are valid
             for batch in phon_enc_input:
                 for token in batch:
-                    if torch.any(token >= self.dataset_config.phonological_vocabulary_size):
-                        raise ValueError("Feature indices must be less than vocabulary size")
+                    if torch.any(
+                        token >= self.dataset_config.phonological_vocabulary_size
+                    ):
+                        raise ValueError(
+                            "Feature indices must be less than vocabulary size"
+                        )
             batch_size = len(phon_enc_input)
-            
+
         elif pathway == "o2o":
             if orth_enc_input is None:
                 raise ValueError("o2o pathway requires orthographic inputs")
             if phon_enc_input is not None or phon_enc_pad_mask is not None:
-                raise ValueError("o2o pathway expects phonological inputs (phon_enc_input, phon_enc_pad_mask) to be None")
+                raise ValueError(
+                    "o2o pathway expects phonological inputs (phon_enc_input, phon_enc_pad_mask) to be None"
+                )
             # Check token indices
-            if torch.any(orth_enc_input >= self.dataset_config.orthographic_vocabulary_size):
+            if torch.any(
+                orth_enc_input >= self.dataset_config.orthographic_vocabulary_size
+            ):
                 raise ValueError("Input tokens must be less than vocabulary size")
             batch_size = orth_enc_input.size(0)
-            
+
         elif pathway == "op2op":
             if orth_enc_input is None:
                 raise ValueError("op2op pathway requires orthographic inputs")
@@ -225,34 +256,46 @@ class MockModel:
             if orth_enc_pad_mask.dtype != torch.bool:
                 raise ValueError("orth_enc_pad_mask must have dtype torch.bool")
             if orth_enc_input.size(1) > self.dataset_config.max_orth_seq_len:
-                raise ValueError(f"Orthographic input sequence length {orth_enc_input.size(1)} exceeds maximum {self.dataset_config.max_orth_seq_len}")
+                raise ValueError(
+                    f"Orthographic input sequence length {orth_enc_input.size(1)} exceeds maximum {self.dataset_config.max_orth_seq_len}"
+                )
             if len(phon_enc_input) != orth_enc_input.size(0):
                 raise ValueError("Batch size mismatch")
             # Check if feature indices are valid
             for batch in phon_enc_input:
                 for token in batch:
-                    if torch.any(token >= self.dataset_config.phonological_vocabulary_size):
-                        raise ValueError("Feature indices must be less than vocabulary size")
-            if torch.any(orth_enc_input >= self.dataset_config.orthographic_vocabulary_size):
-                raise ValueError("Orthographic tokens must be less than vocabulary size")
+                    if torch.any(
+                        token >= self.dataset_config.phonological_vocabulary_size
+                    ):
+                        raise ValueError(
+                            "Feature indices must be less than vocabulary size"
+                        )
+            if torch.any(
+                orth_enc_input >= self.dataset_config.orthographic_vocabulary_size
+            ):
+                raise ValueError(
+                    "Orthographic tokens must be less than vocabulary size"
+                )
             batch_size = orth_enc_input.size(0)
-            
+
         else:
             raise ValueError(f"Unknown pathway: {pathway}")
-            
+
         # Set seed for deterministic generation
         if deterministic:
             torch.manual_seed(self.seed)
-            
+
         # Prepare default output structure
         # For deterministic generation, create a fixed tensor based on batch size
         if deterministic:
-            global_encoding = torch.ones(batch_size, self.model_config.d_embedding, 
-                                      self.model_config.d_model)
+            global_encoding = torch.ones(
+                batch_size, self.model_config.d_embedding, self.model_config.d_model
+            )
         else:
-            global_encoding = torch.randn(batch_size, self.model_config.d_embedding, 
-                                       self.model_config.d_model)
-        
+            global_encoding = torch.randn(
+                batch_size, self.model_config.d_embedding, self.model_config.d_model
+            )
+
         output = {
             "global_encoding": global_encoding,
             "orth_probs": None,
@@ -261,7 +304,7 @@ class MockModel:
             "phon_vecs": None,
             "phon_tokens": None,
         }
-        
+
         # Fill in appropriate output fields based on pathway
         if pathway in ["o2p", "p2p", "op2op"]:
             # In deterministic mode, use consistent probabilities for all batch items
@@ -271,10 +314,12 @@ class MockModel:
                 for step in range(5):  # 5 steps per sequence
                     # Create tensor and normalize
                     torch.manual_seed(step + 100)  # Consistent seed for each position
-                    step_probs = torch.rand(self.dataset_config.phonological_vocabulary_size)
+                    step_probs = torch.rand(
+                        self.dataset_config.phonological_vocabulary_size
+                    )
                     step_probs = step_probs / step_probs.sum()  # Normalize to sum to 1
                     base_probs.append(step_probs)
-                
+
                 # Use the same probs for all batch items
                 phon_probs = []
                 for b in range(batch_size):
@@ -286,13 +331,17 @@ class MockModel:
                     seq_probs = []
                     for step in range(5):  # 5 steps per sequence
                         # Create tensor and normalize
-                        step_probs = torch.rand(self.dataset_config.phonological_vocabulary_size)
-                        step_probs = step_probs / step_probs.sum()  # Normalize to sum to 1
+                        step_probs = torch.rand(
+                            self.dataset_config.phonological_vocabulary_size
+                        )
+                        step_probs = (
+                            step_probs / step_probs.sum()
+                        )  # Normalize to sum to 1
                         seq_probs.append(step_probs)
                     phon_probs.append(seq_probs)
-            
+
             output["phon_probs"] = phon_probs
-            
+
             # Create binary feature vectors for phonological output
             if deterministic:
                 # Create consistent binary vectors for each position
@@ -303,7 +352,7 @@ class MockModel:
                     random_bits = torch.rand(self.dataset_config.dimension_phon_repr)
                     binary_vec = (random_bits > 0.5).to(torch.float)
                     base_vecs.append(binary_vec)
-                
+
                 # Use the same vectors for all batch items
                 phon_vecs = []
                 for b in range(batch_size):
@@ -315,13 +364,15 @@ class MockModel:
                     seq_vecs = []
                     for step in range(5):
                         # Create binary tensor (only 0s and 1s)
-                        random_bits = torch.rand(self.dataset_config.dimension_phon_repr)
+                        random_bits = torch.rand(
+                            self.dataset_config.dimension_phon_repr
+                        )
                         binary_vec = (random_bits > 0.5).to(torch.float)
                         seq_vecs.append(binary_vec)
                     phon_vecs.append(seq_vecs)
-                    
+
             output["phon_vecs"] = phon_vecs
-            
+
             # Create token tensors
             if deterministic:
                 # In deterministic mode, all sequences should be the same
@@ -346,9 +397,9 @@ class MockModel:
                         tokens.append(features)
                     tokens.append(torch.tensor([32]))  # End with EOS
                     phon_tokens.append(tokens)
-                    
+
             output["phon_tokens"] = phon_tokens
-        
+
         if pathway in ["p2o", "o2o", "op2op"]:
             # Create probability tensors for orthographic
             if deterministic:
@@ -357,10 +408,12 @@ class MockModel:
                 for step in range(5):
                     # Create tensor and normalize
                     torch.manual_seed(step + 300)  # Consistent seed for each position
-                    step_probs = torch.rand(self.dataset_config.orthographic_vocabulary_size)
+                    step_probs = torch.rand(
+                        self.dataset_config.orthographic_vocabulary_size
+                    )
                     step_probs = step_probs / step_probs.sum()  # Normalize to sum to 1
                     base_probs.append(step_probs)
-                
+
                 # Use the same probs for all batch items
                 orth_probs = []
                 for b in range(batch_size):
@@ -371,37 +424,46 @@ class MockModel:
                 for b in range(batch_size):
                     seq_probs = []
                     for step in range(5):
-                        step_probs = torch.rand(self.dataset_config.orthographic_vocabulary_size)
-                        step_probs = step_probs / step_probs.sum()  # Normalize to sum to 1
+                        step_probs = torch.rand(
+                            self.dataset_config.orthographic_vocabulary_size
+                        )
+                        step_probs = (
+                            step_probs / step_probs.sum()
+                        )  # Normalize to sum to 1
                         seq_probs.append(step_probs)
                     orth_probs.append(seq_probs)
-            
+
             output["orth_probs"] = orth_probs
-            
+
             # Create orthographic tokens
             if deterministic:
                 # In deterministic mode, all batches get the same sequence
                 orth_tokens = torch.tensor([[0, 5, 8, 3, 1]] * batch_size)
             else:
                 # In stochastic mode, get different sequences
-                orth_tokens = torch.cat([
-                    torch.zeros((batch_size, 1), dtype=torch.long),  # BOS
-                    torch.randint(2, 10, (batch_size, 3), dtype=torch.long),  # Content
-                    torch.ones((batch_size, 1), dtype=torch.long),  # EOS
-                ], dim=1)
-                
+                orth_tokens = torch.cat(
+                    [
+                        torch.zeros((batch_size, 1), dtype=torch.long),  # BOS
+                        torch.randint(
+                            2, 10, (batch_size, 3), dtype=torch.long
+                        ),  # Content
+                        torch.ones((batch_size, 1), dtype=torch.long),  # EOS
+                    ],
+                    dim=1,
+                )
+
             output["orth_tokens"] = orth_tokens
-        
+
         return output
-    
+
     def generate(self, encodings, pathway="o2p", deterministic=True):
         """Mock generate method that returns a GenerationOutput instance."""
         if pathway not in ["o2p", "p2o", "o2o", "p2p", "op2op"]:
             raise ValueError(f"Invalid pathway: {pathway}")
-        
+
         # Determine batch size from the encodings
         batch_size = len(encodings)
-        
+
         # For the generate_wrapper_pathway_routing test, we need a simplified approach
         # that doesn't rely on extracting input from the encodings
         if pathway == "o2p":
@@ -411,7 +473,7 @@ class MockModel:
                 orth_enc_pad_mask=torch.zeros((batch_size, 2), dtype=torch.bool),
                 phon_enc_input=None,
                 phon_enc_pad_mask=None,
-                deterministic=deterministic
+                deterministic=deterministic,
             )
         elif pathway == "p2o":
             phon_input = [[torch.tensor([31]), torch.tensor([32])]] * batch_size
@@ -421,7 +483,7 @@ class MockModel:
                 orth_enc_pad_mask=None,
                 phon_enc_input=phon_input,
                 phon_enc_pad_mask=torch.zeros((batch_size, 2), dtype=torch.bool),
-                deterministic=deterministic
+                deterministic=deterministic,
             )
         elif pathway == "o2o":
             result = self._generate(
@@ -430,7 +492,7 @@ class MockModel:
                 orth_enc_pad_mask=torch.zeros((batch_size, 2), dtype=torch.bool),
                 phon_enc_input=None,
                 phon_enc_pad_mask=None,
-                deterministic=deterministic
+                deterministic=deterministic,
             )
         elif pathway == "p2p":
             phon_input = [[torch.tensor([31]), torch.tensor([32])]] * batch_size
@@ -440,7 +502,7 @@ class MockModel:
                 orth_enc_pad_mask=None,
                 phon_enc_input=phon_input,
                 phon_enc_pad_mask=torch.zeros((batch_size, 2), dtype=torch.bool),
-                deterministic=deterministic
+                deterministic=deterministic,
             )
         elif pathway == "op2op":
             phon_input = [[torch.tensor([31]), torch.tensor([32])]] * batch_size
@@ -450,9 +512,9 @@ class MockModel:
                 orth_enc_pad_mask=torch.zeros((batch_size, 2), dtype=torch.bool),
                 phon_enc_input=phon_input,
                 phon_enc_pad_mask=torch.zeros((batch_size, 2), dtype=torch.bool),
-                deterministic=deterministic
+                deterministic=deterministic,
             )
-        
+
         # Convert to GenerationOutput
         output = GenerationOutput(
             global_encoding=result["global_encoding"],
@@ -460,10 +522,11 @@ class MockModel:
             phon_tokens=result["phon_tokens"],
             orth_probs=result["orth_probs"],
             phon_probs=result["phon_probs"],
-            phon_vecs=result["phon_vecs"]
+            phon_vecs=result["phon_vecs"],
         )
-        
+
         return output
+
 
 @pytest.fixture
 def model(dataset_config, model_config):

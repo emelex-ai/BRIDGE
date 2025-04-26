@@ -92,17 +92,17 @@ class TestBridgeTokenizer:
         # Create encoding for use with o2p pathway (orthography -> phonology)
         nonword = "blathe"
         encoding = bridge_tokenizer.encode(nonword, modality_filter="orthography")
-        
+
         assert encoding is not None
         assert isinstance(encoding, BridgeEncoding)
-        
+
         # This encoding should be usable for o2p generation
         assert encoding.orth_enc_ids is not None
         assert encoding.orth_enc_mask is not None
-        
+
         # These placeholder values should not interfere with o2p generation
         assert encoding.phon_enc_ids is not None
-    
+
     def test_invalid_modality_filter(self, bridge_tokenizer):
         """Test that an invalid modality_filter raises an error."""
         with pytest.raises(ValueError):

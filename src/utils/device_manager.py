@@ -26,7 +26,9 @@ class DeviceManager:
                 if torch.cuda.is_available():
                     self._device = requested_device
                 else:
-                    logger.warning("CUDA requested but not available. Falling back to CPU.")
+                    logger.warning(
+                        "CUDA requested but not available. Falling back to CPU."
+                    )
                     self._device = torch.device("cpu")
             elif requested_device.type == "mps":
                 if (
@@ -36,7 +38,9 @@ class DeviceManager:
                 ):
                     self._device = requested_device
                 else:
-                    logger.warning("MPS requested but not available. Falling back to CPU.")
+                    logger.warning(
+                        "MPS requested but not available. Falling back to CPU."
+                    )
                     self._device = torch.device("cpu")
             else:
                 self._device = requested_device
@@ -58,7 +62,7 @@ class DeviceManager:
             torch.cuda.synchronize()
         elif self._device.type == "mps":
             torch.mps.synchronize()
-            
+
     def to_device(self, tensor_or_module):
         """Moves a tensor or module to the current device."""
         return tensor_or_module.to(self._device)
