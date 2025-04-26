@@ -536,6 +536,7 @@ class Model(nn.Module):
         # Add initial probability placeholders for the BOS token
         initial_prob = torch.zeros(
             (batch_size, self.orthographic_vocabulary_size),
+            (batch_size, self.orthographic_vocabulary_size),
             device=self.device,
         )
         initial_prob[:, 0] = 1  # BOS token probability
@@ -842,6 +843,12 @@ class Model(nn.Module):
                     or if any required encoding components are missing.
         """
         # Extract appropriate tensors based on pathway
+        orth_enc_input = None
+        orth_enc_pad_mask = None
+        phon_enc_input = None
+        phon_enc_pad_mask = None
+
+        # Handle orthographic inputs for relevant pathways
         orth_enc_input = None
         orth_enc_pad_mask = None
         phon_enc_input = None

@@ -24,6 +24,7 @@ class TrainingPipeline:
         self.training_config = training_config
         self.dataset = dataset
         self.device = device_manager.device
+        self.device = device_manager.device
         self.model = model.to(self.device)
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(),
@@ -107,9 +108,15 @@ class TrainingPipeline:
             phon_loss = torch.nn.CrossEntropyLoss(ignore_index=35)(
                 logits["phon"], phonology["targets"]
             )  # Ignore [PAD] token
+            phon_loss = torch.nn.CrossEntropyLoss(ignore_index=35)(
+                logits["phon"], phonology["targets"]
+            )  # Ignore [PAD] token
 
         # Calculate orth_loss if applicable
         if self.training_config.training_pathway in ["p2o", "op2op"]:
+            orth_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(
+                logits["orth"], orthography["enc_input_ids"][:, 1:]
+            )  # Ignore [PAD] token
             orth_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(
                 logits["orth"], orthography["enc_input_ids"][:, 1:]
             )  # Ignore [PAD] token

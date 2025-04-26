@@ -33,7 +33,13 @@ def load_configs():
 
 def main():
     configs = load_configs()
-    TrainModelHandler(**configs).initiate_model_pretraining()
+    for dataset_num in range(19, 30):
+        dataset_config = configs["dataset_config"]
+        parts = dataset_config.dataset_filepath.split("/")
+        parts[-1] = f"input_data_{dataset_num}.pkl"
+        dataset_config.dataset_filepath = "/".join(parts)
+        configs["dataset_config"] = dataset_config
+        TrainModelHandler(**configs).initiate_model_pretraining()
 
 
 if __name__ == "__main__":
