@@ -23,12 +23,16 @@ class GCSClient:
         """
         if credentials_path:
             # Authenticate using the provided service account JSON
-            self.client = storage.Client.from_service_account_json(credentials_path, project=project)
+            self.client = storage.Client.from_service_account_json(
+                credentials_path, project=project
+            )
         else:
             # Authenticate via GOOGLE_APPLICATION_CREDENTIALS env var or default
             self.client = storage.Client(project=project)
 
-    def download_file(self, bucket_name: str, blob_name: str, destination_file_name: str) -> None:
+    def download_file(
+        self, bucket_name: str, blob_name: str, destination_file_name: str
+    ) -> None:
         """
         Download a blob from a bucket to a local file.
         """
@@ -37,14 +41,18 @@ class GCSClient:
         blob.download_to_filename(destination_file_name)
         print(f"Downloaded gs://{bucket_name}/{blob_name} to {destination_file_name}")
 
-    def upload_file(self, bucket_name: str, source_file_name: str, destination_blob_name: str) -> None:
+    def upload_file(
+        self, bucket_name: str, source_file_name: str, destination_blob_name: str
+    ) -> None:
         """
         Upload a local file to a GCS bucket.
         """
         bucket = self.client.bucket(bucket_name)
         blob = bucket.blob(destination_blob_name)
         blob.upload_from_filename(source_file_name)
-        print(f"Uploaded {source_file_name} to gs://{bucket_name}/{destination_blob_name}")
+        print(
+            f"Uploaded {source_file_name} to gs://{bucket_name}/{destination_blob_name}"
+        )
 
     def read_file(self, bucket_name: str, blob_name: str, as_text: bool = False):
         """
@@ -62,7 +70,9 @@ class GCSClient:
         blob = bucket.blob(blob_name)
         return blob.download_as_text() if as_text else blob.download_as_bytes()
 
-    def read_csv(self, bucket_name: str, blob_name: str, **read_csv_kwargs) -> pd.DataFrame:
+    def read_csv(
+        self, bucket_name: str, blob_name: str, **read_csv_kwargs
+    ) -> pd.DataFrame:
         """
         Read a CSV file in GCS directly into a pandas DataFrame without saving locally.
 

@@ -14,16 +14,21 @@ from unittest.mock import Mock
 
 class MockBridgeDataset:
     """Mock implementation of BridgeDataset for testing Model."""
+
     def __init__(self, **kwargs):
         self.device = torch.device(kwargs.get("device", "cpu"))
-        self.orthographic_vocabulary_size = kwargs.get("orthographic_vocabulary_size", 49)
-        self.phonological_vocabulary_size = kwargs.get("phonological_vocabulary_size", 34)
-        
+        self.orthographic_vocabulary_size = kwargs.get(
+            "orthographic_vocabulary_size", 49
+        )
+        self.phonological_vocabulary_size = kwargs.get(
+            "phonological_vocabulary_size", 34
+        )
+
         # Mock tokenizer
         self.tokenizer = Mock()
         self.tokenizer.get_vocabulary_sizes.return_value = {
             "orthographic": self.orthographic_vocabulary_size,
-            "phonological": self.phonological_vocabulary_size
+            "phonological": self.phonological_vocabulary_size,
         }
 
 
@@ -31,8 +36,7 @@ class MockBridgeDataset:
 def mock_dataset():
     """Fixture for mock BridgeDataset."""
     return MockBridgeDataset(
-        orthographic_vocabulary_size=49,
-        phonological_vocabulary_size=34
+        orthographic_vocabulary_size=49, phonological_vocabulary_size=34
     )
 
 
@@ -77,17 +81,19 @@ def test_embed_phon_tokens(model: Model):
         data = pickle.load(f)
 
     input = data["input"]
-    
+
     # Don't compare to fixed expected output, instead check properties of the output
     output = model.embed_phon_tokens(input)
-    
+
     # Check output is a tensor with expected shape characteristics
     assert isinstance(output, torch.Tensor), "Output should be a tensor"
     assert output.dim() == 3, "Output should be 3-dimensional"
     assert output.size(0) == len(input), "Batch dimension should match input"
     assert output.size(1) == len(input[0]), "Sequence length should match input"
-    assert output.size(2) == model.model_config.d_model, "Feature dimension should match d_model"
-    
+    assert (
+        output.size(2) == model.model_config.d_model
+    ), "Feature dimension should match d_model"
+
     # Check output contains reasonable values (not NaN, not huge)
     assert not torch.isnan(output).any(), "Output contains NaN values"
     assert torch.abs(output).max() < 100, "Output contains unreasonably large values"
@@ -115,16 +121,26 @@ def test_model_initialization_with_dataset(mock_dataset, model_config):
     model = Model(model_config, mock_dataset)
 
     # Verify the model correctly obtained vocabulary sizes
-    assert model.orthographic_vocabulary_size == mock_dataset.orthographic_vocabulary_size
-    assert model.phonological_vocabulary_size == mock_dataset.phonological_vocabulary_size
+    assert (
+        model.orthographic_vocabulary_size == mock_dataset.orthographic_vocabulary_size
+    )
+    assert (
+        model.phonological_vocabulary_size == mock_dataset.phonological_vocabulary_size
+    )
 
     # Verify hardcoded sequence lengths
     assert model.max_orth_seq_len == 30
     assert model.max_phon_seq_len == 30
 
     # Verify embedding dimensions
-    assert model.orthography_embedding.num_embeddings == mock_dataset.orthographic_vocabulary_size
-    assert model.phonology_embedding.num_embeddings == mock_dataset.phonological_vocabulary_size
+    assert (
+        model.orthography_embedding.num_embeddings
+        == mock_dataset.orthographic_vocabulary_size
+    )
+    assert (
+        model.phonology_embedding.num_embeddings
+        == mock_dataset.phonological_vocabulary_size
+    )
     assert model.orth_position_embedding.num_embeddings == 30
     assert model.phon_position_embedding.num_embeddings == 30
 
@@ -136,17 +152,21 @@ def test_embed_o(model: Model):
 
     orth_enc_input = data["orth_enc_input"]
     orth_enc_pad_mask = data["orth_enc_pad_mask"]
-    
+
     # Don't compare to fixed expected output, instead check properties of the output
     output = model.embed_o(orth_enc_input, orth_enc_pad_mask)
-    
+
     # Check output is a tensor with expected shape characteristics
     assert isinstance(output, torch.Tensor), "Output should be a tensor"
     assert output.dim() == 3, "Output should be 3-dimensional"
-    assert output.size(0) == orth_enc_input.size(0), "Batch dimension should match input"
+    assert output.size(0) == orth_enc_input.size(
+        0
+    ), "Batch dimension should match input"
     assert output.size(1) == 1, "Sequence length should be 1 (global encoding)"
-    assert output.size(2) == model.model_config.d_model, "Feature dimension should match d_model"
-    
+    assert (
+        output.size(2) == model.model_config.d_model
+    ), "Feature dimension should match d_model"
+
     # Check output contains reasonable values (not NaN, not huge)
     assert not torch.isnan(output).any(), "Output contains NaN values"
     assert torch.abs(output).max() < 100, "Output contains unreasonably large values"
@@ -159,17 +179,19 @@ def test_embed_p(model: Model):
 
     phon_enc_input = data["phon_enc_input"]
     phon_enc_pad_mask = data["phon_enc_pad_mask"]
-    
+
     # Don't compare to fixed expected output, instead check properties of the output
     output = model.embed_p(phon_enc_input, phon_enc_pad_mask)
-    
+
     # Check output is a tensor with expected shape characteristics
     assert isinstance(output, torch.Tensor), "Output should be a tensor"
     assert output.dim() == 3, "Output should be 3-dimensional"
     assert output.size(0) == len(phon_enc_input), "Batch dimension should match input"
     assert output.size(1) == 1, "Sequence length should be 1 (global encoding)"
-    assert output.size(2) == model.model_config.d_model, "Feature dimension should match d_model"
-    
+    assert (
+        output.size(2) == model.model_config.d_model
+    ), "Feature dimension should match d_model"
+
     # Check output contains reasonable values (not NaN, not huge)
     assert not torch.isnan(output).any(), "Output contains NaN values"
     assert torch.abs(output).max() < 100, "Output contains unreasonably large values"
@@ -185,19 +207,23 @@ def test_embed_op(model: Model):
     orth_enc_pad_mask = data["orth_enc_pad_mask"]
     phon_enc_input = data["phon_enc_input"]
     phon_enc_pad_mask = data["phon_enc_pad_mask"]
-    
+
     # Don't compare to fixed expected output, instead check properties of the output
     output = model.embed_op(
         orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask
     )
-    
+
     # Check output is a tensor with expected shape characteristics
     assert isinstance(output, torch.Tensor), "Output should be a tensor"
     assert output.dim() == 3, "Output should be 3-dimensional"
-    assert output.size(0) == orth_enc_input.size(0), "Batch dimension should match input"
+    assert output.size(0) == orth_enc_input.size(
+        0
+    ), "Batch dimension should match input"
     assert output.size(1) == 1, "Sequence length should be 1 (global encoding)"
-    assert output.size(2) == model.model_config.d_model, "Feature dimension should match d_model"
-    
+    assert (
+        output.size(2) == model.model_config.d_model
+    ), "Feature dimension should match d_model"
+
     # Check output contains reasonable values (not NaN, not huge)
     assert not torch.isnan(output).any(), "Output contains NaN values"
     assert torch.abs(output).max() < 100, "Output contains unreasonably large values"
@@ -228,24 +254,38 @@ def test_forward_op2op(model: Model):
         phon_dec_input,
         phon_dec_pad_mask,
     )
-    
+
     # Verify orthographic output
     assert "orth" in output, "Output should contain 'orth' key"
     assert isinstance(output["orth"], torch.Tensor), "Output['orth'] should be a tensor"
     assert output["orth"].dim() == 3, "Output['orth'] should be 3-dimensional"
-    assert output["orth"].size(0) == orth_enc_input.size(0), "Batch size should match input"
-    assert output["orth"].size(1) == model.orthographic_vocabulary_size, "Second dimension should be vocab size"
-    assert output["orth"].size(2) == orth_dec_input.size(1), "Third dimension should match sequence length"
+    assert output["orth"].size(0) == orth_enc_input.size(
+        0
+    ), "Batch size should match input"
+    assert (
+        output["orth"].size(1) == model.orthographic_vocabulary_size
+    ), "Second dimension should be vocab size"
+    assert output["orth"].size(2) == orth_dec_input.size(
+        1
+    ), "Third dimension should match sequence length"
     assert not torch.isnan(output["orth"]).any(), "Output should not contain NaN values"
-    
+
     # Verify phonological output
     assert "phon" in output, "Output should contain 'phon' key"
     assert isinstance(output["phon"], torch.Tensor), "Output['phon'] should be a tensor"
     assert output["phon"].dim() == 4, "Output['phon'] should be 4-dimensional"
-    assert output["phon"].size(0) == len(phon_enc_input), "Batch size should match input"
-    assert output["phon"].size(1) == 2, "Second dimension should be 2 (binary classification)"
-    assert output["phon"].size(2) == len(phon_dec_input[0]), "Third dimension should match sequence length"
-    assert output["phon"].size(3) == model.phonological_vocabulary_size - 1, "Fourth dimension should be vocab size minus 1"
+    assert output["phon"].size(0) == len(
+        phon_enc_input
+    ), "Batch size should match input"
+    assert (
+        output["phon"].size(1) == 2
+    ), "Second dimension should be 2 (binary classification)"
+    assert output["phon"].size(2) == len(
+        phon_dec_input[0]
+    ), "Third dimension should match sequence length"
+    assert (
+        output["phon"].size(3) == model.phonological_vocabulary_size - 1
+    ), "Fourth dimension should be vocab size minus 1"
     assert not torch.isnan(output["phon"]).any(), "Output should not contain NaN values"
 
 
@@ -271,10 +311,18 @@ def test_forward_o2p(model: Model):
     assert "phon" in output, "Output should contain 'phon' key"
     assert isinstance(output["phon"], torch.Tensor), "Output['phon'] should be a tensor"
     assert output["phon"].dim() == 4, "Output['phon'] should be 4-dimensional"
-    assert output["phon"].size(0) == orth_enc_input.size(0), "Batch size should match input"
-    assert output["phon"].size(1) == 2, "Second dimension should be 2 (binary classification)"
-    assert output["phon"].size(2) == len(phon_dec_input[0]), "Third dimension should match sequence length"
-    assert output["phon"].size(3) == model.phonological_vocabulary_size - 1, "Fourth dimension should be vocab size minus 1"
+    assert output["phon"].size(0) == orth_enc_input.size(
+        0
+    ), "Batch size should match input"
+    assert (
+        output["phon"].size(1) == 2
+    ), "Second dimension should be 2 (binary classification)"
+    assert output["phon"].size(2) == len(
+        phon_dec_input[0]
+    ), "Third dimension should match sequence length"
+    assert (
+        output["phon"].size(3) == model.phonological_vocabulary_size - 1
+    ), "Fourth dimension should be vocab size minus 1"
     assert not torch.isnan(output["phon"]).any(), "Output should not contain NaN values"
 
 
@@ -299,9 +347,15 @@ def test_forward_p2o(model: Model):
     assert "orth" in output, "Output should contain 'orth' key"
     assert isinstance(output["orth"], torch.Tensor), "Output['orth'] should be a tensor"
     assert output["orth"].dim() == 3, "Output['orth'] should be 3-dimensional"
-    assert output["orth"].size(0) == orth_dec_input.size(0), "Batch size should match input"
-    assert output["orth"].size(1) == model.orthographic_vocabulary_size, "Second dimension should be vocab size"
-    assert output["orth"].size(2) == orth_dec_input.size(1), "Third dimension should match sequence length"
+    assert output["orth"].size(0) == orth_dec_input.size(
+        0
+    ), "Batch size should match input"
+    assert (
+        output["orth"].size(1) == model.orthographic_vocabulary_size
+    ), "Second dimension should be vocab size"
+    assert output["orth"].size(2) == orth_dec_input.size(
+        1
+    ), "Third dimension should match sequence length"
     assert not torch.isnan(output["orth"]).any(), "Output should not contain NaN values"
 
 

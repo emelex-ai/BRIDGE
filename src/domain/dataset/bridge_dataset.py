@@ -9,7 +9,6 @@ import random
 import logging
 from typing import Union, Any
 from pathlib import Path
-import torch
 from collections import OrderedDict
 from functools import lru_cache
 import pandas as pd

@@ -3,23 +3,32 @@ from traindata import utilities
 
 
 def calculate_phon_word_accuracy(phon_true, phoneme_wise_mask):
-    word_accuracies = [word[target != 2].all().int() for word, target in zip(phoneme_wise_mask, phon_true)]
+    word_accuracies = [
+        word[target != 2].all().int()
+        for word, target in zip(phoneme_wise_mask, phon_true)
+    ]
     phon_word_accuracy = sum(word_accuracies) / len(word_accuracies)
     return phon_word_accuracy
 
 
 def calculate_phoneme_wise_accuracy(phon_true, masked_phon_true, phoneme_wise_mask):
-    return phoneme_wise_mask.all(dim=-1).sum() / (masked_phon_true.shape[0] / phon_true.shape[-1])
+    return phoneme_wise_mask.all(dim=-1).sum() / (
+        masked_phon_true.shape[0] / phon_true.shape[-1]
+    )
 
 
-def calculate_phon_feature_accuracy(phon_valid_mask, masked_phon_true, masked_phon_pred):
+def calculate_phon_feature_accuracy(
+    phon_valid_mask, masked_phon_true, masked_phon_pred
+):
     correct_features = (masked_phon_pred == masked_phon_true).sum()
     phon_feature_accuracy = correct_features.float() / phon_valid_mask.sum().float()
 
     return phon_feature_accuracy
 
 
-def calculate_euclidean_distance(phon_true: torch.Tensor, phon_pred: torch.Tensor) -> torch.Tensor:
+def calculate_euclidean_distance(
+    phon_true: torch.Tensor, phon_pred: torch.Tensor
+) -> torch.Tensor:
     """
     Calculates euclidean distance between predicted and target phoneme
     """
@@ -41,7 +50,9 @@ def calculate_euclidean_distance(phon_true: torch.Tensor, phon_pred: torch.Tenso
     return torch.mean(distances)
 
 
-def calculate_closest_phoneme_cdist(phon_true: torch.Tensor, phon_pred: torch.Tensor, phon_reps: torch.Tensor, norm=2):
+def calculate_closest_phoneme_cdist(
+    phon_true: torch.Tensor, phon_pred: torch.Tensor, phon_reps: torch.Tensor, norm=2
+):
     """
     Finds the p norm closest phoneme to the model's output, and compares this to the target phoneme
     """
@@ -54,7 +65,11 @@ def calculate_closest_phoneme_cdist(phon_true: torch.Tensor, phon_pred: torch.Te
     pred_masked = pred[mask].reshape(-1, true.shape[-1])[:, :-4]
     res = torch.cdist(pred_masked, phon_reps, norm)
     res2 = torch.cdist(true_masked, phon_reps, norm)
-    return torch.mean(torch.eq(torch.argmin(res2, dim=1), torch.argmin(res, dim=1)).type(dtype=torch.float))
+    return torch.mean(
+        torch.eq(torch.argmin(res2, dim=1), torch.argmin(res, dim=1)).type(
+            dtype=torch.float
+        )
+    )
 
 
 def calculate_closest_phoneme_cosine(
@@ -80,10 +95,16 @@ def calculate_closest_phoneme_cosine(
     res = torch.mm(pred_masked, phon_reps.t()) / pred_norm
     res2 = torch.mm(true_masked, phon_reps.t()) / true_norm
     # Find rate at which the closest predicted phoneme equals the target phoneme
-    return torch.mean(torch.eq(torch.argmin(res2, dim=1), torch.argmin(res, dim=1)).type(dtype=torch.float))
+    return torch.mean(
+        torch.eq(torch.argmin(res2, dim=1), torch.argmin(res, dim=1)).type(
+            dtype=torch.float
+        )
+    )
 
 
-def calculate_cosine_distance(phon_true: torch.Tensor, phon_pred: torch.Tensor) -> torch.Tensor:
+def calculate_cosine_distance(
+    phon_true: torch.Tensor, phon_pred: torch.Tensor
+) -> torch.Tensor:
     """
     Calculates euclidean distance between predicted and target phoneme
     """
@@ -98,7 +119,9 @@ def calculate_cosine_distance(phon_true: torch.Tensor, phon_pred: torch.Tensor) 
 
 
 def calculate_phon_metrics(
-    logits: dict[str, torch.Tensor], phonology: dict[str, torch.Tensor], phon_reps: torch.Tensor
+    logits: dict[str, torch.Tensor],
+    phonology: dict[str, torch.Tensor],
+    phon_reps: torch.Tensor,
 ) -> dict[str, float]:
     phon_pred = torch.argmax(logits["phon"], dim=1)
     phon_true = phonology["targets"]
@@ -113,13 +136,23 @@ def calculate_phon_metrics(
     masked_phon_pred = phon_pred[phon_valid_mask]
     cosine_accuracy = calculate_cosine_distance(phon_true, phon_pred)
     euclidean_distance = calculate_euclidean_distance(phon_true, phon_pred)
-    phon_feature_accuracy = calculate_phon_feature_accuracy(phon_valid_mask, masked_phon_true, masked_phon_pred)
+    phon_feature_accuracy = calculate_phon_feature_accuracy(
+        phon_valid_mask, masked_phon_true, masked_phon_pred
+    )
     phoneme_wise_mask = phon_pred == phon_true
-    phoneme_wise_accuracy = calculate_phoneme_wise_accuracy(phon_true, masked_phon_true, phoneme_wise_mask)
+    phoneme_wise_accuracy = calculate_phoneme_wise_accuracy(
+        phon_true, masked_phon_true, phoneme_wise_mask
+    )
     phon_word_accuracy = calculate_phon_word_accuracy(phon_true, phoneme_wise_mask)
-    closest_phoneme = calculate_closest_phoneme_cdist(phon_true, phon_pred, phon_reps, 1)
-    closest_phoneme_2 = calculate_closest_phoneme_cdist(phon_true, phon_pred, phon_reps, 2)
-    closest_phoneme_cosine = calculate_closest_phoneme_cosine(phon_true, phon_pred, phon_reps)
+    closest_phoneme = calculate_closest_phoneme_cdist(
+        phon_true, phon_pred, phon_reps, 1
+    )
+    closest_phoneme_2 = calculate_closest_phoneme_cdist(
+        phon_true, phon_pred, phon_reps, 2
+    )
+    closest_phoneme_cosine = calculate_closest_phoneme_cosine(
+        phon_true, phon_pred, phon_reps
+    )
     return {
         "phon_cosine_similarity": cosine_accuracy.item(),
         "phon_euclidean_distance": euclidean_distance.item(),
@@ -133,7 +166,9 @@ def calculate_phon_metrics(
 
 
 def calculate_phon_reps_distance():
-    phon_reps = torch.tensor(utilities.phontable("data/phonreps.csv").values, dtype=torch.float)[:-1]
+    phon_reps = torch.tensor(
+        utilities.phontable("data/phonreps.csv").values, dtype=torch.float
+    )[:-1]
     resp = torch.cdist(phon_reps, phon_reps, p=1)
     for item in resp:
         print(torch.sort(item)[0])

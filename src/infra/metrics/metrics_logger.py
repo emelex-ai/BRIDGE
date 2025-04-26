@@ -18,7 +18,9 @@ class STDOutMetricsLogger(MetricsLogger):
 
 
 class MultipleMetricsLogger(MetricsLogger):
-    def __init__(self, metrics_config: MetricsConfig, loggers: list[MetricsLogger]) -> None:
+    def __init__(
+        self, metrics_config: MetricsConfig, loggers: list[MetricsLogger]
+    ) -> None:
         super().__init__(metrics_config)
         self.loggers = loggers
 
