@@ -1,10 +1,17 @@
-from src.domain.datamodels import ModelConfig, DatasetConfig, TrainingConfig, WandbConfig
-from src.domain.datamodels.metrics_config import MetricsConfig
-from src.infra.metrics.metrics_logger import metrics_logger_factory
-from src.utils.helper_funtions import get_run_name, set_seed
+from src.domain.datamodels import (
+    ModelConfig,
+    DatasetConfig,
+    TrainingConfig,
+    WandbConfig,
+)
+from src.utils.helper_functions import get_run_name, set_seed
 from src.application.training import TrainingPipeline
+from src.infra.clients.gcp.gcs_client import GCSClient
+from src.infra.metrics import metrics_logger_factory
 from src.infra.clients.wandb import WandbWrapper
+from src.domain.datamodels import MetricsConfig
 from src.domain.dataset import BridgeDataset
+
 from src.domain.model import Model
 import logging
 import os
@@ -20,7 +27,7 @@ class TrainModelHandler:
         model_config: ModelConfig,
         dataset_config: DatasetConfig,
         training_config: TrainingConfig,
-        metrics_config: MetricsConfig
+        metrics_config: MetricsConfig,
     ):
         """
         Initialize the training handler with configurations.
@@ -30,6 +37,7 @@ class TrainModelHandler:
         self.dataset_config = dataset_config
         self.training_config = training_config
         self.metrics_config = metrics_config
+        self.gcs_client = GCSClient()
         self.wandb_wrapper = None
         self.pipeline = None
 
@@ -53,18 +61,19 @@ class TrainModelHandler:
         """
         Set up the training pipeline and dataset.
         """
-        bridge_dataset = BridgeDataset(dataset_config=self.dataset_config, device=self.training_config.device)
+        bridge_dataset = BridgeDataset(
+            dataset_config=self.dataset_config, gcs_client=self.gcs_client
+        )
         self.pipeline = TrainingPipeline(
             model=Model(
                 model_config=self.model_config,
-                dataset_config=self.dataset_config,
-                device=self.training_config.device,
+                dataset=bridge_dataset,
             ),
             training_config=self.training_config,
             dataset=bridge_dataset,
-            metrics_logger=metrics_logger_factory(self.metrics_config)
+            metrics_logger=metrics_logger_factory(self.metrics_config),
         )
-    
+
     def initiate_model_training(self):
         """
         Start the training process.
@@ -75,7 +84,9 @@ class TrainModelHandler:
         run_name = get_run_name(self.training_config.model_artifacts_dir)
         self.wandb_wrapper.start_run(run_name=run_name)
 
-        self.training_config.model_artifacts_dir = os.path.join(self.training_config.model_artifacts_dir, run_name)
+        self.training_config.model_artifacts_dir = os.path.join(
+            self.training_config.model_artifacts_dir, run_name
+        )
         os.makedirs(self.training_config.model_artifacts_dir, exist_ok=True)
 
         logger.info("Starting training...")
@@ -93,14 +104,20 @@ class TrainModelHandler:
 
         logger.info("Starting pretraining...")
         for i in range(1, 50):
-            self.training_config.model_artifacts_dir = f"model_artifacts/pretraining/{i}"
-            self.dataset_config.dataset_filepath = f"data/pretraining/input_data_{i}.pkl"
+            self.training_config.model_artifacts_dir = (
+                f"model_artifacts/pretraining/{i}"
+            )
+            self.dataset_config.dataset_filepath = (
+                f"data/pretraining/input_data_{i}.pkl"
+            )
             os.makedirs(self.training_config.model_artifacts_dir, exist_ok=True)
 
             self._initialize_wandb()
             self._setup_pipeline()
 
-            run_name = f"pretraining_{i}_" + get_run_name(self.training_config.model_artifacts_dir)
+            run_name = f"pretraining_{i}_" + get_run_name(
+                self.training_config.model_artifacts_dir
+            )
             self.wandb_wrapper.start_run(run_name=run_name)
 
             logger.info(f"Pretraining on dataset {i}...")

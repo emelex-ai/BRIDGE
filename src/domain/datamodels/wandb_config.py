@@ -1,7 +1,5 @@
-from pydantic import BaseModel, Field, ConfigDict
-from src.utils.helper_funtions import get_project_root
-from typing import List, Optional
-import os
+from pydantic import BaseModel, Field
+from pydantic import ConfigDict
 
 
 class WandbConfig(BaseModel):

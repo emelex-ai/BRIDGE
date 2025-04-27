@@ -1,12 +1,11 @@
-from pydantic import BaseModel, Field, model_validator, field_validator, ConfigDict
-from src.utils.helper_funtions import get_project_root
-from src.utils.device import device_manager
+from pydantic import BaseModel, Field, model_validator, field_validator
+from src.utils.helper_functions import get_project_root
 from typing import Optional
+import torch
 import os
 
 
 class TrainingConfig(BaseModel):
-    device: Optional[str] = Field(default=device_manager.device.type)
     num_epochs: int = Field(default=2)
     batch_size_train: int = Field(default=32)
     batch_size_val: int = Field(default=32)
@@ -53,12 +52,6 @@ class TrainingConfig(BaseModel):
             raise ValueError("train_test_split must be between 0.0 and 1.0")
         return v
 
-    @field_validator("device", mode="before")
-    def validate_device(cls, v: str | None) -> str:
-        if v is None:
-            v = device_manager.device.type
-        return v
-
     @model_validator(mode="after")
     def validate_paths(self):
         if not os.path.exists(self.model_artifacts_dir):
@@ -68,4 +61,3 @@ class TrainingConfig(BaseModel):
         if self.checkpoint_path and not os.path.exists(self.checkpoint_path):
             raise FileNotFoundError(f"Checkpoint file not found: {self.checkpoint_path}")
         return self
-

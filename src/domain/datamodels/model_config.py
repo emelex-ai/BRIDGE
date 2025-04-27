@@ -1,14 +1,7 @@
-from pydantic import (
-    BaseModel,
-    Field,
-    field_validator,
-    ValidationInfo,
-    model_validator,
-    ConfigDict,
-)
-from src.utils.helper_funtions import get_project_root
-from typing import List, Optional
-import os
+from pydantic import BaseModel, Field, field_validator, ValidationInfo
+from typing import Optional
+
+from pydantic import ConfigDict
 
 
 class ModelConfig(BaseModel):
@@ -28,4 +21,3 @@ class ModelConfig(BaseModel):
         if nhead is not None and v % nhead != 0:
             raise ValueError("d_model must be divisible by nhead")
         return v
-

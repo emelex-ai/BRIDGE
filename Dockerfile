@@ -8,7 +8,7 @@
 FROM python:3.12-slim
 
 # Set working directory
-WORKDIR /app
+
 
 # Install system dependencies and development tools
 RUN apt-get update && \
@@ -28,7 +28,7 @@ RUN poetry config virtualenvs.create false
 
 # Install dependencies
 RUN poetry install --no-root --no-interaction
-
+RUN python -m nltk.downloader cmudict
 # Copy the rest of the application code
 COPY . .
 

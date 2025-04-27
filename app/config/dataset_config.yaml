@@ -1,6 +1,9 @@
-dataset_filepath: 'into_reading_sequentially_arranged_repeated_1_time.pkl'
+dataset_filepath: 'pretraining/input_data_1.pkl'
+# dataset_filepath: 'data.csv'
+# dataset_filepath: 'input_data.pkl'
+custom_cmudict_path: 'custom_cmudict.json'
 dimension_phon_repr: 31
-orthographic_vocabulary_size: 
-phonological_vocabulary_size: 
-max_orth_seq_len: 18
-max_phon_seq_len: 17
+#orthographic_vocabulary_size: 
+#phonological_vocabulary_size: 
+#max_orth_seq_len: 0
+#max_phon_seq_len: 0

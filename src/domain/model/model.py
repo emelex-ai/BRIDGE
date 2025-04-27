@@ -1,39 +1,52 @@
-from src.domain.datamodels import DatasetConfig, ModelConfig
+from src.domain.datamodels import ModelConfig
 from src.domain.model.encoder import Encoder
 from src.domain.model.decoder import Decoder
-from src.utils.helper_funtions import set_seed
+from src.utils.helper_functions import set_seed
 from src.domain.datamodels import BridgeEncoding, GenerationOutput
+from src.utils.device_manager import device_manager
+from src.domain.dataset import BridgeDataset
 from typing import Any, Literal
 import torch.nn as nn
 import torch
 
 
 class Model(nn.Module):
+
     def __init__(
         self,
         model_config: ModelConfig,
-        dataset_config: DatasetConfig,
-        device: str | None = None,
+        dataset: BridgeDataset,
     ) -> None:
         super().__init__()
         self.model_config = model_config
-        self.dataset_config = dataset_config
-        self.device = torch.device(device) if device else torch.device("cpu")
+        self.dataset = dataset
+        self.device = device_manager.device
 
         if self.model_config.seed:
             set_seed(seed=self.model_config.seed)
+
+        # Get vocabulary sizes from dataset
+        self.orthographic_vocabulary_size = dataset.orthographic_vocabulary_size
+        self.phonological_vocabulary_size = dataset.phonological_vocabulary_size
+
+        # Hardcoded sequence lengths - will be replaced with dynamic position encoding in the future
+        self.max_orth_seq_len = 30
+        self.max_phon_seq_len = 30
+
         # Initialize embeddings and position embeddings
         self.orthography_embedding = nn.Embedding(
-            self.dataset_config.orthographic_vocabulary_size, self.model_config.d_model
+            self.orthographic_vocabulary_size, self.model_config.d_model
         )
+        # Fixed position embeddings - will be replaced with dynamic position encoding (e.g., RoPE)
         self.orth_position_embedding = nn.Embedding(
-            self.dataset_config.max_orth_seq_len, self.model_config.d_model
+            self.max_orth_seq_len, self.model_config.d_model
         )
         self.phonology_embedding = nn.Embedding(
-            self.dataset_config.phonological_vocabulary_size, self.model_config.d_model
+            self.phonological_vocabulary_size, self.model_config.d_model
         )
+        # Fixed position embeddings - will be replaced with dynamic position encoding (e.g., RoPE)
         self.phon_position_embedding = nn.Embedding(
-            self.dataset_config.max_phon_seq_len, self.model_config.d_model
+            self.max_phon_seq_len, self.model_config.d_model
         )
 
         self.global_embedding = nn.Parameter(
@@ -89,7 +102,7 @@ class Model(nn.Module):
             num_layers=self.model_config.num_orth_dec_layers,
         )
         self.linear_orthography_decoder = nn.Linear(
-            self.model_config.d_model, self.dataset_config.orthographic_vocabulary_size
+            self.model_config.d_model, self.orthographic_vocabulary_size
         )
 
         self.phonology_decoder = Decoder(
@@ -99,7 +112,7 @@ class Model(nn.Module):
         )
         self.linear_phonology_decoder = nn.Linear(
             self.model_config.d_model,
-            2 * (self.dataset_config.phonological_vocabulary_size - 1),
+            2 * (self.phonological_vocabulary_size - 1),
         )
 
     # Helper functions
@@ -522,7 +535,8 @@ class Model(nn.Module):
 
         # Add initial probability placeholders for the BOS token
         initial_prob = torch.zeros(
-            (batch_size, self.dataset_config.orthographic_vocabulary_size),
+            (batch_size, self.orthographic_vocabulary_size),
+            (batch_size, self.orthographic_vocabulary_size),
             device=self.device,
         )
         initial_prob[:, 0] = 1  # BOS token probability
@@ -534,7 +548,7 @@ class Model(nn.Module):
             batch_size, dtype=torch.bool, device=self.device
         )
 
-        for step in range(self.dataset_config.max_orth_seq_len - 1):
+        for step in range(self.max_orth_seq_len - 1):
             # Check if all sequences have generated an EOS token
             if (generated_orth_tokens == 1).any(dim=1).all():
                 break
@@ -603,7 +617,7 @@ class Model(nn.Module):
         batch_size = prompt_encoding.size(0)
 
         # Preallocate output tensors for efficiency
-        max_len = self.dataset_config.max_phon_seq_len
+        max_len = self.max_phon_seq_len
         phon_probs = [[] for _ in range(batch_size)]
         phon_vecs = [[] for _ in range(batch_size)]
 
@@ -746,9 +760,7 @@ class Model(nn.Module):
 
             # All these pathways have "2p" meaning we need to run the phonological decoder loop
             if pathway in ["op2op", "o2p", "p2p"]:
-                mask = self.generate_triangular_mask(
-                    self.dataset_config.max_phon_seq_len
-                )
+                mask = self.generate_triangular_mask(self.max_phon_seq_len)
 
                 generated_phon_tokens = [
                     [torch.tensor([31], dtype=torch.long, device=self.device)]
@@ -775,9 +787,7 @@ class Model(nn.Module):
 
             # All these pathways have "2o" meaning we need to run the orthography decoder loop
             if pathway in ["op2op", "p2o", "o2o"]:
-                mask = self.generate_triangular_mask(
-                    self.dataset_config.max_orth_seq_len
-                )
+                mask = self.generate_triangular_mask(self.max_orth_seq_len)
                 generated_orth_tokens = torch.tensor(
                     [[0] for _ in range(batch_size)],
                     dtype=torch.long,
@@ -817,8 +827,8 @@ class Model(nn.Module):
         inputs to the underlying generation mechanism.
 
         Args:
-            encodings: A BridgeEncoding object containing both orthographic and
-                    phonological representations.
+            encodings: A BridgeEncoding object containing orthographic and/or
+                    phonological representations, depending on the pathway.
             pathway: The generation pathway to use. Defaults to "o2p" (orthographic
                     to phonological).
             deterministic: Whether to use deterministic (greedy) or stochastic sampling.
@@ -833,23 +843,37 @@ class Model(nn.Module):
                     or if any required encoding components are missing.
         """
         # Extract appropriate tensors based on pathway
+        orth_enc_input = None
+        orth_enc_pad_mask = None
+        phon_enc_input = None
+        phon_enc_pad_mask = None
+
+        # Handle orthographic inputs for relevant pathways
+        orth_enc_input = None
+        orth_enc_pad_mask = None
+        phon_enc_input = None
+        phon_enc_pad_mask = None
+
+        # Handle orthographic inputs for relevant pathways
         if pathway in ["o2p", "o2o", "op2op"]:
             if encodings.orthographic is None:
                 raise ValueError(f"Pathway {pathway} requires orthographic encodings")
             orth_enc_input = encodings.orthographic.enc_input_ids
             orth_enc_pad_mask = encodings.orthographic.enc_pad_mask
-        else:
-            orth_enc_input = None
-            orth_enc_pad_mask = None
 
+        # Handle phonological inputs for relevant pathways
         if pathway in ["p2o", "p2p", "op2op"]:
-            if not hasattr(encodings, "phonological"):
+            # For op2op, both are required
+            if pathway == "op2op" and encodings.phonological is None:
                 raise ValueError(f"Pathway {pathway} requires phonological encodings")
-            phon_enc_input = encodings.phonological.enc_input_ids
-            phon_enc_pad_mask = encodings.phonological.enc_pad_mask
-        else:
-            phon_enc_input = None
-            phon_enc_pad_mask = None
+
+            # For p2o and p2p, we need phonological data
+            if pathway in ["p2o", "p2p"] and encodings.phonological is None:
+                raise ValueError(f"Pathway {pathway} requires phonological encodings")
+
+            if encodings.phonological is not None:
+                phon_enc_input = encodings.phonological.enc_input_ids
+                phon_enc_pad_mask = encodings.phonological.enc_pad_mask
 
         # Call the underlying generate function
         generation_results = self._generate(
@@ -895,10 +919,10 @@ class Model(nn.Module):
         # Add sequence length validation for phonological input
         if phon_enc_input is not None:
             max_phon_len = max(len(seq) for seq in phon_enc_input)
-            if max_phon_len > self.dataset_config.max_phon_seq_len:
+            if max_phon_len > self.max_phon_seq_len:
                 raise ValueError(
                     f"Phonological input sequence length {max_phon_len} exceeds "
-                    f"maximum allowed length {self.dataset_config.max_phon_seq_len}"
+                    f"maximum allowed length {self.max_phon_seq_len}"
                 )
 
         if pathway == "p2o":
@@ -963,7 +987,7 @@ class Model(nn.Module):
                 )
 
             # Validate feature indices are within vocabulary bounds
-            max_feature_idx = self.dataset_config.phonological_vocabulary_size - 1
+            max_feature_idx = self.phonological_vocabulary_size
             if any(
                 torch.any(features >= max_feature_idx)
                 for batch_item in phon_enc_input
@@ -1109,7 +1133,7 @@ class Model(nn.Module):
                 )
 
             # Validate feature indices are within vocabulary bounds
-            max_feature_idx = self.dataset_config.phonological_vocabulary_size
+            max_feature_idx = self.phonological_vocabulary_size
             if any(
                 torch.any(features >= max_feature_idx)
                 for batch_item in phon_enc_input
@@ -1174,12 +1198,10 @@ class Model(nn.Module):
                 )
 
             # Validate vocabulary bounds
-            if torch.any(
-                orth_enc_input >= self.dataset_config.orthographic_vocabulary_size
-            ):
+            if torch.any(orth_enc_input >= self.orthographic_vocabulary_size):
                 raise ValueError(
                     f"Input tokens must be less than vocabulary size "
-                    f"({self.dataset_config.orthographic_vocabulary_size})"
+                    f"({self.orthographic_vocabulary_size})"
                 )
 
             # Validate device placement
@@ -1222,10 +1244,10 @@ class Model(nn.Module):
                 )
 
             # Validate orthographic sequence length
-            if orth_enc_input.size(1) > self.dataset_config.max_orth_seq_len:
+            if orth_enc_input.size(1) > self.max_orth_seq_len:
                 raise ValueError(
                     f"Orthographic input sequence length {orth_enc_input.size(1)} exceeds "
-                    f"maximum allowed length {self.dataset_config.max_orth_seq_len}"
+                    f"maximum allowed length {self.max_orth_seq_len}"
                 )
 
             # Validate orthographic mask dimensions and type
@@ -1264,10 +1286,10 @@ class Model(nn.Module):
 
             # Validate phonological sequence length
             max_phon_len = max(len(seq) for seq in phon_enc_input)
-            if max_phon_len > self.dataset_config.max_phon_seq_len:
+            if max_phon_len > self.max_phon_seq_len:
                 raise ValueError(
                     f"Phonological input sequence length {max_phon_len} exceeds "
-                    f"maximum allowed length {self.dataset_config.max_phon_seq_len}"
+                    f"maximum allowed length {self.max_phon_seq_len}"
                 )
 
             # Validate phonological padding mask
@@ -1294,7 +1316,7 @@ class Model(nn.Module):
                 )
 
             # Validate phonological feature indices are within vocabulary bounds
-            max_feature_idx = self.dataset_config.phonological_vocabulary_size - 1
+            max_feature_idx = self.phonological_vocabulary_size
             if any(
                 torch.any(features >= max_feature_idx)
                 for batch_item in phon_enc_input
@@ -1305,10 +1327,8 @@ class Model(nn.Module):
                 )
 
             # Validate orthographic tokens are within vocabulary bounds
-            if torch.any(
-                orth_enc_input >= self.dataset_config.orthographic_vocabulary_size
-            ):
+            if torch.any(orth_enc_input >= self.orthographic_vocabulary_size):
                 raise ValueError(
                     f"Orthographic tokens must be less than vocabulary size "
-                    f"({self.dataset_config.orthographic_vocabulary_size})"
+                    f"({self.orthographic_vocabulary_size})"
                 )

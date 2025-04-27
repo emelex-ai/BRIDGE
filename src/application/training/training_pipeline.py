@@ -8,12 +8,13 @@ from src.domain.dataset import BridgeDataset
 from src.domain.model import Model
 from typing import Union
 import time
-from traindata import utilities
+from src.utils.device_manager import device_manager
 
 from src.infra.metrics.metrics_logger import MetricsLogger
 
 
 class TrainingPipeline:
+
     def __init__(
         self,
         model: Model,
@@ -28,10 +29,9 @@ class TrainingPipeline:
             test_dataset_config = self.dataset.dataset_config.model_copy()
             test_dataset_config.dataset_filepath = self.training_config.test_data_path
             self.test_dataset = BridgeDataset(
-                dataset_config=test_dataset_config,
-                device=self.training_config.device,
+                dataset_config=test_dataset_config, gcs_client=self.dataset.gcs_client
             )
-        self.device = torch.device(training_config.device)
+        self.device = device_manager.device
         self.model = model.to(self.device)
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(),
@@ -39,11 +39,8 @@ class TrainingPipeline:
             weight_decay=training_config.weight_decay,
         )
         self.train_slices, self.val_slices = self.create_data_slices()
-        self.phon_reps = torch.tensor(
-            utilities.phontable("data/phonreps.csv").values,
-            dtype=torch.float,
-            device=self.device,
-        )[:-1]
+        self.phon_reps = self.dataset.tokenizer.phoneme_tokenizer.phonreps_array
+
         self.start_epoch = 0
         if training_config.checkpoint_path:
             self.load_model(training_config.checkpoint_path)
@@ -57,7 +54,9 @@ class TrainingPipeline:
         ]
         val_slices = [
             slice(i, min(i + self.training_config.batch_size_val, len(self.dataset)))
-            for i in range(cutpoint, len(self.dataset), self.training_config.batch_size_val)
+            for i in range(
+                cutpoint, len(self.dataset), self.training_config.batch_size_val
+            )
         ]
         return train_slices, val_slices
 
@@ -113,11 +112,21 @@ class TrainingPipeline:
 
         # Calculate phon_loss if applicable
         if self.training_config.training_pathway in ["o2p", "op2op", "p2p"]:
-            phon_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(logits["phon"], phonology["targets"])
+            phon_loss = torch.nn.CrossEntropyLoss(ignore_index=35)(
+                logits["phon"], phonology["targets"]
+            )  # Ignore [PAD] token
+            phon_loss = torch.nn.CrossEntropyLoss(ignore_index=35)(
+                logits["phon"], phonology["targets"]
+            )  # Ignore [PAD] token
 
         # Calculate orth_loss if applicable
         if self.training_config.training_pathway in ["p2o", "op2op"]:
-            orth_loss = torch.nn.CrossEntropyLoss(ignore_index=4)(logits["orth"], orthography["enc_input_ids"][:, 1:])
+            orth_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(
+                logits["orth"], orthography["enc_input_ids"][:, 1:]
+            )  # Ignore [PAD] token
+            orth_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(
+                logits["orth"], orthography["enc_input_ids"][:, 1:]
+            )  # Ignore [PAD] token
 
         # Calculate the combined loss, summing only non-None losses
         total_loss = sum(loss for loss in [orth_loss, phon_loss] if loss is not None)
@@ -151,10 +160,7 @@ class TrainingPipeline:
         orthography, phonology = batch["orthographic"], batch["phonological"]
 
         # Forward pass
-        # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
-        #     with record_function("model_forward"):
         logits = self.forward(orthography, phonology)
-        # print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
 
         # Compute loss
         metrics = self.compute_loss(logits, orthography, phonology)
@@ -179,6 +185,10 @@ class TrainingPipeline:
         total_metrics = {}
         for step, batch_slice in enumerate(progress_bar):
             metrics = self.single_step(self.dataset, batch_slice, self.metrics_logger.metrics_config.training_metrics)
+            #metrics = self.single_step(batch_slice, False)
+            progress_bar.set_postfix(
+                {key: f"{value:.4f}" for key, value in metrics.items() if not isinstance(value, str)}
+            )
             if not total_metrics:
                 total_metrics = {key: value for key, value in metrics.items() if not isinstance(value, str)}
             else:
@@ -204,7 +214,7 @@ class TrainingPipeline:
             total_metrics = {}
             for step, batch_slice in enumerate(progress_bar):
                 metrics = self.single_step(self.dataset, batch_slice, self.metrics_logger.metrics_config.validation_metrics)
-                progress_bar.set_postfix({key: f"{value:.4f}" for key, value in metrics.items()})
+                progress_bar.set_postfix({key: f"{value:.4f}" for key, value in metrics.items() if not isinstance(value, str)} )
                 if not total_metrics:
                     total_metrics = metrics
                 else:
@@ -231,12 +241,13 @@ class TrainingPipeline:
             slice(i, min(i + self.training_config.batch_size_train, len(self.test_dataset)))
             for i in range(0, len(self.test_dataset), self.training_config.batch_size_train)
         ]
-        progress_bar = tqdm(test_slices, desc=f"Validating Epoch {epoch+1}")
+        progress_bar = tqdm(test_slices, desc=f"Testing Epoch {epoch+1}")
         
         with torch.no_grad():
             total_metrics = {}
             for step, batch_slice in enumerate(progress_bar):
                 metrics = self.single_step(self.test_dataset, batch_slice, self.metrics_logger.metrics_config.validation_metrics)
+                progress_bar.set_postfix({key: f"{value:.4f}" for key, value in metrics.items() if not isinstance(value, str)} )
                 if not total_metrics:
                     total_metrics = {key: value for key, value in metrics.items() if not isinstance(value, str)}
                 else:
@@ -252,7 +263,6 @@ class TrainingPipeline:
         )
         return {"test_" + str(key): val for key, val in total_metrics.items()}
                 
-
 
     def run_train_val_loop(self, run_name: str):
         for epoch in range(self.start_epoch, self.training_config.num_epochs):
@@ -270,11 +280,13 @@ class TrainingPipeline:
     def save_model(self, epoch: int, run_name: str) -> None:
         if (epoch + 1) % self.training_config.save_every == 0:
 
-            model_path = f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}.pth"
+            model_path = (
+                f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}.pth"
+            )
             torch.save(
                 {
                     "model_config": self.model.model_config,
-                    "dataset_config": self.model.dataset_config,
+                    "dataset_config": self.dataset.dataset_config,
                     "model_state_dict": self.model.state_dict(),
                     "optimizer_state_dict": self.optimizer.state_dict(),
                     "epoch": epoch,
@@ -288,11 +300,15 @@ class TrainingPipeline:
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.start_epoch = checkpoint["epoch"]
 
-    def transfer_partial_model_parameters(self, pretrained_model_path: str, module_prefixes: list[str]):
+    def transfer_partial_model_parameters(
+        self, pretrained_model_path: str, module_prefixes: list[str]
+    ):
         checkpoint = torch.load(pretrained_model_path)
         pretrained_state = checkpoint["model_state_dict"]
         filtered_state = {
-            k: v for k, v in pretrained_state.items() if any(k.startswith(prefix) for prefix in module_prefixes)
+            k: v
+            for k, v in pretrained_state.items()
+            if any(k.startswith(prefix) for prefix in module_prefixes)
         }
 
         model_dict = self.model.state_dict()
@@ -301,4 +317,6 @@ class TrainingPipeline:
 
         new_state = self.model.state_dict()
         for key, pretrained_weight in filtered_state.items():
-            assert torch.equal(new_state[key], pretrained_weight), f"Weight transfer failed for {key}"
+            assert torch.equal(
+                new_state[key], pretrained_weight
+            ), f"Weight transfer failed for {key}"

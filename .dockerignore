@@ -1,4 +1,5 @@
 .git
 models/
-model_artifacts/
 results/
+*.pth
+model_artifacts
