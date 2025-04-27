@@ -37,7 +37,9 @@ class TrainModelHandler:
         self.dataset_config = dataset_config
         self.training_config = training_config
         self.metrics_config = metrics_config
-        self.gcs_client = GCSClient()
+        self.gcs_client = (
+            GCSClient() if dataset_config.dataset_filepath.startswith("gs://") else None
+        )
         self.wandb_wrapper = None
         self.pipeline = None
 
