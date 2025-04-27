@@ -29,7 +29,7 @@ class BridgeDataset:
     def __init__(
         self,
         dataset_config: DatasetConfig,
-        gcs_client: GCSClient,
+        gcs_client: GCSClient = None,
         cache_path: str | None = "data/.cache",
         cache_size: int = 1000,
     ):
@@ -96,6 +96,10 @@ class BridgeDataset:
 
     def _read_gcs_csv(self, bucket: str, blob: str) -> pd.DataFrame:
         """Read a CSV blob from GCS into a DataFrame."""
+        if not self.gcs_client:
+            raise ValueError(
+                "Must provide GCS client to BridgeDataset to read GCS files. Use the gcs_client parameter"
+            )
         return self.gcs_client.read_csv(
             bucket_name=bucket,
             blob_name=blob,
