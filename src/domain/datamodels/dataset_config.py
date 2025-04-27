@@ -31,9 +31,10 @@ class DatasetConfig(BaseModel):
                 project_root, "data", values["dataset_filepath"]
             )
 
-        values["custom_cmudict_path"] = os.path.join(
-            project_root, "data", values["custom_cmudict_path"]
-        )
+        if values.get("custom_cmudict_path") is not None:
+            values["custom_cmudict_path"] = os.path.join(
+                project_root, "data", values["custom_cmudict_path"]
+            )
 
         # For backward compatibility
         if "phoneme_cache_size" in values and "tokenizer_cache_size" not in values:
