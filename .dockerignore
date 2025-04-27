@@ -1,1 +1,4 @@
 .git
+models/
+model_artifacts/
+results/

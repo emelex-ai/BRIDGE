@@ -30,6 +30,8 @@ class TrainingConfig(BaseModel):
         values["model_artifacts_dir"] = os.path.join(
             project_root, values["model_artifacts_dir"]
         )
+        # Create the directory if it doesn't exist
+        os.makedirs(values["model_artifacts_dir"], exist_ok=True)
         if "test_data_path" in values:
             values["test_data_path"] = os.path.join(
             project_root, "data", values["test_data_path"]
