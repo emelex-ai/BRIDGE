@@ -38,4 +38,4 @@ RUN poetry install --no-root --no-interaction
 COPY . .
 
 # Set Python path
-ENV PYTHONPATH="${PYTHONPATH}:/app"
+ENV PYTHONPATH="/app"
