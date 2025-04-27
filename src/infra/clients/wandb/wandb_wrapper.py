@@ -25,7 +25,6 @@ class WandbWrapper(Singleton):
 
         if self.is_enabled:
             logger.info("WandbWrapper initialized with project_name: %s, entity: %s", project_name, entity)
-            print(os.environ["WANDB_API_KEY"])
             wandb.login(key=os.environ["WANDB_API_KEY"])
         else:
             logger.info("WandbWrapper initialized in disabled mode.")
