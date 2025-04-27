@@ -208,7 +208,7 @@ class BridgeDataset:
         """Return the number of valid words in the dataset."""
         return len(self.words)
 
-    def __getitem__(self, idx: Union[int, slice, str]) -> dict[str, dict[str, Any]]:
+    def __getitem__(self, idx: Union[int, slice, str]) -> BridgeEncoding:
         """
         Retrieve encoded data for specified index or slice.
         Maintains compatibility with training pipeline expectations.
@@ -228,38 +228,24 @@ class BridgeDataset:
 
             word = self.words[idx]
             encoding = self._get_encoding(word)
-            if encoding is None:
-                raise RuntimeError(f"Failed to encode word: {word}")
-
-            # Convert single encoding to batch format
-            return encoding.to_dict()
 
         elif isinstance(idx, slice):
             selected_words = self.words[idx]
-            encodings = []
-
-            encodings = self._get_encoding(selected_words)
-            if encodings is None:
-                raise RuntimeError(f"Failed to encode word: {word}")
-
-            if not encodings:
-                raise ValueError("No valid encodings in slice")
-
-            # Merge encodings into batch
-            return encodings.to_dict()
+            encoding = self._get_encoding(selected_words)
 
         elif isinstance(idx, str):
             if idx not in self.words:
                 raise KeyError(f"Word '{idx}' not found in dataset")
 
             encoding = self._get_encoding(idx)
-            if encoding is None:
-                raise RuntimeError(f"Failed to encode word: {idx}")
-
-            return encoding.to_dict()
 
         else:
             raise TypeError(f"Invalid index type: {type(idx)}")
+
+        if encoding is None:
+            raise RuntimeError(f"Failed to encode word: {word}")
+
+        return encoding
 
     def shuffle(self, cutoff: int) -> None:
         """
