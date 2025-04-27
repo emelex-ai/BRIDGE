@@ -25,7 +25,7 @@ class DatasetConfig(BaseModel):
                 "dataset_filepath"
             ].get_default()
 
-        if "gs://" not in values["dataset_filepath"]:
+        if "gs://" not in str(values["dataset_filepath"]):
             # Convert relative paths to absolute paths
             values["dataset_filepath"] = os.path.join(
                 project_root, "data", values["dataset_filepath"]
