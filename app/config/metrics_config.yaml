@@ -1,5 +1,5 @@
 batch_metrics: true
 training_metrics: true
 validation_metrics: true
-modes: ["csv"]
-filename: "pilot_run_1.csv"
+modes: ["gcs"]
+filename: "pretraining_results.csv"

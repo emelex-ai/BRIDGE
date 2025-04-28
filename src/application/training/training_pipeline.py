@@ -301,6 +301,7 @@ class TrainingPipeline:
                     model_path,
                     f"pretraining/{index}/models/model_epoch_{epoch}.pth",
                 )
+            self.metrics_logger.save()
 
     def load_model(self, model_path: str):
         checkpoint = torch.load(model_path)
