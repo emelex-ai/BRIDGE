@@ -1,4 +1,5 @@
 import json
+import os
 import torch
 from tqdm import tqdm
 from src.application.training.ortho_metrics import calculate_orth_metrics
@@ -293,6 +294,13 @@ class TrainingPipeline:
                 },
                 model_path,
             )
+            if self.dataset.gcs_client:
+                index = int(os.environ['CLOUD_RUN_TASK_INDEX'])+1
+                self.dataset.gcs_client.upload_file(
+                    os.environ["BUCKET_NAME"],
+                    model_path,
+                    f"pretraining/{index}/models/model_epoch_{epoch}.pth",
+                )
 
     def load_model(self, model_path: str):
         checkpoint = torch.load(model_path)

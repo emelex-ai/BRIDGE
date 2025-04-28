@@ -2,4 +2,5 @@
 models/
 results/
 *.pth
-model_artifacts
+model_artifacts/
+data/pretraining/

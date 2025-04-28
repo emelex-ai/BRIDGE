@@ -25,7 +25,7 @@ results/*.pkl
 *.ipynb
 data/into_reading/
 *.csv
-
+*.json
 results/*.csv
 
 .pytest_cache/

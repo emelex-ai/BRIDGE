@@ -33,4 +33,4 @@ RUN python -m nltk.downloader cmudict
 COPY . .
 
 
-ENTRYPOINT ["poetry", "run", "python", "-m", "app.bin.main"]
+ENTRYPOINT ["poetry", "run", "python", "-m", "app.bin.docker_entry"]
