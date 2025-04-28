@@ -86,3 +86,18 @@ class GCSClient:
         """
         csv_text = self.read_file(bucket_name, blob_name, as_text=True)
         return pd.read_csv(StringIO(csv_text), **read_csv_kwargs)
+
+    def exists(self, bucket_name: str, blob_name: str) -> bool:
+        """
+        Check if a blob exists in the specified GCS bucket.
+
+        Args:
+            bucket_name (str): Name of the GCS bucket.
+            blob_name (str): Name of the blob in the bucket.
+
+        Returns:
+            bool: True if the blob exists, False otherwise.
+        """
+        bucket = self.client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+        return blob.exists()

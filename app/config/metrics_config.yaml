@@ -2,4 +2,4 @@ batch_metrics: true
 training_metrics: true
 validation_metrics: true
 modes: ["csv"]
-filename: "results/training1.csv"
+filename: "pilot_run_1.csv"

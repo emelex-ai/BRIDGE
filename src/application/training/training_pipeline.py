@@ -1,3 +1,5 @@
+import json
+import os
 import torch
 from tqdm import tqdm
 from src.application.training.ortho_metrics import calculate_orth_metrics
@@ -23,7 +25,13 @@ class TrainingPipeline:
     ):
         self.training_config = training_config
         self.dataset = dataset
-        self.device = device_manager.device
+        self.test_dataset = None
+        if self.training_config.test_data_path:
+            test_dataset_config = self.dataset.dataset_config.model_copy()
+            test_dataset_config.dataset_filepath = self.training_config.test_data_path
+            self.test_dataset = BridgeDataset(
+                dataset_config=test_dataset_config, gcs_client=self.dataset.gcs_client
+            )
         self.device = device_manager.device
         self.model = model.to(self.device)
         self.optimizer = torch.optim.AdamW(
@@ -148,8 +156,8 @@ class TrainingPipeline:
 
         return metrics
 
-    def single_step(self, batch_slice: slice, calculate_metrics: bool = False) -> dict:
-        batch = self.dataset[batch_slice]
+    def single_step(self, dataset: BridgeDataset, batch_slice: slice, calculate_metrics: bool = False) -> dict:
+        batch = dataset[batch_slice]
         orthography, phonology = batch["orthographic"], batch["phonological"]
 
         # Forward pass
@@ -157,7 +165,7 @@ class TrainingPipeline:
 
         # Compute loss
         metrics = self.compute_loss(logits, orthography, phonology)
-
+        metrics.update({"word": json.dumps(dataset.words[batch_slice])})
         # Backpropagation only if training
         if self.model.training:
             metrics.get("loss").backward()
@@ -166,23 +174,24 @@ class TrainingPipeline:
         if calculate_metrics:
             metrics.update(self.compute_metrics(logits, orthography, phonology))
         if self.metrics_logger.metrics_config.batch_metrics:
-            self.metrics_logger.log_metrics(metrics)
+            self.metrics_logger.log_metrics(metrics, "BATCH")
         return metrics
 
     def train_single_epoch(self, epoch: int) -> dict:
         self.model.train()
         start = time.time()
         cutpoint = int(len(self.dataset) * self.training_config.train_test_split)
-        self.dataset.shuffle(cutpoint)
+        #self.dataset.shuffle(cutpoint)
         progress_bar = tqdm(self.train_slices, desc=f"Training Epoch {epoch+1}")
         total_metrics = {}
         for step, batch_slice in enumerate(progress_bar):
-            metrics = self.single_step(batch_slice, False)
+            metrics = self.single_step(self.dataset, batch_slice, self.metrics_logger.metrics_config.training_metrics)
+            #metrics = self.single_step(batch_slice, False)
             progress_bar.set_postfix(
-                {key: f"{value:.4f}" for key, value in metrics.items()}
+                {key: f"{value:.4f}" for key, value in metrics.items() if not isinstance(value, str)}
             )
             if not total_metrics:
-                total_metrics = metrics
+                total_metrics = {key: value for key, value in metrics.items() if not isinstance(value, str)}
             else:
                 for key in total_metrics.keys():
                     total_metrics[key] += metrics[key]
@@ -205,10 +214,8 @@ class TrainingPipeline:
         with torch.no_grad():
             total_metrics = {}
             for step, batch_slice in enumerate(progress_bar):
-                metrics = self.single_step(batch_slice, True)
-                progress_bar.set_postfix(
-                    {key: f"{value:.4f}" for key, value in metrics.items()}
-                )
+                metrics = self.single_step(self.dataset, batch_slice, self.metrics_logger.metrics_config.validation_metrics)
+                progress_bar.set_postfix({key: f"{value:.4f}" for key, value in metrics.items() if not isinstance(value, str)} )
                 if not total_metrics:
                     total_metrics = metrics
                 else:
@@ -223,6 +230,40 @@ class TrainingPipeline:
             }
         )
         return {"valid_" + str(key): val for key, val in total_metrics.items()}
+    
+    def test_single_epoch(self, epoch: int) -> dict:
+        self.model.eval()
+        start = time.time()
+        if self.test_dataset is None:
+            raise ValueError("Test dataset not provided in the configuration.")
+
+        # Create test slices based on batch size
+        test_slices = [
+            slice(i, min(i + self.training_config.batch_size_train, len(self.test_dataset)))
+            for i in range(0, len(self.test_dataset), self.training_config.batch_size_train)
+        ]
+        progress_bar = tqdm(test_slices, desc=f"Testing Epoch {epoch+1}")
+        
+        with torch.no_grad():
+            total_metrics = {}
+            for step, batch_slice in enumerate(progress_bar):
+                metrics = self.single_step(self.test_dataset, batch_slice, self.metrics_logger.metrics_config.validation_metrics)
+                progress_bar.set_postfix({key: f"{value:.4f}" for key, value in metrics.items() if not isinstance(value, str)} )
+                if not total_metrics:
+                    total_metrics = {key: value for key, value in metrics.items() if not isinstance(value, str)}
+                else:
+                    for key in total_metrics.keys():
+                        total_metrics[key] += metrics[key]
+            for key in total_metrics.keys():
+                total_metrics[key] /= len(test_slices)
+        total_metrics.update(
+            {
+                "time_per_step": (time.time() - start) / len(test_slices),
+                "time_per_epoch": (time.time() - start) * len(test_slices),
+            }
+        )
+        return {"test_" + str(key): val for key, val in total_metrics.items()}
+                
 
     def run_train_val_loop(self, run_name: str):
         for epoch in range(self.start_epoch, self.training_config.num_epochs):
@@ -230,7 +271,10 @@ class TrainingPipeline:
             if self.val_slices:
                 metrics = self.validate_single_epoch(epoch)
                 training_metrics.update(metrics)
-            self.metrics_logger.log_metrics(training_metrics)
+            if self.test_dataset:
+                metrics = self.test_single_epoch(epoch)
+                training_metrics.update(metrics)
+            self.metrics_logger.log_metrics(training_metrics, "EPOCH")
             self.save_model(epoch, run_name)
             yield training_metrics
 
@@ -250,6 +294,13 @@ class TrainingPipeline:
                 },
                 model_path,
             )
+            if self.dataset.gcs_client:
+                index = int(os.environ['CLOUD_RUN_TASK_INDEX'])+1
+                self.dataset.gcs_client.upload_file(
+                    os.environ["BUCKET_NAME"],
+                    model_path,
+                    f"pretraining/{index}/models/model_epoch_{epoch}.pth",
+                )
 
     def load_model(self, model_path: str):
         checkpoint = torch.load(model_path)
