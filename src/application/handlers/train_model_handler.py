@@ -150,9 +150,9 @@ class TrainModelHandler:
             if hasattr(self.training_config, key):
                 setattr(self.training_config, key, value)
 
-        self.training_config.model_artifacts_dir = "models/pretraining/1"
-        self.dataset_config.dataset_filepath = "data/pretraining/input_data_1.pkl"
-        os.makedirs(self.training_config.model_artifacts_dir, exist_ok=True)
+        #self.training_config.model_artifacts_dir = "models/pretraining/1"
+        #self.dataset_config.dataset_filepath = "data/pretraining/input_data_1.pkl"
+        #os.makedirs(self.training_config.model_artifacts_dir, exist_ok=True)
 
         self._setup_pipeline()
 
