@@ -7,7 +7,6 @@ import os
 import pickle
 import random
 import logging
-from typing import Union, Any
 from pathlib import Path
 from collections import OrderedDict
 from functools import lru_cache
@@ -176,7 +175,7 @@ class BridgeDataset:
         return batch_encoding
 
     # TODO: Work on encoding cache logic
-    def _get_encoding(self, word: Union[str, list[str]]) -> BridgeEncoding | None:
+    def _get_encoding(self, word: str | list[str]) -> BridgeEncoding | None:
         """
         Get encoding for a word, using cache when available.
 
@@ -208,7 +207,7 @@ class BridgeDataset:
         """Return the number of valid words in the dataset."""
         return len(self.words)
 
-    def __getitem__(self, idx: Union[int, slice, str]) -> BridgeEncoding:
+    def __getitem__(self, idx: int | slice | str) -> BridgeEncoding:
         """
         Retrieve encoded data for specified index or slice.
         Maintains compatibility with training pipeline expectations.

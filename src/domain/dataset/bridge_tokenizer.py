@@ -19,7 +19,7 @@ special handling for nonwords (words not in CMUDict).
 
 import torch
 import logging
-from typing import Literal, Optional, List, Union, Dict, Any
+from typing import Literal
 from src.domain.datamodels.encodings import BridgeEncoding, EncodingComponent
 from src.domain.dataset.character_tokenizer import CharacterTokenizer
 from src.domain.dataset.phoneme_tokenizer import PhonemeTokenizer
@@ -39,7 +39,7 @@ class BridgeTokenizer:
     def __init__(
         self,
         phoneme_cache_size: int = 10000,
-        custom_cmudict_path: Optional[str] = None,
+        custom_cmudict_path: str | None = None,
     ):
         # Initialize device
         self.device = device_manager.device

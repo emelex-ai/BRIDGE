@@ -1,4 +1,5 @@
 import torch
+from src.domain.datamodels import EncodingComponent
 
 
 def calculate_phon_word_accuracy(phon_true, phoneme_wise_mask):
@@ -119,11 +120,11 @@ def calculate_cosine_distance(
 
 def calculate_phon_metrics(
     logits: dict[str, torch.Tensor],
-    phonology: dict[str, torch.Tensor],
+    phonology: EncodingComponent,
     phon_reps: torch.Tensor,
 ) -> dict[str, float]:
     phon_pred = torch.argmax(logits["phon"], dim=1)
-    phon_true = phonology["targets"]
+    phon_true = phonology.targets
 
     with open("tests/application/training/data/phon_pred.pt", "wb") as f:
         torch.save(phon_pred, f)

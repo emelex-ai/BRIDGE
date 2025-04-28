@@ -4,7 +4,7 @@ Uses slots and frozen dataclasses for optimal memory usage and access speed.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Union, Optional, List
+from typing import Any
 import torch
 
 
@@ -16,7 +16,7 @@ class EncodingComponent:
     enc_pad_mask: torch.Tensor
     dec_input_ids: Any  # Tensor for orth, list of lists of tensors for phon
     dec_pad_mask: torch.Tensor
-    targets: Optional[torch.Tensor] = None  # Only used for phonological data
+    targets: torch.Tensor | None = None  # Only used for phonological data
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +34,7 @@ class BridgeEncoding:
     """
 
     orthographic: EncodingComponent
-    phonological: Optional[EncodingComponent] = None
+    phonological: EncodingComponent | None = None
     device: torch.device = field(default=torch.device("cpu"))
 
     # Legacy property accessors for backwards compatibility
@@ -55,7 +55,7 @@ class BridgeEncoding:
         return self.orthographic.dec_pad_mask
 
     @property
-    def phon_enc_ids(self) -> List[List[torch.Tensor]]:
+    def phon_enc_ids(self) -> list[list[torch.Tensor]]:
         if self.phonological is None:
             raise AttributeError("Phonological component is not available")
         return self.phonological.enc_input_ids
@@ -67,7 +67,7 @@ class BridgeEncoding:
         return self.phonological.enc_pad_mask
 
     @property
-    def phon_dec_ids(self) -> List[List[torch.Tensor]]:
+    def phon_dec_ids(self) -> list[list[torch.Tensor]]:
         if self.phonological is None:
             raise AttributeError("Phonological component is not available")
         return self.phonological.dec_input_ids
@@ -260,7 +260,7 @@ class BridgeEncoding:
 
     @classmethod
     def from_dict(
-        cls, data: dict[str, Any], device: Optional[torch.device] = None
+        cls, data: dict[str, Any], device: torch.device | None = None
     ) -> "BridgeEncoding":
         """
         Create a BridgeEncoding instance from a dictionary representation.
@@ -391,7 +391,7 @@ class BridgeEncoding:
             device=device,
         )
 
-    def __getitem__(self, idx: Union[int, slice]) -> dict[str, Any]:
+    def __getitem__(self, idx: int | slice) -> dict[str, Any]:
         """
         Get a batch slice of the encoding.
 

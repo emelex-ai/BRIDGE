@@ -1,7 +1,5 @@
 from pydantic import BaseModel, Field, model_validator, field_validator
 from src.utils.helper_functions import get_project_root
-from typing import Optional
-import torch
 import os
 
 
@@ -10,13 +8,13 @@ class TrainingConfig(BaseModel):
     batch_size_train: int = Field(default=32)
     batch_size_val: int = Field(default=32)
     train_test_split: float = Field(default=0.8)
-    max_nb_steps: Optional[int] = Field(default=None)
+    max_nb_steps: int | None = Field(default=None)
     learning_rate: float = Field(default=0.001)
     training_pathway: str = Field(default="o2p")
     save_every: int = Field(default=1)
     model_artifacts_dir: str = Field(default="model_artifacts")
     weight_decay: float = Field(default=0.0)
-    checkpoint_path: Optional[str] = Field(default=None)
+    checkpoint_path: str | None = Field(default=None)
 
     @model_validator(mode="before")
     def convert_paths(cls, values):

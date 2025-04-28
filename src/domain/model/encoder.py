@@ -1,4 +1,3 @@
-from typing import Optional
 import torch.nn as nn
 import torch
 
@@ -16,8 +15,8 @@ class Encoder(nn.Module):
     def forward(
         self,
         src: torch.Tensor,
-        src_mask: Optional[torch.Tensor] = None,
-        src_key_padding_mask: Optional[torch.Tensor] = None,
+        src_mask: torch.Tensor | None = None,
+        src_key_padding_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         output = self.transformer_encoder(
             src, mask=src_mask, src_key_padding_mask=src_key_padding_mask

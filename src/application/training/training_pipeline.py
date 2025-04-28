@@ -3,9 +3,9 @@ from tqdm import tqdm
 from src.application.training.ortho_metrics import calculate_orth_metrics
 from src.application.training.phon_metrics import calculate_phon_metrics
 from src.domain.datamodels import TrainingConfig
+from src.domain.datamodels import EncodingComponent
 from src.domain.dataset import BridgeDataset
 from src.domain.model import Model
-from typing import Union
 import time
 from src.utils.device_manager import device_manager
 
@@ -54,51 +54,59 @@ class TrainingPipeline:
         return train_slices, val_slices
 
     def forward(
-        self, orthography: dict[str, torch.Tensor], phonology: dict[str, torch.Tensor]
+        self, orthography: EncodingComponent, phonology: EncodingComponent
     ) -> dict[str, torch.Tensor]:
         if self.training_config.training_pathway == "o2p":
             return self.model(
                 task="o2p",
-                orth_enc_input=orthography["enc_input_ids"],
-                orth_enc_pad_mask=orthography["enc_pad_mask"],
-                phon_dec_input=phonology["dec_input_ids"],
-                phon_dec_pad_mask=phonology["dec_pad_mask"],
+                orth_enc_input=orthography.enc_input_ids,
+                orth_enc_pad_mask=orthography.enc_pad_mask,
+                phon_dec_input=phonology.dec_input_ids,
+                phon_dec_pad_mask=phonology.dec_pad_mask,
+            )
+        elif self.training_config.training_pathway == "o2o":
+            return self.model(
+                task="o2o",
+                orth_enc_input=orthography.enc_input_ids,
+                orth_enc_pad_mask=orthography.enc_pad_mask,
+                orth_dec_input=orthography.dec_input_ids,
+                orth_dec_pad_mask=orthography.dec_pad_mask,
             )
         elif self.training_config.training_pathway == "op2op":
             return self.model(
                 task="op2op",
-                orth_enc_input=orthography["enc_input_ids"],
-                orth_enc_pad_mask=orthography["enc_pad_mask"],
-                orth_dec_input=orthography["dec_input_ids"],
-                orth_dec_pad_mask=orthography["dec_pad_mask"],
-                phon_enc_input=phonology["enc_input_ids"],
-                phon_enc_pad_mask=phonology["enc_pad_mask"],
-                phon_dec_input=phonology["dec_input_ids"],
-                phon_dec_pad_mask=phonology["dec_pad_mask"],
+                orth_enc_input=orthography.enc_input_ids,
+                orth_enc_pad_mask=orthography.enc_pad_mask,
+                orth_dec_input=orthography.dec_input_ids,
+                orth_dec_pad_mask=orthography.dec_pad_mask,
+                phon_enc_input=phonology.enc_input_ids,
+                phon_enc_pad_mask=phonology.enc_pad_mask,
+                phon_dec_input=phonology.dec_input_ids,
+                phon_dec_pad_mask=phonology.dec_pad_mask,
             )
         elif self.training_config.training_pathway == "p2o":
             return self.model(
                 task="p2o",
-                phon_enc_input=phonology["enc_input_ids"],
-                phon_enc_pad_mask=phonology["enc_pad_mask"],
-                orth_dec_input=orthography["dec_input_ids"],
-                orth_dec_pad_mask=orthography["dec_pad_mask"],
+                phon_enc_input=phonology.enc_input_ids,
+                phon_enc_pad_mask=phonology.enc_pad_mask,
+                orth_dec_input=orthography.dec_input_ids,
+                orth_dec_pad_mask=orthography.dec_pad_mask,
             )
         elif self.training_config.training_pathway == "p2p":
             return self.model(
                 task="p2p",
-                phon_enc_input=phonology["enc_input_ids"],
-                phon_enc_pad_mask=phonology["enc_pad_mask"],
-                phon_dec_input=phonology["dec_input_ids"],
-                phon_dec_pad_mask=phonology["dec_pad_mask"],
+                phon_enc_input=phonology.enc_input_ids,
+                phon_enc_pad_mask=phonology.enc_pad_mask,
+                phon_dec_input=phonology.dec_input_ids,
+                phon_dec_pad_mask=phonology.dec_pad_mask,
             )
 
     def compute_loss(
         self,
         logits: dict[str, torch.Tensor],
-        orthography: dict[str, torch.Tensor],
-        phonology: dict[str, torch.Tensor],
-    ) -> dict[str, Union[torch.Tensor, None]]:
+        orthography: EncodingComponent,
+        phonology: EncodingComponent,
+    ) -> dict[str, torch.Tensor | None]:
         # Initialize losses to None
         orth_loss = None
         phon_loss = None
@@ -106,19 +114,19 @@ class TrainingPipeline:
         # Calculate phon_loss if applicable
         if self.training_config.training_pathway in ["o2p", "op2op", "p2p"]:
             phon_loss = torch.nn.CrossEntropyLoss(ignore_index=35)(
-                logits["phon"], phonology["targets"]
+                logits["phon"], phonology.targets
             )  # Ignore [PAD] token
             phon_loss = torch.nn.CrossEntropyLoss(ignore_index=35)(
-                logits["phon"], phonology["targets"]
+                logits["phon"], phonology.targets
             )  # Ignore [PAD] token
 
         # Calculate orth_loss if applicable
-        if self.training_config.training_pathway in ["p2o", "op2op"]:
+        if self.training_config.training_pathway in ["p2o", "op2op", "o2o"]:
             orth_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(
-                logits["orth"], orthography["enc_input_ids"][:, 1:]
+                logits["orth"], orthography.enc_input_ids[:, 1:]
             )  # Ignore [PAD] token
             orth_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(
-                logits["orth"], orthography["enc_input_ids"][:, 1:]
+                logits["orth"], orthography.enc_input_ids[:, 1:]
             )  # Ignore [PAD] token
 
         # Calculate the combined loss, summing only non-None losses
@@ -136,21 +144,21 @@ class TrainingPipeline:
     def compute_metrics(
         self,
         logits: dict[str, torch.Tensor],
-        orthography: dict[str, torch.Tensor],
-        phonology: dict[str, torch.Tensor],
+        orthography: EncodingComponent,
+        phonology: EncodingComponent,
     ) -> dict:
         metrics = {}
         if self.training_config.training_pathway in ["o2p", "op2op", "p2p"]:
             metrics.update(calculate_phon_metrics(logits, phonology, self.phon_reps))
 
-        if self.training_config.training_pathway in ["op2op", "p2o"]:
+        if self.training_config.training_pathway in ["op2op", "p2o", "o2o"]:
             metrics.update(calculate_orth_metrics(logits, orthography))
 
         return metrics
 
     def single_step(self, batch_slice: slice, calculate_metrics: bool = False) -> dict:
         batch = self.dataset[batch_slice]
-        orthography, phonology = batch["orthographic"], batch["phonological"]
+        orthography, phonology = batch.orthographic, batch.phonological
 
         # Forward pass
         logits = self.forward(orthography, phonology)

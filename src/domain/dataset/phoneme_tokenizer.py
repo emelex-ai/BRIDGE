@@ -1,4 +1,3 @@
-from typing import Union
 import logging
 import os
 
@@ -133,7 +132,7 @@ class PhonemeTokenizer:
             return active_indices
         return self.special_vecs["[UNK]"]
 
-    def encode(self, words: Union[str, list[str]]) -> CUDADict | None:
+    def encode(self, words: str | list[str]) -> CUDADict | None:
         """Encode words or phrases to phonetic feature indices."""
         if isinstance(words, str):
             words = [words]
