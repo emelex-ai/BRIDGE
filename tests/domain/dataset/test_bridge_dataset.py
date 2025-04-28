@@ -252,14 +252,14 @@ def test_dataset_length(bridge_dataset):
 
 def test_get_item_by_index(bridge_dataset):
     """Test accessing items by numerical index."""
-    item = bridge_dataset[0]
+    item = bridge_dataset[0].to_dict()
     assert isinstance(item, dict)
     assert set(item.keys()) == {"orthographic", "phonological"}
 
     # Verify tensor properties
     orth = item["orthographic"]
     assert torch.is_tensor(orth["enc_input_ids"])
-    assert orth["enc_input_ids"].shape == (1, 5)
+    assert orth["enc_input_ids"].shape == (1, 6)
     assert orth["enc_input_ids"].device == bridge_dataset.device
 
     phon = item["phonological"]
@@ -269,17 +269,17 @@ def test_get_item_by_index(bridge_dataset):
 
 def test_get_item_by_word(bridge_dataset):
     """Test accessing items by word string."""
-    item = bridge_dataset["cat"]
+    item = bridge_dataset["cat"].to_dict()
     assert isinstance(item, dict)
     assert torch.equal(
         item["orthographic"]["enc_input_ids"],
-        torch.tensor([[0, 18, 16, 35, 1]], device=bridge_dataset.device),
+        torch.tensor([[6, 0, 21, 19, 38, 1]], device=bridge_dataset.device),
     )
 
 
 def test_get_item_by_slice(bridge_dataset):
     """Test accessing multiple items using slice notation."""
-    items = bridge_dataset[0:2]
+    items = bridge_dataset[0:2].to_dict()
     assert isinstance(items, dict)
     # We should get both items in the batch
     assert items["orthographic"]["enc_input_ids"].shape[0] == 2
@@ -339,8 +339,8 @@ def test_device_movement(dataset_config, mock_gcs_client):
 
 def test_batch_consistency(bridge_dataset):
     """Test consistency of batch processing."""
-    single = bridge_dataset[0]
-    batch = bridge_dataset[0:1]
+    single = bridge_dataset[0].to_dict()
+    batch = bridge_dataset[0:1].to_dict()
 
     # Verify batch is properly formatted version of single
     assert torch.equal(
@@ -434,7 +434,7 @@ def test_cache_path_handling(tmp_path, dataset_config, mock_gcs_client):
 
 def test_integration_with_training_pipeline(bridge_dataset):
     """Test compatibility with training pipeline requirements."""
-    batch = bridge_dataset[0:2]
+    batch = bridge_dataset[0:2].to_dict()
 
     # Verify batch format meets training pipeline requirements
     assert isinstance(batch, dict)
