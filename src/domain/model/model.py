@@ -467,9 +467,9 @@ class Model(nn.Module):
             out_tokens: A list of lists, each inner list contains the active feature indices
                         for that sample. If all features are off, we default to [33].
 
-        Sample from phonological decoder output. last_token_probs is a tensor of shape (batch_size, 2, 33)
-        where 2 represents the probability dimension and 33 is the number of possible phonological vector
-        features (including BOS, EOS, PAD). For the probabilitye dimension (2) the zeroth index is the probability
+        Sample from phonological decoder output. last_token_probs is a tensor of shape (batch_size, 2, num_features)
+        where 2 represents the probability dimension and num_features is the number of possible phonological vector
+        features (including BOS, EOS, PAD, etc). For the probability dimension (2) the zeroth index is the probability
         of the feature being off, and the first index is the probability of the feature being on.
 
         For example [0.6, 0.4] -> [feature off, feature on] and in this scenario the feature is off
@@ -511,6 +511,7 @@ class Model(nn.Module):
         generated_orth_tokens: torch.Tensor,
         prompt_encoding: torch.Tensor,
         deterministic: bool,
+        language: str | None,  # Need to implement support for this
     ) -> dict[str, Any]:
         """
         Iteratively generates orthographic tokens for all sequences in the batch.
@@ -673,19 +674,22 @@ class Model(nn.Module):
         orth_enc_pad_mask: torch.Tensor | None = None,
         phon_enc_input: list[list[torch.Tensor]] | None = None,
         phon_enc_pad_mask: torch.Tensor | None = None,
-        deterministic: bool = False,
+        deterministic: bool | None = False,
+        language: str | None = "--",
     ) -> dict[str, Any]:
         """
         Generates either orthographic tokens or phonological features (or both),
         depending on the chosen pathway.
 
         Args:
-            pathway: One of ["op2op", "o2p", "p2o"].
+            pathway: One of ["op2op", "o2p", "p2o", "o2o"].
             orth_enc_input: (batch_size, max_seq_len) input IDs (from an orth encoder).
             orth_enc_pad_mask: (batch_size, max_seq_len) Boolean mask indicating PAD tokens.
             phon_enc_input: (batch_size, max_seq_len) input IDs (from a phon encoder).
             phon_enc_pad_mask: (batch_size, max_seq_len) Boolean mask indicating PAD tokens.
             deterministic: Whether sampling is greedy (True) or stochastic (False).
+            language: Two letter language code for the model to resolve interlingual
+                homographs and homophones. Defaults to "--" (no language specified).
 
         Returns:
             A dictionary with keys:
@@ -701,10 +705,6 @@ class Model(nn.Module):
 
         Returns:
             The routine returna a dictionary with keys containing the generated data at various levels, along with the global embedding vector.
-
-        Note:
-            Only the o2p pathway is currently implemented to support batch processing. Need to add an issue to complete implementation of the
-            p2o and op2op batch processing pathways.
 
         See Also:
             - phonology_decoder_loop

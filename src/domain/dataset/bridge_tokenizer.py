@@ -59,6 +59,7 @@ class BridgeTokenizer:
         self,
         text: str | list[str],
         modality_filter: Literal["both", "orthography", "phonology"] = "both",
+        language_map: dict[str, str] = None,
     ) -> BridgeEncoding | None:
         """
         Encode text using tokenizers based on the specified modality filter.
@@ -69,6 +70,9 @@ class BridgeTokenizer:
                 - "both": Encode both orthography and phonology (default)
                 - "orthography": Encode only orthography, create placeholder phonology
                 - "phonology": Encode only phonology, create placeholder orthography
+            language_map: Optional mapping of words to language for resolving
+                interlingual homographs. Keys are words, values are language codes.
+                (e.g., "EN", "ES"). If a word is not in the map, it defaults to "--".
 
         Returns:
             BridgeEncoding containing encodings according to the modality filter,

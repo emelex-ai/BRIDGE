@@ -18,6 +18,21 @@ class EncodingComponent:
     dec_pad_mask: torch.Tensor
     targets: torch.Tensor | None = None  # Only used for phonological data
 
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Convert to dictionary format for compatibility with existing code.
+
+        Returns:
+            Dictionary containing the encoding component data
+        """
+        return {
+            "enc_input_ids": self.enc_input_ids,
+            "enc_pad_mask": self.enc_pad_mask,
+            "dec_input_ids": self.dec_input_ids,
+            "dec_pad_mask": self.dec_pad_mask,
+            "targets": self.targets,
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class BridgeEncoding:

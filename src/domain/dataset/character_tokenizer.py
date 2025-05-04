@@ -1,6 +1,5 @@
 from src.utils.device_manager import device_manager
 from src.domain.dataset import CUDADict
-from typing import Union
 import logging
 import torch
 import string
@@ -15,7 +14,11 @@ class CharacterTokenizer:
 
         # Initialize vocabulary with special tokens
         self.special_tokens = ["[BOS]", "[EOS]", "[PAD]", "[UNK]", "[CLS]", "[SEP]"]
-        self.vocab = self.special_tokens + list(string.printable)
+
+    #heterophonic homographs
+        # Language tokens help the model resolve interlingual homographs. '--' is a placeholder for unspecified languages that preserves tensor shape.
+        self.language_tokens = ["--", "EN", "ES"]
+        self.vocab = self.special_tokens + self.language_tokens + list(string.printable)
 
         # Create mappings from characters to indices and vice versa
         self.char_2_idx = {ch: i for i, ch in enumerate(self.vocab)}
@@ -29,7 +32,30 @@ class CharacterTokenizer:
     def get_vocabulary_size(self) -> int:
         return self.vocabulary_size
 
-    def encode(self, list_of_strings: Union[str, list[str]]) -> CUDADict:
+    def encode(
+        self,
+        list_of_strings: str | list[str],
+        language_map: dict[str, str] = None,
+    ) -> CUDADict:
+        """
+        Encode a list of strings into a tensor representation.
+        Args:
+            list_of_strings (str | list[str]): A string or a list of strings to be encoded.
+            language_map (dict[str, str], optional): A mapping of words to their corresponding languages.
+                Defaults to None, which means no language mapping is applied. Keys are words and
+                values are language codes (e.g., "EN", "ES"). If a word is not in the map, it defaults to "--".
+        Returns:
+            CUDADict: A dictionary containing the encoded input IDs and padding masks.
+        """
+
+        # Ensure the languages in the map are valid
+        if language_map is None:
+            language_map = {}
+        for lang in language_map.values():
+            if lang.upper() not in self.language_tokens:
+                err_str = f"Invalid language: {lang}. Supported languages are: {self.language_tokens[:-1]}"
+                logger.error(err_str)
+                raise ValueError(err_str)
 
         # Ensure the input is either a string or a list of strings
         if isinstance(list_of_strings, str):
@@ -43,12 +69,18 @@ class CharacterTokenizer:
         max_length = max(len(s) for s in list_of_strings)
 
         enc_pad = (
-            lambda s: ["[BOS]"]
+            lambda s: [language_map.get(s.upper(), "--")]
+            + ["[BOS]"]
             + list(s)
             + ["[EOS]"]
             + ["[PAD]"] * (max_length - len(s))
         )
-        dec_pad = lambda s: ["[BOS]"] + list(s) + ["[PAD]"] * (max_length - len(s))
+        dec_pad = (
+            lambda s: [language_map.get(s.upper(), "--")]
+            + ["[BOS]"]
+            + list(s)
+            + ["[PAD]"] * (max_length - len(s))
+        )
 
         # Create encoder-padded and decoder-padded string lists
         enc_strings = [enc_pad(s) for s in list_of_strings]
@@ -56,7 +88,10 @@ class CharacterTokenizer:
 
         # Initialize tensors for encoded input
         enc_input_ids = torch.zeros(
-            (len(enc_strings), 2 + max_length), dtype=torch.long, device=self.device
+            # +3 for [LANG], [BOS], [EOS]
+            (len(enc_strings), 3 + max_length),
+            dtype=torch.long,
+            device=self.device,
         )
         for i, enc_str in enumerate(enc_strings):
             for j, ch in enumerate(enc_str):
@@ -64,7 +99,10 @@ class CharacterTokenizer:
 
         # Initialize tensors for decoder input
         dec_input_ids = torch.zeros(
-            (len(dec_strings), 1 + max_length), dtype=torch.long, device=self.device
+            # +2 for [LANG], [BOS]
+            (len(dec_strings), 2 + max_length),
+            dtype=torch.long,
+            device=self.device,
         )
         for i, dec_str in enumerate(dec_strings):
             for j, ch in enumerate(dec_str):

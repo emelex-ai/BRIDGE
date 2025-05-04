@@ -26,7 +26,7 @@ class PhonemeTokenizer:
 
         # Load phonetic representations from config
         self.phonreps = pd.read_csv(
-            os.path.join(get_project_root(), "data/phonreps.csv")
+            os.path.join(get_project_root(), "data/.core/phonreps.csv")
         )
         self.phonreps.set_index("phone", inplace=True)
         self.base_dim = len(self.phonreps.columns)
@@ -54,10 +54,13 @@ class PhonemeTokenizer:
             else:
                 logger.warning(f"Custom CMU dict not found at {custom_cmudict_path}")
 
-        # Load official CMU dict as fallback
-        fallback_pron = {word: pron[0] for word, pron in cmudict.dict().items() if pron}
-        # Merge: use custom entries where available, otherwise fallback
-        self.pronunciation_dict = {**fallback_pron, **custom_pron}
+        # Load multilingual phonological lexicon dict as foundation
+        self.pronunciation_dict = self._load_multilingual_vocab()
+
+        # Overwrite any entries in the lexicon with custom pronunciations
+        for word, langs in custom_pron.items():
+            for lang, pronunciations in langs.items():
+                self.pronunciation_dict[word.lower()][lang.lower()] = pronunciations
 
         # Special tokens at end of vector space - added [SPC] token
         self.special_token_dims = {
@@ -79,17 +82,47 @@ class PhonemeTokenizer:
         self.vector_cache = {}
         self.max_cache_size = max_cache_size
 
-    def _get_word_phonemes(self, word: str) -> list | None:
-        """Get phonemes for a single word, handling spaces."""
+    def _load_multilingual_vocab(directory, lang_codes: list[str]) -> dict:
+        """Load all language-specific JSON files into a unified vocabulary structure."""
+        vocab = {}
+        for filename in os.listdir(directory):
+            if filename.endswith(".json"):
+                # Extract ISO 639 language code from filename
+                lang_code = filename.split(".")[0].lower()
+                if lang_code.lower() not in lang_codes:
+                    continue
+                if len(lang_code) != 2:
+                    logger.warning(
+                        f"Invalid language code in filename: {filename}. Skipping. Must be two letter ISO 639 code."
+                    )
+                    continue
+                file_path = os.path.join(directory, filename)
+
+                with open(file_path, "r", encoding="utf-8") as f:
+                    lang_dict = json.load(f)
+
+                for word, pronunciations in lang_dict.items():
+                    normalized_word = word.lower()
+
+                    if normalized_word not in vocab:
+                        vocab[normalized_word] = {}
+
+                    # Store pronunciations under language code
+                    vocab[normalized_word][lang_code] = pronunciations
+
+        return vocab
+
+    def _get_word_phonemes(self, word: str, language: str = "en") -> list | None:
+        """Get phonemes for a single word and language"""
         if not word:  # Handle empty string
             return []
 
         lookup_word = word.lower()
         if lookup_word in self.pronunciation_dict:
-            return self.pronunciation_dict[lookup_word]
+            return self.pronunciation_dict[lookup_word][language]
         return None
 
-    def _get_phrase_phonemes(self, phrase: str) -> list | None:
+    def _get_phrase_phonemes(self, phrase: str, language: str) -> list | None:
         """Convert a phrase into phonemes, handling spaces between words."""
         words = phrase.strip().split()
         if not words:  # Handle empty or whitespace-only input
@@ -97,7 +130,7 @@ class PhonemeTokenizer:
 
         result = []
         for i, word in enumerate(words):
-            phonemes = self._get_word_phonemes(word)
+            phonemes = self._get_word_phonemes(word, language)
             if phonemes is None:
                 logger.warning(f"Word not found in phrase: {word}")
                 return None

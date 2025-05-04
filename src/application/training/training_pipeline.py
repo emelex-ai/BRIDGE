@@ -164,7 +164,12 @@ class TrainingPipeline:
 
         return metrics
 
-    def single_step(self, dataset: BridgeDataset, batch_slice: slice, calculate_metrics: bool = False) -> dict:
+    def single_step(
+        self,
+        dataset: BridgeDataset,
+        batch_slice: slice,
+        calculate_metrics: bool = False,
+    ) -> dict:
         batch = dataset[batch_slice]
         orthography, phonology = batch.orthographic, batch.phonological
 
@@ -189,17 +194,29 @@ class TrainingPipeline:
         self.model.train()
         start = time.time()
         cutpoint = int(len(self.dataset) * self.training_config.train_test_split)
-        #self.dataset.shuffle(cutpoint)
+        # self.dataset.shuffle(cutpoint)
         progress_bar = tqdm(self.train_slices, desc=f"Training Epoch {epoch+1}")
         total_metrics = {}
         for step, batch_slice in enumerate(progress_bar):
-            metrics = self.single_step(self.dataset, batch_slice, self.metrics_logger.metrics_config.training_metrics)
-            #metrics = self.single_step(batch_slice, False)
+            metrics = self.single_step(
+                self.dataset,
+                batch_slice,
+                self.metrics_logger.metrics_config.training_metrics,
+            )
+            # metrics = self.single_step(batch_slice, False)
             progress_bar.set_postfix(
-                {key: f"{value:.4f}" for key, value in metrics.items() if not isinstance(value, str)}
+                {
+                    key: f"{value:.4f}"
+                    for key, value in metrics.items()
+                    if not isinstance(value, str)
+                }
             )
             if not total_metrics:
-                total_metrics = {key: value for key, value in metrics.items() if not isinstance(value, str)}
+                total_metrics = {
+                    key: value
+                    for key, value in metrics.items()
+                    if not isinstance(value, str)
+                }
             else:
                 for key in total_metrics.keys():
                     total_metrics[key] += metrics[key]
@@ -222,14 +239,26 @@ class TrainingPipeline:
         with torch.no_grad():
             total_metrics = {}
             for step, batch_slice in enumerate(progress_bar):
-                metrics = self.single_step(self.dataset, batch_slice, self.metrics_logger.metrics_config.validation_metrics)
-                progress_bar.set_postfix({key: f"{value:.4f}" for key, value in metrics.items() if not isinstance(value, str)} )
+                metrics = self.single_step(
+                    self.dataset,
+                    batch_slice,
+                    self.metrics_logger.metrics_config.validation_metrics,
+                )
+                progress_bar.set_postfix(
+                    {
+                        key: f"{value:.4f}"
+                        for key, value in metrics.items()
+                        if not isinstance(value, str)
+                    }
+                )
                 if not total_metrics:
                     total_metrics = metrics
                 else:
                     for key in total_metrics.keys():
                         total_metrics[key] += metrics[key]
             for key in total_metrics.keys():
+                if key in ["word"]:
+                    continue
                 total_metrics[key] /= len(self.val_slices)
         total_metrics.update(
             {
@@ -238,7 +267,7 @@ class TrainingPipeline:
             }
         )
         return {"valid_" + str(key): val for key, val in total_metrics.items()}
-    
+
     def test_single_epoch(self, epoch: int) -> dict:
         self.model.eval()
         start = time.time()
@@ -247,18 +276,37 @@ class TrainingPipeline:
 
         # Create test slices based on batch size
         test_slices = [
-            slice(i, min(i + self.training_config.batch_size_train, len(self.test_dataset)))
-            for i in range(0, len(self.test_dataset), self.training_config.batch_size_train)
+            slice(
+                i,
+                min(i + self.training_config.batch_size_train, len(self.test_dataset)),
+            )
+            for i in range(
+                0, len(self.test_dataset), self.training_config.batch_size_train
+            )
         ]
         progress_bar = tqdm(test_slices, desc=f"Testing Epoch {epoch+1}")
-        
+
         with torch.no_grad():
             total_metrics = {}
             for step, batch_slice in enumerate(progress_bar):
-                metrics = self.single_step(self.test_dataset, batch_slice, self.metrics_logger.metrics_config.validation_metrics)
-                progress_bar.set_postfix({key: f"{value:.4f}" for key, value in metrics.items() if not isinstance(value, str)} )
+                metrics = self.single_step(
+                    self.test_dataset,
+                    batch_slice,
+                    self.metrics_logger.metrics_config.validation_metrics,
+                )
+                progress_bar.set_postfix(
+                    {
+                        key: f"{value:.4f}"
+                        for key, value in metrics.items()
+                        if not isinstance(value, str)
+                    }
+                )
                 if not total_metrics:
-                    total_metrics = {key: value for key, value in metrics.items() if not isinstance(value, str)}
+                    total_metrics = {
+                        key: value
+                        for key, value in metrics.items()
+                        if not isinstance(value, str)
+                    }
                 else:
                     for key in total_metrics.keys():
                         total_metrics[key] += metrics[key]
@@ -271,7 +319,6 @@ class TrainingPipeline:
             }
         )
         return {"test_" + str(key): val for key, val in total_metrics.items()}
-                
 
     def run_train_val_loop(self, run_name: str):
         for epoch in range(self.start_epoch, self.training_config.num_epochs):
@@ -303,7 +350,7 @@ class TrainingPipeline:
                 model_path,
             )
             if self.dataset.gcs_client:
-                index = int(os.environ['CLOUD_RUN_TASK_INDEX'])+1
+                index = int(os.environ["CLOUD_RUN_TASK_INDEX"]) + 1
                 self.dataset.gcs_client.upload_file(
                     os.environ["BUCKET_NAME"],
                     model_path,
