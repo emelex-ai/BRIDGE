@@ -49,6 +49,44 @@ resource "google_artifact_registry_repository" "ml_containers" {
   format        = "DOCKER"
 }
 
+# Reference artifact registry image
+data "google_artifact_registry_docker_image" "pretraining" {
+  repository_id = "ml-training-images"
+  location = var.region
+  image_name = "pretraining:latest"
+}
+
+# Create Cloud Run Job
+resource "google_cloud_run_v2_job" "pretraining_job" {
+  name = "pretraining-job"
+  location = var.region
+  
+  template {
+    task_count = 50
+    template {
+      timeout = "36000s" # 10 hours
+      service_account = google_service_account.training_service_account.email
+      containers {
+        image = data.google_artifact_registry_docker_image.pretraining.self_link
+        
+        resources {
+          limits = {
+            memory = "2Gi"
+            cpu    = "1"
+          }
+        }
+        env {
+          name  = "BUCKET_NAME"
+          value = google_storage_bucket.ml_storage.name
+        }
+      }
+
+    }
+  }
+
+}
+
+
 # Grant service account permission to pull images
 resource "google_artifact_registry_repository_iam_member" "registry_reader" {
   location   = google_artifact_registry_repository.ml_containers.location
