@@ -58,3 +58,6 @@ terraform.rc
 
 # Ignore plan files
 *.tfplan
+
+# cached credentials
+token.pickle
