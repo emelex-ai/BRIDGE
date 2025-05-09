@@ -1,16 +1,18 @@
 import json
 import os
+import gc
+from typing import Union
+import time
+
 import torch
 from tqdm import tqdm
+
 from src.application.training.ortho_metrics import calculate_orth_metrics
 from src.application.training.phon_metrics import calculate_phon_metrics
 from src.domain.datamodels import TrainingConfig
 from src.domain.dataset import BridgeDataset
 from src.domain.model import Model
-from typing import Union
-import time
 from src.utils.device_manager import device_manager
-
 from src.infra.metrics.metrics_logger import MetricsLogger
 
 
@@ -234,6 +236,10 @@ class TrainingPipeline:
         progress_bar = tqdm(self.train_slices, desc=f"Training Epoch {epoch+1}")
         total_metrics = {}
         for step, batch_slice in enumerate(progress_bar):
+            # Run garbage collection to free up memory
+            if step % 10 == 0:
+                gc.collect()
+
             metrics = self.single_step(
                 self.dataset,
                 batch_slice,
