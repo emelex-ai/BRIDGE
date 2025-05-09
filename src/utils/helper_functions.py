@@ -2,6 +2,8 @@ from datetime import datetime
 import getpass
 import os
 
+from src.infra.clients.gcp.gcs_client import GCSClient
+
 import torch
 import random
 import numpy as np
@@ -58,6 +60,43 @@ def get_run_name(model_artifacts_dir="model_artifacts"):
     os.makedirs(run_path, exist_ok=True)
 
     return run_name
+
+
+def find_latest_checkpoint(
+    storage_client: GCSClient, bucket_name: str, task_index: str
+):
+    """Find the latest checkpoint for a specific task in GCS."""
+    bucket = storage_client.bucket(bucket_name)
+    prefix = f"pretraining/{task_index}/models/model_epoch_"
+
+    # List all checkpoint blobs
+    blobs = list(bucket.list_blobs(prefix=prefix))
+
+    if not blobs:
+        return None
+
+    # Extract epoch numbers from blob names
+    latest_epoch = -1
+    latest_blob = None
+
+    for blob in blobs:
+        # Extract epoch number from blob name
+        file_name = blob.name.split("/")[-1]
+        try:
+            epoch = int(file_name.replace("model_epoch_", "").replace(".pth", ""))
+            if epoch > latest_epoch:
+                latest_epoch = epoch
+                latest_blob = blob
+        except ValueError:
+            continue
+
+    if latest_blob:
+        # Download the latest checkpoint
+        checkpoint_path = f"tmp_checkpoint_{task_index}.pth"
+        latest_blob.download_to_filename(checkpoint_path)
+        return checkpoint_path, latest_epoch
+
+    return None, -1
 
 
 def set_seed(seed: int):
