@@ -66,7 +66,8 @@ def find_latest_checkpoint(
     storage_client: GCSClient, bucket_name: str, task_index: str
 ):
     """Find the latest checkpoint for a specific task in GCS."""
-    bucket = storage_client.bucket(bucket_name)
+    client = storage_client.client
+    bucket = client.bucket(bucket_name)
     prefix = f"pretraining/{task_index}/models/model_epoch_"
 
     # List all checkpoint blobs
