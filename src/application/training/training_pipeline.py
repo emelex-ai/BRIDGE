@@ -399,10 +399,26 @@ class TrainingPipeline:
             self.metrics_logger.save()
 
     def load_model(self, model_path: str):
-        checkpoint = torch.load(model_path)
-        self.model.load_state_dict(checkpoint["model_state_dict"])
-        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        self.start_epoch = checkpoint["epoch"]
+        try:
+            checkpoint = torch.load(model_path)
+            self.model.load_state_dict(checkpoint["model_state_dict"])
+            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+            # Set the correct starting epoch
+            if "epoch" in checkpoint:
+                self.start_epoch = checkpoint["epoch"] + 1  # Start from the next epoch
+                logger.info(f"Resuming training from epoch {self.start_epoch}")
+            else:
+                logger.warning(
+                    "Checkpoint doesn't contain epoch information, starting from 0"
+                )
+                self.start_epoch = 0
+
+            return True
+        except Exception as e:
+            logger.error(f"Error loading checkpoint {model_path}: {e}")
+            self.start_epoch = 0
+            return False
 
     def transfer_partial_model_parameters(
         self, pretrained_model_path: str, module_prefixes: list[str]
