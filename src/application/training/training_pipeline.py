@@ -6,6 +6,7 @@ import time
 
 import torch
 from tqdm import tqdm
+import logging
 
 from src.application.training.ortho_metrics import calculate_orth_metrics
 from src.application.training.phon_metrics import calculate_phon_metrics
@@ -50,6 +51,7 @@ class TrainingPipeline:
         if training_config.checkpoint_path:
             self.load_model(training_config.checkpoint_path)
         self.metrics_logger = metrics_logger
+        self.logger = logging.getLogger(__name__)
 
     def create_data_slices(self):
         cutpoint = int(len(self.dataset) * self.training_config.train_test_split)
@@ -462,16 +464,16 @@ class TrainingPipeline:
             # Set the correct starting epoch
             if "epoch" in checkpoint:
                 self.start_epoch = checkpoint["epoch"] + 1  # Start from the next epoch
-                logger.info(f"Resuming training from epoch {self.start_epoch}")
+                self.logger.info(f"Resuming training from epoch {self.start_epoch}")
             else:
-                logger.warning(
+                self.logger.warning(
                     "Checkpoint doesn't contain epoch information, starting from 0"
                 )
                 self.start_epoch = 0
 
             return True
         except Exception as e:
-            logger.error(f"Error loading checkpoint {model_path}: {e}")
+            self.logger.error(f"Error loading checkpoint {model_path}: {e}")
             self.start_epoch = 0
             return False
 
