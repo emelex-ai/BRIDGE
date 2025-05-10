@@ -82,9 +82,21 @@ class PhonemeTokenizer:
         self.vector_cache = {}
         self.max_cache_size = max_cache_size
 
-    def _load_multilingual_vocab(directory, lang_codes: list[str]) -> dict:
-        """Load all language-specific JSON files into a unified vocabulary structure."""
+    def _load_multilingual_vocab(
+        self, directory: str | None = None, lang_codes: list[str] | None = None
+    ) -> dict:
+        """Load all language-specific JSON files into a unified vocabulary structure.""" """Load language-specific JSON files into a unified vocabulary structure."""
+        if directory is None:
+            directory = os.path.join(
+                get_project_root(), "data/.core/pronunciation_lexicons"
+            )
+        if lang_codes is None:
+            lang_codes = ["en", "es"]  # Default supported languages
+
         vocab = {}
+        if not os.path.exists(directory):
+            logger.error(f"Pronunciation lexicon directory not found: {directory}")
+            return vocab
         for filename in os.listdir(directory):
             if filename.endswith(".json"):
                 # Extract ISO 639 language code from filename
@@ -119,10 +131,24 @@ class PhonemeTokenizer:
 
         lookup_word = word.lower()
         if lookup_word in self.pronunciation_dict:
-            return self.pronunciation_dict[lookup_word][language]
+            lang_code = language.lower()
+            # Check if pronunciation exists for requests language
+            if lang_code in self.pronunciation_dict[lookup_word]:
+                return self.pronunciation_dict[lookup_word][lang_code]
+            # Fall back to English if requested language not available
+            elif "en" in self.pronunciation_dict[lookup_word]:
+                logger.warning(
+                    f"Word '{word}' not found in {language}, falling back to English"
+                )
+                return self.pronunciation_dict[lookup_word]["en"]
+            else:
+                logger.warning(f"Word '{word}' exists but not in {language} or English")
+        else:
+            logger.debug(f"Word '{word}' not found in pronunciation lexicon")
+
         return None
 
-    def _get_phrase_phonemes(self, phrase: str, language: str) -> list | None:
+    def _get_phrase_phonemes(self, phrase: str, language: str | None = "en") -> list | None:
         """Convert a phrase into phonemes, handling spaces between words."""
         words = phrase.strip().split()
         if not words:  # Handle empty or whitespace-only input
@@ -165,15 +191,20 @@ class PhonemeTokenizer:
             return active_indices
         return self.special_vecs["[UNK]"]
 
-    def encode(self, words: str | list[str]) -> CUDADict | None:
+    def encode(
+        self, words: str | list[str], language_map: dict[str, str] | None = None
+    ) -> CUDADict | None:
         """Encode words or phrases to phonetic feature indices."""
+        if language_map is None:
+            language_map = {}
+
         if isinstance(words, str):
             words = [words]
 
         # Process each word/phrase into phonemes
         word_phonemes = []
         for phrase in words:
-            phonemes = self._get_phrase_phonemes(phrase)
+            phonemes = self._get_phrase_phonemes(phrase, language_map)
             if phonemes is None:
                 return None
             word_phonemes.append(phonemes)

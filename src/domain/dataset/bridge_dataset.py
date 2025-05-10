@@ -113,18 +113,25 @@ class BridgeDataset:
         """
         if "word_raw" not in df.columns:
             raise KeyError("DataFrame must contain 'word_raw' column")
-        valid = []
-        for idx, word in enumerate(df["word_raw"]):
-            if not isinstance(word, str):
-                logger.warning(f"Skipping non-str entry: {word}")
-                continue
-            if idx == 0:
-                # test encoding of first valid word
-                if self._encode_single_word(word) is None:
-                    logger.warning(f"Initial encoding validation failed for {word}")
+
+        if "language" in df.columns:
+            language_map = {}
+            valid = []
+            for word, language in zip(df["word_raw"], df["language"]):
+            # Create language map (tokenizer defaults to "--" if "language" column is missing)
+            language_map[word] = language.upper()
+
+            for idx, word in enumerate(df["word_raw"]):
+                if not isinstance(word, str):
+                    logger.warning(f"Skipping non-str entry: {word}")
                     continue
-            valid.append(word)
-        return valid
+                if idx == 0:
+                    # test encoding of first valid word
+                    if self._encode_single_word(word) is None:
+                        logger.warning(f"Initial encoding validation failed for {word}")
+                        continue
+                valid.append(word)
+            return valid
 
     @lru_cache(maxsize=128)
     def _encode_single_word(self, word: str) -> BridgeEncoding | None:

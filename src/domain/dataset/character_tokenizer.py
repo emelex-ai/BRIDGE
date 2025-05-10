@@ -15,7 +15,7 @@ class CharacterTokenizer:
         # Initialize vocabulary with special tokens
         self.special_tokens = ["[BOS]", "[EOS]", "[PAD]", "[UNK]", "[CLS]", "[SEP]"]
 
-    #heterophonic homographs
+        # heterophonic homographs
         # Language tokens help the model resolve interlingual homographs. '--' is a placeholder for unspecified languages that preserves tensor shape.
         self.language_tokens = ["--", "EN", "ES"]
         self.vocab = self.special_tokens + self.language_tokens + list(string.printable)
@@ -51,11 +51,14 @@ class CharacterTokenizer:
         # Ensure the languages in the map are valid
         if language_map is None:
             language_map = {}
-        for lang in language_map.values():
-            if lang.upper() not in self.language_tokens:
-                err_str = f"Invalid language: {lang}. Supported languages are: {self.language_tokens[:-1]}"
-                logger.error(err_str)
-                raise ValueError(err_str)
+        valid_langs = set(self.language_tokens)
+        invalid_langs = [
+            lang for lang in language_map.values() if lang.upper() not in valid_langs
+        ]
+        if invalid_langs:
+            err_str = f"Invalid languages: {invalid_langs}. Supported languages are: {self.language_tokens[1:]}"  # Skip '--'
+            logger.error(err_str)
+            raise ValueError(err_str)
 
         # Ensure the input is either a string or a list of strings
         if isinstance(list_of_strings, str):
@@ -128,7 +131,10 @@ class CharacterTokenizer:
                     [
                         self.idx_2_char[i]
                         for i in ints
-                        if self.idx_2_char[i] not in self.special_tokens
+                        if (
+                            self.idx_2_char[i] not in self.special_tokens
+                            and self.idx_2_char[i] not in self.language_tokens
+                        )
                     ]
                 )
                 for ints in list_of_ints

@@ -88,7 +88,7 @@ class BridgeTokenizer:
         # Get orthographic encoding if needed
         ortho_encoding = None
         if modality_filter in ["both", "orthography"]:
-            ortho_encoding = self.char_tokenizer.encode(text)
+            ortho_encoding = self.char_tokenizer.encode(text, language_map=language_map)
 
         # Get phonological encoding if needed
         phono_encoding = None
