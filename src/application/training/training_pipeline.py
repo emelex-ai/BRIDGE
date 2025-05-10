@@ -15,6 +15,8 @@ from src.domain.model import Model
 from src.utils.device_manager import device_manager
 from src.infra.metrics.metrics_logger import MetricsLogger
 
+min_interval = 30
+
 
 class TrainingPipeline:
 
@@ -231,9 +233,14 @@ class TrainingPipeline:
     def train_single_epoch(self, epoch: int) -> dict:
         self.model.train()
         start = time.time()
+        last_update_time = time.time()
         cutpoint = int(len(self.dataset) * self.training_config.train_test_split)
         # self.dataset.shuffle(cutpoint)
-        progress_bar = tqdm(self.train_slices, desc=f"Training Epoch {epoch+1}")
+        progress_bar = tqdm(
+            self.train_slices,
+            desc=f"Training Epoch {epoch+1}",
+            mininterval=min_interval,
+        )
         total_metrics = {}
         for step, batch_slice in enumerate(progress_bar):
             # Run garbage collection to free up memory
@@ -246,13 +253,16 @@ class TrainingPipeline:
                 self.metrics_logger.metrics_config.training_metrics,
             )
             # metrics = self.single_step(batch_slice, False)
-            progress_bar.set_postfix(
-                {
-                    key: f"{value:.4f}"
-                    for key, value in metrics.items()
-                    if not isinstance(value, str)
-                }
-            )
+            current_time = time.time()
+            if current_time - last_update_time > min_interval:
+                progress_bar.set_postfix(
+                    {
+                        key: f"{value:.4f}"
+                        for key, value in metrics.items()
+                        if not isinstance(value, str)
+                    }
+                )
+                last_update_time = current_time
             if not total_metrics:
                 total_metrics = {
                     key: value
@@ -276,7 +286,11 @@ class TrainingPipeline:
         self.model.eval()
         start = time.time()
 
-        progress_bar = tqdm(self.val_slices, desc=f"Validating Epoch {epoch+1}")
+        progress_bar = tqdm(
+            self.val_slices,
+            desc=f"Validating Epoch {epoch+1}",
+            mininterval=min_interval,
+        )
 
         with torch.no_grad():
             total_metrics = {}
@@ -286,13 +300,16 @@ class TrainingPipeline:
                     batch_slice,
                     self.metrics_logger.metrics_config.validation_metrics,
                 )
-                progress_bar.set_postfix(
-                    {
-                        key: f"{value:.4f}"
-                        for key, value in metrics.items()
-                        if not isinstance(value, str)
-                    }
-                )
+                current_time = time.time()
+                if current_time - last_update_time > min_interval:
+                    progress_bar.set_postfix(
+                        {
+                            key: f"{value:.4f}"
+                            for key, value in metrics.items()
+                            if not isinstance(value, str)
+                        }
+                    )
+                    last_update_time = current_time
                 if not total_metrics:
                     total_metrics = metrics
                 else:
@@ -324,7 +341,9 @@ class TrainingPipeline:
                 0, len(self.test_dataset), self.training_config.batch_size_train
             )
         ]
-        progress_bar = tqdm(test_slices, desc=f"Testing Epoch {epoch+1}")
+        progress_bar = tqdm(
+            test_slices, desc=f"Testing Epoch {epoch+1}", mininterval=min_interval
+        )
 
         with torch.no_grad():
             total_metrics = {}
@@ -334,13 +353,17 @@ class TrainingPipeline:
                     batch_slice,
                     self.metrics_logger.metrics_config.validation_metrics,
                 )
-                progress_bar.set_postfix(
-                    {
-                        key: f"{value:.4f}"
-                        for key, value in metrics.items()
-                        if not isinstance(value, str)
-                    }
-                )
+
+                current_time = time.time()
+                if current_time - last_update_time > min_interval:
+                    progress_bar.set_postfix(
+                        {
+                            key: f"{value:.4f}"
+                            for key, value in metrics.items()
+                            if not isinstance(value, str)
+                        }
+                    )
+                    last_update_time = current_time
                 if not total_metrics:
                     total_metrics = {
                         key: value
