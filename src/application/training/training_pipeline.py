@@ -15,7 +15,7 @@ from src.domain.model import Model
 from src.utils.device_manager import device_manager
 from src.infra.metrics.metrics_logger import MetricsLogger
 
-min_interval = 30
+min_interval = 1
 
 
 class TrainingPipeline:
@@ -166,11 +166,44 @@ class TrainingPipeline:
         batch_slice: slice,
         calculate_metrics: bool = False,
     ) -> dict:
-        # Split batch into smaller chunks if it's too large
+        num_chunks = (
+            self.training_config.num_chunks if self.training_config.num_chunks else 1
+        )
+        # Fast path when not using accumulated gradients
+        if num_chunks == 1:
+            # Zero gradients
+            if self.model.training:
+                self.optimizer.zero_grad()
+
+            # Process the entire batch at once
+            batch = dataset[batch_slice]
+            orthography, phonology = batch["orthographic"], batch["phonological"]
+
+            # Forward pass
+            logits = self.forward(orthography, phonology)
+
+            # Compute loss (no scaling needed)
+            metrics = self.compute_loss(logits, orthography, phonology)
+
+            # Backward pass
+            if self.model.training:
+                metrics["loss"].backward()
+                self.optimizer.step()
+                self.optimizer.zero_grad()  # Reset gradients after update
+
+            # Calculate additional metrics if needed
+            if calculate_metrics:
+                metrics.update(self.compute_metrics(logits, orthography, phonology))
+
+            if self.metrics_logger.metrics_config.batch_metrics:
+                self.metrics_logger.log_metrics(metrics, "BATCH")
+
+            metrics.update({"word": json.dumps(dataset.words[batch_slice])})
+            return metrics
+
+        # Original accumulated gradients path for num_chunks > 1
         accumulated_metrics = {}
-        sub_slices = self._create_sub_slices(
-            batch_slice, num_chunks=4
-        )  # Divide into 4 smaller batches
+        sub_slices = self._create_sub_slices(batch_slice, num_chunks=num_chunks)
 
         # Zero gradients once at the beginning
         self.optimizer.zero_grad()
@@ -184,9 +217,7 @@ class TrainingPipeline:
 
             # Compute loss with scaled factor
             metrics = self.compute_loss(logits, orthography, phonology)
-            loss = metrics.get("loss") / len(
-                sub_slices
-            )  # Scale loss by number of chunks
+            loss = metrics.get("loss") / num_chunks  # Scale loss by number of chunks
 
             # Backward pass (accumulate gradients)
             if self.model.training:
@@ -285,7 +316,7 @@ class TrainingPipeline:
     def validate_single_epoch(self, epoch: int) -> dict:
         self.model.eval()
         start = time.time()
-
+        last_update_time = time.time()
         progress_bar = tqdm(
             self.val_slices,
             desc=f"Validating Epoch {epoch+1}",
@@ -328,6 +359,7 @@ class TrainingPipeline:
     def test_single_epoch(self, epoch: int) -> dict:
         self.model.eval()
         start = time.time()
+        last_update_time = time.time()
         if self.test_dataset is None:
             raise ValueError("Test dataset not provided in the configuration.")
 
