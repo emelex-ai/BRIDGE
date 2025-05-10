@@ -1,7 +1,6 @@
 from pydantic import BaseModel, Field, model_validator, field_validator
 from src.utils.helper_functions import get_project_root
 from typing import Optional
-import torch
 import os
 
 
@@ -18,6 +17,10 @@ class TrainingConfig(BaseModel):
     weight_decay: float = Field(default=0.0)
     checkpoint_path: Optional[str] = Field(default=None)
     test_data_path: Optional[str] = Field(default=None)
+    num_chunks: Optional[int] = Field(
+        default=1,
+        description="Number of chunks to split a batch into for accumulated gradients",
+    )
 
     @model_validator(mode="before")
     def convert_paths(cls, values):
@@ -33,8 +36,8 @@ class TrainingConfig(BaseModel):
         os.makedirs(values["model_artifacts_dir"], exist_ok=True)
         if "test_data_path" in values:
             values["test_data_path"] = os.path.join(
-            project_root, "data", values["test_data_path"]
-        )
+                project_root, "data", values["test_data_path"]
+            )
         return values
 
     @field_validator("training_pathway")
@@ -59,5 +62,7 @@ class TrainingConfig(BaseModel):
                 f"Model directory not found: {self.model_artifacts_dir}"
             )
         if self.checkpoint_path and not os.path.exists(self.checkpoint_path):
-            raise FileNotFoundError(f"Checkpoint file not found: {self.checkpoint_path}")
+            raise FileNotFoundError(
+                f"Checkpoint file not found: {self.checkpoint_path}"
+            )
         return self

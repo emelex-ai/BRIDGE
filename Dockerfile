@@ -1,36 +1,38 @@
-# Dockerfile-cpu.dev
-#
-# Base development environment for CPU-only systems
-# This Dockerfile creates a foundation that other specialized environments can build upon.
-# It includes all necessary development tools and Python packages, configured to run
-# efficiently on CPU architectures.
-
 FROM python:3.12-slim
 
-# Set working directory
+WORKDIR /app
 
-
-# Install system dependencies and development tools
+# Install necessary build tools
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
-    curl \
-    git \
-    libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install poetry==1.8.5
-
-# Copy dependency files
+# Copy application code
+COPY src/ /app/src/
+COPY app/ /app/app/
+COPY data/tests/ /app/data/tests/
+COPY tests/application/training/data/ /app/tests/application/training/data/
 COPY pyproject.toml poetry.lock* ./
 
-RUN poetry config virtualenvs.create false
+# Create directories first
+RUN mkdir -p /app/data /app/model_artifacts /app/results
 
-# Install dependencies
-RUN poetry install --no-root --no-interaction
+# Copy data files 
+COPY data/phonreps.csv /app/data/
+
+# Install Poetry and dependencies (excluding GPU)
+RUN pip install poetry==1.8.5 && \
+    poetry config virtualenvs.create false && \
+    poetry install
+
+# Download NLTK data
 RUN python -m nltk.downloader cmudict
-# Copy the rest of the application code
-COPY . .
 
+# Set environment variables for memory optimization
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONOPTIMIZE=2
 
-ENTRYPOINT ["poetry", "run", "python", "-m", "app.bin.docker_entry"]
+# Set entry point
+ENTRYPOINT ["python", "-m", "app.bin.docker_entry"]

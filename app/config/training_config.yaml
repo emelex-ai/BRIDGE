@@ -12,3 +12,4 @@ use_wandb: true
 weight_decay: 0.01
 checkpoint_path: 
 test_data_path: 'tests/adjusted_ewfg.pkl'
+num_chunks: 1 # Set gt 1 for accumulated gradients (num chunks to split the batch size into)

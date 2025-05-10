@@ -1,17 +1,22 @@
 import json
 import os
+import gc
+from typing import Union
+import time
+
 import torch
 from tqdm import tqdm
+import logging
+
 from src.application.training.ortho_metrics import calculate_orth_metrics
 from src.application.training.phon_metrics import calculate_phon_metrics
 from src.domain.datamodels import TrainingConfig
 from src.domain.dataset import BridgeDataset
 from src.domain.model import Model
-from typing import Union
-import time
 from src.utils.device_manager import device_manager
-
 from src.infra.metrics.metrics_logger import MetricsLogger
+
+min_interval = 1
 
 
 class TrainingPipeline:
@@ -23,6 +28,8 @@ class TrainingPipeline:
         dataset: BridgeDataset,
         metrics_logger: MetricsLogger,
     ):
+        self.logger = logging.getLogger(__name__)
+        self.metrics_logger = metrics_logger
         self.training_config = training_config
         self.dataset = dataset
         self.test_dataset = None
@@ -45,7 +52,6 @@ class TrainingPipeline:
         self.start_epoch = 0
         if training_config.checkpoint_path:
             self.load_model(training_config.checkpoint_path)
-        self.metrics_logger = metrics_logger
 
     def create_data_slices(self):
         cutpoint = int(len(self.dataset) * self.training_config.train_test_split)
@@ -156,42 +162,146 @@ class TrainingPipeline:
 
         return metrics
 
-    def single_step(self, dataset: BridgeDataset, batch_slice: slice, calculate_metrics: bool = False) -> dict:
-        batch = dataset[batch_slice]
-        orthography, phonology = batch["orthographic"], batch["phonological"]
+    def single_step(
+        self,
+        dataset: BridgeDataset,
+        batch_slice: slice,
+        calculate_metrics: bool = False,
+    ) -> dict:
+        num_chunks = (
+            self.training_config.num_chunks if self.training_config.num_chunks else 1
+        )
+        # Fast path when not using accumulated gradients
+        if num_chunks == 1:
+            # Zero gradients
+            if self.model.training:
+                self.optimizer.zero_grad()
 
-        # Forward pass
-        logits = self.forward(orthography, phonology)
+            # Process the entire batch at once
+            batch = dataset[batch_slice]
+            orthography, phonology = batch["orthographic"], batch["phonological"]
 
-        # Compute loss
-        metrics = self.compute_loss(logits, orthography, phonology)
-        metrics.update({"word": json.dumps(dataset.words[batch_slice])})
-        # Backpropagation only if training
+            # Forward pass
+            logits = self.forward(orthography, phonology)
+
+            # Compute loss (no scaling needed)
+            metrics = self.compute_loss(logits, orthography, phonology)
+
+            # Backward pass
+            if self.model.training:
+                metrics["loss"].backward()
+                self.optimizer.step()
+                self.optimizer.zero_grad()  # Reset gradients after update
+
+            # Calculate additional metrics if needed
+            if calculate_metrics:
+                metrics.update(self.compute_metrics(logits, orthography, phonology))
+
+            if self.metrics_logger.metrics_config.batch_metrics:
+                self.metrics_logger.log_metrics(metrics, "BATCH")
+
+            metrics.update({"word": json.dumps(dataset.words[batch_slice])})
+            return metrics
+
+        # Original accumulated gradients path for num_chunks > 1
+        accumulated_metrics = {}
+        sub_slices = self._create_sub_slices(batch_slice, num_chunks=num_chunks)
+
+        # Zero gradients once at the beginning
+        self.optimizer.zero_grad()
+
+        for sub_slice in sub_slices:
+            batch = dataset[sub_slice]
+            orthography, phonology = batch["orthographic"], batch["phonological"]
+
+            # Forward pass
+            logits = self.forward(orthography, phonology)
+
+            # Compute loss with scaled factor
+            metrics = self.compute_loss(logits, orthography, phonology)
+            loss = metrics.get("loss") / num_chunks  # Scale loss by number of chunks
+
+            # Backward pass (accumulate gradients)
+            if self.model.training:
+                loss.backward()
+
+            # Update metrics
+            if not accumulated_metrics:
+                accumulated_metrics = {k: v for k, v in metrics.items()}
+            else:
+                for k, v in metrics.items():
+                    if isinstance(v, torch.Tensor) and k != "word":
+                        accumulated_metrics[k] += v
+
+        # Only step optimizer after processing all sub-batches
         if self.model.training:
-            metrics.get("loss").backward()
             self.optimizer.step()
             self.optimizer.zero_grad()
+
         if calculate_metrics:
-            metrics.update(self.compute_metrics(logits, orthography, phonology))
+            accumulated_metrics.update(
+                self.compute_metrics(logits, orthography, phonology)
+            )
+
         if self.metrics_logger.metrics_config.batch_metrics:
-            self.metrics_logger.log_metrics(metrics, "BATCH")
-        return metrics
+            self.metrics_logger.log_metrics(accumulated_metrics, "BATCH")
+
+        accumulated_metrics.update({"word": json.dumps(dataset.words[batch_slice])})
+        return accumulated_metrics
+
+    def _create_sub_slices(self, batch_slice: slice, num_chunks: int) -> list[slice]:
+        """Split a slice into smaller slices."""
+        start, stop = batch_slice.start, batch_slice.stop
+        size = stop - start
+        chunk_size = max(1, size // num_chunks)
+
+        sub_slices = []
+        for i in range(0, size, chunk_size):
+            sub_start = start + i
+            sub_stop = min(start + i + chunk_size, stop)
+            sub_slices.append(slice(sub_start, sub_stop))
+
+        return sub_slices
 
     def train_single_epoch(self, epoch: int) -> dict:
         self.model.train()
         start = time.time()
+        last_update_time = time.time()
         cutpoint = int(len(self.dataset) * self.training_config.train_test_split)
-        #self.dataset.shuffle(cutpoint)
-        progress_bar = tqdm(self.train_slices, desc=f"Training Epoch {epoch+1}")
+        # self.dataset.shuffle(cutpoint)
+        progress_bar = tqdm(
+            self.train_slices,
+            desc=f"Training Epoch {epoch+1}",
+            mininterval=min_interval,
+        )
         total_metrics = {}
         for step, batch_slice in enumerate(progress_bar):
-            metrics = self.single_step(self.dataset, batch_slice, self.metrics_logger.metrics_config.training_metrics)
-            #metrics = self.single_step(batch_slice, False)
-            progress_bar.set_postfix(
-                {key: f"{value:.4f}" for key, value in metrics.items() if not isinstance(value, str)}
+            # Run garbage collection to free up memory
+            if step % 10 == 0:
+                gc.collect()
+
+            metrics = self.single_step(
+                self.dataset,
+                batch_slice,
+                self.metrics_logger.metrics_config.training_metrics,
             )
+            # metrics = self.single_step(batch_slice, False)
+            current_time = time.time()
+            if current_time - last_update_time > min_interval:
+                progress_bar.set_postfix(
+                    {
+                        key: f"{value:.4f}"
+                        for key, value in metrics.items()
+                        if not isinstance(value, str)
+                    }
+                )
+                last_update_time = current_time
             if not total_metrics:
-                total_metrics = {key: value for key, value in metrics.items() if not isinstance(value, str)}
+                total_metrics = {
+                    key: value
+                    for key, value in metrics.items()
+                    if not isinstance(value, str)
+                }
             else:
                 for key in total_metrics.keys():
                     total_metrics[key] += metrics[key]
@@ -208,14 +318,31 @@ class TrainingPipeline:
     def validate_single_epoch(self, epoch: int) -> dict:
         self.model.eval()
         start = time.time()
-
-        progress_bar = tqdm(self.val_slices, desc=f"Validating Epoch {epoch+1}")
+        last_update_time = time.time()
+        progress_bar = tqdm(
+            self.val_slices,
+            desc=f"Validating Epoch {epoch+1}",
+            mininterval=min_interval,
+        )
 
         with torch.no_grad():
             total_metrics = {}
             for step, batch_slice in enumerate(progress_bar):
-                metrics = self.single_step(self.dataset, batch_slice, self.metrics_logger.metrics_config.validation_metrics)
-                progress_bar.set_postfix({key: f"{value:.4f}" for key, value in metrics.items() if not isinstance(value, str)} )
+                metrics = self.single_step(
+                    self.dataset,
+                    batch_slice,
+                    self.metrics_logger.metrics_config.validation_metrics,
+                )
+                current_time = time.time()
+                if current_time - last_update_time > min_interval:
+                    progress_bar.set_postfix(
+                        {
+                            key: f"{value:.4f}"
+                            for key, value in metrics.items()
+                            if not isinstance(value, str)
+                        }
+                    )
+                    last_update_time = current_time
                 if not total_metrics:
                     total_metrics = metrics
                 else:
@@ -230,27 +357,53 @@ class TrainingPipeline:
             }
         )
         return {"valid_" + str(key): val for key, val in total_metrics.items()}
-    
+
     def test_single_epoch(self, epoch: int) -> dict:
         self.model.eval()
         start = time.time()
+        last_update_time = time.time()
         if self.test_dataset is None:
             raise ValueError("Test dataset not provided in the configuration.")
 
         # Create test slices based on batch size
         test_slices = [
-            slice(i, min(i + self.training_config.batch_size_train, len(self.test_dataset)))
-            for i in range(0, len(self.test_dataset), self.training_config.batch_size_train)
+            slice(
+                i,
+                min(i + self.training_config.batch_size_train, len(self.test_dataset)),
+            )
+            for i in range(
+                0, len(self.test_dataset), self.training_config.batch_size_train
+            )
         ]
-        progress_bar = tqdm(test_slices, desc=f"Testing Epoch {epoch+1}")
-        
+        progress_bar = tqdm(
+            test_slices, desc=f"Testing Epoch {epoch+1}", mininterval=min_interval
+        )
+
         with torch.no_grad():
             total_metrics = {}
             for step, batch_slice in enumerate(progress_bar):
-                metrics = self.single_step(self.test_dataset, batch_slice, self.metrics_logger.metrics_config.validation_metrics)
-                progress_bar.set_postfix({key: f"{value:.4f}" for key, value in metrics.items() if not isinstance(value, str)} )
+                metrics = self.single_step(
+                    self.test_dataset,
+                    batch_slice,
+                    self.metrics_logger.metrics_config.validation_metrics,
+                )
+
+                current_time = time.time()
+                if current_time - last_update_time > min_interval:
+                    progress_bar.set_postfix(
+                        {
+                            key: f"{value:.4f}"
+                            for key, value in metrics.items()
+                            if not isinstance(value, str)
+                        }
+                    )
+                    last_update_time = current_time
                 if not total_metrics:
-                    total_metrics = {key: value for key, value in metrics.items() if not isinstance(value, str)}
+                    total_metrics = {
+                        key: value
+                        for key, value in metrics.items()
+                        if not isinstance(value, str)
+                    }
                 else:
                     for key in total_metrics.keys():
                         total_metrics[key] += metrics[key]
@@ -263,7 +416,6 @@ class TrainingPipeline:
             }
         )
         return {"test_" + str(key): val for key, val in total_metrics.items()}
-                
 
     def run_train_val_loop(self, run_name: str):
         for epoch in range(self.start_epoch, self.training_config.num_epochs):
@@ -295,7 +447,7 @@ class TrainingPipeline:
                 model_path,
             )
             if self.dataset.gcs_client:
-                index = int(os.environ['CLOUD_RUN_TASK_INDEX'])+1
+                index = int(os.environ["CLOUD_RUN_TASK_INDEX"]) + 1
                 self.dataset.gcs_client.upload_file(
                     os.environ["BUCKET_NAME"],
                     model_path,
@@ -304,10 +456,26 @@ class TrainingPipeline:
             self.metrics_logger.save()
 
     def load_model(self, model_path: str):
-        checkpoint = torch.load(model_path)
-        self.model.load_state_dict(checkpoint["model_state_dict"])
-        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        self.start_epoch = checkpoint["epoch"]
+        try:
+            checkpoint = torch.load(model_path)
+            self.model.load_state_dict(checkpoint["model_state_dict"])
+            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+            # Set the correct starting epoch
+            if "epoch" in checkpoint:
+                self.start_epoch = checkpoint["epoch"] + 1  # Start from the next epoch
+                self.logger.info(f"Resuming training from epoch {self.start_epoch}")
+            else:
+                self.logger.warning(
+                    "Checkpoint doesn't contain epoch information, starting from 0"
+                )
+                self.start_epoch = 0
+
+            return True
+        except Exception as e:
+            self.logger.error(f"Error loading checkpoint {model_path}: {e}")
+            self.start_epoch = 0
+            return False
 
     def transfer_partial_model_parameters(
         self, pretrained_model_path: str, module_prefixes: list[str]
