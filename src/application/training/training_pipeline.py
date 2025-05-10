@@ -28,6 +28,8 @@ class TrainingPipeline:
         dataset: BridgeDataset,
         metrics_logger: MetricsLogger,
     ):
+        self.logger = logging.getLogger(__name__)
+        self.metrics_logger = metrics_logger
         self.training_config = training_config
         self.dataset = dataset
         self.test_dataset = None
@@ -50,8 +52,6 @@ class TrainingPipeline:
         self.start_epoch = 0
         if training_config.checkpoint_path:
             self.load_model(training_config.checkpoint_path)
-        self.metrics_logger = metrics_logger
-        self.logger = logging.getLogger(__name__)
 
     def create_data_slices(self):
         cutpoint = int(len(self.dataset) * self.training_config.train_test_split)
