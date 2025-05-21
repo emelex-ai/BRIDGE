@@ -93,7 +93,7 @@ class BridgeTokenizer:
         # Get phonological encoding if needed
         phono_encoding = None
         if modality_filter in ["both", "phonology"]:
-            phono_encoding = self.phoneme_tokenizer.encode(text)
+            phono_encoding = self.phoneme_tokenizer.encode(text, language_map=language_map)
 
             # If phonological encoding fails and it's required, return None
             if phono_encoding is None:

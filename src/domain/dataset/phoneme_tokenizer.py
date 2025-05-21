@@ -19,6 +19,7 @@ class PhonemeTokenizer:
     def __init__(
         self,
         max_cache_size: int = 10000,
+        lang_codes: list[str] = None,
         custom_cmudict_path: str | None = None,
     ):
         # Set device - defaulting to CPU if None provided
@@ -55,7 +56,7 @@ class PhonemeTokenizer:
                 logger.warning(f"Custom CMU dict not found at {custom_cmudict_path}")
 
         # Load multilingual phonological lexicon dict as foundation
-        self.pronunciation_dict = self._load_multilingual_vocab()
+        self.pronunciation_dict = self._load_multilingual_vocab(lang_codes=lang_codes)
 
         # Overwrite any entries in the lexicon with custom pronunciations
         for word, langs in custom_pron.items():
@@ -132,7 +133,7 @@ class PhonemeTokenizer:
         lookup_word = word.lower()
         if lookup_word in self.pronunciation_dict:
             lang_code = language.lower()
-            # Check if pronunciation exists for requests language
+            # Check if pronunciation exists for requested language
             if lang_code in self.pronunciation_dict[lookup_word]:
                 return self.pronunciation_dict[lookup_word][lang_code]
             # Fall back to English if requested language not available
