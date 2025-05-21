@@ -9,11 +9,8 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy application code
-COPY src/ /app/src/
-COPY app/ /app/app/
-COPY data/tests/ /app/data/tests/
-COPY tests/application/training/data/ /app/tests/application/training/data/
-COPY pyproject.toml poetry.lock* ./
+COPY . /app/
+
 
 # Create directories first
 RUN mkdir -p /app/data /app/model_artifacts /app/results
@@ -35,4 +32,4 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONOPTIMIZE=2
 
 # Set entry point
-ENTRYPOINT ["python", "-m", "app.bin.docker_entry"]
+ENTRYPOINT ["python", "-m", "app.bin.finetuning_docker_entry"]

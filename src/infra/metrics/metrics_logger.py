@@ -70,7 +70,7 @@ class CSVMetricsLogger(MetricsLogger):
             if isinstance(metrics[metric], torch.Tensor):
                 metrics[metric] = metrics[metric].item()
         # First log should include header columns
-        file_name = f"results/{self.metrics_config.filename.split(".")[0]}_{level}.{self.metrics_config.filename.split(".")[1]}"
+        file_name = f"results/{self.metrics_config.filename.split('.')[0]}_{level}.{self.metrics_config.filename.split('.')[1]}"
         if not self.opened[level]:
             with open(file_name, "w") as f:
                 f.write(",".join(metrics.keys()) + "\n")
@@ -91,10 +91,12 @@ class CSVGCPMetricsLogger(CSVMetricsLogger):
 
     def save(self) -> None:
         index = int(os.environ["CLOUD_RUN_TASK_INDEX"]) + 1
+        pretraining_index = index // 22 + 1
+        finetuning_index = index % 22
         for level in self.opened:
             if self.opened[level]:
                 file_name = f"results/{self.metrics_config.filename.split('.')[0]}_{level}.{self.metrics_config.filename.split('.')[1]}"
-                self.gcs_client.upload_file(os.environ["BUCKET_NAME"], file_name, f"pretraining/{index}/{file_name}")
+                self.gcs_client.upload_file(os.environ["BUCKET_NAME"], file_name, f"finetuning/{finetuning_index}/{file_name}/{pretraining_index}/{file_name}")
 
 
 def metrics_logger_factory(metrics_config: MetricsConfig) -> MetricsLogger:

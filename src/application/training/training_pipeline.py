@@ -8,6 +8,7 @@ import torch
 from tqdm import tqdm
 import logging
 
+from app.bin import pretraining
 from src.application.training.ortho_metrics import calculate_orth_metrics
 from src.application.training.phon_metrics import calculate_phon_metrics
 from src.domain.datamodels import TrainingConfig
@@ -448,10 +449,12 @@ class TrainingPipeline:
             )
             if self.dataset.gcs_client:
                 index = int(os.environ["CLOUD_RUN_TASK_INDEX"]) + 1
+                pretraining_index = index // 22 + 1
+                finetuning_index = index % 22
                 self.dataset.gcs_client.upload_file(
                     os.environ["BUCKET_NAME"],
                     model_path,
-                    f"pretraining/{index}/models/model_epoch_{epoch}.pth",
+                    f"finetuning/{finetuning_index}/models/{pretraining_index}/model_epoch_{epoch}.pth",
                 )
             self.metrics_logger.save()
 
@@ -463,8 +466,9 @@ class TrainingPipeline:
 
             # Set the correct starting epoch
             if "epoch" in checkpoint:
-                self.start_epoch = checkpoint["epoch"] + 1  # Start from the next epoch
-                self.logger.info(f"Resuming training from epoch {self.start_epoch}")
+                if self.training_config.checkpoint_path and 'pretraining' not in self.training_config.checkpoint_path:
+                    self.start_epoch = checkpoint["epoch"] + 1  # Start from the next epoch
+                    self.logger.info(f"Resuming training from epoch {self.start_epoch}")
             else:
                 self.logger.warning(
                     "Checkpoint doesn't contain epoch information, starting from 0"

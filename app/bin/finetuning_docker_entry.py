@@ -92,7 +92,7 @@ def find_latest_pretrained_checkpoint(
 
             # Download the latest checkpoint
             checkpoint_path = (
-                f"tmp_checkpoints/task_{task_index}_epoch_{latest_epoch}.pth"
+                f"tmp_checkpoints/pretraining_task_{task_index}_epoch_{latest_epoch}.pth"
             )
             logger.info(
                 f"Downloading latest checkpoint (epoch {latest_epoch}) to {checkpoint_path}"
@@ -127,10 +127,10 @@ def load_configs():
 
         # Check if config exists in GCS and download if necessary
         bucket_name = os.environ["BUCKET_NAME"]
-        if storage_interface.exists(bucket_name, f"pretraining/{key}.yaml"):
+        if storage_interface.exists(bucket_name, f"finetuning/{key}.yaml"):
             logger.info(f"Downloading config from GCS: {key}.yaml")
             storage_interface.download_file(
-                bucket_name, f"pretraining/{key}.yaml", config_filename
+                bucket_name, f"finetuning/{key}.yaml", config_filename
             )
 
         # Initialize handler and get config
@@ -140,8 +140,9 @@ def load_configs():
 
     # Load dataset for current job task
     index = int(os.environ["CLOUD_RUN_TASK_INDEX"]) + 1
+    pretraining_index, finetuning_index = task_index_to_run(index)
     if not storage_interface.exists(
-        os.environ["BUCKET_NAME"], f"pretraining/{index}/data_{index}.csv"
+        os.environ["BUCKET_NAME"], f"finetuning/{finetuning_index}/{finetuning_index}.csv"
     ):
         logger.error(
             f"Data file not found in GCS: pretraining/{index}/data_{index}.csv"
@@ -150,7 +151,7 @@ def load_configs():
             f"Data file not found in GCS: pretraining/{index}/data_{index}.csv"
         )
 
-    data_path = f"gs://{os.environ['BUCKET_NAME']}/pretraining/{index}/data_{index}.csv"
+    data_path = f"gs://{os.environ['BUCKET_NAME']}/finetuning/{finetuning_index}/{finetuning_index}.csv"
     logger.info(f"Setting dataset path to: {data_path}")
     configs["dataset_config"].dataset_filepath = data_path
 
