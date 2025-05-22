@@ -454,7 +454,7 @@ class TrainingPipeline:
                 self.dataset.gcs_client.upload_file(
                     os.environ["BUCKET_NAME"],
                     model_path,
-                    f"finetuning/{finetuning_index}/models/{pretraining_index}/model_epoch_{epoch}.pth",
+                    f"finetuning/{finetuning_index}/{pretraining_index}/models/model_epoch_{epoch}.pth",
                 )
             self.metrics_logger.save()
 

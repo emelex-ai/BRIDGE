@@ -96,7 +96,7 @@ class CSVGCPMetricsLogger(CSVMetricsLogger):
         for level in self.opened:
             if self.opened[level]:
                 file_name = f"results/{self.metrics_config.filename.split('.')[0]}_{level}.{self.metrics_config.filename.split('.')[1]}"
-                self.gcs_client.upload_file(os.environ["BUCKET_NAME"], file_name, f"finetuning/{finetuning_index}/{file_name}/{pretraining_index}/{file_name}")
+                self.gcs_client.upload_file(os.environ["BUCKET_NAME"], file_name, f"finetuning/{finetuning_index}/{pretraining_index}/results/{file_name}")
 
 
 def metrics_logger_factory(metrics_config: MetricsConfig) -> MetricsLogger:

@@ -32,6 +32,70 @@ def task_index_to_run(task_index: int) -> Tuple[int, int]:
     return pretraining_index, finetuning_index
 
 
+def find_latest_finetuned_checkpoint(bucket_name: str, task_index: int):
+    """
+    Find the latest checkpoint for a specific task in GCS.
+    Args:
+        bucket_name: The name of the GCS bucket
+        task_index: The task index to look for checkpoints
+    Returns:
+        Tuple containing (checkpoint_path, latest_epoch) or (None, -1) if no checkpoint found
+    """
+    try:
+        pretraining_index, finetuning_index = task_index_to_run(task_index)
+        # Initialize the GCS client
+        gcs_client = GCSClient(project="bridge-457501")
+
+        # Define the prefix for model checkpoints
+        prefix = (
+            f"finetuning/{finetuning_index}/{pretraining_index}/models/model_epoch_"
+        )
+        logger.info(f"Looking for checkpoints with prefix: {prefix}")
+        # Get underlying Google Cloud Storage client and bucket
+        client = gcs_client.client
+        bucket = client.bucket(bucket_name)
+        # List all checkpoint blobs with the prefix
+        blobs = list(bucket.list_blobs(prefix=prefix))
+        logger.info(f"Found {len(blobs)} potential checkpoint files")
+        if not blobs:
+            logger.info("No existing checkpoints found")
+            return None, -1
+        # Extract epoch numbers from blob names
+        latest_epoch = -1
+        latest_blob = None
+        for blob in blobs:
+            # Extract epoch number from blob name
+            file_name = blob.name.split("/")[-1]
+            try:
+                epoch = int(file_name.replace("model_epoch_", "").replace(".pth", ""))
+                if epoch > latest_epoch:
+                    latest_epoch = epoch
+                    latest_blob = blob
+            except ValueError:
+                logger.warning(f"Couldn't parse epoch number from {file_name}")
+                continue
+        if latest_epoch != -1:
+            logger.info(f"Found checkpoint for epoch {epoch}")
+        else:
+            logger.info("No valid checkpoints found. Initiating training from epoch 0")
+        if latest_blob:
+            # Create directory if it doesn't exist
+            os.makedirs("tmp_checkpoints", exist_ok=True)
+            # Download the latest checkpoint
+            checkpoint_path = (
+                f"tmp_checkpoints/finetuning_task_{task_index}_epoch_{latest_epoch}.pth"
+            )
+            logger.info(
+                f"Downloading latest checkpoint (epoch {latest_epoch}) to {checkpoint_path}"
+            )
+            latest_blob.download_to_filename(checkpoint_path)
+            return checkpoint_path, latest_epoch
+        return None, -1
+    except Exception as e:
+        logger.exception(f"Error finding latest checkpoint: {e}")
+        return None, -1
+
+
 def find_latest_pretrained_checkpoint(
     bucket_name: str, task_index: int
 ) -> Tuple[Optional[str], int]:
@@ -91,9 +155,7 @@ def find_latest_pretrained_checkpoint(
             os.makedirs("tmp_checkpoints", exist_ok=True)
 
             # Download the latest checkpoint
-            checkpoint_path = (
-                f"tmp_checkpoints/pretraining_task_{task_index}_epoch_{latest_epoch}.pth"
-            )
+            checkpoint_path = f"tmp_checkpoints/pretraining_task_{task_index}_epoch_{latest_epoch}.pth"
             logger.info(
                 f"Downloading latest checkpoint (epoch {latest_epoch}) to {checkpoint_path}"
             )
@@ -142,7 +204,8 @@ def load_configs():
     index = int(os.environ["CLOUD_RUN_TASK_INDEX"]) + 1
     pretraining_index, finetuning_index = task_index_to_run(index)
     if not storage_interface.exists(
-        os.environ["BUCKET_NAME"], f"finetuning/{finetuning_index}/{finetuning_index}.csv"
+        os.environ["BUCKET_NAME"],
+        f"finetuning/{finetuning_index}/{finetuning_index}.csv",
     ):
         logger.error(
             f"Data file not found in GCS: pretraining/{index}/data_{index}.csv"
@@ -176,7 +239,13 @@ def main():
         logger.info(
             f"Looking for checkpoints in bucket: {bucket_name} for task {task_index}"
         )
-        checkpoint_path, latest_epoch = find_latest_pretrained_checkpoint(bucket_name, task_index)
+        checkpoint_path, latest_epoch = find_latest_finetuned_checkpoint(
+            bucket_name, task_index
+        )
+        if not checkpoint_path:
+            checkpoint_path, latest_epoch = find_latest_pretrained_checkpoint(
+                bucket_name, task_index
+            )
 
         # Update training config with checkpoint path if found
         if checkpoint_path and os.path.exists(checkpoint_path):
