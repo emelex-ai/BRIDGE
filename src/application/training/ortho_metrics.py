@@ -1,4 +1,5 @@
 import torch
+from src.domain.datamodels import EncodingComponent
 
 
 def calculate_orth_word_accuracy(
@@ -21,10 +22,10 @@ def calculate_letter_wise_accuracy(
 
 
 def calculate_orth_metrics(
-    logits: dict[str, torch.Tensor], orthography: dict[str, torch.Tensor]
+    logits: dict[str, torch.Tensor], orthography: EncodingComponent
 ) -> dict[str, float]:
     orth_pred = torch.argmax(logits["orth"], dim=1)
-    orth_true = orthography["enc_input_ids"][:, 1:]
+    orth_true = orthography.enc_input_ids[:, 1:]
     orth_valid_mask = orth_true != 4
     masked_orth_true = orth_true[orth_valid_mask]
     masked_orth_pred = orth_pred[orth_valid_mask]

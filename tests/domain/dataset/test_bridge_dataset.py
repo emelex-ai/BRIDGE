@@ -11,9 +11,8 @@ import pickle
 import json
 from unittest.mock import Mock, patch
 
-from src.domain.datamodels import DatasetConfig
+from src.domain.datamodels import BridgeEncoding, EncodingComponent
 from src.domain.dataset import BridgeDataset, BridgeTokenizer
-from src.domain.datamodels import BridgeEncoding
 from src.infra.clients.gcp.gcs_client import GCSClient
 
 
@@ -91,7 +90,6 @@ def dataset_config(mock_dataset_file, mock_cmudict_file):
 
 def create_test_encoding(word: str, device: torch.device) -> BridgeEncoding:
     """Helper function to create test BridgeEncoding instances with new structure."""
-    from src.domain.datamodels.encodings import EncodingComponent
 
     if word == "cat":
         # Create orthographic encoding component
@@ -253,26 +251,33 @@ def test_dataset_length(bridge_dataset):
 def test_get_item_by_index(bridge_dataset):
     """Test accessing items by numerical index."""
     item = bridge_dataset[0]
-    assert isinstance(item, dict)
-    assert set(item.keys()) == {"orthographic", "phonological"}
+    assert isinstance(item, BridgeEncoding)
+    assert hasattr(item, "orthographic")
+    assert hasattr(item, "phonological")
+    assert isinstance(item.orthographic, EncodingComponent)
+    assert isinstance(item.phonological, EncodingComponent)
 
     # Verify tensor properties
-    orth = item["orthographic"]
-    assert torch.is_tensor(orth["enc_input_ids"])
-    assert orth["enc_input_ids"].shape == (1, 5)
-    assert orth["enc_input_ids"].device == bridge_dataset.device
+    orth = item.orthographic
+    assert torch.is_tensor(orth.enc_input_ids)
+    assert orth.enc_input_ids.shape == (1, 5)
+    assert orth.enc_input_ids.device == bridge_dataset.device
 
-    phon = item["phonological"]
-    assert isinstance(phon["enc_input_ids"], list)
-    assert all(torch.is_tensor(t) for t in phon["enc_input_ids"][0])
+    phon = item.phonological
+    assert isinstance(phon.enc_input_ids, list)
+    assert all(torch.is_tensor(t) for t in phon.enc_input_ids[0])
 
 
 def test_get_item_by_word(bridge_dataset):
     """Test accessing items by word string."""
     item = bridge_dataset["cat"]
-    assert isinstance(item, dict)
+    assert isinstance(item, BridgeEncoding)
+    assert hasattr(item, "orthographic")
+    assert hasattr(item, "phonological")
+    assert isinstance(item.orthographic, EncodingComponent)
+    assert isinstance(item.phonological, EncodingComponent)
     assert torch.equal(
-        item["orthographic"]["enc_input_ids"],
+        item.orthographic.enc_input_ids,
         torch.tensor([[0, 18, 16, 35, 1]], device=bridge_dataset.device),
     )
 
@@ -280,10 +285,14 @@ def test_get_item_by_word(bridge_dataset):
 def test_get_item_by_slice(bridge_dataset):
     """Test accessing multiple items using slice notation."""
     items = bridge_dataset[0:2]
-    assert isinstance(items, dict)
+    assert isinstance(items, BridgeEncoding)
+    assert hasattr(items, "orthographic")
+    assert hasattr(items, "phonological")
+    assert isinstance(items.orthographic, EncodingComponent)
+    assert isinstance(items.phonological, EncodingComponent)
     # We should get both items in the batch
-    assert items["orthographic"]["enc_input_ids"].shape[0] == 2
-    assert items["phonological"]["enc_pad_mask"].shape[0] == 2
+    assert items.orthographic.enc_input_ids.shape[0] == 2
+    assert items.phonological.enc_pad_mask.shape[0] == 2
 
 
 def test_invalid_index_access(bridge_dataset):
@@ -344,11 +353,11 @@ def test_batch_consistency(bridge_dataset):
 
     # Verify batch is properly formatted version of single
     assert torch.equal(
-        single["orthographic"]["enc_input_ids"],
-        batch["orthographic"]["enc_input_ids"],
+        single.orthographic.enc_input_ids,
+        batch.orthographic.enc_input_ids,
     )
     assert torch.equal(
-        single["phonological"]["enc_pad_mask"], batch["phonological"]["enc_pad_mask"]
+        single.phonological.enc_pad_mask, batch.phonological.enc_pad_mask
     )
 
 
@@ -437,14 +446,17 @@ def test_integration_with_training_pipeline(bridge_dataset):
     batch = bridge_dataset[0:2]
 
     # Verify batch format meets training pipeline requirements
-    assert isinstance(batch, dict)
-    assert set(batch.keys()) == {"orthographic", "phonological"}
+    assert isinstance(batch, BridgeEncoding)
+    assert hasattr(batch, "orthographic")
+    assert hasattr(batch, "phonological")
+    assert isinstance(batch.orthographic, EncodingComponent)
+    assert isinstance(batch.phonological, EncodingComponent)
     assert all(
-        key in batch["orthographic"]
+        hasattr(batch.orthographic, key)
         for key in ["enc_input_ids", "enc_pad_mask", "dec_input_ids", "dec_pad_mask"]
     )
     assert all(
-        key in batch["phonological"]
+        hasattr(batch.phonological, key)
         for key in [
             "enc_input_ids",
             "enc_pad_mask",

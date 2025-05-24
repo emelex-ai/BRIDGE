@@ -227,8 +227,7 @@ class BridgeDataset:
             if encoding is None:
                 raise RuntimeError(f"Failed to encode word: {word}")
 
-            # Convert single encoding to batch format
-            return encoding.to_dict()
+            return encoding
 
         elif isinstance(idx, slice):
             selected_words = self.words[idx]
@@ -241,8 +240,7 @@ class BridgeDataset:
             if not encodings:
                 raise ValueError("No valid encodings in slice")
 
-            # Merge encodings into batch
-            return encodings.to_dict()
+            return encodings
 
         elif isinstance(idx, str):
             if idx not in self.words:
@@ -252,7 +250,7 @@ class BridgeDataset:
             if encoding is None:
                 raise RuntimeError(f"Failed to encode word: {idx}")
 
-            return encoding.to_dict()
+            return encoding
 
         else:
             raise TypeError(f"Invalid index type: {type(idx)}")
