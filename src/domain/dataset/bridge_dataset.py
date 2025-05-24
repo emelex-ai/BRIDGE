@@ -204,7 +204,9 @@ class BridgeDataset:
         """Return the number of valid words in the dataset."""
         return len(self.words)
 
-    def __getitem__(self, idx: Union[int, slice, str]) -> dict[str, dict[str, Any]]:
+    def __getitem__(
+        self, idx: Union[int, slice, str, list[str]]
+    ) -> dict[str, dict[str, Any]]:
         """
         Retrieve encoded data for specified index or slice.
         Maintains compatibility with training pipeline expectations.
@@ -214,6 +216,7 @@ class BridgeDataset:
                 - int: Single word index
                 - slice: Range of word indices
                 - str: Specific word
+                - list[str]: List of words:w
 
         Returns:
             Dictionary containing orthographic and phonological encodings
@@ -227,8 +230,7 @@ class BridgeDataset:
             if encoding is None:
                 raise RuntimeError(f"Failed to encode word: {word}")
 
-            # Convert single encoding to batch format
-            return encoding.to_dict()
+            return encoding
 
         elif isinstance(idx, slice):
             selected_words = self.words[idx]
@@ -241,8 +243,7 @@ class BridgeDataset:
             if not encodings:
                 raise ValueError("No valid encodings in slice")
 
-            # Merge encodings into batch
-            return encodings.to_dict()
+            return encodings
 
         elif isinstance(idx, str):
             if idx not in self.words:
@@ -252,7 +253,16 @@ class BridgeDataset:
             if encoding is None:
                 raise RuntimeError(f"Failed to encode word: {idx}")
 
-            return encoding.to_dict()
+            return encoding
+
+        elif isinstance(idx, list):
+            if not all(isinstance(i, str) for i in idx):
+                raise TypeError("List indices must be strings")
+            encodings = self._get_encoding(idx)
+            if encodings is None:
+                raise RuntimeError(f"Failed to encode words: {', '.join(idx)}")
+
+            return encodings
 
         else:
             raise TypeError(f"Invalid index type: {type(idx)}")

@@ -465,11 +465,11 @@ class Model(nn.Module):
         Returns:
             feature_presence: A (B, num_features) binary tensor (0 or 1).
             out_tokens: A list of lists, each inner list contains the active feature indices
-                        for that sample. If all features are off, we default to [33].
+                        for that sample. If all features are off, we default to [PAD].
 
-        Sample from phonological decoder output. last_token_probs is a tensor of shape (batch_size, 2, 33)
-        where 2 represents the probability dimension and 33 is the number of possible phonological vector
-        features (including BOS, EOS, PAD). For the probabilitye dimension (2) the zeroth index is the probability
+        Sample from phonological decoder output. last_token_probs is a tensor of shape (batch_size, 2, phon_vocab_size),
+        where 2 represents the probability dimension and phon_vocab_size is the number of possible phonological vector
+        features (including BOS, EOS, UNK, SPC). For the probability dimension (2) the zeroth index is the probability
         of the feature being off, and the first index is the probability of the feature being on.
 
         For example [0.6, 0.4] -> [feature off, feature on] and in this scenario the feature is off
@@ -499,7 +499,7 @@ class Model(nn.Module):
         )
         for i in range(len(active_features)):
             if empty_masks[i]:
-                active_features[i] = [33]  # PAD token
+                active_features[i] = [self.dataset.tokenizer.phon_pad_id]  # PAD token
 
         return feature_presence, active_features
 
@@ -535,7 +535,6 @@ class Model(nn.Module):
 
         # Add initial probability placeholders for the BOS token
         initial_prob = torch.zeros(
-            (batch_size, self.orthographic_vocabulary_size),
             (batch_size, self.orthographic_vocabulary_size),
             device=self.device,
         )
@@ -657,7 +656,8 @@ class Model(nn.Module):
 
             # Check for early stopping (if all sequences have hit EOS)
             if all(
-                any(32 in token for token in tokens) for tokens in generated_phon_tokens
+                any(self.dataset.tokenizer.phon_eos_id in token for token in tokens)
+                for tokens in generated_phon_tokens
             ):
                 break
 
@@ -763,7 +763,13 @@ class Model(nn.Module):
                 mask = self.generate_triangular_mask(self.max_phon_seq_len)
 
                 generated_phon_tokens = [
-                    [torch.tensor([31], dtype=torch.long, device=self.device)]
+                    [
+                        torch.tensor(
+                            [self.dataset.tokenizer.phon_bos_id],
+                            dtype=torch.long,
+                            device=self.device,
+                        )
+                    ]
                     for _ in range(batch_size)
                 ]
 
@@ -843,12 +849,6 @@ class Model(nn.Module):
                     or if any required encoding components are missing.
         """
         # Extract appropriate tensors based on pathway
-        orth_enc_input = None
-        orth_enc_pad_mask = None
-        phon_enc_input = None
-        phon_enc_pad_mask = None
-
-        # Handle orthographic inputs for relevant pathways
         orth_enc_input = None
         orth_enc_pad_mask = None
         phon_enc_input = None
