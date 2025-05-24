@@ -122,7 +122,7 @@ class MockDatasetConfig:
     """Mock DatasetConfig with the attributes needed for tests."""
 
     def __init__(self):
-        self.dataset_filepath = "/app/data/data.csv"
+        self.dataset_filepath = "data/data.csv"
         self.device = "cpu"
         self.phoneme_cache_size = 10000
         self.dimension_phon_repr = 31
