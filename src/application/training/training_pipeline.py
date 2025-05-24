@@ -94,7 +94,7 @@ class TrainingPipeline:
             return self.model(
                 task="p2o",
                 phon_enc_input=phonology.enc_input_ids,
-                phon_enc_pad_mask=phonology.lenc_pad_mask,
+                phon_enc_pad_mask=phonology.enc_pad_mask,
                 orth_dec_input=orthography.dec_input_ids,
                 orth_dec_pad_mask=orthography.dec_pad_mask,
             )
