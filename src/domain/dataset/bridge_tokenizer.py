@@ -48,6 +48,12 @@ class BridgeTokenizer:
         self.phoneme_tokenizer = PhonemeTokenizer(
             max_cache_size=phoneme_cache_size, custom_cmudict_path=custom_cmudict_path
         )
+        self.phon_bos_id = self.phoneme_tokenizer.special_token_dims["[BOS]"]
+        self.phon_pad_id = self.phoneme_tokenizer.special_token_dims["[PAD]"]
+        self.phon_eos_id = self.phoneme_tokenizer.special_token_dims["[EOS]"]
+        self.orth_bos_id = self.char_tokenizer.char_2_idx["[BOS]"]
+        self.orth_pad_id = self.char_tokenizer.char_2_idx["[PAD]"]
+        self.orth_eos_id = self.char_tokenizer.char_2_idx["[EOS]"]
 
         logger.info(
             f"BridgeTokenizer initialized on device {self.device} "
@@ -183,7 +189,7 @@ class BridgeTokenizer:
         """Create a minimal phonological component for orthography-only encoding."""
         # Create placeholder phonological tensors
         placeholder_feature_indices = torch.tensor(
-            [33], dtype=torch.long, device=self.device
+            [self.phon_pad_id], dtype=torch.long, device=self.device
         )
 
         # Each item in each batch gets a pad token feature index

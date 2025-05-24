@@ -15,6 +15,14 @@ from src.domain.datamodels import BridgeEncoding, EncodingComponent
 from src.domain.dataset import BridgeDataset, BridgeTokenizer
 from src.infra.clients.gcp.gcs_client import GCSClient
 
+tokenizer = BridgeTokenizer()
+PHON_BOS_ID = tokenizer.phon_bos_id
+PHON_PAD_ID = tokenizer.phon_pad_id
+PHON_EOS_ID = tokenizer.phon_eos_id
+ORTH_BOS_ID = tokenizer.orth_bos_id
+ORTH_PAD_ID = tokenizer.orth_pad_id
+ORTH_EOS_ID = tokenizer.orth_eos_id
+
 
 @pytest.fixture
 def mock_gcs_client():
@@ -103,11 +111,11 @@ def create_test_encoding(word: str, device: torch.device) -> BridgeEncoding:
         # Create phonological encoding component
         phon_enc_ids = [
             [
-                torch.tensor([31], device=device),
+                torch.tensor([PHON_BOS_ID], device=device),
                 torch.tensor([4, 6], device=device),
                 torch.tensor([14, 15, 17, 22, 29], device=device),
                 torch.tensor([2, 6], device=device),
-                torch.tensor([32], device=device),
+                torch.tensor([PHON_EOS_ID], device=device),
             ]
         ]
         phon_enc_mask = torch.tensor(
@@ -115,7 +123,7 @@ def create_test_encoding(word: str, device: torch.device) -> BridgeEncoding:
         )
         phon_dec_ids = [
             [
-                torch.tensor([31], device=device),
+                torch.tensor([PHON_BOS_ID], device=device),
                 torch.tensor([4, 6], device=device),
                 torch.tensor([14, 15, 17, 22, 29], device=device),
                 torch.tensor([2, 6], device=device),
@@ -161,11 +169,11 @@ def create_test_encoding(word: str, device: torch.device) -> BridgeEncoding:
         # Create phonological encoding component
         phon_enc_ids = [
             [
-                torch.tensor([31], device=device),
+                torch.tensor([PHON_BOS_ID], device=device),
                 torch.tensor([7, 8], device=device),
                 torch.tensor([11, 17, 22], device=device),
                 torch.tensor([3, 6], device=device),
-                torch.tensor([32], device=device),
+                torch.tensor([PHON_EOS_ID], device=device),
             ]
         ]
         phon_enc_mask = torch.tensor(
@@ -173,7 +181,7 @@ def create_test_encoding(word: str, device: torch.device) -> BridgeEncoding:
         )
         phon_dec_ids = [
             [
-                torch.tensor([31], device=device),
+                torch.tensor([PHON_BOS_ID], device=device),
                 torch.tensor([7, 8], device=device),
                 torch.tensor([11, 17, 22], device=device),
                 torch.tensor([3, 6], device=device),
