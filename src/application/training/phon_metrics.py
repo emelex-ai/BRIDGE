@@ -126,10 +126,13 @@ def calculate_phon_metrics(
     phon_pred = torch.argmax(logits["phon"], dim=1)
     phon_true = phonology.targets
 
-    with open("tests/application/training/data/phon_pred.pt", "wb") as f:
-        torch.save(phon_pred, f)
-    with open("tests/application/training/data/phon_true.pt", "wb") as f:
-        torch.save(phon_true, f)
+    # Manually set to true if we need to generate more data for tests on next
+    # run, or if we want to save the data for debugging purposes.
+    if False:
+        with open("tests/application/training/data/phon_pred.pt", "wb") as f:
+            torch.save(phon_pred, f)
+        with open("tests/application/training/data/phon_true.pt", "wb") as f:
+            torch.save(phon_true, f)
 
     phon_valid_mask = phon_true != 2
     masked_phon_true = phon_true[phon_valid_mask]
