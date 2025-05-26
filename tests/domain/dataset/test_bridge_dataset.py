@@ -11,9 +11,9 @@ import pickle
 import json
 from unittest.mock import Mock, patch
 
-from src.domain.datamodels import BridgeEncoding, EncodingComponent
-from src.domain.dataset import BridgeDataset, BridgeTokenizer
-from src.infra.clients.gcp.gcs_client import GCSClient
+from bridge.domain.datamodels import BridgeEncoding, EncodingComponent
+from bridge.domain.dataset import BridgeDataset, BridgeTokenizer
+from bridge.infra.clients.gcp.gcs_client import GCSClient
 
 tokenizer = BridgeTokenizer()
 PHON_BOS_ID = tokenizer.phon_bos_id

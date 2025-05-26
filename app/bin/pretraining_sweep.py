@@ -5,7 +5,7 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
-from src.application.handlers import (
+from bridge.application.handlers import (
     ModelConfigHandler,
     DatasetConfigHandler,
     TrainingConfigHandler,

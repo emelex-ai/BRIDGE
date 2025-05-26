@@ -2,9 +2,9 @@ import pytest
 import torch
 from unittest.mock import patch, MagicMock
 
-from src.domain.datamodels import BridgeEncoding, GenerationOutput
-from src.domain.datamodels.encodings import EncodingComponent
-from src.domain.dataset.bridge_tokenizer import BridgeTokenizer
+from bridge.domain.datamodels import BridgeEncoding, GenerationOutput
+from bridge.domain.datamodels.encodings import EncodingComponent
+from bridge.domain.dataset.bridge_tokenizer import BridgeTokenizer
 
 
 @pytest.fixture
@@ -14,7 +14,7 @@ def bridge_tokenizer():
 
 
 class TestNonwordGenerate:
-    @patch("src.domain.model.model.Model")
+    @patch("bridge.domain.model.model.Model")
     def test_o2p_nonword_generation(self, MockModel, bridge_tokenizer):
         """Test generating phonological representation from a nonword."""
         # Set up mock model
@@ -44,7 +44,7 @@ class TestNonwordGenerate:
         assert output.phon_tokens is not None
         assert output.phon_probs is not None
 
-    @patch("src.domain.model.model.Model")
+    @patch("bridge.domain.model.model.Model")
     def test_multiple_nonwords_batch(self, MockModel, bridge_tokenizer):
         """Test generating phonological representations for multiple nonwords."""
         # Set up mock model
@@ -82,7 +82,7 @@ class TestNonwordGenerate:
         assert output.phon_tokens is not None
         assert len(output.phon_tokens) == 3  # Batch size
 
-    @patch("src.domain.model.model.Model")
+    @patch("bridge.domain.model.model.Model")
     def test_mixed_words_nonwords_batch(self, MockModel, bridge_tokenizer):
         """Test generating phonological representations for a mix of words and nonwords."""
         # Set up mock model
