@@ -87,9 +87,9 @@ def load_config(config_path):
 
 
 # Example usage:
-config_path = "app/config/training_config.yaml"
-config = load_config(config_path)
+# config_path = "app/config/training_config.yaml"
+# config = load_config(config_path)
 
-device_key = config.get("device", None)
+# device_key = config.get("device", None)
 
-device_manager = DeviceManager(device=device_key)
+device_manager = DeviceManager(device="cpu")
