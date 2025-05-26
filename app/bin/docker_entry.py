@@ -2,15 +2,15 @@ import os
 import logging
 from typing import Type, Tuple, Optional
 
-from src.application.shared.base_config_handler import BaseConfigHandler
-from src.infra.clients.gcp.gcs_client import GCSClient
-from src.infra.data.storage_interface import StorageInterface
+from bridge.application.shared.base_config_handler import BaseConfigHandler
+from bridge.infra.clients.gcp.gcs_client import GCSClient
+from bridge.infra.data.storage_interface import StorageInterface
 
 import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
-from src.application.handlers import (
+from bridge.application.handlers import (
     ModelConfigHandler,
     DatasetConfigHandler,
     TrainingConfigHandler,

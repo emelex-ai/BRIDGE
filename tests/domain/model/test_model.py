@@ -3,9 +3,9 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
-from src.domain.datamodels import ModelConfig
-from src.domain.model import Model
-from src.domain.dataset import BridgeDataset
+from bridge.domain.datamodels import ModelConfig
+from bridge.domain.model import Model
+from bridge.domain.dataset import BridgeDataset
 import pytest
 import pickle
 import torch
@@ -402,7 +402,7 @@ def test_forward_p2p(model: Model, mock_dataset):
 
 def test_gpu_availability():
     """Test GPU availability and basic tensor operations."""
-    from src.utils.device_manager import device_manager
+    from bridge.utils import device_manager
 
     # Create test tensor
     x = device_manager.create_tensor([[1.0, 2.0], [3.0, 4.0]])

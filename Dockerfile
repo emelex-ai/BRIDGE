@@ -9,7 +9,7 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy application code
-COPY src/ /app/src/
+COPY bridge/ /app/bridge/
 COPY app/ /app/app/
 COPY data/tests/ /app/data/tests/
 COPY tests/application/training/data/ /app/tests/application/training/data/

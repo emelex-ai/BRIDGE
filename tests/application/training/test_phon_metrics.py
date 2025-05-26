@@ -1,10 +1,10 @@
-from src.application.training.phon_metrics import (
+from bridge.application.training.phon_metrics import (
     calculate_closest_phoneme_cdist,
     calculate_closest_phoneme_cosine,
     calculate_cosine_distance,
     calculate_euclidean_distance,
 )
-from src.utils.helper_functions import get_project_root
+from bridge.utils import get_project_root
 import math
 import torch
 import os
