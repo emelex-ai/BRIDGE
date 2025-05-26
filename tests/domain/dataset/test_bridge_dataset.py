@@ -234,7 +234,7 @@ def mock_bridge_tokenizer():
 def bridge_dataset(dataset_config, mock_bridge_tokenizer, mock_gcs_client):
     """Create a BridgeDataset instance with mocked components."""
     with patch(
-        "src.domain.dataset.BridgeTokenizer", return_value=mock_bridge_tokenizer
+        "bridge.domain.dataset.BridgeTokenizer", return_value=mock_bridge_tokenizer
     ) as mock:
         dataset = BridgeDataset(dataset_config, mock_gcs_client)
         dataset.mock_tokenizer = mock_bridge_tokenizer
@@ -324,7 +324,7 @@ def test_encoding_cache(dataset_config, mock_bridge_tokenizer, mock_gcs_client):
     mock_tokenizer.encode.side_effect = mock_encode
 
     # Create dataset with our controlled mock
-    with patch("src.domain.dataset.BridgeTokenizer", return_value=mock_tokenizer):
+    with patch("bridge.domain.dataset.BridgeTokenizer", return_value=mock_tokenizer):
         dataset = BridgeDataset(dataset_config, mock_gcs_client)
 
         # Access same item twice
@@ -345,7 +345,7 @@ def test_device_movement(dataset_config, mock_gcs_client):
     if not torch.cuda.is_available():
         pytest.skip("CUDA not available")
 
-    with patch("src.domain.dataset.BridgeTokenizer") as mock_tokenizer:
+    with patch("bridge.domain.dataset.BridgeTokenizer") as mock_tokenizer:
         dataset = BridgeDataset(dataset_config, mock_gcs_client)
         assert dataset.device.type == "cpu"
 
@@ -383,7 +383,7 @@ def test_shuffle_functionality(bridge_dataset):
 # TODO: fix this once cache logic is fixed
 # def test_memory_management(dataset_config, mock_bridge_tokenizer):
 #     """Test memory management with cache size limits."""
-#     with patch("src.domain.dataset.BridgeTokenizer", return_value=mock_bridge_tokenizer):
+#     with patch("bridge.domain.dataset.BridgeTokenizer", return_value=mock_bridge_tokenizer):
 #         dataset = BridgeDataset(dataset_config, cache_size=1)
 
 #         # Access items to fill cache
@@ -415,7 +415,7 @@ def test_error_handling_invalid_encodings(
     # and the _encode_single_word method in BridgeDataset to bypass the lru_cache
 
     with patch(
-        "src.domain.dataset.BridgeTokenizer", return_value=mock_bridge_tokenizer
+        "bridge.domain.dataset.BridgeTokenizer", return_value=mock_bridge_tokenizer
     ):
         # Create the dataset
         dataset = BridgeDataset(dataset_config, mock_gcs_client)
@@ -487,7 +487,7 @@ def test_vocabulary_size_properties(
 
     # Create new dataset with our controlled mock
     with patch(
-        "src.domain.dataset.BridgeTokenizer", return_value=mock_bridge_tokenizer
+        "bridge.domain.dataset.BridgeTokenizer", return_value=mock_bridge_tokenizer
     ):
         dataset_config = MockDatasetConfig(
             dataset_filepath=bridge_dataset.dataset_filepath, device="cpu"
