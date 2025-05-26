@@ -27,10 +27,9 @@ class PhonemeTokenizer:
         self.device = device_manager.device
 
         # Load phonetic representations from config
-        with importlib.resources.files("bridge.core").joinpath(
-            "phonreps.csv"
-        ).open() as f:
-            self.phonreps = pd.read_csv(f)
+        self.phonreps = pd.read_csv(
+            os.path.join(get_project_root(), "bridge/core/phonreps.csv")
+        )
         self.phonreps.set_index("phone", inplace=True)
         self.base_dim = len(self.phonreps.columns)
 
