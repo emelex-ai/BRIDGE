@@ -1,5 +1,3 @@
-from typing import Union
-import importlib.resources
 import logging
 import os
 
@@ -21,6 +19,7 @@ class PhonemeTokenizer:
     def __init__(
         self,
         max_cache_size: int = 10000,
+        lang_codes: list[str] | None = None,
         custom_cmudict_path: str | None = None,
     ):
         # Set device - defaulting to CPU if None provided
@@ -38,28 +37,28 @@ class PhonemeTokenizer:
             self.phonreps.values, dtype=torch.float, device=self.device
         )
         self.phonreps_index = {p: i for i, p in enumerate(self.phonreps.index)}
+
+        # Load multilingual phonological lexicon dict as foundation
+        self.pronunciation_dict = self._load_multilingual_vocab(lang_codes=lang_codes)
+
         # --- BEGIN Custom CMU-dict loading ---
-        custom_pron = {}
+        custom_prons = {}
         if custom_cmudict_path:
             if os.path.isfile(custom_cmudict_path):
                 try:
                     with open(custom_cmudict_path, "r") as f:
-                        data = json.load(f)
-                    for word, prons in data.items():
-                        if prons:
-                            # take the first pronunciation variant
-                            custom_pron[word] = prons[0]
+                        custom_pron = json.load(f)
                 except Exception as e:
                     logger.warning(
                         f"Failed to load custom CMU dict at {custom_cmudict_path}: {e}"
                     )
             else:
-                logger.warning(f"Custom CMU dict not found at {custom_cmudict_path}")
+                logger.warning(f"Custom word dict not found at {custom_cmudict_path}")
 
-        # Load official CMU dict as fallback
-        fallback_pron = {word: pron[0] for word, pron in cmudict.dict().items() if pron}
-        # Merge: use custom entries where available, otherwise fallback
-        self.pronunciation_dict = {**fallback_pron, **custom_pron}
+        # Overwrite any entries in the lexicon with custom pronunciations
+        for word, langs in custom_prons.items():
+            for lang, pronunciation in langs.items():
+                self.pronunciation_dict[word.lower()][lang.lower()] = pronunciation
 
         # Special tokens at end of vector space - added [SPC] token
         self.special_token_dims = {
@@ -81,25 +80,86 @@ class PhonemeTokenizer:
         self.vector_cache = {}
         self.max_cache_size = max_cache_size
 
-    def _get_word_phonemes(self, word: str) -> list | None:
-        """Get phonemes for a single word, handling spaces."""
+    def _load_multilingual_vocab(
+        self, directory: str | None = None, lang_codes: list[str] | None = None
+    ) -> dict:
+        """Load all language-specific JSON files into a unified vocabulary structure.""" """Load language-specific JSON files into a unified vocabulary structure."""
+        if directory is None:
+            directory = os.path.join(
+                get_project_root(), "data/.core/pronunciation_lexicons"
+            )
+        if lang_codes is None:
+            lang_codes = ["en", "es"]  # Default supported languages
+
+        vocab = {}
+        if not os.path.exists(directory):
+            logger.error(f"Pronunciation lexicon directory not found: {directory}")
+            return vocab
+        for filename in os.listdir(directory):
+            if filename.endswith(".json"):
+                # Extract ISO 639 language code from filename
+                lang_code = filename.split(".")[0].lower()
+                if lang_code.lower() not in lang_codes:
+                    continue
+                if len(lang_code) != 2:
+                    logger.warning(
+                        f"Invalid language code in filename: {filename}. Skipping. Must be two letter ISO 639 code."
+                    )
+                    continue
+                file_path = os.path.join(directory, filename)
+
+                with open(file_path, "r", encoding="utf-8") as f:
+                    lang_dict = json.load(f)
+
+                for word, pronunciations in lang_dict.items():
+                    normalized_word = word.lower()
+
+                    if normalized_word not in vocab:
+                        vocab[normalized_word] = {}
+
+                    # Store pronunciations under language code
+                    vocab[normalized_word][lang_code] = pronunciations
+
+        return vocab
+
+    def _get_word_phonemes(self, word: str, language: str = "en") -> list | None:
+        """Get phonemes for a single word and language"""
         if not word:  # Handle empty string
             return []
 
         lookup_word = word.lower()
         if lookup_word in self.pronunciation_dict:
-            return self.pronunciation_dict[lookup_word]
+            lang_code = language.lower()
+            # Check if pronunciation exists for requested language
+            if lang_code in self.pronunciation_dict[lookup_word]:
+                return self.pronunciation_dict[lookup_word][lang_code]
+            # Fall back to English if requested language not available
+            elif "en" in self.pronunciation_dict[lookup_word]:
+                logger.warning(
+                    f"Word '{word}' not found in {language}, falling back to English"
+                )
+                return self.pronunciation_dict[lookup_word]["en"]
+            else:
+                logger.warning(f"Word '{word}' exists but not in {language} or English")
+        else:
+            logger.debug(f"Word '{word}' not found in pronunciation lexicon")
+
         return None
 
-    def _get_phrase_phonemes(self, phrase: str) -> list | None:
+    def _get_phrase_phonemes(
+        self, phrase: str, languages: dict[str, str] | None = None
+    ) -> list | None:
         """Convert a phrase into phonemes, handling spaces between words."""
         words = phrase.strip().split()
         if not words:  # Handle empty or whitespace-only input
             return []
 
+        if languages is None:
+            languages = {word: "en" for word in words}
+
         result = []
         for i, word in enumerate(words):
-            phonemes = self._get_word_phonemes(word)
+            phonemes = self._get_word_phonemes(word, languages[word])
             if phonemes is None:
                 logger.warning(f"Word not found in phrase: {word}")
                 return None
@@ -134,15 +194,20 @@ class PhonemeTokenizer:
             return active_indices
         return self.special_vecs["[UNK]"]
 
-    def encode(self, words: Union[str, list[str]]) -> CUDADict | None:
+    def encode(
+        self, words: str | list[str], language_map: dict[str, str] | None = None
+    ) -> CUDADict | None:
         """Encode words or phrases to phonetic feature indices."""
+        if language_map is None:
+            language_map = {}
+
         if isinstance(words, str):
             words = [words]
 
         # Process each word/phrase into phonemes
         word_phonemes = []
         for phrase in words:
-            phonemes = self._get_phrase_phonemes(phrase)
+            phonemes = self._get_phrase_phonemes(phrase, language_map)
             if phonemes is None:
                 return None
             word_phonemes.append(phonemes)
@@ -228,7 +293,7 @@ class PhonemeTokenizer:
         lengths = torch.tensor(
             [len(indices) for indices in indices_batch], device=self.device
         )
-        values = torch.ones(lengths.sum(), device=self.device)
+        values = torch.ones(int(lengths.sum()), device=self.device)
 
         # Build sparse tensor indices
         row_indices = torch.repeat_interleave(

@@ -7,7 +7,6 @@ import os
 import pickle
 import random
 import logging
-from typing import Union, Any
 from pathlib import Path
 from collections import OrderedDict
 from functools import lru_cache
@@ -29,7 +28,7 @@ class BridgeDataset:
     def __init__(
         self,
         dataset_config: DatasetConfig,
-        gcs_client: GCSClient,
+        gcs_client: GCSClient | None = None,
         cache_path: str | None = "data/.cache",
         cache_size: int = 1000,
     ):
@@ -96,6 +95,10 @@ class BridgeDataset:
 
     def _read_gcs_csv(self, bucket: str, blob: str) -> pd.DataFrame:
         """Read a CSV blob from GCS into a DataFrame."""
+        if not self.gcs_client:
+            raise ValueError(
+                "Must provide GCS client to BridgeDataset to read GCS files. Use the gcs_client parameter"
+            )
         return self.gcs_client.read_csv(
             bucket_name=bucket,
             blob_name=blob,
@@ -110,18 +113,25 @@ class BridgeDataset:
         """
         if "word_raw" not in df.columns:
             raise KeyError("DataFrame must contain 'word_raw' column")
-        valid = []
-        for idx, word in enumerate(df["word_raw"]):
-            if not isinstance(word, str):
-                logger.warning(f"Skipping non-str entry: {word}")
-                continue
-            if idx == 0:
-                # test encoding of first valid word
-                if self._encode_single_word(word) is None:
-                    logger.warning(f"Initial encoding validation failed for {word}")
+
+        if "language" in df.columns:
+            language_map = {}
+            valid = []
+            for word, language in zip(df["word_raw"], df["language"]):
+                # Create language map (tokenizer defaults to "--" if "language" column is missing)
+                language_map[word] = language.upper()
+
+            for idx, word in enumerate(df["word_raw"]):
+                if not isinstance(word, str):
+                    logger.warning(f"Skipping non-str entry: {word}")
                     continue
-            valid.append(word)
-        return valid
+                if idx == 0:
+                    # test encoding of first valid word
+                    if self._encode_single_word(word) is None:
+                        logger.warning(f"Initial encoding validation failed for {word}")
+                        continue
+                valid.append(word)
+            return valid
 
     @lru_cache(maxsize=128)
     def _encode_single_word(self, word: str) -> BridgeEncoding | None:
@@ -172,7 +182,7 @@ class BridgeDataset:
         return batch_encoding
 
     # TODO: Work on encoding cache logic
-    def _get_encoding(self, word: Union[str, list[str]]) -> BridgeEncoding | None:
+    def _get_encoding(self, word: str | list[str]) -> BridgeEncoding | None:
         """
         Get encoding for a word, using cache when available.
 
@@ -204,9 +214,7 @@ class BridgeDataset:
         """Return the number of valid words in the dataset."""
         return len(self.words)
 
-    def __getitem__(
-        self, idx: Union[int, slice, str, list[str]]
-    ) -> dict[str, dict[str, Any]]:
+    def __getitem__(self, idx: int | slice | str | list[str]) -> BridgeEncoding:
         """
         Retrieve encoded data for specified index or slice.
         Maintains compatibility with training pipeline expectations.
@@ -234,12 +242,7 @@ class BridgeDataset:
 
         elif isinstance(idx, slice):
             selected_words = self.words[idx]
-            encodings = []
-
             encodings = self._get_encoding(selected_words)
-            if encodings is None:
-                raise RuntimeError(f"Failed to encode word: {word}")
-
             if not encodings:
                 raise ValueError("No valid encodings in slice")
 

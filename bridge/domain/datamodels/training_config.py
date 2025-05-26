@@ -9,7 +9,7 @@ class TrainingConfig(BaseModel):
     batch_size_train: int = Field(default=32)
     batch_size_val: int = Field(default=32)
     train_test_split: float = Field(default=0.8)
-    max_nb_steps: Optional[int] = Field(default=None)
+    max_nb_steps: int | None = Field(default=None)
     learning_rate: float = Field(default=0.001)
     training_pathway: str = Field(default="o2p")
     save_every: int = Field(default=1)

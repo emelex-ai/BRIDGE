@@ -12,7 +12,7 @@ class GCSClient:
       2. Passing a service account JSON key file path to the constructor.
     """
 
-    def __init__(self, project: str = None, credentials_path: str = None):
+    def __init__(self, project: str | None = None, credentials_path: str | None = None):
         """
         Initialize the GCS client.
 

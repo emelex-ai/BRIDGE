@@ -39,7 +39,7 @@ class BridgeTokenizer:
     def __init__(
         self,
         phoneme_cache_size: int = 10000,
-        custom_cmudict_path: Optional[str] = None,
+        custom_cmudict_path: str | None = None,
     ):
         # Initialize device
         self.device = device_manager.device
@@ -65,6 +65,7 @@ class BridgeTokenizer:
         self,
         text: str | list[str],
         modality_filter: Literal["both", "orthography", "phonology"] = "both",
+        language_map: dict[str, str] = None,
     ) -> BridgeEncoding | None:
         """
         Encode text using tokenizers based on the specified modality filter.
@@ -75,6 +76,9 @@ class BridgeTokenizer:
                 - "both": Encode both orthography and phonology (default)
                 - "orthography": Encode only orthography, create placeholder phonology
                 - "phonology": Encode only phonology, create placeholder orthography
+            language_map: Optional mapping of words to language for resolving
+                interlingual homographs. Keys are words, values are language codes.
+                (e.g., "EN", "ES"). If a word is not in the map, it defaults to "--".
 
         Returns:
             BridgeEncoding containing encodings according to the modality filter,
@@ -90,12 +94,12 @@ class BridgeTokenizer:
         # Get orthographic encoding if needed
         ortho_encoding = None
         if modality_filter in ["both", "orthography"]:
-            ortho_encoding = self.char_tokenizer.encode(text)
+            ortho_encoding = self.char_tokenizer.encode(text, language_map=language_map)
 
         # Get phonological encoding if needed
         phono_encoding = None
         if modality_filter in ["both", "phonology"]:
-            phono_encoding = self.phoneme_tokenizer.encode(text)
+            phono_encoding = self.phoneme_tokenizer.encode(text, language_map=language_map)
 
             # If phonological encoding fails and it's required, return None
             if phono_encoding is None:

@@ -1,4 +1,4 @@
-from typing import Annotated, Optional
+from typing import Annotated
 from pydantic import BaseModel, Field, model_validator
 import torch
 

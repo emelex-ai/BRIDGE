@@ -1,4 +1,3 @@
-from typing import Union, List
 import logging
 import torch
 
@@ -16,7 +15,9 @@ class CUDADict(dict):
             batches = self[key]
             if isinstance(batches, list):
                 try:
-                    output[key] = [[val.to(device) for val in batch] for batch in batches]
+                    output[key] = [
+                        [val.to(device) for val in batch] for batch in batches
+                    ]
                 except:
                     print(f"batches = {batches}")
                     raise
