@@ -40,6 +40,8 @@ all = ["wandb", "google-cloud-storage"]
 deptry = "^0.23.0"
 pytest = "^8.3.5"
 pytest-mock = "^3.14.0"
+scipy = "^1.15.3"
+openpyxl = "^3.1.5"
 
 [tool.pytest.ini_options]
 pythonpath = "."

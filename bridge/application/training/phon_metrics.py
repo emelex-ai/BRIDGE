@@ -124,7 +124,7 @@ def calculate_phon_metrics(
     phon_reps: torch.Tensor,
 ) -> dict[str, float]:
     phon_pred = torch.argmax(logits["phon"], dim=1)
-    phon_true = phonology.targets
+    phon_true = phonology.phon_targets
 
     # Manually set to true if we need to generate more data for tests on next
     # run, or if we want to save the data for debugging purposes.

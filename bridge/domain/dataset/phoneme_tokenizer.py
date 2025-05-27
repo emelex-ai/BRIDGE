@@ -1,5 +1,6 @@
 import logging
 import os
+from pathlib import PosixPath
 
 from nltk.corpus import cmudict
 import pandas as pd
@@ -20,7 +21,7 @@ class PhonemeTokenizer:
         self,
         max_cache_size: int = 10000,
         lang_codes: list[str] | None = None,
-        custom_cmudict_path: str | None = None,
+        custom_cmudict_path: str | PosixPath | None = None,
     ):
         # Set device - defaulting to CPU if None provided
         self.device = device_manager.device
@@ -86,7 +87,7 @@ class PhonemeTokenizer:
         """Load all language-specific JSON files into a unified vocabulary structure.""" """Load language-specific JSON files into a unified vocabulary structure."""
         if directory is None:
             directory = os.path.join(
-                get_project_root(), "data/.core/pronunciation_lexicons"
+                get_project_root(), "bridge/core/pronunciation_lexicons"
             )
         if lang_codes is None:
             lang_codes = ["en", "es"]  # Default supported languages
@@ -132,13 +133,15 @@ class PhonemeTokenizer:
             lang_code = language.lower()
             # Check if pronunciation exists for requested language
             if lang_code in self.pronunciation_dict[lookup_word]:
-                return self.pronunciation_dict[lookup_word][lang_code]
+                # Take the first pronunciation available for the word (for now)
+                return self.pronunciation_dict[lookup_word][lang_code][0]
             # Fall back to English if requested language not available
             elif "en" in self.pronunciation_dict[lookup_word]:
                 logger.warning(
                     f"Word '{word}' not found in {language}, falling back to English"
                 )
-                return self.pronunciation_dict[lookup_word]["en"]
+                # Take the first pronunciation available for the word (for now)
+                return self.pronunciation_dict[lookup_word]["en"][0]
             else:
                 logger.warning(f"Word '{word}' exists but not in {language} or English")
         else:
@@ -147,19 +150,19 @@ class PhonemeTokenizer:
         return None
 
     def _get_phrase_phonemes(
-        self, phrase: str, languages: dict[str, str] | None = None
+        self, phrase: str, language_map: dict[str, str] | None = None
     ) -> list | None:
         """Convert a phrase into phonemes, handling spaces between words."""
         words = phrase.strip().split()
         if not words:  # Handle empty or whitespace-only input
             return []
 
-        if languages is None:
-            languages = {word: "en" for word in words}
+        if language_map is None:
+            language_map = {word: "en" for word in words}
 
         result = []
         for i, word in enumerate(words):
-            phonemes = self._get_word_phonemes(word, languages[word])
+            phonemes = self._get_word_phonemes(word, language_map[word])
             if phonemes is None:
                 logger.warning(f"Word not found in phrase: {word}")
                 return None
@@ -198,8 +201,6 @@ class PhonemeTokenizer:
         self, words: str | list[str], language_map: dict[str, str] | None = None
     ) -> CUDADict | None:
         """Encode words or phrases to phonetic feature indices."""
-        if language_map is None:
-            language_map = {}
 
         if isinstance(words, str):
             words = [words]

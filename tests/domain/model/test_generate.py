@@ -396,7 +396,7 @@ class MockModel:
                     tokens = [torch.tensor([PHON_BOS_ID])]  # Start with BOS
                     for i in range(3):  # Add 3 phoneme tokens
                         n_features = torch.randint(1, 4, (1,)).item()
-                        features = torch.randint(0, 30, (n_features,))
+                        features = torch.randint(0, 30, (int(n_features),))
                         tokens.append(features)
                     tokens.append(torch.tensor([PHON_EOS_ID]))  # End with EOS
                     phon_tokens.append(tokens)
@@ -467,6 +467,7 @@ class MockModel:
 
         # For the generate_wrapper_pathway_routing test, we need a simplified approach
         # that doesn't rely on extracting input from the encodings
+        result = {}
         if pathway == "o2p":
             result = self._generate(
                 pathway="o2p",

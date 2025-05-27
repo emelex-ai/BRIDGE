@@ -18,6 +18,18 @@ class EncodingComponent:
     dec_pad_mask: torch.Tensor
     targets: torch.Tensor | None = None  # Only used for phonological data
 
+    @property
+    def phon_targets(self) -> torch.Tensor:
+        """
+        Get phonological targets if available.
+
+        Returns:
+            Tensor containing phonological targets, or raises AttributeError if not set
+        """
+        if self.targets is None:
+            raise AttributeError("Phonological targets are not available")
+        return self.targets
+
     def to_dict(self) -> dict[str, Any]:
         """
         Convert to dictionary format for compatibility with existing code.

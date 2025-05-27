@@ -34,18 +34,8 @@ def mock_gcs_client():
 def mock_dataset_file(tmp_path):
     """Create a temporary dataset file with known test data."""
     test_data = {
-        "cat": {
-            "count": 1,
-            "phoneme": ([1, 2, 3], [4, 5, 6]),
-            "phoneme_shape": (3, 2),
-            "orthography": [0, 1, 2, 3],
-        },
-        "dog": {
-            "count": 1,
-            "phoneme": ([7, 8, 9], [10, 11, 12]),
-            "phoneme_shape": (3, 2),
-            "orthography": [4, 5, 6, 7],
-        },
+        "word_raw": ["cat", "dog"],
+        "language": ["en", "en"],
     }
 
     file_path = tmp_path / "test_dataset.pkl"
@@ -96,7 +86,7 @@ def dataset_config(mock_dataset_file, mock_cmudict_file):
     )
 
 
-def create_test_encoding(word: str, device: torch.device) -> BridgeEncoding:
+def create_test_encoding(word: str, device: torch.device) -> BridgeEncoding | None:
     """Helper function to create test BridgeEncoding instances with new structure."""
 
     if word == "cat":
@@ -268,7 +258,7 @@ def test_get_item_by_index(bridge_dataset):
     # Verify tensor properties
     orth = item.orthographic
     assert torch.is_tensor(orth.enc_input_ids)
-    assert orth.enc_input_ids.shape == (1, 5)
+    assert orth.enc_input_ids.shape == (1, 6)
     assert orth.enc_input_ids.device == bridge_dataset.device
 
     phon = item.phonological
@@ -279,6 +269,7 @@ def test_get_item_by_index(bridge_dataset):
 def test_get_item_by_word(bridge_dataset):
     """Test accessing items by word string."""
     item = bridge_dataset["cat"]
+    assert bridge_dataset.language_map
     assert isinstance(item, BridgeEncoding)
     assert hasattr(item, "orthographic")
     assert hasattr(item, "phonological")
@@ -286,7 +277,7 @@ def test_get_item_by_word(bridge_dataset):
     assert isinstance(item.phonological, EncodingComponent)
     assert torch.equal(
         item.orthographic.enc_input_ids,
-        torch.tensor([[0, 18, 16, 35, 1]], device=bridge_dataset.device),
+        torch.tensor([[7, 0, 21, 19, 38, 1]], device=bridge_dataset.device),
     )
 
 

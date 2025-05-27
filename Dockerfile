@@ -19,15 +19,12 @@ COPY pyproject.toml poetry.lock* ./
 RUN mkdir -p /app/data /app/model_artifacts /app/results
 
 # Copy data files 
-COPY data/phonreps.csv /app/data/
+COPY core/phonreps.csv /app/core/
 
 # Install Poetry and dependencies (excluding GPU)
 RUN pip install poetry==1.8.5 && \
     poetry config virtualenvs.create false && \
     poetry install
-
-# Download NLTK data
-RUN python -m nltk.downloader cmudict
 
 # Set environment variables for memory optimization
 ENV PYTHONPATH=/app

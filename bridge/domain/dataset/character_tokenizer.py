@@ -36,7 +36,7 @@ class CharacterTokenizer:
     def encode(
         self,
         list_of_strings: str | list[str],
-        language_map: dict[str, str] = None,
+        language_map: dict[str, str] | None = None,
     ) -> CUDADict:
         """
         Encode a list of strings into a tensor representation.
@@ -73,14 +73,14 @@ class CharacterTokenizer:
         max_length = max(len(s) for s in list_of_strings)
 
         enc_pad = (
-            lambda s: [language_map.get(s.upper(), "--")]
+            lambda s: [language_map.get(s.lower(), "--")]
             + ["[BOS]"]
             + list(s)
             + ["[EOS]"]
             + ["[PAD]"] * (max_length - len(s))
         )
         dec_pad = (
-            lambda s: [language_map.get(s.upper(), "--")]
+            lambda s: [language_map.get(s.lower(), "--")]
             + ["[BOS]"]
             + list(s)
             + ["[PAD]"] * (max_length - len(s))

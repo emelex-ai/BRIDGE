@@ -17,6 +17,10 @@ class TrainingConfig(BaseModel):
     weight_decay: float = Field(default=0.0)
     checkpoint_path: Optional[str] = Field(default=None)
     test_data_path: Optional[str] = Field(default=None)
+    shuffle: Optional[bool] = Field(
+        default=True,
+        description="Whether to shuffle the training data before each epoch",
+    )
     num_chunks: Optional[int] = Field(
         default=1,
         description="Number of chunks to split a batch into for accumulated gradients",

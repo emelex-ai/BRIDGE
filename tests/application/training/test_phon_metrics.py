@@ -54,7 +54,7 @@ def test_euclidean_distance():
 
 
 def test_closest_phoneme_cdist():
-    phonreps = pd.read_csv(os.path.join(get_project_root(), "data/phonreps.csv"))
+    phonreps = pd.read_csv(os.path.join(get_project_root(), "bridge/core/phonreps.csv"))
     phonreps.set_index("phone", inplace=True)
     phon_reps = torch.tensor(phonreps.values, dtype=torch.float)[:-1]
     phon_pred = torch.load(
@@ -71,7 +71,7 @@ def test_closest_phoneme_cdist():
 
 
 def test_closest_phoneme_cdist_identity():
-    phonreps = pd.read_csv(os.path.join(get_project_root(), "data/phonreps.csv"))
+    phonreps = pd.read_csv(os.path.join(get_project_root(), "bridge/core/phonreps.csv"))
     phonreps.set_index("phone", inplace=True)
     phon_reps = torch.tensor(phonreps.values, dtype=torch.float)[:-1]
     phon_true = torch.load(
@@ -82,7 +82,7 @@ def test_closest_phoneme_cdist_identity():
 
 
 def test_closest_phoneme_cosine():
-    phonreps = pd.read_csv(os.path.join(get_project_root(), "data/phonreps.csv"))
+    phonreps = pd.read_csv(os.path.join(get_project_root(), "bridge/core/phonreps.csv"))
     phonreps.set_index("phone", inplace=True)
     phon_reps = torch.tensor(phonreps.values, dtype=torch.float)[:-1]
     phon_pred = torch.load(
@@ -99,7 +99,7 @@ def test_closest_phoneme_cosine():
 
 
 def test_closest_phoneme_cosine_identity():
-    phonreps = pd.read_csv(os.path.join(get_project_root(), "data/phonreps.csv"))
+    phonreps = pd.read_csv(os.path.join(get_project_root(), "bridge/core/phonreps.csv"))
     phonreps.set_index("phone", inplace=True)
     phon_reps = torch.tensor(phonreps.values, dtype=torch.float)[:-1]
     phon_true = torch.load(

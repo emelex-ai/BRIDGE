@@ -83,11 +83,7 @@ The BRIDGE project uses multiple YAML configuration files located in `BRIDGE/app
 | Parameter                     | Type    | Description                                                                 |
 |-------------------------------|---------|-----------------------------------------------------------------------------|
 | `dataset_filepath`            | str     | Path to the primary dataset file.                                          |
-| `dimension_phon_repr`         | int     | Dimensionality of the phonological representation.                         |
-| `orthographic_vocabulary_size`| int     | Size of the orthographic vocabulary.                                       |
-| `phonological_vocabulary_size`| int     | Size of the phonological vocabulary.                                       |
-| `max_orth_seq_len`            | int     | Maximum sequence length for orthography.                                   |
-| `max_phon_seq_len`            | int     | Maximum sequence length for phonology.                                     |
+| `custom_cmudict_path`         | str     | Path to a custom dictionary that maps words to languages and ARPABET pronuciations. This overrides the default pornunciation dictionaries.                                  |
 
 ---
 

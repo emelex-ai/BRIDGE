@@ -268,7 +268,8 @@ class TrainingPipeline:
         start = time.time()
         last_update_time = time.time()
         cutpoint = int(len(self.dataset) * self.training_config.train_test_split)
-        # self.dataset.shuffle(cutpoint)
+        if self.training_config.shuffle:
+            self.dataset.shuffle(cutpoint)
         progress_bar = tqdm(
             self.train_slices,
             desc=f"Training Epoch {epoch+1}",
