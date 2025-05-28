@@ -30,7 +30,7 @@ RUN apt-get update && \
     # Install gcloud CLI
     apt-get update && \
     apt-get install -y --no-install-recommends google-cloud-cli && \
-    \\
+    \
     rm -rf /var/lib/apt/lists/*
 
 RUN curl -sSL https://install.python-poetry.org | python3.12 - \
