@@ -17,6 +17,7 @@ from bridge.domain.datamodels import (
 )
 from bridge.application.training import TrainingPipeline
 from bridge.application.handlers import TrainModelHandler
+from bridge.utils import convert_numeric_prediction, remove_right_pad
 
 __version__ = "0.1.0"
 
@@ -32,4 +33,5 @@ __all__ = [
     "GenerationOutput",
     "TrainingPipeline",
     "TrainModelHandler",
+    convert_numeric_prediction,
 ]

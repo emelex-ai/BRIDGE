@@ -61,7 +61,11 @@ class PhonemeTokenizer:
             for lang, pronunciation in langs.items():
                 self.pronunciation_dict[word.lower()][lang.lower()] = pronunciation
 
-        # Special tokens at end of vector space - added [SPC] token
+        # Special tokens at end of vector space...
+        # We should probably add a new special token for 'null' or something.
+        # This is needed for when the generate routine produces a phoneme vector
+        # with NO active features. This is not a 'valid' phoneme, but we need
+        # to handle it gracefully.
         self.special_token_dims = {
             "[BOS]": self.base_dim,
             "[EOS]": self.base_dim + 1,

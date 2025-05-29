@@ -1,0 +1,8 @@
+# dataset_filepath: 'gs://bridge-ml-training/datasets/pretraining/data_1.csv'
+dataset_filepath: 'nuria_pretraining/p_p_english_pred_learner.csv'
+# dataset_filepath: 'input_data.pkl'
+# custom_cmudict_path: 'custom_cmudict.json'
+#orthographic_vocabulary_size: 
+#phonological_vocabulary_size: 
+#max_orth_seq_len: 0
+#max_phon_seq_len: 0

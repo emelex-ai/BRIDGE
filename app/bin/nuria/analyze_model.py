@@ -1,22 +1,27 @@
+import os
+import json
+import warnings
+
 import torch
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from bridge.domain.dataset import BridgeDataset
 from bridge.domain.model import Model
-import json
 from scipy.spatial.distance import hamming
 from scipy.stats import entropy
-import warnings
 
 warnings.filterwarnings("ignore")
 
 
-def load_model_and_dataset():
+def load_model_and_dataset(checkpoint_path: str, dataset_path: str):
     """Load the trained model and dataset."""
     print("Loading model and dataset...")
-    chkpt = torch.load("model_artifacts/pretraining_1_epoch_69.pth", weights_only=False)
-    chkpt["dataset_config"].dataset_filepath = "data/pretraining_1.csv"
+    chkpt = torch.load(
+        checkpoint_path,
+        weights_only=False,
+    )
+    chkpt["dataset_config"].dataset_filepath = dataset_path
     dataset = BridgeDataset(chkpt["dataset_config"], None)
     model = Model(chkpt["model_config"], dataset)
     model.load_state_dict(
@@ -244,14 +249,17 @@ def evaluate_single_word(model, word_str, word_idx, dataset):
         confidence_metrics = calculate_confidence_metrics(probabilities)
 
         # Feature-level detailed metrics
-        feature_level_metrics = calculate_feature_level_metrics(
-            target_features, generated_matrix
-        )
+        feature_level_metrics = {}
+        # Turn off for now. This is computationally expensive and not needed yet
+        # feature_level_metrics = calculate_feature_level_metrics(
+        #    target_features, generated_matrix
+        # )
 
         # Compile all results
         result = {
             "word_index": word_idx,
             "word_text": word_str,
+            "language": dataset.languages[word_idx].upper(),
             "target_sequence": phoneme_tokens_to_string(target_tokens),
             "generated_sequence": phoneme_tokens_to_string(generated_tokens),
             "target_length": len(target_tokens),
@@ -390,12 +398,12 @@ def calculate_dataset_metrics(all_targets, all_generated):
     return pd.DataFrame(results)
 
 
-def main():
+def main(checkpoint_path: str, dataset_path: str, output_file: str):
     """Main evaluation pipeline."""
     print("Starting comprehensive model evaluation...")
 
     # Load model and dataset
-    model, dataset = load_model_and_dataset()
+    model, dataset = load_model_and_dataset(checkpoint_path, dataset_path)
 
     results = []
     all_targets = []
@@ -419,17 +427,11 @@ def main():
     df_summary = calculate_dataset_metrics(all_targets, all_generated)
 
     # Save to Excel with multiple sheets
-    output_file = "model_1_evaluation_epoch_69.xlsx"
-
     print(f"Saving results to {output_file}...")
 
     with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
         df_words.to_excel(writer, sheet_name="Per_Word_Results", index=False)
         df_summary.to_excel(writer, sheet_name="Dataset_Summary", index=False)
-
-    # Also save as CSV for easier programmatic access
-    df_words.to_csv("per_word_results_fixed.csv", index=False)
-    df_summary.to_csv("dataset_summary_fixed.csv", index=False)
 
     print("Evaluation complete!")
     print(f"Results saved to {output_file}")
@@ -451,4 +453,27 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+
+    checkpoint_paths = [
+        "model_artifacts/nuria_experiments/2025_05_28_run_001/model_epoch_{epoch_num}.pth",
+        "model_artifacts/nuria_experiments/2025_05_28_run_002/model_epoch_{epoch_num}.pth",
+        "model_artifacts/nuria_experiments/2025_05_28_run_003/model_epoch_{epoch_num}.pth",
+    ]
+    dataset_paths = [
+        "data/nuria_pretraining/p_p_bilingual_learner.csv",
+        "data/nuria_pretraining/p_p_english_pred_learner.csv",
+        "data/nuria_pretraining/p_p_spanish_pred_learner.csv",
+    ]
+    for epoch_num in range(9, 309, 10):
+        for checkpoint_path, dataset_path in zip(checkpoint_paths, dataset_paths):
+            formatted_checkpoint_path = checkpoint_path.format(epoch_num=epoch_num)
+            print(f"\n=== Evaluating {formatted_checkpoint_path} ===")
+            output_file = (
+                dataset_path.split("/")[-1].split(".")[0]
+                + f"_epoch_{epoch_num}_evaluation.xlsx"
+            )
+            output_file = f"results/nuria_evaluation/{output_file}"
+            if os.path.exists(output_file):
+                print(f"Skipping {formatted_checkpoint_path} - already evaluated.")
+                continue
+            main(formatted_checkpoint_path, dataset_path, output_file)

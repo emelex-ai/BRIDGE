@@ -66,7 +66,7 @@ class BridgeDataset:
         # Load raw data into a DataFrame
         raw_df = self._load_raw_dataframe(self.dataset_filepath)
         # Process DataFrame into validated word list
-        self.words, self.language_map = self._process_raw_dataframe(raw_df)
+        self.words, self.languages = self._process_raw_dataframe(raw_df)
         logger.info(f"Loaded {len(self.words)} valid words.")
 
         # Create cache directory if needed
@@ -123,36 +123,33 @@ class BridgeDataset:
             dtype={"col1": str},
         )
 
-    def _process_raw_dataframe(
-        self, df: pd.DataFrame
-    ) -> tuple[list[str], dict[str, str] | None]:
+    def _process_raw_dataframe(self, df: pd.DataFrame) -> tuple[list[str], list[str]]:
         """
         Validate and filter 'word_raw' entries, ensuring tokenization consistency.
         """
 
-        language_map: dict[str, str] | None = {}
+        languages: list[str] = []
         if "language" in df.columns:
-            for word, language in zip(df["word_raw"], df["language"]):
-                # Create language map (tokenizer defaults to "--" if "language" column is missing)
-                language_map[word.lower()] = language.upper()
+            languages = df["language"].tolist()
         else:
-            language_map = None
+            languages = ["EN"] * len(df)
 
         valid_words: list[str] = []
-        for idx, word in enumerate(df["word_raw"]):
-            if not isinstance(word, str):
-                logger.warning(f"Skipping non-str entry: {word}")
+        valid_languages: list[str] = []
+        for idx, (word, lang) in enumerate(zip(df["word_raw"], languages)):
+            if not isinstance(word, str) and isinstance(lang, str):
+                logger.warning(f"Skipping non-str entry: {word}, {lang}")
                 continue
             if idx == 0:
                 # test encoding of first valid word
-                language = (
-                    language_map.get(word.lower(), None) if language_map else None
-                )
-                if self._encode_single_word(word, language=language) is None:
-                    logger.warning(f"Initial encoding validation failed for {word}")
+                if self._encode_single_word(word, language=lang) is None:
+                    logger.warning(
+                        f"Initial encoding validation failed for {word}, {lang}"
+                    )
                     continue
             valid_words.append(word)
-        return valid_words, language_map
+            valid_languages.append(lang)
+        return valid_words, valid_languages
 
     @lru_cache(maxsize=128)
     def _encode_single_word(
@@ -256,64 +253,178 @@ class BridgeDataset:
         """Return the number of valid words in the dataset."""
         return len(self.words)
 
-    def __getitem__(
+    def _resolve_language_map(
         self,
-        idx: int | slice | str | list[str],
-    ) -> BridgeEncoding:
+        words: list[str],
+        provided_language_map: dict[str, str] | None = None,
+        strict_conflicts: bool = True,
+    ) -> dict[str, str]:
         """
-        Retrieve encoded data for specified index or slice.
-        Maintains compatibility with training pipeline expectations.
+        Resolve language mapping for a list of words.
 
         Args:
-            idx: Can be:
-                - int: Single word index
-                - slice: Range of word indices
-                - str: Specific word
-                - list[str]: List of words:w
+            words: List of words to resolve languages for
+            provided_language_map: Optional explicit language mapping
+            strict_conflicts: If True, raise errors on language conflicts
 
         Returns:
-            Dictionary containing orthographic and phonological encodings
+            Dictionary mapping words to languages
+
+        Raises:
+            ValueError: If strict_conflicts=True and word has multiple languages
+            KeyError: If word not found in dataset
         """
+        if provided_language_map is not None:
+            return provided_language_map
+
+        if not self.languages:
+            return {}
+
+        language_map = {}
+        for word in words:
+            # Find all indices where this word appears
+            word_indices = [i for i, w in enumerate(self.words) if w == word]
+
+            if not word_indices:
+                raise KeyError(f"Word '{word}' not found in dataset")
+
+            # Get all languages for this word
+            word_languages = [self.languages[i] for i in word_indices]
+            unique_languages = set(word_languages)
+
+            if len(unique_languages) > 1 and strict_conflicts:
+                raise ValueError(
+                    f"Word '{word}' found in multiple languages: {', '.join(unique_languages)}. "
+                    "Use get_encoding() with language_map parameter to specify target language."
+                )
+            elif len(unique_languages) >= 1:
+                # Use the first/only language found
+                language_map[word.lower()] = list(unique_languages)[0].upper()
+
+        return language_map
+
+    def _get_encoding_unified(
+        self,
+        idx: int | slice | str | list[str],
+        language_map: dict[str, str] | None = None,
+        strict_conflicts: bool = True,
+    ) -> BridgeEncoding:
+        """
+        Unified method to get encodings for any index type.
+
+        Args:
+            idx: Index specification (int, slice, str, or list[str])
+            language_map: Optional explicit language mapping
+            strict_conflicts: If True, raise errors on language conflicts
+
+        Returns:
+            BridgeEncoding object
+
+        Raises:
+            IndexError: If int index out of range
+            TypeError: If idx is unsupported type
+            KeyError: If string not found in dataset
+            ValueError: If language conflicts and strict_conflicts=True
+            RuntimeError: If encoding fails
+        """
+        # Convert index to list of words and resolve languages
         if isinstance(idx, int):
             if idx < 0 or idx >= len(self.words):
                 raise IndexError(f"Index {idx} out of range [0, {len(self.words)})")
+            words = [self.words[idx]]
 
-            word = self.words[idx]
-            encoding = self._get_encoding(word, self.language_map)
-            if encoding is None:
-                raise RuntimeError(f"Failed to encode word: {word}")
-
-            return encoding
+            # For single index, use the corresponding language directly
+            if language_map is None and self.languages:
+                lang = self.languages[idx]
+                resolved_language_map = {words[0].lower(): lang.upper()}
+            else:
+                resolved_language_map = language_map or {}
 
         elif isinstance(idx, slice):
-            selected_words = self.words[idx]
-            encodings = self._get_encoding(selected_words, self.language_map)
-            if not encodings:
-                raise ValueError("No valid encodings in slice")
+            words = self.words[idx]
 
-            return encodings
+            # For slice, use the corresponding languages directly (no conflict checking needed)
+            if language_map is None and self.languages:
+                selected_langs = self.languages[idx]
+                resolved_language_map = dict(
+                    zip(
+                        [w.lower() for w in words],
+                        [l.upper() for l in selected_langs],
+                    )
+                )
+            else:
+                resolved_language_map = language_map or {}
 
         elif isinstance(idx, str):
-            if idx not in self.words:
-                raise KeyError(f"Word '{idx}' not found in dataset")
-
-            encoding = self._get_encoding(idx, self.language_map)
-            if encoding is None:
-                raise RuntimeError(f"Failed to encode word: {idx}")
-
-            return encoding
+            words = [idx]
+            resolved_language_map = self._resolve_language_map(
+                words,
+                provided_language_map=language_map,
+                strict_conflicts=strict_conflicts,
+            )
 
         elif isinstance(idx, list):
             if not all(isinstance(i, str) for i in idx):
                 raise TypeError("List indices must be strings")
-            encodings = self._get_encoding(idx, self.language_map)
-            if encodings is None:
-                raise RuntimeError(f"Failed to encode words: {', '.join(idx)}")
-
-            return encodings
+            words = idx
+            resolved_language_map = self._resolve_language_map(
+                words,
+                provided_language_map=language_map,
+                strict_conflicts=strict_conflicts,
+            )
 
         else:
             raise TypeError(f"Invalid index type: {type(idx)}")
+
+        # Get encoding
+        if len(words) == 1:
+            # Single word - preserve original behavior
+            encoding = self._get_encoding(words[0], resolved_language_map)
+        else:
+            # Multiple words - batch encoding
+            encoding = self._get_encoding(words, resolved_language_map)
+
+        if encoding is None:
+            word_list = ", ".join(words)
+            raise RuntimeError(f"Failed to encode word(s): {word_list}")
+
+        return encoding
+
+    def __getitem__(self, idx: int | slice | str | list[str]) -> BridgeEncoding:
+        """
+        Retrieve encoded data for specified index or slice.
+        Uses dataset's built-in language mapping with strict conflict checking.
+
+        Args:
+            idx: Can be int, slice, str, or list[str]
+
+        Returns:
+            BridgeEncoding object
+
+        Raises:
+            ValueError: If word found in multiple languages (directs to get_encoding)
+        """
+        return self._get_encoding_unified(idx, language_map=None, strict_conflicts=True)
+
+    def get_encoding(
+        self,
+        idx: int | slice | str | list[str],
+        language_map: dict[str, str] | None = None,
+    ) -> BridgeEncoding:
+        """
+        Retrieve encoded data with optional explicit language mapping.
+        Allows language_map override and handles conflicts gracefully.
+
+        Args:
+            idx: Can be int, slice, str, or list[str]
+            language_map: Optional mapping of words to languages
+
+        Returns:
+            BridgeEncoding object
+        """
+        return self._get_encoding_unified(
+            idx, language_map=language_map, strict_conflicts=False
+        )
 
     def shuffle(self, cutoff: int) -> None:
         """
@@ -329,10 +440,18 @@ class BridgeDataset:
         # Store original order for validation
         original_words = self.words.copy()
 
-        # Shuffle words up to cutoff
-        shuffled_section = self.words[:cutoff]
-        random.shuffle(shuffled_section)
-        self.words = shuffled_section + self.words[cutoff:]
+        # Create indices and shuffle them to maintain word-language alignment
+        indices = list(range(cutoff))
+        random.shuffle(indices)
+
+        # Apply the same shuffle to both words and languages
+        shuffled_words = [self.words[i] for i in indices] + self.words[cutoff:]
+        shuffled_languages = [self.languages[i] for i in indices] + self.languages[
+            cutoff:
+        ]
+
+        self.words = shuffled_words
+        self.languages = shuffled_languages
 
         # Validate no words were lost
         assert len(self.words) == len(original_words)

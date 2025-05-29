@@ -1,0 +1,5 @@
+batch_metrics: true
+training_metrics: true
+validation_metrics: true
+modes: ["csv"]
+filename: "training.csv"

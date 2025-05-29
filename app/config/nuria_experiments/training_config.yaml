@@ -1,0 +1,12 @@
+num_epochs: 400
+batch_size_train: 64
+batch_size_val: 64
+train_test_split: 1.0
+learning_rate: 0.0001
+training_pathway: p2p
+device: cpu #cpu #cuda
+save_every: 10
+model_artifacts_dir: 'model_artifacts/nuria_experiments'
+weight_decay: 0.01
+shuffle: true
+num_chunks: 1 # Set gt 1 for accumulated gradients (num chunks to split the batch size into)

@@ -51,9 +51,11 @@ class BridgeTokenizer:
         )
         self.phon_bos_id = self.phoneme_tokenizer.special_token_dims["[BOS]"]
         self.phon_pad_id = self.phoneme_tokenizer.special_token_dims["[PAD]"]
+        self.phon_spc_id = self.phoneme_tokenizer.special_token_dims["[SPC]"]
         self.phon_eos_id = self.phoneme_tokenizer.special_token_dims["[EOS]"]
         self.orth_bos_id = self.char_tokenizer.char_2_idx["[BOS]"]
         self.orth_pad_id = self.char_tokenizer.char_2_idx["[PAD]"]
+        self.orth_spc_id = self.char_tokenizer.char_2_idx[" "]
         self.orth_eos_id = self.char_tokenizer.char_2_idx["[EOS]"]
 
         logger.info(

@@ -6,4 +6,5 @@ from bridge.utils.helper_functions import (
     get_run_name,
     set_seed,
     convert_numeric_prediction,
+    remove_right_pad,
 )

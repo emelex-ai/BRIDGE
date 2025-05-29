@@ -119,20 +119,40 @@ class TrainingPipeline:
 
         # Calculate phon_loss if applicable
         if self.training_config.training_pathway in ["o2p", "op2op", "p2p"]:
-            phon_loss = torch.nn.CrossEntropyLoss(ignore_index=35)(
-                logits["phon"], phonology.targets
-            )  # Ignore [PAD] token
-            phon_loss = torch.nn.CrossEntropyLoss(ignore_index=35)(
-                logits["phon"], phonology.targets
-            )  # Ignore [PAD] token
+            # phon_loss = torch.nn.CrossEntropyLoss(ignore_index=35)(
+            # logits["phon"], phonology.targets
+            # )  # Ignore [PAD] token
+
+            # Extract the "on" logits from the (batch, 2, seq_len, features) tensor
+            # We only need the logits for the "feature is on" prediction
+            phon_on_logits = logits["phon"][
+                :, 1, :, :
+            ]  # Shape: (batch, seq_len, features)
+
+            # Get the binary targets
+            phon_targets = phonology.targets  # Shape: (batch, seq_len, features)
+
+            # Create a mask to ignore PAD positions
+            # PAD positions have all features set to the PAD token value
+            pad_mask = (phon_targets != 35).any(dim=-1)  # Shape: (batch, seq_len)
+
+            # Only compute loss where we have valid (non-PAD) phonemes
+            valid_logits = phon_on_logits[
+                pad_mask
+            ]  # Shape: (num_valid_positions, features)
+            valid_targets = phon_targets[
+                pad_mask
+            ].float()  # Shape: (num_valid_positions, features)
+
+            # Apply BCEWithLogitsLoss - this allows multiple features to be active
+            phon_loss = torch.nn.functional.binary_cross_entropy_with_logits(
+                valid_logits, valid_targets
+            )
 
         # Calculate orth_loss if applicable
         if self.training_config.training_pathway in ["p2o", "op2op"]:
             orth_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(
-                logits["orth"], orthography.enc_input_ids[:, 1:]
-            )  # Ignore [PAD] token
-            orth_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(
-                logits["orth"], orthography.enc_input_ids[:, 1:]
+                logits["orth"], orthography.enc_input_ids[:, 2:]
             )  # Ignore [PAD] token
 
         # Calculate the combined loss, summing only non-None losses

@@ -269,7 +269,7 @@ def test_get_item_by_index(bridge_dataset):
 def test_get_item_by_word(bridge_dataset):
     """Test accessing items by word string."""
     item = bridge_dataset["cat"]
-    assert bridge_dataset.language_map
+    assert bridge_dataset.languages
     assert isinstance(item, BridgeEncoding)
     assert hasattr(item, "orthographic")
     assert hasattr(item, "phonological")

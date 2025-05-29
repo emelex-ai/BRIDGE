@@ -499,7 +499,7 @@ class Model(nn.Module):
         )
         for i in range(len(active_features)):
             if empty_masks[i]:
-                active_features[i] = [self.dataset.tokenizer.phon_pad_id]  # PAD token
+                active_features[i] = [self.dataset.tokenizer.phon_spc_id]  # SPC token
 
         return feature_presence, active_features
 
@@ -534,23 +534,33 @@ class Model(nn.Module):
         # Initialize probability tracking for each sequence in batch
         orth_probs = [[] for _ in range(batch_size)]
 
-        # Add initial probability placeholders for the BOS token
-        initial_prob = torch.zeros(
-            (batch_size, self.orthographic_vocabulary_size),
-            device=self.device,
+        # Add placeholder probabilities for both LANG and BOS tokens
+        lang_prob = torch.zeros(
+            (batch_size, self.orthographic_vocabulary_size), device=self.device
         )
-        initial_prob[:, 0] = 1  # BOS token probability
+        lang_token_id = generated_orth_tokens[0, 0].item()  # Get the language token ID
+        lang_prob[:, lang_token_id] = 1  # Language token probability
+
+        bos_prob = torch.zeros(
+            (batch_size, self.orthographic_vocabulary_size), device=self.device
+        )
+        bos_prob[:, 0] = 1  # BOS token probability
+
         for b in range(batch_size):
-            orth_probs[b].append(initial_prob[b])
+            orth_probs[b].extend([lang_prob[b], bos_prob[b]])
 
         # Track which sequences have finished generating
         sequence_finished = torch.zeros(
             batch_size, dtype=torch.bool, device=self.device
         )
 
-        for step in range(self.max_orth_seq_len - 1):
-            # Check if all sequences have generated an EOS token
-            if (generated_orth_tokens == 1).any(dim=1).all():
+        for step in range(
+            self.max_orth_seq_len - 2
+        ):  # -2 because we start with [LANG, BOS]
+            # Check if all sequences have generated an EOS token (accounting for LANG token offset)
+            if (
+                (generated_orth_tokens[:, 2:] == 1).any(dim=1).all()
+            ):  # Skip LANG and BOS when checking for EOS
                 break
 
             step_mask = mask[: step + 1, : step + 1]
@@ -794,8 +804,9 @@ class Model(nn.Module):
             # All these pathways have "2o" meaning we need to run the orthography decoder loop
             if pathway in ["op2op", "p2o", "o2o"]:
                 mask = self.generate_triangular_mask(self.max_orth_seq_len)
+                lang_token_id = self._get_language_token_id(language)
                 generated_orth_tokens = torch.tensor(
-                    [[0] for _ in range(batch_size)],
+                    [[lang_token_id, 0] for _ in range(batch_size)],  # [LANG, BOS]
                     dtype=torch.long,
                     device=self.device,
                 )
@@ -823,6 +834,7 @@ class Model(nn.Module):
         encodings: BridgeEncoding,
         pathway: Literal["o2p", "p2o", "op2op", "p2p", "o2o"],
         deterministic: bool = False,
+        language: str | None = "--",
     ) -> GenerationOutput:
         """
         High-level generation interface that works with unified encoding objects.
@@ -839,6 +851,8 @@ class Model(nn.Module):
                     to phonological).
             deterministic: Whether to use deterministic (greedy) or stochastic sampling.
                         Defaults to False (stochastic).
+            language: Two-letter language code for resolving interlingual
+                    homographs and homophones. Defaults to "--" (no language specified).
 
         Returns:
             A GenerationOutput object containing the generated sequences and associated
@@ -883,6 +897,7 @@ class Model(nn.Module):
             phon_enc_input=phon_enc_input,
             phon_enc_pad_mask=phon_enc_pad_mask,
             deterministic=deterministic,
+            language=language,
         )
 
         # Package the results into our validated GenerationOutput model
@@ -894,6 +909,15 @@ class Model(nn.Module):
             phon_probs=generation_results.get("phon_probs"),
             phon_vecs=generation_results.get("phon_vecs"),
             phon_tokens=generation_results.get("phon_tokens"),
+        )
+
+    def _get_language_token_id(self, language: str) -> int:
+        """Convert language string to corresponding token ID in orthographic vocabulary."""
+        # Access the character tokenizer through the dataset
+        char_tokenizer = self.dataset.tokenizer.char_tokenizer
+        lang_token = language.upper() if language else "--"
+        return char_tokenizer.char_2_idx.get(
+            lang_token, char_tokenizer.char_2_idx["--"]
         )
 
     def _validate_generate_input(

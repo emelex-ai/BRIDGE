@@ -25,7 +25,7 @@ def calculate_orth_metrics(
     logits: dict[str, torch.Tensor], orthography: EncodingComponent
 ) -> dict[str, float]:
     orth_pred = torch.argmax(logits["orth"], dim=1)
-    orth_true = orthography.enc_input_ids[:, 1:]
+    orth_true = orthography.enc_input_ids[:, 2:]
     orth_valid_mask = orth_true != 4
     masked_orth_true = orth_true[orth_valid_mask]
     masked_orth_pred = orth_pred[orth_valid_mask]

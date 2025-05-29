@@ -21,7 +21,7 @@ include = ["bridge/data/*.csv"]
 [tool.poetry.dependencies]
 python = ">=3.12,<3.13"
 nltk = "^3.8.1"
-numpy = "^1.26.0"
+numpy = "^2.2.6"
 pandas = "^2.1.2"
 protobuf = "^5.28.2"
 pydantic = "^2.9.2"
@@ -42,6 +42,9 @@ pytest = "^8.3.5"
 pytest-mock = "^3.14.0"
 scipy = "^1.15.3"
 openpyxl = "^3.1.5"
+matplotlib = "^3.10.3"
+seaborn = "^0.13.2"
+matplotlib-inline = "^0.1.7"
 
 [tool.pytest.ini_options]
 pythonpath = "."
