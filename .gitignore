@@ -62,6 +62,12 @@ terraform.rc
 # cached credentials
 token.pickle
 
+# Never include results, data, figure, etcs
+results/*
+language_analysis_plots/
+profiling_results/*
+
+
 
 # package files
 dist/*

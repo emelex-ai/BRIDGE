@@ -2,10 +2,10 @@ import logging
 import os
 from pathlib import PosixPath
 
-from nltk.corpus import cmudict
 import pandas as pd
 import torch
 import json
+from scipy.spatial.distance import hamming
 
 from bridge.domain.dataset import CUDADict
 from bridge.utils import get_project_root
@@ -38,6 +38,9 @@ class PhonemeTokenizer:
             self.phonreps.values, dtype=torch.float, device=self.device
         )
         self.phonreps_index = {p: i for i, p in enumerate(self.phonreps.index)}
+
+        # Create inverse mapping from phoneme vectors to phoneme strings
+        self._create_inverse_phoneme_mapping()
 
         # Load multilingual phonological lexicon dict as foundation
         self.pronunciation_dict = self._load_multilingual_vocab(lang_codes=lang_codes)
@@ -315,3 +318,140 @@ class PhonemeTokenizer:
 
     def get_vocabulary_size(self) -> int:
         return self.vocabulary_size
+
+    def _create_inverse_phoneme_mapping(self):
+        """Create an inverse mapping from phoneme vectors to phoneme strings."""
+        # Since vectors might not be unique, we'll use a more sophisticated approach
+        # Store both the vectors and a quick lookup for exact matches
+        self.phoneme_vectors_to_strings = {}
+
+        # For each phoneme, store its vector representation
+        for phoneme, idx in self.phonreps_index.items():
+            # Convert the vector to a tuple for hashability
+            vector = self.phonreps_array[idx]
+            vector_tuple = tuple(vector.cpu().numpy().astype(int))
+
+            # Store the mapping (handling potential collisions)
+            if vector_tuple not in self.phoneme_vectors_to_strings:
+                self.phoneme_vectors_to_strings[vector_tuple] = []
+            self.phoneme_vectors_to_strings[vector_tuple].append(phoneme)
+
+        # Also store all phoneme vectors as a tensor for distance calculations
+        self.all_phoneme_vectors = self.phonreps_array
+        self.all_phoneme_names = list(self.phonreps_index.keys())
+
+    def phoneme_vector_to_phoneme(self, phoneme_vector, distance_fn=None, top_k=1):
+        """
+        Map a phoneme vector back to phoneme string(s).
+
+        Args:
+            phoneme_vector: Tensor representing a phoneme's features
+            distance_fn: Optional distance function. If None, uses Hamming distance
+            top_k: Number of closest phonemes to return if no exact match
+
+        Returns:
+            List of phoneme strings (exact matches or closest matches)
+        """
+        # Ensure vector is on the correct device
+        if isinstance(phoneme_vector, torch.Tensor):
+            phoneme_vector = phoneme_vector.to(self.device)
+        else:
+            phoneme_vector = torch.tensor(phoneme_vector, device=self.device)
+
+        # Check if this is a special token vector
+        # Special tokens are one-hot encoded at dimensions >= base_dim
+        if phoneme_vector.dim() == 1 and len(phoneme_vector) > self.base_dim:
+            # Check for special token by finding the active dimension
+            active_dims = torch.nonzero(phoneme_vector, as_tuple=True)[0]
+            if len(active_dims) == 1 and active_dims[0] >= self.base_dim:
+                # This is a special token
+                for token, dim in self.special_token_dims.items():
+                    if active_dims[0].item() == dim:
+                        return [token]
+                return ["[UNK]"]
+
+            # If not a special token, extract only the base phoneme features
+            phoneme_vector = phoneme_vector[: self.base_dim]
+
+        # First, try exact match
+        vector_tuple = tuple(phoneme_vector.cpu().numpy().astype(int))
+        if vector_tuple in self.phoneme_vectors_to_strings:
+            return self.phoneme_vectors_to_strings[vector_tuple]
+
+        # If no exact match, find closest phoneme(s)
+        if distance_fn is None:
+            # Default to Hamming distance for binary vectors
+            def hamming_distance(v1, v2):
+                return (v1 != v2).float().sum()
+
+            distance_fn = hamming_distance
+
+        # Calculate distances to all phonemes
+        distances = torch.tensor(
+            [
+                distance_fn(phoneme_vector, self.all_phoneme_vectors[i])
+                for i in range(len(self.all_phoneme_vectors))
+            ],
+            device=self.device,
+        )
+
+        # Get top-k closest phonemes
+        _, indices = torch.topk(distances, k=min(top_k, len(distances)), largest=False)
+
+        # Return the phoneme strings
+        closest_phonemes = [self.all_phoneme_names[idx.item()] for idx in indices]
+
+        # If only one closest match requested and distance is reasonable, return just that
+        if top_k == 1:
+            return closest_phonemes
+
+        # Otherwise, return all requested matches with their distances for debugging
+        return [
+            (self.all_phoneme_names[idx.item()], distances[idx].item())
+            for idx in indices
+        ]
+
+    def phoneme_vectors_to_word(self, phoneme_vectors, distance_fn=None):
+        """
+        Convert a sequence of phoneme vectors back to a sequence of phonemes.
+
+        Args:
+            phoneme_vectors: List or tensor of phoneme vectors
+            distance_fn: Optional distance function for inexact matches
+
+        Returns:
+            List of phoneme strings representing the word
+        """
+        phonemes = []
+
+        for vector in phoneme_vectors:
+            # Handle different vector types
+            if isinstance(vector, torch.Tensor):
+                # Check if it's a scalar (special token index)
+                if vector.dim() == 0:
+                    # This might be a special token index
+                    for token, dim in self.special_token_dims.items():
+                        if vector.item() == dim:
+                            phonemes.append(token)
+                            break
+                    else:
+                        # Not a special token, treat as unknown
+                        phonemes.append("[UNK]")
+                else:
+                    # Regular phoneme vector - use the updated method
+                    matches = self.phoneme_vector_to_phoneme(
+                        vector, distance_fn, top_k=1
+                    )
+                    if matches:
+                        phonemes.append(matches[0])
+                    else:
+                        phonemes.append("[UNK]")
+            else:
+                # Non-tensor input
+                matches = self.phoneme_vector_to_phoneme(vector, distance_fn, top_k=1)
+                if matches:
+                    phonemes.append(matches[0])
+                else:
+                    phonemes.append("[UNK]")
+
+        return phonemes
