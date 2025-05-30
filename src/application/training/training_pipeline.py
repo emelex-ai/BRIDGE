@@ -448,9 +448,9 @@ class TrainingPipeline:
                 model_path,
             )
             if self.dataset.gcs_client:
-                index = int(os.environ["CLOUD_RUN_TASK_INDEX"]) + 1
+                index = int(os.environ["CLOUD_RUN_TASK_INDEX"])
                 pretraining_index = index // 22 + 1
-                finetuning_index = index % 22
+                finetuning_index = index % 22 + 1
                 self.dataset.gcs_client.upload_file(
                     os.environ["BUCKET_NAME"],
                     model_path,

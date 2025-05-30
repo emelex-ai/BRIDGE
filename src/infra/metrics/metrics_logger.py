@@ -93,9 +93,9 @@ class CSVGCPMetricsLogger(CSVMetricsLogger):
         self.gcs_client = gcs_client
 
     def save(self) -> None:
-        index = int(os.environ["CLOUD_RUN_TASK_INDEX"]) + 1
+        index = int(os.environ["CLOUD_RUN_TASK_INDEX"])
         pretraining_index = index // 22 + 1
-        finetuning_index = index % 22
+        finetuning_index = index % 22 + 1
         for level in self.opened:
             if self.opened[level]:
                 file_name = f"results/{self.metrics_config.filename.split('.')[0]}_{level}.{self.metrics_config.filename.split('.')[1]}"

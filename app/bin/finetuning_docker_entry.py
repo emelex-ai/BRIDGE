@@ -2,7 +2,6 @@ import os
 import logging
 from typing import Type, Tuple, Optional
 
-from app.bin import pretraining
 from src.application.shared.base_config_handler import BaseConfigHandler
 from src.infra.clients.gcp.gcs_client import GCSClient
 from src.infra.data.storage_interface import StorageInterface
@@ -28,7 +27,7 @@ logger = logging.getLogger(__name__)
 def task_index_to_run(task_index: int) -> Tuple[int, int]:
 
     pretraining_index = task_index // 22 + 1
-    finetuning_index = task_index % 22
+    finetuning_index = task_index % 22 + 1
     return pretraining_index, finetuning_index
 
 
@@ -79,7 +78,9 @@ def find_latest_finetuned_checkpoint(bucket_name: str, task_index: int):
             # Now download the metrics files
             try:
                 # Check if metrics exists in GCS
-                metrics_prefix = f"finetuning/{finetuning_index}/{pretraining_index}/results/"
+                metrics_prefix = (
+                    f"finetuning/{finetuning_index}/{pretraining_index}/results/"
+                )
                 logger.info(f"Looking for metrics files with prefix: {metrics_prefix}")
                 metrics_blobs = list(bucket.list_blobs(prefix=metrics_prefix))
 
@@ -220,20 +221,20 @@ def load_configs():
         configs[key] = handler.get_config()
 
     # Load dataset for current job task
-    index = int(os.environ["CLOUD_RUN_TASK_INDEX"]) + 1
+    index = int(os.environ["CLOUD_RUN_TASK_INDEX"])
     pretraining_index, finetuning_index = task_index_to_run(index)
     if not storage_interface.exists(
         os.environ["BUCKET_NAME"],
-        f"finetuning/{finetuning_index}/{finetuning_index}.csv",
+        f"finetuning/{finetuning_index}/.csv",
     ):
         logger.error(
-            f"Data file not found in GCS: pretraining/{index}/data_{index}.csv"
+            f"Data file not found in GCS: finetuning/{finetuning_index}/{pretraining_index}.csv"
         )
         raise FileNotFoundError(
-            f"Data file not found in GCS: pretraining/{index}/data_{index}.csv"
+            f"Data file not found in GCS: finetuning/{finetuning_index}/{pretraining_index}.csv"
         )
 
-    data_path = f"gs://{os.environ['BUCKET_NAME']}/finetuning/{finetuning_index}/{finetuning_index}.csv"
+    data_path = f"gs://{os.environ['BUCKET_NAME']}/finetuning/{finetuning_index}/{pretraining_index}.csv"
     logger.info(f"Setting dataset path to: {data_path}")
     configs["dataset_config"].dataset_filepath = data_path
 
@@ -249,7 +250,7 @@ def main():
     configs = load_configs()
 
     # Get task index
-    task_index = int(os.environ["CLOUD_RUN_TASK_INDEX"]) + 1
+    task_index = int(os.environ["CLOUD_RUN_TASK_INDEX"])
     logger.info(f"Running task {task_index}")
 
     try:
