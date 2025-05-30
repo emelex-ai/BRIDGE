@@ -1,14 +1,15 @@
 import pickle
 import torch
-with open("results/pretraining_1_epoch_0.pkl", 'rb') as f:
+
+with open("results/pretraining_1_epoch_0.pkl", "rb") as f:
     data = pickle.load(f)
 
 # First clone the tensors to avoid modifying the originals
-phon_preds = data["pretraining"]["phon_predictions"].clone()
-phon_targets = data["pretraining"]["phon_targets"].clone()
+phon_preds = data.pretraining.phon_predictions.clone()
+phon_targets = data.pretraining.phon_targets.clone()
 
 # ===== FEATURE LEVEL ACCURACY =====
-# Create mask for valid features (not padding tokens which are marked as 2)  
+# Create mask for valid features (not padding tokens which are marked as 2)
 phon_features_mask = phon_targets != 2
 
 # Find which predictions match targets, but only count valid features
@@ -39,15 +40,15 @@ print("Overall Word-Level Accuracy:", word_accuracy.item())
 # ===== PER-WORD DETAILED ANALYSIS =====
 print("\nDetailed per-word analysis:")
 for i in range(min(5, len(word_correct))):  # Show first 5 words as example
-   # Count valid features for this word
-   n_valid_features = phon_features_mask[i].sum().item()
-   n_correct_features = masked_equalities[i].sum().item()
-   
-   # Count valid phonemes for this word
-   n_valid_phonemes = valid_phonemes[i].sum().item()
-   n_correct_phonemes = (phoneme_correct[i] & valid_phonemes[i]).sum().item()
-   
-   print(f"\nWord {i}:")
-   print(f"Features: {n_correct_features}/{n_valid_features} correct")
-   print(f"Phonemes: {n_correct_phonemes}/{n_valid_phonemes} correct")
-   print(f"Word-level: {'Correct' if word_correct[i] else 'Incorrect'}")
+    # Count valid features for this word
+    n_valid_features = phon_features_mask[i].sum().item()
+    n_correct_features = masked_equalities[i].sum().item()
+
+    # Count valid phonemes for this word
+    n_valid_phonemes = valid_phonemes[i].sum().item()
+    n_correct_phonemes = (phoneme_correct[i] & valid_phonemes[i]).sum().item()
+
+    print(f"\nWord {i}:")
+    print(f"Features: {n_correct_features}/{n_valid_features} correct")
+    print(f"Phonemes: {n_correct_phonemes}/{n_valid_phonemes} correct")
+    print(f"Word-level: {'Correct' if word_correct[i] else 'Incorrect'}")
