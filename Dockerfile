@@ -8,8 +8,12 @@ RUN apt-get update && \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-
-
+# Copy application code
+COPY bridge/ /app/bridge/
+COPY app/ /app/app/
+COPY data/tests/ /app/data/tests/
+COPY tests/application/training/data/ /app/tests/application/training/data/
+COPY pyproject.toml poetry.lock* ./
 
 # Create directories first
 RUN mkdir -p /app/data /app/model_artifacts /app/results
