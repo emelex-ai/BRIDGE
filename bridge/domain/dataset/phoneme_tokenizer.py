@@ -386,3 +386,32 @@ class PhonemeTokenizer:
                     phonemes.append("[UNK]")
 
         return phonemes
+
+    def indices_to_phoneme(self, indices):
+        """
+        Convert active feature indices back to a phoneme.
+
+        Args:
+            indices: Tensor of active feature indices
+
+        Returns:
+            Phoneme string or [UNK] if not found
+        """
+        # Create a full vector from indices
+        vector = torch.zeros(self.base_dim, device=self.device)
+
+        # Handle special tokens
+        if len(indices) == 1 and indices[0] >= self.base_dim:
+            for token, dim in self.special_token_dims.items():
+                if indices[0].item() == dim:
+                    return token
+            return "[UNK]"
+
+        # Set active features
+        valid_indices = indices[indices < self.base_dim]
+        if len(valid_indices) > 0:
+            vector[valid_indices] = 1
+
+        # Find matching phoneme
+        matches = self.phoneme_vector_to_phoneme(vector, top_k=1)
+        return matches[0] if matches else "[UNK]"
