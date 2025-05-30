@@ -8,7 +8,6 @@ import torch
 from tqdm import tqdm
 import logging
 
-from app.bin import pretraining
 from src.application.training.ortho_metrics import calculate_orth_metrics
 from src.application.training.phon_metrics import calculate_phon_metrics
 from src.domain.datamodels import TrainingConfig

@@ -225,16 +225,16 @@ def load_configs():
     pretraining_index, finetuning_index = task_index_to_run(index)
     if not storage_interface.exists(
         os.environ["BUCKET_NAME"],
-        f"finetuning/{finetuning_index}/.csv",
+        f"finetuning/{finetuning_index}/{finetuning_index}.csv",
     ):
         logger.error(
-            f"Data file not found in GCS: finetuning/{finetuning_index}/{pretraining_index}.csv"
+            f"Data file not found in GCS: finetuning/{finetuning_index}/{finetuning_index}.csv"
         )
         raise FileNotFoundError(
-            f"Data file not found in GCS: finetuning/{finetuning_index}/{pretraining_index}.csv"
+            f"Data file not found in GCS: finetuning/{finetuning_index}/{finetuning_index}.csv"
         )
 
-    data_path = f"gs://{os.environ['BUCKET_NAME']}/finetuning/{finetuning_index}/{pretraining_index}.csv"
+    data_path = f"gs://{os.environ['BUCKET_NAME']}/finetuning/{finetuning_index}/{finetuning_index}.csv"
     logger.info(f"Setting dataset path to: {data_path}")
     configs["dataset_config"].dataset_filepath = data_path
 
