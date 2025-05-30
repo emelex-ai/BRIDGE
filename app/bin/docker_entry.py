@@ -73,7 +73,27 @@ def find_latest_checkpoint(
                 logger.warning(f"Couldn't parse epoch number from {file_name}")
                 continue
         if latest_epoch != -1:
-            logger.info(f"Found checkpoint for epoch {epoch}")
+            logger.info(f"Found checkpoint for epoch {latest_epoch}")
+
+            # Now download the metrics files
+            try:
+                # Check if metrics exists in GCS
+                metrics_prefix = f"pretraining/{task_index}/results/"
+                logger.info(f"Looking for metrics files with prefix: {metrics_prefix}")
+                metrics_blobs = list(bucket.list_blobs(prefix=metrics_prefix))
+
+                if metrics_blobs:
+                    # Create results directory if it doesn't exist
+                    os.makedirs("results", exist_ok=True)
+
+                    # Download each metrics file
+                    for blob in metrics_blobs:
+                        filename = blob.name.split("/")[-1]
+                        local_path = f"results/{filename}"
+                        logger.info(f"Downloading metrics file to {local_path}")
+                        blob.download_to_filename(local_path)
+            except Exception as e:
+                logger.warning(f"Error downloading metrics files: {e}")
         else:
             logger.info("No valid checkpoints found. Initiating training from epoch 0")
 

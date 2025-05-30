@@ -76,6 +76,25 @@ def find_latest_finetuned_checkpoint(bucket_name: str, task_index: int):
                 continue
         if latest_epoch != -1:
             logger.info(f"Found checkpoint for epoch {epoch}")
+            # Now download the metrics files
+            try:
+                # Check if metrics exists in GCS
+                metrics_prefix = f"finetuning/{finetuning_index}/{pretraining_index}/results/"
+                logger.info(f"Looking for metrics files with prefix: {metrics_prefix}")
+                metrics_blobs = list(bucket.list_blobs(prefix=metrics_prefix))
+
+                if metrics_blobs:
+                    # Create results directory if it doesn't exist
+                    os.makedirs("results", exist_ok=True)
+
+                    # Download each metrics file
+                    for blob in metrics_blobs:
+                        filename = blob.name.split("/")[-1]
+                        local_path = f"results/{filename}"
+                        logger.info(f"Downloading metrics file to {local_path}")
+                        blob.download_to_filename(local_path)
+            except Exception as e:
+                logger.warning(f"Error downloading metrics files: {e}")
         else:
             logger.info("No valid checkpoints found. Initiating training from epoch 0")
         if latest_blob:

@@ -8,8 +8,7 @@ RUN apt-get update && \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy application code
-COPY . /app/
+
 
 
 # Create directories first
@@ -18,6 +17,8 @@ RUN mkdir -p /app/data /app/model_artifacts /app/results
 # Copy data files 
 COPY data/phonreps.csv /app/data/
 
+COPY  pyproject.toml /app/
+
 # Install Poetry and dependencies (excluding GPU)
 RUN pip install poetry==1.8.5 && \
     poetry config virtualenvs.create false && \
@@ -25,6 +26,9 @@ RUN pip install poetry==1.8.5 && \
 
 # Download NLTK data
 RUN python -m nltk.downloader cmudict
+
+# Copy application code
+COPY . /app/
 
 # Set environment variables for memory optimization
 ENV PYTHONPATH=/app
