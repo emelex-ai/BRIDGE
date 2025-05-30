@@ -289,3 +289,15 @@ class BridgeTokenizer:
             "orthographic": self.char_tokenizer.get_vocabulary_size(),
             "phonological": self.phoneme_tokenizer.get_vocabulary_size(),
         }
+
+    def phoneme_vectors_to_word(self, phoneme_vectors, distance_fn=None):
+        """Convert phoneme vectors to word."""
+        return self.phoneme_tokenizer.phoneme_vectors_to_word(
+            phoneme_vectors, distance_fn
+        )
+
+    def phoneme_vector_to_phoneme(self, phoneme_vector, distance_fn=None, top_k=1):
+        """Convert a single phoneme vector to phoneme string(s)."""
+        return self.phoneme_tokenizer.phoneme_vector_to_phoneme(
+            phoneme_vector, distance_fn, top_k
+        )
