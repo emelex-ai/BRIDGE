@@ -1,40 +1,23 @@
 [tool.poetry]
 name = "bridge"
 version = "0.1.0"
-description = "A computational model for naming printed words that bridges orthographic and phonological representations"
-authors = ["Nathan Crock <nathan@emelex.com>"]
+description = ""
+authors = ["Nathan Crock <mathnathan@gmail.com>"]
 readme = "README.md"
-homepage = "https://github.com/emelex-ai/BRIDGE"
-repository = "https://github.com/emelex-ai/BRIDGE"
-documentation = "https://github.com/emelex-ai/BRIDGE"
-keywords = ["nlp", "psycholinguistics", "phonology", "orthography", "deep-learning"]
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Science/Research",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3.12",
-]
-include = ["bridge/data/*.csv"]
-
+package-mode = false
 
 [tool.poetry.dependencies]
-python = ">=3.12,<3.13"
-nltk = "^3.8.1"
-numpy = "^1.26.0"
-pandas = "^2.1.2"
-protobuf = "^5.28.2"
-pydantic = "^2.9.2"
-pyyaml = "^6.0.2"
-torch = "^2.4.1"
-tqdm = "^4.66.5"
-google-cloud-storage = {version = "^3.1.0"}
-wandb = {version = "^0.18.3"}
-
-[tool.poetry.extras]
-wandb = ["wandb"]
-gcp = ["google-cloud-storage"]
-all = ["wandb", "google-cloud-storage"]
+python = ">=3.12.*,<3.13"
+nltk = "3.8.1"
+numpy = "1.26.0"
+pandas = "2.1.2"
+protobuf = "5.28.2"
+pydantic = "2.9.2"
+pyyaml = "6.0.2"
+torch = "2.4.1"
+tqdm = "4.66.5"
+wandb = "0.18.3"
+google-cloud-storage = "3.1.0"
 
 [tool.poetry.group.dev.dependencies]
 deptry = "^0.23.0"

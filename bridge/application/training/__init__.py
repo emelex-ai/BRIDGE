@@ -1,1 +1,0 @@
-from bridge.application.training.training_pipeline import TrainingPipeline

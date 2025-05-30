@@ -62,7 +62,3 @@ terraform.rc
 # cached credentials
 token.pickle
 servacc.json
-
-
-# package files
-dist/*

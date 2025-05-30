@@ -3,8 +3,8 @@ import torch
 import logging
 from unittest.mock import patch
 
-from bridge.domain.dataset.bridge_tokenizer import BridgeTokenizer
-from bridge.domain.datamodels import BridgeEncoding
+from src.domain.dataset.bridge_tokenizer import BridgeTokenizer
+from src.domain.datamodels import BridgeEncoding
 
 
 @pytest.fixture

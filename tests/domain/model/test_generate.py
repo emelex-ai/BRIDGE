@@ -1,24 +1,19 @@
 import pytest
+import pickle
 import torch
-from bridge.domain.datamodels import (
+from pathlib import Path
+from src.domain.datamodels import (
+    DatasetConfig,
     ModelConfig,
     GenerationOutput,
     BridgeEncoding,
 )
-from bridge.domain.dataset import BridgeDataset, BridgeTokenizer
-from bridge.domain.datamodels.encodings import EncodingComponent
-
-tokenizer = BridgeTokenizer()
-PHON_BOS_ID = tokenizer.phon_bos_id
-PHON_PAD_ID = tokenizer.phon_pad_id
-PHON_EOS_ID = tokenizer.phon_eos_id
-ORTH_BOS_ID = tokenizer.orth_bos_id
-ORTH_PAD_ID = tokenizer.orth_pad_id
-ORTH_EOS_ID = tokenizer.orth_eos_id
+from src.domain.datamodels.encodings import EncodingComponent
+from src.domain.model import Model
 
 
 @pytest.fixture
-def o2p_sample_input(model, dataset_config):
+def o2p_sample_input(dataset_config):
     """Creates sample input data for testing o2p generation."""
     batch_size = 2
     seq_len = 5
@@ -26,7 +21,7 @@ def o2p_sample_input(model, dataset_config):
     # Create sample orthographic input with known values
     orth_enc_input = torch.randint(
         0,
-        model.dataset.orthographic_vocabulary_size,
+        dataset_config.orthographic_vocabulary_size,
         (batch_size, seq_len),
         dtype=torch.long,
     )
@@ -51,21 +46,21 @@ def p2o_sample_input(dataset_config):
     seq_len = 5
 
     # Create sample phonological input with known values
-    # Each sequence starts with BOS and ends with EOS
+    # Each sequence starts with BOS (31) and ends with EOS (32)
     phon_enc_input = [
         [
-            torch.tensor([PHON_BOS_ID], device="cpu"),  # BOS
+            torch.tensor([31], device="cpu"),  # BOS
             torch.tensor([1, 6]),
             torch.tensor([14, 15, 21]),
             torch.tensor([2, 7]),
-            torch.tensor([PHON_EOS_ID], device="cpu"),  # EOS
+            torch.tensor([32], device="cpu"),  # EOS
         ],
         [
-            torch.tensor([PHON_BOS_ID], device="cpu"),  # BOS
+            torch.tensor([31], device="cpu"),  # BOS
             torch.tensor([2, 6]),
             torch.tensor([14, 24, 29]),
             torch.tensor([2, 6]),
-            torch.tensor([PHON_EOS_ID], device="cpu"),  # EOS
+            torch.tensor([32], device="cpu"),  # EOS
         ],
     ]
 
@@ -84,9 +79,9 @@ def p2p_sample_input(dataset_config):
 
     Similar to p2o_sample_input but used for phoneme-to-phoneme generation testing.
     Each sequence contains:
-    - BOS token
+    - BOS token (31)
     - Some phoneme feature combinations
-    - EOS token
+    - EOS token (32)
     """
     batch_size = 2
     seq_len = 5
@@ -94,18 +89,18 @@ def p2p_sample_input(dataset_config):
     # Create sample phonological input similar to p2o fixture
     phon_enc_input = [
         [
-            torch.tensor([PHON_BOS_ID], device="cpu"),  # BOS
+            torch.tensor([31], device="cpu"),  # BOS
             torch.tensor([1, 6]),  # First phoneme features
             torch.tensor([14, 15, 21]),  # Second phoneme features
             torch.tensor([2, 7]),  # Third phoneme features
-            torch.tensor([PHON_EOS_ID], device="cpu"),  # EOS
+            torch.tensor([32], device="cpu"),  # EOS
         ],
         [
-            torch.tensor([PHON_BOS_ID], device="cpu"),  # BOS
+            torch.tensor([31], device="cpu"),  # BOS
             torch.tensor([2, 6]),  # Different first phoneme
             torch.tensor([14, 24, 29]),  # Different second phoneme
             torch.tensor([2, 6]),  # Different third phoneme
-            torch.tensor([PHON_EOS_ID], device="cpu"),  # EOS
+            torch.tensor([32], device="cpu"),  # EOS
         ],
     ]
 
@@ -122,7 +117,7 @@ class MockDatasetConfig:
     """Mock DatasetConfig with the attributes needed for tests."""
 
     def __init__(self):
-        self.dataset_filepath = "data/data.csv"
+        self.dataset_filepath = "data.csv"
         self.device = "cpu"
         self.phoneme_cache_size = 10000
         self.dimension_phon_repr = 31
@@ -130,7 +125,6 @@ class MockDatasetConfig:
         self.phonological_vocabulary_size = 34
         self.max_orth_seq_len = 100
         self.max_phon_seq_len = 100
-        self.custom_cmudict_path = None
 
 
 @pytest.fixture
@@ -167,7 +161,6 @@ class MockModel:
     def __init__(self, model_config, dataset_config):
         self.model_config = model_config
         self.dataset_config = dataset_config
-        self.dataset = BridgeDataset(dataset_config, None)
         self.device = torch.device("cpu")
         # Store seed for deterministic generation
         self.seed = 42
@@ -247,7 +240,9 @@ class MockModel:
                     "o2o pathway expects phonological inputs (phon_enc_input, phon_enc_pad_mask) to be None"
                 )
             # Check token indices
-            if torch.any(orth_enc_input >= self.dataset.orthographic_vocabulary_size):
+            if torch.any(
+                orth_enc_input >= self.dataset_config.orthographic_vocabulary_size
+            ):
                 raise ValueError("Input tokens must be less than vocabulary size")
             batch_size = orth_enc_input.size(0)
 
@@ -275,7 +270,9 @@ class MockModel:
                         raise ValueError(
                             "Feature indices must be less than vocabulary size"
                         )
-            if torch.any(orth_enc_input >= self.dataset.orthographic_vocabulary_size):
+            if torch.any(
+                orth_enc_input >= self.dataset_config.orthographic_vocabulary_size
+            ):
                 raise ValueError(
                     "Orthographic tokens must be less than vocabulary size"
                 )
@@ -381,11 +378,11 @@ class MockModel:
                 # In deterministic mode, all sequences should be the same
                 phon_tokens = []
                 base_tokens = [
-                    torch.tensor([PHON_BOS_ID]),  # BOS
+                    torch.tensor([31]),  # BOS
                     torch.tensor([1, 6]),
                     torch.tensor([14, 15]),
                     torch.tensor([2, 7]),
-                    torch.tensor([PHON_EOS_ID]),  # EOS
+                    torch.tensor([32]),  # EOS
                 ]
                 for b in range(batch_size):
                     phon_tokens.append(base_tokens)
@@ -393,12 +390,12 @@ class MockModel:
                 # In stochastic mode, sequences should be different
                 phon_tokens = []
                 for b in range(batch_size):
-                    tokens = [torch.tensor([PHON_BOS_ID])]  # Start with BOS
+                    tokens = [torch.tensor([31])]  # Start with BOS
                     for i in range(3):  # Add 3 phoneme tokens
                         n_features = torch.randint(1, 4, (1,)).item()
                         features = torch.randint(0, 30, (n_features,))
                         tokens.append(features)
-                    tokens.append(torch.tensor([PHON_EOS_ID]))  # End with EOS
+                    tokens.append(torch.tensor([32]))  # End with EOS
                     phon_tokens.append(tokens)
 
             output["phon_tokens"] = phon_tokens
@@ -411,7 +408,9 @@ class MockModel:
                 for step in range(5):
                     # Create tensor and normalize
                     torch.manual_seed(step + 300)  # Consistent seed for each position
-                    step_probs = torch.rand(self.dataset.orthographic_vocabulary_size)
+                    step_probs = torch.rand(
+                        self.dataset_config.orthographic_vocabulary_size
+                    )
                     step_probs = step_probs / step_probs.sum()  # Normalize to sum to 1
                     base_probs.append(step_probs)
 
@@ -426,7 +425,7 @@ class MockModel:
                     seq_probs = []
                     for step in range(5):
                         step_probs = torch.rand(
-                            self.dataset.orthographic_vocabulary_size
+                            self.dataset_config.orthographic_vocabulary_size
                         )
                         step_probs = (
                             step_probs / step_probs.sum()
@@ -477,9 +476,7 @@ class MockModel:
                 deterministic=deterministic,
             )
         elif pathway == "p2o":
-            phon_input = [
-                [torch.tensor([PHON_BOS_ID]), torch.tensor([PHON_EOS_ID])]
-            ] * batch_size
+            phon_input = [[torch.tensor([31]), torch.tensor([32])]] * batch_size
             result = self._generate(
                 pathway="p2o",
                 orth_enc_input=None,
@@ -498,9 +495,7 @@ class MockModel:
                 deterministic=deterministic,
             )
         elif pathway == "p2p":
-            phon_input = [
-                [torch.tensor([PHON_BOS_ID]), torch.tensor([PHON_EOS_ID])]
-            ] * batch_size
+            phon_input = [[torch.tensor([31]), torch.tensor([32])]] * batch_size
             result = self._generate(
                 pathway="p2p",
                 orth_enc_input=None,
@@ -510,9 +505,7 @@ class MockModel:
                 deterministic=deterministic,
             )
         elif pathway == "op2op":
-            phon_input = [
-                [torch.tensor([PHON_BOS_ID]), torch.tensor([PHON_EOS_ID])]
-            ] * batch_size
+            phon_input = [[torch.tensor([31]), torch.tensor([32])]] * batch_size
             result = self._generate(
                 pathway="op2op",
                 orth_enc_input=torch.tensor([[0, 1]] * batch_size),
@@ -583,28 +576,23 @@ def test_o2p_basic_generation(model, o2p_sample_input):
 
     # Check sequence contents
     for b in range(batch_size):
-        # First token should be BOS
-        phon_bos_id = model.dataset.tokenizer.phon_bos_id
-        assert phon_bos_id in output["phon_tokens"][b][0]
+        # First token should be BOS (31)
+        assert 31 in output["phon_tokens"][b][0]
 
         # Check that each sequence has proper progression
         seq_len = len(output["phon_tokens"][b])
         assert seq_len <= model.dataset_config.max_phon_seq_len
 
         # Verify EOS token appears
-        phon_eos_id = model.dataset.tokenizer.phon_eos_id
         eos_positions = [
-            i
-            for i, tokens in enumerate(output["phon_tokens"][b])
-            if phon_eos_id in tokens
+            i for i, tokens in enumerate(output["phon_tokens"][b]) if 32 in tokens
         ]
         assert len(eos_positions) == 1, "Should have exactly one EOS token"
 
-        # Everything after EOS should be PAD
-        phon_pad_id = model.dataset.tokenizer.phon_pad_id
+        # Everything after EOS should be PAD (33)
         eos_pos = eos_positions[0]
         for tokens in output["phon_tokens"][b][eos_pos + 1 :]:
-            assert phon_pad_id in tokens, "Tokens after EOS should be PAD"
+            assert 33 in tokens, "Tokens after EOS should be PAD"
 
 
 def test_o2p_deterministic_consistency(model, o2p_sample_input):
@@ -680,7 +668,7 @@ def test_o2p_batch_consistency(model, dataset_config):
     """
     # Create single sample
     single_input = torch.randint(
-        0, model.dataset.orthographic_vocabulary_size, (1, 5), dtype=torch.long
+        0, dataset_config.orthographic_vocabulary_size, (1, 5), dtype=torch.long
     )
     single_mask = torch.zeros_like(single_input, dtype=torch.bool)
 
@@ -883,16 +871,8 @@ def test_p2o_input_validation(model, dataset_config):
     """
     # Valid phonological input for reference
     valid_phon_input = [
-        [
-            torch.tensor([PHON_BOS_ID]),
-            torch.tensor([1, 2]),
-            torch.tensor([PHON_EOS_ID]),
-        ],
-        [
-            torch.tensor([PHON_BOS_ID]),
-            torch.tensor([3, 4]),
-            torch.tensor([PHON_EOS_ID]),
-        ],
+        [torch.tensor([31]), torch.tensor([1, 2]), torch.tensor([32])],
+        [torch.tensor([31]), torch.tensor([3, 4]), torch.tensor([32])],
     ]
     valid_mask = torch.zeros((2, 3), dtype=torch.bool)
 
@@ -945,9 +925,7 @@ def test_p2o_batch_consistency(model, dataset_config):
     Tests that processing single samples and batches produces consistent results.
     """
     # Create single sample
-    single_input = [
-        [torch.tensor([PHON_BOS_ID]), torch.tensor([1, 2]), torch.tensor([PHON_EOS_ID])]
-    ]
+    single_input = [[torch.tensor([31]), torch.tensor([1, 2]), torch.tensor([32])]]
     single_mask = torch.zeros((1, 3), dtype=torch.bool)
 
     # Generate with single sample
@@ -1031,15 +1009,15 @@ def test_p2p_basic_generation(model, p2p_sample_input):
 
     # Check sequence contents for each batch item
     for b in range(batch_size):
-        # First token should be BOS
-        assert PHON_BOS_ID in output["phon_tokens"][b][0]
+        # First token should be BOS (31)
+        assert 31 in output["phon_tokens"][b][0]
 
         # Each sequence should have proper progression
         seq_len = len(output["phon_tokens"][b])
         assert seq_len <= model.dataset_config.max_phon_seq_len
 
         # Verify EOS token appears somewhere in the sequence
-        has_eos = any(PHON_EOS_ID in tokens for tokens in output["phon_tokens"][b])
+        has_eos = any(32 in tokens for tokens in output["phon_tokens"][b])
         assert has_eos, f"Sequence {b} missing EOS token"
 
         # Check probability and vector consistency
@@ -1140,10 +1118,10 @@ def test_p2p_batch_consistency(model, dataset_config):
     # Create a single sample with a clear phonological structure
     single_input = [
         [
-            torch.tensor([PHON_BOS_ID], device="cpu"),  # BOS token
+            torch.tensor([31], device="cpu"),  # BOS token
             torch.tensor([1, 6]),  # First phoneme features
             torch.tensor([14, 15, 21]),  # Second phoneme features
-            torch.tensor([PHON_EOS_ID], device="cpu"),  # EOS token
+            torch.tensor([32], device="cpu"),  # EOS token
         ]
     ]
     single_mask = torch.zeros((1, 4), dtype=torch.bool)  # Mask for single sample
@@ -1226,16 +1204,8 @@ def test_p2p_input_validation(model, dataset_config):
     """
     # Create valid inputs for reference
     valid_phon_input = [
-        [
-            torch.tensor([PHON_BOS_ID]),
-            torch.tensor([1, 2]),
-            torch.tensor([PHON_EOS_ID]),
-        ],
-        [
-            torch.tensor([PHON_BOS_ID]),
-            torch.tensor([3, 4]),
-            torch.tensor([PHON_EOS_ID]),
-        ],
+        [torch.tensor([31]), torch.tensor([1, 2]), torch.tensor([32])],
+        [torch.tensor([31]), torch.tensor([3, 4]), torch.tensor([32])],
     ]
     valid_mask = torch.zeros((2, 3), dtype=torch.bool)
 
@@ -1264,7 +1234,7 @@ def test_p2p_input_validation(model, dataset_config):
     # Test with invalid feature indices
     invalid_phon_input = [
         [
-            torch.tensor([PHON_BOS_ID]),
+            torch.tensor([31]),
             torch.tensor([model.dataset_config.phonological_vocabulary_size + 1]),
         ],
     ]
@@ -1292,7 +1262,7 @@ def test_o2o_basic_generation(model, dataset_config):
     # Create sample orthographic input
     orth_enc_input = torch.randint(
         0,
-        model.dataset.orthographic_vocabulary_size,
+        dataset_config.orthographic_vocabulary_size,
         (batch_size, seq_len),
         dtype=torch.long,
         device=model.device,
@@ -1357,7 +1327,7 @@ def test_o2o_deterministic_consistency(model, dataset_config):
     # Create input data
     orth_enc_input = torch.randint(
         0,
-        model.dataset.orthographic_vocabulary_size,
+        dataset_config.orthographic_vocabulary_size,
         (2, 5),
         dtype=torch.long,
         device=model.device,
@@ -1424,7 +1394,9 @@ def test_o2o_input_validation(model):
         )
 
     # Test with invalid token indices
-    invalid_input = torch.full((2, 5), model.dataset.orthographic_vocabulary_size)
+    invalid_input = torch.full(
+        (2, 5), model.dataset_config.orthographic_vocabulary_size
+    )
     with pytest.raises(
         ValueError, match="Input tokens must be less than vocabulary size"
     ):
@@ -1576,7 +1548,7 @@ def test_o2o_stochastic_sampling(model, dataset_config):
 
         # Verify tokens are within vocabulary bounds
         assert torch.all(
-            output["orth_tokens"] < model.dataset.orthographic_vocabulary_size
+            output["orth_tokens"] < model.dataset_config.orthographic_vocabulary_size
         ), "Generated tokens must be within vocabulary bounds"
 
         # Verify probability distributions sum to 1 (within numerical precision)
@@ -1597,7 +1569,7 @@ def test_op2op_input_validation(model, dataset_config):
 
     valid_orth_input = torch.randint(
         0,
-        model.dataset.orthographic_vocabulary_size,
+        dataset_config.orthographic_vocabulary_size,
         (batch_size, orth_seq_len),
         dtype=torch.long,
         device=model.device,
@@ -1606,10 +1578,10 @@ def test_op2op_input_validation(model, dataset_config):
 
     valid_phon_input = [
         [
-            torch.tensor([PHON_BOS_ID], device=model.device),  # BOS
+            torch.tensor([31], device=model.device),  # BOS
             torch.tensor([1, 6], device=model.device),
             torch.tensor([14, 15, 21], device=model.device),
-            torch.tensor([PHON_EOS_ID], device=model.device),  # EOS
+            torch.tensor([32], device=model.device),  # EOS
         ]
         for _ in range(batch_size)
     ]
@@ -1664,7 +1636,7 @@ def test_op2op_input_validation(model, dataset_config):
     # Test sequence length exceeds maximum
     long_orth_input = torch.randint(
         0,
-        model.dataset.orthographic_vocabulary_size,
+        dataset_config.orthographic_vocabulary_size,
         (batch_size, dataset_config.max_orth_seq_len + 1),
         dtype=torch.long,
         device=model.device,
@@ -1685,7 +1657,7 @@ def test_op2op_input_validation(model, dataset_config):
     # Test batch size mismatch
     mismatched_orth_input = torch.randint(
         0,
-        model.dataset.orthographic_vocabulary_size,
+        dataset_config.orthographic_vocabulary_size,
         (batch_size + 1, orth_seq_len),
         dtype=torch.long,
         device=model.device,
@@ -1704,11 +1676,11 @@ def test_op2op_input_validation(model, dataset_config):
     # Test invalid phonological feature indices
     invalid_phon_input = [
         [
-            torch.tensor([PHON_BOS_ID], device=model.device),
+            torch.tensor([31], device=model.device),
             torch.tensor(
                 [dataset_config.phonological_vocabulary_size], device=model.device
             ),  # Invalid index
-            torch.tensor([PHON_EOS_ID], device=model.device),
+            torch.tensor([32], device=model.device),
         ]
         for _ in range(batch_size)
     ]
@@ -1727,7 +1699,7 @@ def test_op2op_input_validation(model, dataset_config):
     # Test invalid orthographic token indices
     invalid_orth_input = torch.full(
         (batch_size, orth_seq_len),
-        model.dataset.orthographic_vocabulary_size,
+        dataset_config.orthographic_vocabulary_size,
         dtype=torch.long,
         device=model.device,
     )
@@ -1761,7 +1733,7 @@ def test_op2op_basic_generation(model, dataset_config):
     # Create orthographic input (ensuring BOS and EOS tokens are present)
     orth_enc_input = torch.randint(
         0,
-        model.dataset.orthographic_vocabulary_size,
+        dataset_config.orthographic_vocabulary_size,
         (batch_size, orth_seq_len),
         dtype=torch.long,
         device=model.device,
@@ -1773,10 +1745,10 @@ def test_op2op_basic_generation(model, dataset_config):
     # Create phonological input with known structure
     phon_enc_input = [
         [
-            torch.tensor([PHON_BOS_ID], device=model.device),  # BOS token
+            torch.tensor([31], device=model.device),  # BOS token
             torch.tensor([1, 6], device=model.device),  # First phoneme
             torch.tensor([14, 15, 21], device=model.device),  # Second phoneme
-            torch.tensor([PHON_EOS_ID], device=model.device),  # EOS token
+            torch.tensor([32], device=model.device),  # EOS token
         ]
         for _ in range(batch_size)
     ]
@@ -1820,14 +1792,14 @@ def test_op2op_basic_generation(model, dataset_config):
     assert len(output["phon_tokens"]) == batch_size
     for b in range(batch_size):
         # Check sequence starts with BOS
-        assert PHON_BOS_ID in output["phon_tokens"][b][0]
+        assert 31 in output["phon_tokens"][b][0]
 
         # Check sequence length is valid
         seq_len = len(output["phon_tokens"][b])
         assert seq_len <= model.dataset_config.max_phon_seq_len
 
         # Verify EOS token appears
-        has_eos = any(PHON_EOS_ID in tokens for tokens in output["phon_tokens"][b])
+        has_eos = any(32 in tokens for tokens in output["phon_tokens"][b])
         assert has_eos, f"Sequence {b} missing EOS token"
 
 
@@ -1840,7 +1812,7 @@ def test_op2op_deterministic_consistency(model, dataset_config):
     batch_size = 2
     orth_enc_input = torch.randint(
         0,
-        model.dataset.orthographic_vocabulary_size,
+        dataset_config.orthographic_vocabulary_size,
         (batch_size, 5),
         dtype=torch.long,
         device=model.device,
@@ -1850,9 +1822,9 @@ def test_op2op_deterministic_consistency(model, dataset_config):
 
     phon_enc_input = [
         [
-            torch.tensor([PHON_BOS_ID], device=model.device),
+            torch.tensor([31], device=model.device),
             torch.tensor([1, 6], device=model.device),
-            torch.tensor([PHON_EOS_ID], device=model.device),
+            torch.tensor([32], device=model.device),
         ]
         for _ in range(batch_size)
     ]
@@ -1901,7 +1873,7 @@ def test_op2op_stochastic_sampling(model, dataset_config):
     batch_size = 2
     orth_enc_input = torch.randint(
         0,
-        model.dataset.orthographic_vocabulary_size,
+        dataset_config.orthographic_vocabulary_size,
         (batch_size, 5),
         dtype=torch.long,
         device=model.device,
@@ -1911,9 +1883,9 @@ def test_op2op_stochastic_sampling(model, dataset_config):
 
     phon_enc_input = [
         [
-            torch.tensor([PHON_BOS_ID], device=model.device),
+            torch.tensor([31], device=model.device),
             torch.tensor([1, 6], device=model.device),
-            torch.tensor([PHON_EOS_ID], device=model.device),
+            torch.tensor([32], device=model.device),
         ]
         for _ in range(batch_size)
     ]
@@ -1978,9 +1950,9 @@ def test_op2op_batch_consistency(model, dataset_config):
 
     single_phon_input = [
         [
-            torch.tensor([PHON_BOS_ID], device=model.device),
+            torch.tensor([31], device=model.device),
             torch.tensor([1, 6], device=model.device),
-            torch.tensor([PHON_EOS_ID], device=model.device),
+            torch.tensor([32], device=model.device),
         ]
     ]
     single_phon_mask = torch.zeros((1, 3), dtype=torch.bool)
@@ -2059,15 +2031,15 @@ def test_generate_wrapper_basic_functionality(model, dataset_config):
     phon_encoding = EncodingComponent(
         enc_input_ids=[
             [
-                torch.tensor([PHON_BOS_ID], device=model.device),  # BOS
+                torch.tensor([31], device=model.device),  # BOS
                 torch.tensor([1, 6], device=model.device),
-                torch.tensor([PHON_EOS_ID], device=model.device),  # EOS
+                torch.tensor([32], device=model.device),  # EOS
             ]
         ],
         enc_pad_mask=torch.zeros((1, 3), dtype=torch.bool, device=model.device),
         dec_input_ids=[
             [
-                torch.tensor([PHON_BOS_ID], device=model.device),
+                torch.tensor([31], device=model.device),
                 torch.tensor([1, 6], device=model.device),
             ]
         ],
@@ -2109,12 +2081,12 @@ def test_generate_wrapper_pathway_routing(model, dataset_config):
     phon_enc = EncodingComponent(
         enc_input_ids=[
             [
-                torch.tensor([PHON_BOS_ID], device=model.device),
-                torch.tensor([PHON_EOS_ID], device=model.device),
+                torch.tensor([31], device=model.device),
+                torch.tensor([32], device=model.device),
             ]
         ],
         enc_pad_mask=torch.zeros((1, 2), dtype=torch.bool, device=model.device),
-        dec_input_ids=[[torch.tensor([PHON_BOS_ID], device=model.device)]],
+        dec_input_ids=[[torch.tensor([31], device=model.device)]],
         dec_pad_mask=torch.zeros((1, 1), dtype=torch.bool, device=model.device),
         targets=torch.zeros(
             (1, 1, dataset_config.phonological_vocabulary_size - 1), device=model.device
@@ -2163,15 +2135,15 @@ def test_generate_wrapper_deterministic_consistency(model, dataset_config):
     phon_enc = EncodingComponent(
         enc_input_ids=[
             [
-                torch.tensor([PHON_BOS_ID], device=model.device),
+                torch.tensor([31], device=model.device),
                 torch.tensor([1, 6], device=model.device),
-                torch.tensor([PHON_EOS_ID], device=model.device),
+                torch.tensor([32], device=model.device),
             ]
         ],
         enc_pad_mask=torch.zeros((1, 3), dtype=torch.bool, device=model.device),
         dec_input_ids=[
             [
-                torch.tensor([PHON_BOS_ID], device=model.device),
+                torch.tensor([31], device=model.device),
                 torch.tensor([1, 6], device=model.device),
             ]
         ],
@@ -2215,12 +2187,12 @@ def test_generate_wrapper_error_handling(model, dataset_config):
     phon_enc = EncodingComponent(
         enc_input_ids=[
             [
-                torch.tensor([PHON_BOS_ID], device=model.device),
-                torch.tensor([PHON_EOS_ID], device=model.device),
+                torch.tensor([31], device=model.device),
+                torch.tensor([32], device=model.device),
             ]
         ],
         enc_pad_mask=torch.zeros((1, 2), dtype=torch.bool, device=model.device),
-        dec_input_ids=[[torch.tensor([PHON_BOS_ID], device=model.device)]],
+        dec_input_ids=[[torch.tensor([31], device=model.device)]],
         dec_pad_mask=torch.zeros((1, 1), dtype=torch.bool, device=model.device),
         targets=torch.zeros(
             (1, 1, dataset_config.phonological_vocabulary_size - 1), device=model.device
