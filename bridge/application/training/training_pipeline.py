@@ -1,4 +1,3 @@
-
 import json
 import os
 import gc
@@ -463,8 +462,13 @@ class TrainingPipeline:
 
             # Set the correct starting epoch
             if "epoch" in checkpoint:
-                if self.training_config.checkpoint_path and 'pretraining' not in self.training_config.checkpoint_path:
-                    self.start_epoch = checkpoint["epoch"] + 1  # Start from the next epoch
+                if self.training_config.checkpoint_path and (
+                    "pretraining" not in self.training_config.checkpoint_path
+                    or "finetuning" not in self.training_config.checkpoint_path
+                ):
+                    self.start_epoch = (
+                        checkpoint["epoch"] + 1
+                    )  # Start from the next epoch
                     self.logger.info(f"Resuming training from epoch {self.start_epoch}")
             else:
                 self.logger.warning(
