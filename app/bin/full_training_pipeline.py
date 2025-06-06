@@ -1,16 +1,16 @@
 import sys
 import os
 
-from src.domain.datamodels.dataset_config import DatasetConfig
-from src.domain.datamodels.metrics_config import MetricsConfig
-from src.domain.datamodels.model_config import ModelConfig
-from src.domain.datamodels.training_config import TrainingConfig
-from src.domain.datamodels.wandb_config import WandbConfig
+from bridge.domain.datamodels.dataset_config import DatasetConfig
+from bridge.domain.datamodels.metrics_config import MetricsConfig
+from bridge.domain.datamodels.model_config import ModelConfig
+from bridge.domain.datamodels.training_config import TrainingConfig
+from bridge.domain.datamodels.wandb_config import WandbConfig
 
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
-from src.application.handlers import (
+from bridge.application.handlers import (
     ModelConfigHandler,
     DatasetConfigHandler,
     TrainingConfigHandler,
