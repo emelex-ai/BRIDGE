@@ -4,7 +4,6 @@ from typing import Type, Tuple, Optional
 
 from bridge.application.shared.base_config_handler import BaseConfigHandler
 from bridge.infra.clients.gcp.gcs_client import GCSClient
-from bridge.infra.data.storage_interface import StorageInterface
 
 import sys
 
@@ -164,6 +163,8 @@ def load_configs():
     data_path = f"gs://{os.environ['BUCKET_NAME']}/pretraining/{index}/data_{index}.csv"
     logger.info(f"Setting dataset path to: {data_path}")
     configs["dataset_config"].dataset_filepath = data_path
+    configs["training_config"].gcs_path = f"pretraining/{index}"
+
 
     return configs
 

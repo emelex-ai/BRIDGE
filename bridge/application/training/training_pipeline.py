@@ -448,13 +448,10 @@ class TrainingPipeline:
                 model_path,
             )
             if self.dataset.gcs_client:
-                index = int(os.environ["CLOUD_RUN_TASK_INDEX"])
-                pretraining_index = index // 22 + 1
-                finetuning_index = index % 22 + 1
                 self.dataset.gcs_client.upload_file(
                     os.environ["BUCKET_NAME"],
                     model_path,
-                    f"finetuning/{finetuning_index}/{pretraining_index}/models/model_epoch_{epoch}.pth",
+                    f"{self.training_config.gcs_path}/models/model_epoch_{epoch}.pth",
                 )
             self.metrics_logger.save()
 

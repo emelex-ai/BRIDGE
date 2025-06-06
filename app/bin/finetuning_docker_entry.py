@@ -2,15 +2,15 @@ import os
 import logging
 from typing import Type, Tuple, Optional
 
-from src.application.shared.base_config_handler import BaseConfigHandler
-from src.infra.clients.gcp.gcs_client import GCSClient
-from src.infra.data.storage_interface import StorageInterface
+from bridge.application.shared.base_config_handler import BaseConfigHandler
+from bridge.infra.clients.gcp.gcs_client import GCSClient
+from bridge.infra.data.storage_interface import StorageInterface
 
 import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
-from src.application.handlers import (
+from bridge.application.handlers import (
     ModelConfigHandler,
     DatasetConfigHandler,
     TrainingConfigHandler,
@@ -236,6 +236,7 @@ def load_configs():
 
     data_path = f"gs://{os.environ['BUCKET_NAME']}/finetuning/{finetuning_index}/{finetuning_index}.csv"
     logger.info(f"Setting dataset path to: {data_path}")
+    configs["training_config"].gcs_path = f"finetuning/{finetuning_index}/{pretraining_index}"
     configs["dataset_config"].dataset_filepath = data_path
 
     return configs

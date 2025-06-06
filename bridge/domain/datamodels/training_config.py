@@ -21,6 +21,7 @@ class TrainingConfig(BaseModel):
         default=1,
         description="Number of chunks to split a batch into for accumulated gradients",
     )
+    gcs_path: Optional[str] = Field(default=None)
 
     @model_validator(mode="before")
     def convert_paths(cls, values):
