@@ -459,7 +459,7 @@ class TrainingPipeline:
 
     def load_model(self, model_path: str):
         try:
-            checkpoint = torch.load(model_path)
+            checkpoint = torch.load(model_path, weights_only=False)
             self.model.load_state_dict(checkpoint["model_state_dict"])
             self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
@@ -483,7 +483,7 @@ class TrainingPipeline:
     def transfer_partial_model_parameters(
         self, pretrained_model_path: str, module_prefixes: list[str]
     ):
-        checkpoint = torch.load(pretrained_model_path)
+        checkpoint = torch.load(pretrained_model_path, weights_only=False)
         pretrained_state = checkpoint["model_state_dict"]
         filtered_state = {
             k: v
