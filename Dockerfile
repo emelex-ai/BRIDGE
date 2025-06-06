@@ -2,37 +2,42 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install necessary build tools
+# Install necessary build tools and curl for uv installation
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
+    curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.cargo/bin:$PATH"
+
+# Copy pyproject.toml and uv.lock first for better caching
+COPY pyproject.toml uv.lock* ./
+
+# Install dependencies using uv
+RUN uv sync --frozen --no-dev
 
 # Copy application code
 COPY bridge/ /app/bridge/
 COPY app/ /app/app/
 COPY data/tests/ /app/data/tests/
 COPY tests/application/training/data/ /app/tests/application/training/data/
-COPY pyproject.toml poetry.lock* ./
 
 # Create directories first
 RUN mkdir -p /app/data /app/model_artifacts /app/results
 
-# Copy data files 
+# Copy data files
 COPY data/phonreps.csv /app/data/
 
-# Install Poetry and dependencies (excluding GPU)
-RUN pip install poetry==1.8.5 && \
-    poetry config virtualenvs.create false && \
-    poetry install
-
-# Download NLTK data
-RUN python -m nltk.downloader cmudict
+# Download NLTK data using uv run
+RUN uv run python -m nltk.downloader cmudict
 
 # Set environment variables for memory optimization
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONOPTIMIZE=2
 
-# Set entry point
-ENTRYPOINT ["python", "-m", "app.bin.docker_entry"]
+# Set entry point using uv run
+ENTRYPOINT ["uv", "run", "python", "-m", "app.bin.docker_entry"]
