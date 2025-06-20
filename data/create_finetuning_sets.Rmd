@@ -180,23 +180,26 @@ for (id in maintrain_ids$maintrain_id){
           if (GRADE %in% c("a", "b")){
             
             ewfg_ = ewfg %>% 
-              filter(grade == "gr1")
+              filter(grade == "gr1") %>% 
+              ungroup()
             
             
           }
           if (GRADE == "c"){
             
             ewfg_ = ewfg %>% 
-              filter(grade == "gr2")
+              filter(grade == "gr2") %>% 
+              ungroup()
             
           }
           
-          
+          set.seed(167)
           background_vocab = ewfg_ %>% 
             slice_sample(n = num_words_to_sample, weight_by = prob_frequency, replace = T) %>% 
             mutate(word_index_in_text = sampled_indices, 
-                   doc_id = target_metadata$doc_id) %>% 
-            select(word, word_index_in_text, doc_id)
+                   doc_id = target_metadata$doc_id,
+                   background_or_not = "background") %>% 
+            select(word, word_index_in_text, doc_id, background_or_not)
           
         }
         if (id %in% length_condition_ids){
@@ -204,26 +207,32 @@ for (id in maintrain_ids$maintrain_id){
           if (GRADE %in% c("a", "b")){
             ewfg_ = ewfg %>% 
               filter(grade == "gr1") %>% 
-              filter(!is.na(prob_length))
+              filter(!is.na(prob_length)) %>% 
+              ungroup()
           }
           if (GRADE == "c"){
+            
             ewfg_ = ewfg %>% 
               filter(grade == "gr2") %>% 
-              filter(!is.na(prob_length))
+              filter(!is.na(prob_length)) %>% 
+              ungroup()
+          
           }
           
           background_vocab = ewfg_ %>% 
             slice_sample(n = num_words_to_sample, weight_by = prob_length) %>% 
             mutate(word_index_in_text = sampled_indices,
-                   doc_id = target_metadata$doc_id) %>% 
-            select(word, word_index_in_text, doc_id)
+                   doc_id = target_metadata$doc_id,
+                   background_or_not = "background") %>% 
+            select(word, word_index_in_text, doc_id, background_or_not)
         }
         
         stopifnot(length(sampled_indices) == nrow(background_vocab))
         
         target_text_with_sampled_background = target %>% 
           filter(word_index_in_text %nin% sampled_indices) %>% 
-          select(word, word_index_in_text, doc_id) %>% 
+          mutate(background_or_not = "not_background") %>% 
+          select(word, word_index_in_text, doc_id, background_or_not, grade) %>% 
           full_join(background_vocab) %>% 
           arrange(word_index_in_text) %>% 
           left_join(target_metadata) %>% 
@@ -258,25 +267,30 @@ for (id in maintrain_ids$maintrain_id){
 ```
 
 
+# Finetuning datasets words only
 ## Create datasets where each word is one row (to make testing easier)
 ```{r}
 
-filenames = list.files(path = "finetuning/1_time/", pattern = "*.csv", full.names = T)
+filenames = list.files(path = writepath, pattern = "*.csv", full.names = T)
+
+
+pattern_tmp = glue(writepath, "/")
+writepath2 = glue(pattern_tmp, "by_word/")
+dir.create(writepath2)
 
 for (filename in filenames){
+
+  pattern_ = glue("(?<={pattern_tmp}).*(?=\\.csv)")
   
-  ID = str_extract(filename, "(?<=maintraining/).*?(?=\\.csv)")
+  ID = str_extract(filename, pattern_)
   
-  outpath = paste("tmp/by_word/", ID, "_by_word.csv", sep = "")
+  outpath = paste(writepath2, "/", ID, "_by_word.csv", sep = "")
   
   df = read_csv(filename) %>% 
     distinct(word_raw) %>% 
     write_csv(outpath)
 
 }
-
-
-tmp = read_csv("maintraining/by_word/1_by_word.csv")
 ```
 
 
@@ -286,7 +300,6 @@ tmp = read_csv("maintraining/by_word/1_by_word.csv")
 Make sure all the datasets have the same length and that the order of indices specifying the words across each dataset is identical.
 ```{r}
 
-filenames = list.files(path = "tmp", full.names = T, pattern = ".csv$")
 num_unique_words_all = c()
 all_values_equal = c()
 
@@ -296,6 +309,7 @@ for (filename in filenames){
   
   tmp = read_csv(filename, show_col_types = F)
   
+  print("-----------------------------")
   print(filename)
   
   num_rows = nrow(tmp)
@@ -303,10 +317,8 @@ for (filename in filenames){
   num_total_words = length(tmp$word_raw)
   max_index = max(tmp$word_order_in_dataset)
   
-  #print(paste("Number total rows", num_rows))
+  print(paste("Number total rows", num_rows))
   print(paste("Number unique words:", num_unique_words))
-  #print(paste("Number unique row numbers:", length(unique(tmp$word_order_in_dataset))))
-  #print(paste("Max row numbers:", max_index))
   
   all_ = all(c(num_rows, max_index, num_total_words) == num_rows)
   
@@ -327,3 +339,4 @@ hist(num_unique_words_all)
 print(paste("Are all the row indices identical?", all(apply(row_indices_df, 1, function(row) length(unique(row)) == 1))))
 
 ```
+
