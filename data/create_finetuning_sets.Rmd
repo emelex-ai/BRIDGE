@@ -1,0 +1,329 @@
+---
+title: "Create Maintraining Sets"
+output: html_document
+date: "2025-04-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+require(Hmisc)
+require(readxl)
+require(papaja)
+require(jsonlite)
+```
+
+# Overview
+This notebook generates random assignments for all conditions in the BRIDGE `decodables_1` experiments. To summarize, here are how the conditions are structured in that experiment:
+
+In total there will be 1,100 models run. The general experimental set up is the following: there are two primary manipulations: (A) the proportion of background vocabulary, which will have 11 different levels of the manipulation, and (B) the type of background vocabulary, where there are two levels of the manipulation. Each cell of the A x B matrix will be populated with 50 different “learners” (see below) resulting in the calculation, N = 11 x 2 x 50 = 1,100 (models). In the table below, the value in each cell corresponds to the number of models run for that cell.
+
+
+```{r table1}
+
+proportions = c("0/100", "10/90", "20/80", "30/70", "40/60", "50/50", "60/40", "70/30", "80/20", "90/10", "100/0")
+
+tibble(Proportion = proportions,
+        `Frequency weighted` = 50,
+        `Length wighted` = c(rep("50", length(proportions)-1), "NA")) %>% 
+  t() %>%
+  #knitr::kable()
+  apa_table(caption = 'Experimental matrix showing the two crossed conditions and the number of learners within each cell. The x-axis shows the proportion of background vocabulary relative to the proportion of words from decodable texts (as a %).',
+            note = 'The number of models within each crossed level of conditions in the Decodables 1 experiments. The leftmost column contains the same set in both levels of the "sampling method" condition and therefore one of them is identified as "NA".') %>% 
+  
+
+```
+
+Within each cell, the words and their orders will be the same for every other learner _within_ that cell. Therefore, we will have 21 different experimental lists (note that the "0/100"). Each will be different from the others based on its position within the X/Y experimental matrix shown in the table above. Each model within each cell will have a "learner" identical to it at the start of training in each other cell. Therefore there will be 50 unique learner IDs. Because only 20 of the 21 cells have background vocabulary associated with them (because the two leftmost cells in the matrix are identical), we only need to make 21 sets.
+
+## Samples
+The frequency-weighted and length weighted samples are performed and written within the same loop.
+
+```{r data_reads, include=FALSE}
+
+custom_frequencies_ = fromJSON("raw/custom_frequencies.json", simplifyVector = FALSE)
+
+custom_frequencies = tibble(word = names(custom_frequencies_),
+                            gr1 = NA,
+                            gr2 = NA)
+
+for (i in seq(length(custom_frequencies$word))){
+  
+  target = custom_frequencies$word[i]
+  
+  custom_frequencies$gr1[i] = custom_frequencies_[[target]][["gr1"]]
+  custom_frequencies$gr2[i] = custom_frequencies_[[target]][["gr2"]]
+  
+}
+
+
+cmu = read_csv('raw/cmu_words.csv', col_names = "word") %>%  
+  mutate(word = str_replace_all(word, "[^A-Za-z]", "")) %>% # replace non-alphabetic characters
+  # note that this dataset doesn't require tolower()
+  pull(word)
+
+# EWFG aka TASA
+ewfg = read_xlsx('raw/ewfg.xlsx') %>% 
+  filter(!str_detect(word, "\\d")) %>% 
+  mutate(word = str_replace_all(word, "[^A-Za-z]", "")) %>% # replace non-alphabetic characters
+  # note that this dataset doesn't require tolower()
+  filter(word %in% cmu) %>% 
+  select(word, gr1, gr2) %>% 
+  pivot_longer(-word, values_to = "frequency", names_to = "grade") %>% 
+  filter(word %nin% custom_frequencies$word) %>%
+  rbind(custom_frequencies %>% pivot_longer(-word, values_to = "frequency", names_to = "grade")) %>% 
+  filter(!is.na(frequency)) %>% 
+  group_by(grade, word) %>% 
+  summarise(frequency = mean(frequency)) %>% 
+  mutate(frequency = frequency + 1) %>% 
+  mutate(prob_frequency = frequency/sum(frequency)) 
+
+# derive orthographic lengths and their probabilities
+into_reading_sequentially_arranged = read_csv('into_reading/into_reading_sequentially_arranged.csv')
+
+probabilities_for_orthographic_lengths = into_reading_sequentially_arranged %>% 
+  mutate(grade = case_when(grade_as_alpha == "a" | grade_as_alpha == "b" ~ "gr1",
+                                    grade_as_alpha == "c" ~ "gr2")) %>% # note that the "gr1" and "gr2" designations are set by EWFG
+  mutate(orthographic_length = str_length(word)) %>% 
+  group_by(grade, orthographic_length) %>% 
+  summarise(orthographic_length_count = n()) %>% 
+  mutate(prob_length = orthographic_length_count/sum(orthographic_length_count))
+
+probabilities_for_orthographic_lengths %>% 
+  ggplot(aes(factor(orthographic_length), prob_length)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~grade) +
+  theme_minimal() +
+  labs(x = "Orthographic length", y = "Probability")
+
+maintrain_ids = read_csv("raw/maintrain_ids.csv") %>% 
+  filter(maintrain_id != 12) # 12 is a duplicate of 1 (see experimental matrix)
+
+ewfg = ewfg %>% 
+  mutate(orthographic_length = str_length(word)) %>% 
+  left_join(probabilities_for_orthographic_lengths %>% 
+              select(grade, orthographic_length, prob_length))
+
+```
+
+
+## Sample and write to file
+```{r}
+# PROPORTION refers to the amount of the training set is background vocabulary
+# so, if proportion == 0, then the entire text should be selected, and if PROPORTION == 1
+# the words selected will be entirely from background vocabulary
+
+N = 1 # how many times you'd like the program repeated for each dataset
+set.seed(236)
+writepath = paste("finetuning/", as.character(N), "_time_through_program", sep = "")
+
+
+if (dir.exists(writepath)) {
+  cat("Directory: ", '"', writepath, '"', " exists. Are you certain you want to overwrite it?\n", sep = "")
+  stop("Caution - overwrite risk")
+  dir.create(writepath)
+}
+
+if (!dir.exists(writepath)) {
+  dir.create(writepath)
+}
+
+
+into_reading_text_table = into_reading_sequentially_arranged %>% 
+  group_by(grade_as_alpha, unit_within_grade, text_number_within_unit) %>% 
+  summarise(n = n(),
+            doc_id = first(doc_id),
+            text_name = first(text_name)) %>% # grade_as_alpha is the sequential version of grade: k = a, 1 = b, 2 = c
+  arrange(grade_as_alpha , unit_within_grade, text_number_within_unit) %>% 
+  rownames_to_column(var = "text_index_in_program") %>% 
+  mutate(text_index_in_program = as.numeric(text_index_in_program))
+
+frequency_weighted_condition_ids = c(1:11)
+length_condition_ids = c(12:22) # note that there is no 12
+
+for (id in maintrain_ids$maintrain_id){
+  start = Sys.time()
+  
+  target_id = maintrain_ids %>% 
+    filter(maintrain_id == id)
+  
+  stopifnot(nrow(target_id) == 1) # should only return one entry
+  
+  PROPORTION = pull(target_id, proportion_background) # proportion of background vocabulary
+  CONDITION = pull(target_id, condition)
+    
+  into_reading_list = list()
+
+  for (text_index in sort(into_reading_text_table$text_index_in_program)){
+  
+    target_metadata = into_reading_text_table %>% 
+      filter(text_index_in_program == text_index)
+    
+    stopifnot(nrow(target_metadata) == 1)  # should only return one entry
+    
+    GRADE = pull(target_metadata, grade_as_alpha)
+    UNIT = pull(target_metadata, unit_within_grade)
+    TEXT_NUMBER = pull(target_metadata, text_number_within_unit)
+    
+    target = into_reading_sequentially_arranged %>% 
+      filter(grade_as_alpha == GRADE & unit_within_grade == UNIT & text_number_within_unit == TEXT_NUMBER)
+    
+    reconstructed_ = list()
+    
+    num_words_to_sample = round(PROPORTION*length(unique(target$word_index_in_text)))
+    sampled_indices = sample(unique(target$word_index_in_text), num_words_to_sample)
+    
+    for (iter in seq(N)){
+      
+        if (id %in% frequency_weighted_condition_ids){
+          
+          if (GRADE %in% c("a", "b")){
+            
+            ewfg_ = ewfg %>% 
+              filter(grade == "gr1")
+            
+            
+          }
+          if (GRADE == "c"){
+            
+            ewfg_ = ewfg %>% 
+              filter(grade == "gr2")
+            
+          }
+          
+          
+          background_vocab = ewfg_ %>% 
+            slice_sample(n = num_words_to_sample, weight_by = prob_frequency, replace = T) %>% 
+            mutate(word_index_in_text = sampled_indices, 
+                   doc_id = target_metadata$doc_id) %>% 
+            select(word, word_index_in_text, doc_id)
+          
+        }
+        if (id %in% length_condition_ids){
+          
+          if (GRADE %in% c("a", "b")){
+            ewfg_ = ewfg %>% 
+              filter(grade == "gr1") %>% 
+              filter(!is.na(prob_length))
+          }
+          if (GRADE == "c"){
+            ewfg_ = ewfg %>% 
+              filter(grade == "gr2") %>% 
+              filter(!is.na(prob_length))
+          }
+          
+          background_vocab = ewfg_ %>% 
+            slice_sample(n = num_words_to_sample, weight_by = prob_length) %>% 
+            mutate(word_index_in_text = sampled_indices,
+                   doc_id = target_metadata$doc_id) %>% 
+            select(word, word_index_in_text, doc_id)
+        }
+        
+        stopifnot(length(sampled_indices) == nrow(background_vocab))
+        
+        target_text_with_sampled_background = target %>% 
+          filter(word_index_in_text %nin% sampled_indices) %>% 
+          select(word, word_index_in_text, doc_id) %>% 
+          full_join(background_vocab) %>% 
+          arrange(word_index_in_text) %>% 
+          left_join(target_metadata) %>% 
+          mutate(iteration = iter)
+        
+        
+        reconstructed_[[as.character(iter)]] = target_text_with_sampled_background
+    }
+    
+      into_reading_list[[text_index]] = list_rbind(reconstructed_)
+  
+  }
+  
+  filename = paste(writepath, "/", id, ".csv", sep = "")
+  
+  into_reading_list %>% 
+    list_rbind() %>% 
+    rownames_to_column(var = "word_order_in_dataset") %>% 
+    mutate(count = 1) %>% 
+    select(word_raw = word, count, everything()) %>% 
+    rename(num_words_in_text = n) %>% 
+    write_csv(filename)
+    
+  end = Sys.time()
+  elapsed = end-start
+  print(paste(id, "done...", 22-id, "remain"))
+  print(paste("Loop for ID", id, "took", round(elapsed[[1]]/60, digits = 2), "minutes"))
+  
+  
+}
+
+```
+
+
+## Create datasets where each word is one row (to make testing easier)
+```{r}
+
+filenames = list.files(path = "finetuning/1_time/", pattern = "*.csv", full.names = T)
+
+for (filename in filenames){
+  
+  ID = str_extract(filename, "(?<=maintraining/).*?(?=\\.csv)")
+  
+  outpath = paste("tmp/by_word/", ID, "_by_word.csv", sep = "")
+  
+  df = read_csv(filename) %>% 
+    distinct(word_raw) %>% 
+    write_csv(outpath)
+
+}
+
+
+tmp = read_csv("maintraining/by_word/1_by_word.csv")
+```
+
+
+
+
+## Tests
+Make sure all the datasets have the same length and that the order of indices specifying the words across each dataset is identical.
+```{r}
+
+filenames = list.files(path = "tmp", full.names = T, pattern = ".csv$")
+num_unique_words_all = c()
+all_values_equal = c()
+
+row_indices_df = tibble(target_row_indices = into_reading_sequentially_arranged$word_index_in_program)
+
+for (filename in filenames){
+  
+  tmp = read_csv(filename, show_col_types = F)
+  
+  print(filename)
+  
+  num_rows = nrow(tmp)
+  num_unique_words = length(unique(tmp$word_raw))
+  num_total_words = length(tmp$word_raw)
+  max_index = max(tmp$word_order_in_dataset)
+  
+  #print(paste("Number total rows", num_rows))
+  print(paste("Number unique words:", num_unique_words))
+  #print(paste("Number unique row numbers:", length(unique(tmp$word_order_in_dataset))))
+  #print(paste("Max row numbers:", max_index))
+  
+  all_ = all(c(num_rows, max_index, num_total_words) == num_rows)
+  
+  print(paste("All equivalent: ", all_))
+ 
+  num_unique_words_all = c(num_unique_words_all, num_unique_words)
+  all_values_equal = c(all_values_equal, all_)
+  
+  row_indices_df = cbind(row_indices_df, tmp$word_order_in_dataset)
+  
+}
+
+print(paste("Are all tested values equal? ...", all_))
+
+hist(num_unique_words_all)
+
+# note that the number of total indices is tested above
+print(paste("Are all the row indices identical?", all(apply(row_indices_df, 1, function(row) length(unique(row)) == 1))))
+
+```
