@@ -1,0 +1,47 @@
+{
+    "bobs": {
+        "gr1": 8,
+        "gr2": 2,
+        "notes": "Based on: bob's"
+    },
+    "hell": {
+        "gr1": 57,
+        "gr2": 59,
+        "notes": "Based on: he'll"
+    },
+    "id": {
+        "gr1": 138,
+        "gr2": 254,
+        "notes": "Based on: i'd"
+    },
+    "ill": {
+        "gr1": 1231,
+        "gr2": 802,
+        "notes": "Based on I'll"
+    },
+    "its": {
+        "gr1": 1604,
+        "gr2": 1526,
+        "notes": "Based on sum of its and it's"
+    },
+    "shell": {
+        "gr1": 23,
+        "gr2": 36,
+        "notes": "Based on she'll"
+    },
+    "theres": {
+        "gr1": 135,
+        "gr2": 227,
+        "notes": "Based on there's"
+    },
+    "well": {
+        "gr1": 237,
+        "gr2": 239,
+        "notes": "Based on we'll"
+    },
+    "were": {
+        "gr1": 140,
+        "gr2": 184,
+        "notes": "Based on we're"
+    }
+}
