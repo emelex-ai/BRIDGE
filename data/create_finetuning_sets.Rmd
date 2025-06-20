@@ -141,7 +141,7 @@ into_reading_text_table = into_reading_sequentially_arranged %>%
 frequency_weighted_condition_ids = c(1:11)
 length_condition_ids = c(12:22) # note that there is no 12
 
-for (id in maintrain_ids$maintrain_id){
+for (id in maintrain_ids$maintrain_id[1]){
   start = Sys.time()
   
   target_id = maintrain_ids %>% 
@@ -252,8 +252,9 @@ for (id in maintrain_ids$maintrain_id){
     list_rbind() %>% 
     rownames_to_column(var = "word_order_in_dataset") %>% 
     mutate(count = 1) %>% 
-    select(word_raw = word, count, everything()) %>% 
-    rename(num_words_in_text = n) %>% 
+    select(word_order_in_dataset, word_raw = word, count, background_or_not, 
+           text_name, doc_id, text_index_in_program, grade, grade_as_alpha, 
+           unit_within_grade, text_number_within_unit, word_index_in_text, num_words_in_text = n, everything()) %>% # everything() is catchall 
     write_csv(filename)
     
   end = Sys.time()
