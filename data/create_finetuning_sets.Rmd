@@ -1,5 +1,5 @@
 ---
-title: "Create Maintraining Sets"
+title: "Create Finetuninging Sets"
 output: html_document
 date: "2025-04-18"
 ---
@@ -29,7 +29,7 @@ tibble(Proportion = proportions,
   t() %>%
   #knitr::kable()
   apa_table(caption = 'Experimental matrix showing the two crossed conditions and the number of learners within each cell. The x-axis shows the proportion of background vocabulary relative to the proportion of words from decodable texts (as a %).',
-            note = 'The number of models within each crossed level of conditions in the Decodables 1 experiments. The leftmost column contains the same set in both levels of the "sampling method" condition and therefore one of them is identified as "NA".') %>% 
+            note = 'The number of models within each crossed level of conditions in the Decodables 1 experiments. The leftmost column contains the same set in both levels of the "sampling method" condition and therefore one of them is identified as "NA".')
   
 
 ```
@@ -96,8 +96,7 @@ probabilities_for_orthographic_lengths %>%
   theme_minimal() +
   labs(x = "Orthographic length", y = "Probability")
 
-maintrain_ids = read_csv("raw/maintrain_ids.csv") %>% 
-  filter(maintrain_id != 12) # 12 is a duplicate of 1 (see experimental matrix)
+finetuning_ids = read_csv("raw/finetuning_ids.csv")
 
 ewfg = ewfg %>% 
   mutate(orthographic_length = str_length(word)) %>% 
@@ -133,27 +132,37 @@ into_reading_text_table = into_reading_sequentially_arranged %>%
   group_by(grade_as_alpha, unit_within_grade, text_number_within_unit) %>% 
   summarise(n = n(),
             doc_id = first(doc_id),
-            text_name = first(text_name)) %>% # grade_as_alpha is the sequential version of grade: k = a, 1 = b, 2 = c
+            text_name = first(text_name),
+            grade = first(grade)) %>% # grade_as_alpha is the sequential version of grade: k = a, 1 = b, 2 = c
   arrange(grade_as_alpha , unit_within_grade, text_number_within_unit) %>% 
   rownames_to_column(var = "text_index_in_program") %>% 
   mutate(text_index_in_program = as.numeric(text_index_in_program))
 
-frequency_weighted_condition_ids = c(1:11)
-length_condition_ids = c(12:22) # note that there is no 12
+frequency_weighted_condition_ids = finetuning_ids %>% 
+  filter(sampling_condition == "frequency_weighted") %>% 
+  pull(finetuning_id)
 
-for (id in maintrain_ids$maintrain_id[1]){
+length_condition_ids = finetuning_ids %>% 
+  filter(sampling_condition == "length_weighted") %>% 
+  pull(finetuning_id)
+
+
+
+for (PROPORTION in unique(finetuning_ids$proportion_background)){
   start = Sys.time()
   
-  target_id = maintrain_ids %>% 
-    filter(maintrain_id == id)
+  target_id = finetuning_ids %>% 
+    filter(proportion_background == PROPORTION)
   
-  stopifnot(nrow(target_id) == 1) # should only return one entry
+  stopifnot(nrow(target_id) == 2) # should only return two entries (one for each sampling condition)
+  stopifnot(length(unique(target_id$sampling_condition)) == 2) # has to be two different levels of condition
   
-  PROPORTION = pull(target_id, proportion_background) # proportion of background vocabulary
-  CONDITION = pull(target_id, condition)
-    
-  into_reading_list = list()
-
+  #PROPORTION = pull(target_id, proportion_background) # proportion of background vocabulary (old code)
+  #CONDITION = pull(target_id, sampling_condition)
+  
+  frequency_weighted_list = list()
+  length_weighted_list = list()
+  
   for (text_index in sort(into_reading_text_table$text_index_in_program)){
   
     target_metadata = into_reading_text_table %>% 
@@ -168,107 +177,161 @@ for (id in maintrain_ids$maintrain_id[1]){
     target = into_reading_sequentially_arranged %>% 
       filter(grade_as_alpha == GRADE & unit_within_grade == UNIT & text_number_within_unit == TEXT_NUMBER)
     
-    reconstructed_ = list()
-    
     num_words_to_sample = round(PROPORTION*length(unique(target$word_index_in_text)))
     sampled_indices = sample(unique(target$word_index_in_text), num_words_to_sample)
     
-    for (iter in seq(N)){
-      
-        if (id %in% frequency_weighted_condition_ids){
-          
-          if (GRADE %in% c("a", "b")){
-            
-            ewfg_ = ewfg %>% 
-              filter(grade == "gr1") %>% 
-              ungroup()
-            
-            
-          }
-          if (GRADE == "c"){
-            
-            ewfg_ = ewfg %>% 
-              filter(grade == "gr2") %>% 
-              ungroup()
-            
-          }
-          
-          set.seed(167)
-          background_vocab = ewfg_ %>% 
-            slice_sample(n = num_words_to_sample, weight_by = prob_frequency, replace = T) %>% 
-            mutate(word_index_in_text = sampled_indices, 
-                   doc_id = target_metadata$doc_id,
-                   background_or_not = "background") %>% 
-            select(word, word_index_in_text, doc_id, background_or_not)
-          
-        }
-        if (id %in% length_condition_ids){
-          
-          if (GRADE %in% c("a", "b")){
-            ewfg_ = ewfg %>% 
-              filter(grade == "gr1") %>% 
-              filter(!is.na(prob_length)) %>% 
-              ungroup()
-          }
-          if (GRADE == "c"){
-            
-            ewfg_ = ewfg %>% 
-              filter(grade == "gr2") %>% 
-              filter(!is.na(prob_length)) %>% 
-              ungroup()
-          
-          }
-          
-          background_vocab = ewfg_ %>% 
-            slice_sample(n = num_words_to_sample, weight_by = prob_length) %>% 
-            mutate(word_index_in_text = sampled_indices,
-                   doc_id = target_metadata$doc_id,
-                   background_or_not = "background") %>% 
-            select(word, word_index_in_text, doc_id, background_or_not)
-        }
-        
-        stopifnot(length(sampled_indices) == nrow(background_vocab))
-        
-        target_text_with_sampled_background = target %>% 
-          filter(word_index_in_text %nin% sampled_indices) %>% 
-          mutate(background_or_not = "not_background") %>% 
-          select(word, word_index_in_text, doc_id, background_or_not, grade) %>% 
-          full_join(background_vocab) %>% 
-          arrange(word_index_in_text) %>% 
-          left_join(target_metadata) %>% 
-          mutate(iteration = iter)
-        
-        
-        reconstructed_[[as.character(iter)]] = target_text_with_sampled_background
-    }
+    frequency_weighted_reconstructed = list()
+    length_weighted_reconstructed = list()
     
-      into_reading_list[[text_index]] = list_rbind(reconstructed_)
+    for(id in target_id$finetuning_id){
+    
+      CONDITION = target_id %>% 
+        filter(finetuning_id == id) %>% 
+        pull(sampling_condition)
+    
+      for (iter in seq(N)){
   
+          if (CONDITION == "frequency_weighted"){
+            
+            if (GRADE %in% c("a", "b")){
+              
+              ewfg_ = ewfg %>% 
+                filter(grade == "gr1") %>% 
+                ungroup()
+              
+              
+            }
+            if (GRADE == "c"){
+              
+              ewfg_ = ewfg %>% 
+                filter(grade == "gr2") %>% 
+                ungroup()
+              
+            }
+            
+            background_vocab = ewfg_ %>% 
+              slice_sample(n = num_words_to_sample, weight_by = prob_frequency, replace = T) %>% 
+              mutate(word_index_in_text = sampled_indices, 
+                     doc_id = target_metadata$doc_id,
+                     background_or_not = "background",
+                     grade = target_metadata$grade) %>% 
+              select(word, word_index_in_text, doc_id, background_or_not, grade)
+            
+            stopifnot(length(sampled_indices) == nrow(background_vocab))
+            
+            target_text_with_sampled_background = target %>% 
+              filter(word_index_in_text %nin% sampled_indices) %>% 
+              mutate(background_or_not = "not_background") %>% 
+              select(word, word_index_in_text, doc_id, background_or_not, grade) %>% 
+              rbind(background_vocab) %>% # using more restrictive rbind() for control
+              arrange(word_index_in_text) %>% 
+              left_join(target_metadata) %>% 
+              mutate(sampling_condition = CONDITION,
+                     iteration = iter)
+          
+            frequency_weighted_reconstructed[[as.character(iter)]] = target_text_with_sampled_background
+            
+          }
+        
+          if (CONDITION == "length_weighted"){
+            
+            if (GRADE %in% c("a", "b")){
+              ewfg_ = ewfg %>% 
+                filter(grade == "gr1") %>% 
+                filter(!is.na(prob_length)) %>% 
+                ungroup() 
+            }
+            if (GRADE == "c"){
+              
+              ewfg_ = ewfg %>% 
+                filter(grade == "gr2") %>% 
+                filter(!is.na(prob_length)) %>% 
+                ungroup()
+            
+            }
+            
+            background_vocab = ewfg_ %>% 
+              slice_sample(n = num_words_to_sample, weight_by = prob_length) %>% 
+              mutate(word_index_in_text = sampled_indices,
+                     doc_id = target_metadata$doc_id,
+                     background_or_not = "background",
+                     grade = target_metadata$grade) %>% 
+              select(word, word_index_in_text, doc_id, background_or_not, grade)
+            
+            stopifnot(length(sampled_indices) == nrow(background_vocab))
+            
+            target_text_with_sampled_background = target %>% 
+              filter(word_index_in_text %nin% sampled_indices) %>% 
+              mutate(background_or_not = "not_background") %>% 
+              select(word, word_index_in_text, doc_id, background_or_not, grade) %>% 
+              rbind(background_vocab) %>% # using more restrictive rbind() for control
+              arrange(word_index_in_text) %>% 
+              left_join(target_metadata) %>% 
+              mutate(sampling_condition = CONDITION,
+                     iteration = iter)
+          
+            length_weighted_reconstructed[[as.character(iter)]] = target_text_with_sampled_background
+            
+          }
+          
+
+      }
+    
+      frequency_weighted_list[[text_index]] = list_rbind(frequency_weighted_reconstructed)
+      length_weighted_list[[text_index]] = list_rbind(length_weighted_reconstructed)
+      #into_reading_list[[text_index]] = list_rbind(reconstructed_)
+
+  }
+    
+
+    
   }
   
-  filename = paste(writepath, "/", id, ".csv", sep = "")
+      
+  frequency_weighted_id = target_id %>% 
+    filter(sampling_condition == "frequency_weighted") %>% 
+    pull(finetuning_id)
   
-  into_reading_list %>% 
+  length_weighted_id = target_id %>% 
+    filter(sampling_condition == "length_weighted") %>% 
+    pull(finetuning_id)
+  
+  filename_frequency_weighted = paste(writepath, "/", frequency_weighted_id, ".csv", sep = "")
+  filename_length_weighted = paste(writepath, "/", length_weighted_id, ".csv", sep = "")
+
+  
+  frequency_weighted_list %>% 
     list_rbind() %>% 
     rownames_to_column(var = "word_order_in_dataset") %>% 
-    mutate(count = 1) %>% 
+    mutate(count = 1,
+           proportion_background = PROPORTION) %>% 
     select(word_order_in_dataset, word_raw = word, count, background_or_not, 
            text_name, doc_id, text_index_in_program, grade, grade_as_alpha, 
            unit_within_grade, text_number_within_unit, word_index_in_text, num_words_in_text = n, everything()) %>% # everything() is catchall 
-    write_csv(filename)
+    write_csv(filename_frequency_weighted)
+  
+  
+  length_weighted_list %>% 
+    list_rbind() %>% 
+    rownames_to_column(var = "word_order_in_dataset") %>% 
+    mutate(count = 1,
+           proportion_background = PROPORTION) %>% 
+    select(word_order_in_dataset, word_raw = word, count, background_or_not, 
+           text_name, doc_id, text_index_in_program, grade, grade_as_alpha, 
+           unit_within_grade, text_number_within_unit, word_index_in_text, num_words_in_text = n, everything()) %>% # everything() is catchall 
+    write_csv(filename_length_weighted)
     
   end = Sys.time()
   elapsed = end-start
-  print(paste(id, "done...", 22-id, "remain"))
-  print(paste("Loop for ID", id, "took", round(elapsed[[1]]/60, digits = 2), "minutes"))
-  
-  
+  print(paste(PROPORTION, "done..."))
+  print(paste("Loop for proportion", PROPORTION, "took", round(elapsed[[1]]/60, digits = 2), "minutes"))
 }
 
 ```
 
 
-# Finetuning datasets words only
+
+# Finetuning dataset: words only version
 ## Create datasets where each word is one row (to make testing easier)
 ```{r}
 
@@ -338,6 +401,54 @@ hist(num_unique_words_all)
 
 # note that the number of total indices is tested above
 print(paste("Are all the row indices identical?", all(apply(row_indices_df, 1, function(row) length(unique(row)) == 1))))
+
+
+for (PROPORTION in unique(finetuning_ids$proportion_background)){
+  
+    target_id = finetuning_ids %>% filter(proportion_background == PROPORTION)
+    
+    tmp_ = list()
+    
+    for (id in target_id$finetuning_id){
+      
+      filepath = glue(writepath, "/", id, ".csv")
+      tmp = read_csv(filepath, show_col_types = F)
+
+      tmp_[[as.character(id)]] = tmp
+      
+    }
+    stopifnot(length(names(tmp_)) == 2)
+
+    
+    df = tmp_ %>% 
+      list_rbind()
+    
+    stopifnot(length(unique(df$proportion_background))==1)
+    stopifnot(length(unique(df$sampling_condition))==2)
+    
+    tmp_a = df %>% 
+      filter(background_or_not == "not_background") %>% 
+      filter(sampling_condition == "frequency_weighted") %>% 
+      arrange(word_order_in_dataset)
+    
+    tmp_b = df %>% 
+      filter(background_or_not == "not_background") %>% 
+      filter(sampling_condition == "length_weighted") %>% 
+      arrange(word_order_in_dataset)
+    
+    stopifnot(all.equal(sort(tmp_a$word_order_in_dataset), sort(tmp_b$word_order_in_dataset)))
+    stopifnot(all.equal(tmp_a$word_raw, tmp_b$word_raw))
+  
+    print("-----------------------------------")
+    print(paste("Proportion", PROPORTION, "passes"))
+    print("-----------------------------------")
+    
+}
+
+redundant_finetuning_id = finetuning_ids %>% 
+  filter(sampling_condition == "length_weighted" & proportion_background == 0) %>% 
+  pull(finetuning_id)
+file.remove(paste(writepath2, redundant_finetuning_id, ".csv", sep = ""))
 
 ```
 
