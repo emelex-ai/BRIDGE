@@ -27,9 +27,9 @@ tmp.ipynb
 tmp.R
 tmp.Rmd
 
-.RData
-.Rhistory
-.Rproj
+*.RData
+*.Rhistory
+*.Rproj
 
 # data directories (ignored because of their large size for now)
 data/finetuning/
