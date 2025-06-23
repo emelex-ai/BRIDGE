@@ -59,6 +59,7 @@ wandb = "0.18.3"
 
 # Git dependency
 Traindata = {git = "https://github.com/mathnathan/Traindata.git"}
+openpyxl = "^3.1.5"
 
 [tool.poetry.group.gpu]
 optional = true
