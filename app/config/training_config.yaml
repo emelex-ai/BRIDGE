@@ -1,15 +1,15 @@
-num_epochs: 1000
+num_epochs: 10
 batch_size_train: 64
 batch_size_val: 64
 train_test_split: 1
 max_nb_steps: 
-learning_rate: 0.0001
-training_pathway: p2p
+learning_rate: 0.005
+training_pathway: o2p
 device: cpu #cpu #cuda
-save_every: 50
+save_every: 1
 model_artifacts_dir: 'model_artifacts'
 use_wandb: true
 weight_decay: 0.01
 checkpoint_path: 
-test_data_path: 'tests/adjusted_ewfg.pkl'
+test_data_path: 
 num_chunks: 1 # Set gt 1 for accumulated gradients (num chunks to split the batch size into)

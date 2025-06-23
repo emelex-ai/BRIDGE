@@ -73,7 +73,7 @@ class TrainModelHandler:
             ),
             training_config=self.training_config,
             dataset=bridge_dataset,
-            metrics_logger=metrics_logger_factory(self.metrics_config),
+            metrics_logger=metrics_logger_factory(self.metrics_config, self.training_config),
         )
 
     def initiate_model_training(self):

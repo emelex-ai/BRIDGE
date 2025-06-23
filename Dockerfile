@@ -21,6 +21,8 @@ RUN mkdir -p /app/data /app/model_artifacts /app/results
 # Copy data files 
 COPY data/phonreps.csv /app/data/
 
+COPY  pyproject.toml /app/
+
 # Install Poetry and dependencies (excluding GPU)
 RUN pip install poetry==1.8.5 && \
     poetry config virtualenvs.create false && \
@@ -29,10 +31,13 @@ RUN pip install poetry==1.8.5 && \
 # Download NLTK data
 RUN python -m nltk.downloader cmudict
 
+# Copy application code
+COPY . /app/
+
 # Set environment variables for memory optimization
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONOPTIMIZE=2
 
 # Set entry point
-ENTRYPOINT ["python", "-m", "app.bin.docker_entry"]
+ENTRYPOINT ["python", "-m", "app.bin.finetuning_docker_entry"]

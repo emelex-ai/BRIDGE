@@ -21,6 +21,7 @@ class TrainingConfig(BaseModel):
         default=1,
         description="Number of chunks to split a batch into for accumulated gradients",
     )
+    gcs_path: Optional[str] = Field(default=None)
 
     @model_validator(mode="before")
     def convert_paths(cls, values):
@@ -34,7 +35,7 @@ class TrainingConfig(BaseModel):
         )
         # Create the directory if it doesn't exist
         os.makedirs(values["model_artifacts_dir"], exist_ok=True)
-        if "test_data_path" in values:
+        if "test_data_path" in values and values["test_data_path"]:
             values["test_data_path"] = os.path.join(
                 project_root, "data", values["test_data_path"]
             )

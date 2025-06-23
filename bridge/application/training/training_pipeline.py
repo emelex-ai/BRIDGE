@@ -447,24 +447,29 @@ class TrainingPipeline:
                 model_path,
             )
             if self.dataset.gcs_client:
-                index = int(os.environ["CLOUD_RUN_TASK_INDEX"]) + 1
                 self.dataset.gcs_client.upload_file(
                     os.environ["BUCKET_NAME"],
                     model_path,
-                    f"pretraining/{index}/models/model_epoch_{epoch}.pth",
+                    f"{self.training_config.gcs_path}/models/model_epoch_{epoch}.pth",
                 )
             self.metrics_logger.save()
 
     def load_model(self, model_path: str):
         try:
-            checkpoint = torch.load(model_path)
+            checkpoint = torch.load(model_path, weights_only=False)
             self.model.load_state_dict(checkpoint["model_state_dict"])
             self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
             # Set the correct starting epoch
             if "epoch" in checkpoint:
-                self.start_epoch = checkpoint["epoch"] + 1  # Start from the next epoch
-                self.logger.info(f"Resuming training from epoch {self.start_epoch}")
+                if self.training_config.checkpoint_path and (
+                    "pretraining" not in self.training_config.checkpoint_path
+                    or "finetuning" not in self.training_config.checkpoint_path
+                ):
+                    self.start_epoch = (
+                        checkpoint["epoch"] + 1
+                    )  # Start from the next epoch
+                    self.logger.info(f"Resuming training from epoch {self.start_epoch}")
             else:
                 self.logger.warning(
                     "Checkpoint doesn't contain epoch information, starting from 0"
@@ -480,7 +485,7 @@ class TrainingPipeline:
     def transfer_partial_model_parameters(
         self, pretrained_model_path: str, module_prefixes: list[str]
     ):
-        checkpoint = torch.load(pretrained_model_path)
+        checkpoint = torch.load(pretrained_model_path, weights_only=False)
         pretrained_state = checkpoint["model_state_dict"]
         filtered_state = {
             k: v
