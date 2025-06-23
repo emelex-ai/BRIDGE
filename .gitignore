@@ -21,7 +21,17 @@ venv/
 model_artifacts
 .devcontainer/platform-config.json
 .Rproj.user
-data/into_reading/
+data/into_reading/ # see corresponding repo for these data
 
-*tmp.ipynb
-*tmp.R
+tmp.ipynb
+tmp.R
+tmp.Rmd
+
+.RData
+.Rhistory
+
+
+# data directories (ignored because of their large size for now)
+data/finetuning/
+data/pretraining/
+
