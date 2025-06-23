@@ -1,0 +1,137 @@
+---
+title: "Pretraining Data"
+output: html_document
+date: "2024-11-10"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+require(tidyverse)
+require(Hmisc)
+cmu = read_csv('raw/cmu.csv')
+childes = read_csv('raw/childes_bridge_receptive_no_compounds.csv') %>% 
+  mutate(word = tolower(word)) %>% 
+  group_by(word) %>% 
+  summarise(word = first(word),
+            count = sum(count)) %>% 
+  filter(!str_detect(word, "[:punct:]")) %>% 
+  filter(word %in% cmu$word) %>% 
+  filter(word %nin% c("nan"))
+
+pretrain_ids = read_csv("raw/pretrain_ids.csv", col_names = "ID")
+```
+
+
+# A linear interpolation
+Here we sample from each value between 0 and 10 from each iteration between `1` and `four_years_old`. The probabilities are linearly interpolated across intervals such that at iteration 1 the probability of sampling `0` is `1.` and at the last iteration the probability of sampling `10` is `1.`.
+
+```{r}
+
+iterations = four_years_old
+# Values to sample from
+values <- 0:10
+
+# Initialize a matrix to store probabilities for each iteration
+probabilities <- matrix(0, nrow = iterations, ncol = length(values))
+
+# Linearly interpolate probabilities
+for (i in 1:iterations) {
+  for (j in 1:length(values)) {
+    probabilities[i, j] <- max(0, 1 - abs(j - 1 - ((i - 1) / (iterations - 1) * 10)))
+  }
+}
+
+# Normalize probabilities for each iteration to sum to 1
+probabilities <- t(apply(probabilities, 1, function(row) row / sum(row)))
+
+samples <- sapply(1:iterations, function(i) sample(values, 1, prob = probabilities[i, ]))
+
+
+
+
+tibble(x = seq(four_years_old),
+       y = samples) %>% 
+  ggplot(aes(x, y)) +
+  geom_point() +
+  geom_smooth(method = "loess")
+
+
+
+samples_ = list()
+n_samples = 500
+for (i in seq(n_samples)){
+  
+  samples_[[i]] = sum(sapply(1:iterations, function(i) sample(values, 1, prob = probabilities[i, ])))
+  
+  
+}
+
+N = median(unlist(samples_))
+
+```
+
+The median is 7300.
+
+Let's determine all the words in our CHILDES samples for which we have data in CMU dictionary. We write this data to file. These words will be used for our pretraining routine. We do this 50 times because it represents some random variation across learners that enter into the main training routines.
+
+
+```{r}
+
+N = 7300
+
+set.seed(567)
+
+for (id in pretrain_ids$ID){
+  
+  subsample = childes %>% 
+    sample_n(size = N, weight = count)
+  
+
+  filename = str_c("pretraining/", id, ".csv")
+  
+  subsample %>% 
+    rename(word_raw = word) %>% 
+    write_csv(filename)
+
+}
+
+
+
+```
+
+## Inspect the data generated for pretraining
+```{r}
+filenames = list.files("pretraining", pattern = "*.csv", full.names = T)
+
+pretrain_sets = list()
+
+for (filename  in filenames){
+  
+  tmp = read_csv(filename)
+  pretrain_sets[[filename]] = tmp
+  
+  
+  
+}
+
+common_words = Reduce(intersect, lapply(pretrain_sets, function(x) x$word_raw))
+length(common_words)
+
+intersects = c()
+
+for (set in pretrain_sets){
+  
+  for (set_ in pretrain_sets){
+    
+    intersects = c(length(intersect(set$word_raw, set_$word_raw)), intersects)
+    print(length(set_$word_raw))
+  }
+  
+  
+  
+}
+
+
+```
+
