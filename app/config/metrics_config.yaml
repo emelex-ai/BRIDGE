@@ -1,5 +1,6 @@
 batch_metrics: true
 training_metrics: true
 validation_metrics: true
-modes: ["gcs"]
+#modes: ["gcs"]
+modes: ["csv"]
 filename: "pretraining_results.csv"

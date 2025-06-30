@@ -264,6 +264,8 @@ class TrainingPipeline:
         return sub_slices
 
     def train_single_epoch(self, epoch: int) -> dict:
+        # Gordon: test checkpoint size
+        self.save_model(epoch, "gordon_checkpoint")  # REMOVE WHEN DONE (GE)
         self.model.train()
         start = time.time()
         last_update_time = time.time()
@@ -454,6 +456,34 @@ class TrainingPipeline:
                     f"pretraining/{index}/models/model_epoch_{epoch}.pth",
                 )
             self.metrics_logger.save()
+
+    # New: GE, 2025-06-29
+    def save_model_step(self, epoch: int, step: int, run_name: str) -> None:
+        """Save model checkpoint at the step level."""
+        if step % self.training_config.save_every == 0:  # Or save every step by removing this condition
+            model_path = (
+                f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}_step_{step}.pth"
+            )
+            torch.save(
+                {
+                    "model_config": self.model.model_config,
+                    "dataset_config": self.dataset.dataset_config,
+                    "model_state_dict": self.model.state_dict(),
+                    "optimizer_state_dict": self.optimizer.state_dict(),
+                    "epoch": epoch,
+                    "step": step,  # Add step information
+                },
+                model_path,
+            )
+            
+            # Upload to GCS if available
+            if self.dataset.gcs_client:
+                index = int(os.environ.get("CLOUD_RUN_TASK_INDEX", 0)) + 1
+                self.dataset.gcs_client.upload_file(
+                    os.environ["BUCKET_NAME"],
+                    model_path,
+                    f"pretraining/{index}/models/model_epoch_{epoch}_step_{step}.pth",
+                )
 
     def load_model(self, model_path: str):
         try:

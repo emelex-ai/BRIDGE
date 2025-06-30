@@ -37,6 +37,7 @@ class TrainModelHandler:
         self.dataset_config = dataset_config
         self.training_config = training_config
         self.metrics_config = metrics_config
+        print(f"==> {dataset_config.dataset_filepath}")
         self.gcs_client = (
             GCSClient() if dataset_config.dataset_filepath.startswith("gs://") else None
         )

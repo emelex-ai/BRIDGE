@@ -1,17 +1,18 @@
-from bridge.domain.datamodels import ModelConfig
-from bridge.domain.model.encoder import Encoder
-from bridge.domain.model.decoder import Decoder
-from bridge.utils.helper_functions import set_seed
-from bridge.domain.datamodels import BridgeEncoding, GenerationOutput
-from bridge.utils import device_manager
-from bridge.domain.dataset import BridgeDataset
 from typing import Any, Literal
-import torch.nn as nn
+
 import torch
+import torch.nn as nn
+from torchsummary import summary
+
+from bridge.domain.datamodels import BridgeEncoding, GenerationOutput, ModelConfig
+from bridge.domain.dataset import BridgeDataset
+from bridge.domain.model.decoder import Decoder
+from bridge.domain.model.encoder import Encoder
+from bridge.utils import device_manager
+from bridge.utils.helper_functions import set_seed
 
 
 class Model(nn.Module):
-
     def __init__(
         self,
         model_config: ModelConfig,
@@ -30,8 +31,8 @@ class Model(nn.Module):
         self.phonological_vocabulary_size = dataset.phonological_vocabulary_size
 
         # Hardcoded sequence lengths - will be replaced with dynamic position encoding in the future
-        self.max_orth_seq_len = 30
-        self.max_phon_seq_len = 30
+        self.max_orth_seq_len = 1024 * 4  # 30
+        self.max_phon_seq_len = 1024 * 4  # 30
 
         # Initialize embeddings and position embeddings
         self.orthography_embedding = nn.Embedding(
@@ -223,7 +224,6 @@ class Model(nn.Module):
         phon_dec_input: list[torch.Tensor],
         phon_dec_pad_mask: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
-
         # Process phonological decoder input
         final_encoding = self.embed_o(orth_enc_input, orth_enc_pad_mask)
         phon_dec_input = self.embed_phon_tokens(
@@ -1332,3 +1332,124 @@ class Model(nn.Module):
                     f"Orthographic tokens must be less than vocabulary size "
                     f"({self.orthographic_vocabulary_size})"
                 )
+
+
+def get_tensor_memory(tensor: torch.Tensor) -> int:
+    """Return memory usage of a tensor in bytes."""
+    return tensor.element_size() * tensor.numel()
+
+
+def get_module_memory(model: torch.nn.Module) -> int:
+    """Return total memory usage (in bytes) of all parameters, buffers, and persistent tensors."""
+    seen = set()
+    total = 0
+
+    # Parameters
+    for p in model.parameters():
+        if id(p) not in seen:
+            total += get_tensor_memory(p)
+            seen.add(id(p))
+
+    # Buffers
+    for b in model.buffers():
+        if id(b) not in seen:
+            total += get_tensor_memory(b)
+            seen.add(id(b))
+
+    # Other persistent tensors (attributes)
+    for name, attr in model.__dict__.items():
+        if isinstance(attr, torch.Tensor) and id(attr) not in seen:
+            total += get_tensor_memory(attr)
+            seen.add(id(attr))
+
+    return total
+
+
+if __name__ == "__main__":
+    import torch
+
+    # Example configuration and dataset
+    model_config = ModelConfig(
+        d_model=1024,
+        nhead=16,
+        num_phon_enc_layers=16,
+        num_orth_enc_layers=16,
+        num_mixing_enc_layers=8,
+        num_orth_dec_layers=16,
+        num_phon_dec_layers=16,
+        d_embedding=4,
+        seed=42,
+    )
+
+    from bridge.domain.model.synthetic_dataset import SyntheticBridgeDataset
+
+    dataset = (
+        SyntheticBridgeDataset()
+    )  # You need to replace this with actual dataset initialization
+    print(f"{dataset=}")
+
+    # Instantiate the model
+    model = Model(model_config, dataset)
+    print(model)
+
+    # for name, p in model.named_parameters():
+    # print(name, p.shape)
+
+    # Calculate the number of parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"Total number of parameters: {total_params}")
+
+    # Calculate the total memory used by the model
+    total_memory_bytes = get_module_memory(model)
+    print(
+        f"Total memory used by the model (parameters, buffers, persistent tensors): {total_memory_bytes / (1024 ** 2):.2f} MB"
+    )
+
+    print("==============================")
+    # Create sample input tensors for testing
+    batch_size, seq_len = 8, 1024 * 4
+
+    # Create dummy orthographic input
+    orth_enc_input = torch.randint(
+        0, model.orthographic_vocabulary_size, (batch_size, seq_len)
+    )
+    orth_enc_pad_mask = torch.zeros((batch_size, seq_len), dtype=torch.bool)
+
+    # Create dummy phonological input (list of tensors)
+    phon_enc_input = [
+        torch.randint(0, model.phonological_vocabulary_size, (seq_len,))
+        for _ in range(batch_size)
+    ]
+    phon_enc_pad_mask = torch.zeros((batch_size, seq_len), dtype=torch.bool)
+
+    # Create dummy decoder inputs
+    phon_dec_input = [
+        torch.randint(0, model.phonological_vocabulary_size, (seq_len,))
+        for _ in range(batch_size)
+    ]
+    orth_dec_input = torch.randint(
+        0, model.orthographic_vocabulary_size, (batch_size, seq_len)
+    )
+
+    # Test the model with proper input format
+    try:
+        with torch.no_grad():
+            for i in range(1000):
+                print("i= ", i)
+                output = model.forward(
+                    "op2op",
+                    orth_enc_input=orth_enc_input,
+                    orth_enc_pad_mask=orth_enc_pad_mask,
+                    phon_enc_input=phon_enc_input,
+                    phon_enc_pad_mask=phon_enc_pad_mask,
+                    phon_dec_input=phon_dec_input,
+                    phon_dec_pad_mask=phon_enc_pad_mask,
+                    orth_dec_input=orth_dec_input,
+                    orth_dec_pad_mask=orth_enc_pad_mask,
+                )
+        print("Model forward pass successful!")
+        print(f"Output keys: {output.keys()}")
+        for key, value in output.items():
+            print(f"{key} shape: {value.shape}")
+    except Exception as e:
+        print(f"Error during forward pass: {e}")
