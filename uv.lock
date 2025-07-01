@@ -20,6 +20,7 @@ name = "bridge"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "google-cloud-storage" },
     { name = "nltk" },
     { name = "numpy" },
     { name = "pandas" },
@@ -40,6 +41,7 @@ dev = [
     { name = "deptry" },
     { name = "pytest" },
     { name = "pytest-mock" },
+    { name = "wandb" },
 ]
 gcp = [
     { name = "google-cloud-storage" },
@@ -55,7 +57,8 @@ wandb = [
 
 [package.metadata]
 requires-dist = [
-    { name = "deptry", marker = "extra == 'dev'", specifier = ">=0.23.0,<1.0.0" },
+    { name = "deptry", marker = "extra == 'dev'", specifier = ">=0.23.0" },
+    { name = "google-cloud-storage", specifier = ">=3.1.0,<4.0.0" },
     { name = "google-cloud-storage", marker = "extra == 'all'", specifier = ">=3.1.0,<4.0.0" },
     { name = "google-cloud-storage", marker = "extra == 'gcp'", specifier = ">=3.1.0,<4.0.0" },
     { name = "ninja", marker = "extra == 'gpu'", specifier = ">=1.10.0" },
@@ -65,14 +68,15 @@ requires-dist = [
     { name = "protobuf", specifier = ">=5.28.2,<6.0.0" },
     { name = "psutil", marker = "extra == 'gpu'", specifier = ">=7.0.0" },
     { name = "pydantic", specifier = ">=2.9.2,<3.0.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.5,<9.0.0" },
-    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.14.0,<4.0.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4.0" },
+    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.14.1" },
     { name = "pyyaml", specifier = ">=6.0.2,<7.0.0" },
     { name = "torch", specifier = ">=2.4.0,<3.0.0" },
     { name = "torchsummary", specifier = ">=1.5.1" },
     { name = "tqdm", specifier = ">=4.66.5,<5.0.0" },
     { name = "vllm-flash-attn", marker = "extra == 'gpu'", specifier = "==2.6.2" },
     { name = "wandb", marker = "extra == 'all'", specifier = ">=0.18.3,<1.0.0" },
+    { name = "wandb", marker = "extra == 'dev'", specifier = ">=0.18.3,<1.0.0" },
     { name = "wandb", marker = "extra == 'wandb'", specifier = ">=0.18.3,<1.0.0" },
 ]
 provides-extras = ["wandb", "gcp", "all", "gpu", "dev"]
