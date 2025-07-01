@@ -276,13 +276,22 @@ if __name__ == "__main__":
     nhead = 8
     num_layers = 6
 
+    # Add these lines before creating the encoder
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if not torch.cuda.is_available():
+        print("ERROR: FlashAttention requires CUDA")
+        exit(1)
+
     # Create encoder
     encoder = FlashAttentionEncoder(
         d_model=d_model, nhead=nhead, num_layers=num_layers, batch_first=True
     )
 
+    # Move everything to GPU
+    encoder = encoder.to(device)
+
     # Test input
-    x = torch.randn(batch_size, seq_len, d_model)
+    x = torch.randn(batch_size, seq_len, d_model, device=device)
 
     # Forward pass
     output = encoder(x)
@@ -293,6 +302,7 @@ if __name__ == "__main__":
 
     # Test individual layer
     layer = FlashAttentionEncoderLayer(d_model=d_model, nhead=nhead, batch_first=True)
+    layer = layer.to(device)  # Move layer to GPU
     layer_output = layer(x)
     print(f"Layer output shape: {layer_output.shape}")
     print("Flash Attention Layer test passed!")
