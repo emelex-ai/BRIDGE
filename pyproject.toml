@@ -17,6 +17,7 @@ classifiers = [
 ]
 
 dependencies = [
+    "google-cloud-storage>=3.1.0,<4.0.0",
     "nltk>=3.8.1,<4.0.0",
     "numpy>=1.26.0,<2.0.0",
     "pandas>=2.1.2,<3.0.0",
@@ -28,14 +29,12 @@ dependencies = [
     "tqdm>=4.66.5,<5.0.0",
 ]
 
-[project.optional-dependencies]
-wandb = ["wandb>=0.18.3,<1.0.0"]
-gcp = ["google-cloud-storage>=3.1.0,<4.0.0"]
-all = ["wandb>=0.18.3,<1.0.0", "google-cloud-storage>=3.1.0,<4.0.0"]
+[dependency-groups]
 dev = [
-    "deptry>=0.23.0,<1.0.0",
-    "pytest>=8.3.5,<9.0.0",
-    "pytest-mock>=3.14.0,<4.0.0",
+    "deptry>=0.23.0",
+    "pytest>=8.4.0",
+    "pytest-mock>=3.14.1",
+    "wandb>=0.18.3,<1.0.0",
 ]
 
 [project.urls]
