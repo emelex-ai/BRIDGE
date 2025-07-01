@@ -11,6 +11,7 @@ require(Hmisc)
 require(readxl)
 require(papaja)
 require(jsonlite)
+require(glue)
 ```
 
 # Overview
@@ -416,7 +417,7 @@ for (filename in filenames){
   
   # are all the words in the set either in cmudict or in custom_cmudict:
   stopifnot(all(tmp$word_raw %in% c(cmu, names(custom_cmudict))))
-  
+  stopifnot(sum(is.na(tmp)) == 0)
 }
 
 print(paste("Are all tested values equal? ...", all_))
@@ -504,6 +505,8 @@ redundant_finetuning_id = finetuning_ids %>%
 
 file.remove(paste(writepath, "/", redundant_finetuning_id, ".csv", sep = ""))
 file.remove(paste(writepath, "/", "by_word/", redundant_finetuning_id, "_by_word.csv", sep = ""))
+
+
 
 ```
 
@@ -749,6 +752,7 @@ for (filename in filenames){
   
   # are all the words in the set either in cmudict or in custom_cmudict:
   stopifnot(all(tmp$word_raw %in% c(cmu, names(custom_cmudict))))
+  stopifnot(sum(is.na(tmp)) == 0)
   
 }
 
