@@ -1,7 +1,7 @@
 [project]
 name = "bridge"
 version = "0.1.0"
-description = "A computational model for naming printed words that bridges orthographic and phonological representations"
+description = "A computational model for naming printed words that bridges orthographic and phonological representations."
 authors = [
     {name = "Nathan Crock", email = "nathan@emelex.com"}
 ]
