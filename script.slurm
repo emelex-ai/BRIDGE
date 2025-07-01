@@ -47,4 +47,4 @@ apptainer exec \
     --bind "$SHARED_VENV:$SHARED_VENV" \
     --bind "${TMPDIR:-/tmp}:${TMPDIR:-/tmp}" \
     "$CONTAINER_IMAGE" \
-    bash -c "cd $SLURM_SUBMIT_DIR && source $SHARED_VENV/bin/activate && python $PYTHON_SCRIPT"
+    bash -c "cd $SLURM_SUBMIT_DIR && source $SHARED_VENV/bin/activate && uv run python $PYTHON_SCRIPT"
