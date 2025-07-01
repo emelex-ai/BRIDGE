@@ -1,0 +1,54 @@
+Bootstrap: localimage
+From: /gpfs/home/gerlebacher/containers/cuda_uv_12.sif
+
+%files
+    pyproject.toml /tmp/pyproject.toml
+
+%post
+    # Update system packages
+    apt-get update && apt-get install -y \
+        curl \
+        wget \
+        git \
+        && rm -rf /var/lib/apt/lists/*
+
+    # Set up working directory
+    mkdir -p /workspace
+    cd /workspace
+    
+    # Copy pyproject.toml
+    cp /tmp/pyproject.toml .
+    
+    # Install dependencies with uv
+    export PYTHONUNBUFFERED=1
+    export UV_CACHE_DIR=/tmp/uv-cache
+    
+    # Initialize uv project and install dependencies
+    uv sync --frozen || uv sync
+    
+    # Verify installation
+    source .venv/bin/activate
+    python -c "import torch; print(f'PyTorch: {torch.__version__}')"
+    python -c "import matplotlib; print(f'Matplotlib: {matplotlib.__version__}')"
+    python -c "import numpy; print(f'NumPy: {numpy.__version__}')"
+    
+    # Clean up cache to reduce image size
+    rm -rf /tmp/uv-cache
+    rm -rf /tmp/pyproject.toml
+
+%environment
+    export PYTHONUNBUFFERED=1
+    export UV_PYTHON_PREFERENCE=only-system
+
+%runscript
+    echo "Enhanced CUDA + UV container with pre-installed dependencies"
+    echo "Available Python packages:"
+    source /workspace/.venv/bin/activate
+    pip list | head -20
+
+%help
+    This container extends cuda_uv_12.sif with pre-installed Python dependencies
+    including PyTorch, NumPy, Matplotlib, and NeMo toolkit.
+    
+    Usage:
+    apptainer exec --nv container.sif python your_script.py
