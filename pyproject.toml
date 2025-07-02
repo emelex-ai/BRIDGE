@@ -36,7 +36,8 @@ all = ["wandb>=0.18.3,<1.0.0", "google-cloud-storage>=3.1.0,<4.0.0"]
 cuda = [
 	"ninja>=1.10.0", 
 	"psutil>=7.0.0", 
-	"vllm-flash-attn==2.6.2",
+	"local-attention==1.11.1",
+	#"vllm-flash-attn==2.6.2",
 ]
 dev = [
     "deptry>=0.23.0",
