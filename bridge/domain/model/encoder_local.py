@@ -295,3 +295,237 @@ if __name__ == "__main__":
         exit(1)
     else:
         print("All tests passed successfully!")
+
+    def test_autoregressive_scaling():
+        """Test autoregressive local attention scaling with different window sizes.
+
+        Tests scaling performance with context size 4096 and various window sizes.
+        Measures forward pass time for different window configurations.
+        """
+        print("=" * 60)
+        print("Testing Autoregressive Local Attention Scaling")
+        print("=" * 60)
+
+        # Test parameters
+        batch_size = 2  # Smaller batch for memory efficiency
+        seq_len = 4096  # Large context size
+        d_model = 512
+        nhead = 8
+        num_layers = 2  # Fewer layers for faster testing
+        window_sizes = [16, 64, 128, 512, 4096]  # Different window sizes to test
+        num_steps = 5  # Number of forward passes to average timing
+
+        print(f"Test configuration:")
+        print(f"  Batch size: {batch_size}")
+        print(f"  Sequence length: {seq_len}")
+        print(f"  Model dimension: {d_model}")
+        print(f"  Number of heads: {nhead}")
+        print(f"  Number of layers: {num_layers}")
+        print(f"  Number of timing steps: {num_steps}")
+        print(f"  Window sizes to test: {window_sizes}")
+        print()
+
+        # Test on CUDA if available, otherwise CPU
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f"Running tests on: {device}")
+        print()
+
+        results = []
+
+        for window_size in window_sizes:
+            print(f"Testing window size: {window_size}")
+
+            try:
+                # Create encoder with current window size
+                encoder = EncoderLocal(
+                    d_model=d_model,
+                    nhead=nhead,
+                    num_layers=num_layers,
+                    device=device,
+                    window_size=window_size,
+                    causal=True,  # Autoregressive
+                    look_backward=1,
+                    look_forward=0,  # Causal - no looking forward
+                )
+
+                if device == "cuda":
+                    encoder = encoder.to("cuda")
+
+                # Create test input
+                x = torch.randn(batch_size, seq_len, d_model, device=device)
+
+                # Warmup run
+                with torch.no_grad():
+                    _ = encoder(x)
+
+                if device == "cuda":
+                    torch.cuda.synchronize()
+
+                # Time multiple forward passes
+                import time
+
+                times = []
+
+                for step in range(num_steps):
+                    if device == "cuda":
+                        torch.cuda.synchronize()
+
+                    start_time = time.time()
+
+                    with torch.no_grad():
+                        output = encoder(x)
+
+                    if device == "cuda":
+                        torch.cuda.synchronize()
+
+                    end_time = time.time()
+                    step_time = end_time - start_time
+                    times.append(step_time)
+
+                    print(f"  Step {step + 1}: {step_time:.4f}s")
+
+                # Calculate statistics
+                avg_time = sum(times) / len(times)
+                min_time = min(times)
+                max_time = max(times)
+
+                # Memory usage (if CUDA)
+                if device == "cuda":
+                    torch.cuda.empty_cache()
+                    initial_memory = torch.cuda.memory_allocated()
+                    with torch.no_grad():
+                        _ = encoder(x)
+                    peak_memory = torch.cuda.max_memory_allocated()
+                    memory_used = (peak_memory - initial_memory) / 1024**2  # MB
+                    torch.cuda.empty_cache()
+                else:
+                    memory_used = 0
+
+                # Verify output shape
+                assert (
+                    output.shape == x.shape
+                ), f"Output shape mismatch: {output.shape} vs {x.shape}"
+
+                # Store results
+                result = {
+                    "window_size": window_size,
+                    "avg_time": avg_time,
+                    "min_time": min_time,
+                    "max_time": max_time,
+                    "memory_mb": memory_used,
+                    "tokens_per_sec": (batch_size * seq_len) / avg_time,
+                    "success": True,
+                }
+                results.append(result)
+
+                print(
+                    f"  ✓ Average time: {avg_time:.4f}s (min: {min_time:.4f}s, max: {max_time:.4f}s)"
+                )
+                print(f"  ✓ Tokens/sec: {result['tokens_per_sec']:.0f}")
+                if device == "cuda":
+                    print(f"  ✓ Memory used: {memory_used:.2f} MB")
+                print(f"  ✓ Shape verification passed")
+                print()
+
+            except Exception as e:
+                print(f"  ❌ Failed: {str(e)}")
+                result = {
+                    "window_size": window_size,
+                    "avg_time": float("inf"),
+                    "min_time": float("inf"),
+                    "max_time": float("inf"),
+                    "memory_mb": 0,
+                    "tokens_per_sec": 0,
+                    "success": False,
+                    "error": str(e),
+                }
+                results.append(result)
+                import traceback
+
+                traceback.print_exc()
+                print()
+
+        # Print summary results
+        print("=" * 60)
+        print("AUTOREGRESSIVE SCALING RESULTS SUMMARY")
+        print("=" * 60)
+        print(
+            f"{'Window Size':<12} {'Avg Time (s)':<12} {'Tokens/sec':<12} {'Memory (MB)':<12} {'Status':<8}"
+        )
+        print("-" * 60)
+
+        successful_results = [r for r in results if r["success"]]
+
+        for result in results:
+            status = "✓ PASS" if result["success"] else "❌ FAIL"
+            print(
+                f"{result['window_size']:<12} {result['avg_time']:<12.4f} {result['tokens_per_sec']:<12.0f} {result['memory_mb']:<12.2f} {status:<8}"
+            )
+
+        if len(successful_results) > 1:
+            print("\n" + "=" * 60)
+            print("SCALING ANALYSIS")
+            print("=" * 60)
+
+            # Compare to baseline (smallest successful window)
+            baseline = successful_results[0]
+            print(f"Baseline (window size {baseline['window_size']}):")
+            print(f"  Time: {baseline['avg_time']:.4f}s")
+            print(f"  Tokens/sec: {baseline['tokens_per_sec']:.0f}")
+            if device == "cuda" and baseline["memory_mb"] > 0:
+                memory_ratio = result["memory_mb"] / baseline["memory_mb"]
+                print(
+                    f"  Window {result['window_size']:>4}: {memory_ratio:.2f}x memory"
+                )
+            print()
+
+            print("Relative performance:")
+            for result in successful_results[1:]:
+                time_ratio = result["avg_time"] / baseline["avg_time"]
+                speed_ratio = result["tokens_per_sec"] / baseline["tokens_per_sec"]
+                if device == "cuda" and baseline["memory_mb"] > 0:
+                    memory_ratio = result["memory_mb"] / baseline["memory_mb"]
+                    print(
+                        f"  Window {result['window_size']:>4}: {time_ratio:.2f}x time, {speed_ratio:.2f}x speed, {memory_ratio:.2f}x memory"
+                    )
+                else:
+                    print(
+                        f"  Window {result['window_size']:>4}: {time_ratio:.2f}x time, {speed_ratio:.2f}x speed"
+                    )
+
+            # Theoretical vs actual scaling
+            print(f"\nTheoretical scaling (assuming O(n*w) complexity):")
+            for result in successful_results[1:]:
+                theoretical_ratio = result["window_size"] / baseline["window_size"]
+                actual_ratio = result["avg_time"] / baseline["avg_time"]
+                efficiency = theoretical_ratio / actual_ratio if actual_ratio > 0 else 0
+                print(
+                    f"  Window {result['window_size']:>4}: theoretical {theoretical_ratio:.2f}x, actual {actual_ratio:.2f}x, efficiency {efficiency:.2f}"
+                )
+
+        print("\n" + "=" * 60)
+        if all(r["success"] for r in results):
+            print("All autoregressive scaling tests PASSED! ✓")
+        else:
+            failed_count = sum(1 for r in results if not r["success"])
+            print(f"{failed_count} out of {len(results)} tests FAILED! ❌")
+        print("=" * 60)
+
+        return all(r["success"] for r in results)
+
+    # Run both tests
+    print("Running basic functionality tests...")
+    basic_success = test_encoder_local()
+
+    print("\n" + "=" * 80 + "\n")
+
+    print("Running autoregressive scaling tests...")
+    scaling_success = test_autoregressive_scaling()
+
+    overall_success = basic_success and scaling_success
+
+    if not overall_success:
+        print("\nSome tests failed!")
+        exit(1)
+    else:
+        print("\nAll tests passed successfully!")
