@@ -1,10 +1,15 @@
 from pydantic import BaseModel, Field, model_validator
+from bridge.utils import get_project_root
+from pathlib import PosixPath
+from pydantic import BaseModel, Field, model_validator
+from bridge.utils import get_project_root
+from pathlib import PosixPath
 import os
 
 
 class DatasetConfig(BaseModel):
-    dataset_filepath: str = Field(description="Path to dataset file")
-    custom_cmudict_path: str = Field(
+    dataset_filepath: str | PosixPath = Field(description="Path to dataset file")
+    custom_cmudict_path: str | PosixPath = Field(
         default=None, description="Path to custom CMU dictionary file"
     )
     tokenizer_cache_size: int = Field(
@@ -14,9 +19,21 @@ class DatasetConfig(BaseModel):
     @model_validator(mode="before")
     def convert_paths(cls, values):
         """Convert relative paths to absolute paths before validation occurs."""
+        project_root = get_project_root()
         if "dataset_filepath" not in values:
-            raise FileNotFoundError(
-                f"No dataset file specified"
+            values["dataset_filepath"] = cls.model_fields[
+                "dataset_filepath"
+            ].get_default()
+
+        if "gs://" not in values["dataset_filepath"]:
+            # Convert relative paths to absolute paths
+            values["dataset_filepath"] = os.path.join(
+                project_root, "data", values["dataset_filepath"]
+            )
+
+        if "custom_cmudict_path" in values and values["custom_cmudict_path"]:
+            values["custom_cmudict_path"] = os.path.join(
+                project_root, "data", values["custom_cmudict_path"]
             )
 
         # For backward compatibility

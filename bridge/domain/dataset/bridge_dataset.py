@@ -99,6 +99,8 @@ class BridgeDataset:
         return self.gcs_client.read_csv(
             bucket_name=bucket,
             blob_name=blob,
+            keep_default_na=False,
+            dtype={"word_raw": str},
             sep=",",
             parse_dates=True,
             low_memory=False,
