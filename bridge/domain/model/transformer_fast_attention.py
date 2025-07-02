@@ -53,6 +53,7 @@ class FlashAttentionEncoderLayer(TransformerEncoderLayer):
             device,
             dtype,
         )
+        print(f"Enter FlashAttentionEncoderLayer initialized with {kwargs}")
 
         # Store parameters for Flash Attention
         self.d_model = d_model
@@ -113,6 +114,8 @@ class FlashAttentionEncoderLayer(TransformerEncoderLayer):
             v = v.half()
 
         # Handle causal mask (if attn_mask is provided)
+        # GE: Why perform this check?
+        # What about for windowed transform?
         causal = False
         if attn_mask is not None:
             # Check if it's a causal mask (lower triangular)
@@ -270,6 +273,7 @@ class FlashAttentionEncoder(nn.Module):
         return output
 
 
+# ----------------------------------------------------------------------
 if __name__ == "__main__":
     # Test the Flash Attention encoder
     batch_size, seq_len, d_model = 4, 128, 512
