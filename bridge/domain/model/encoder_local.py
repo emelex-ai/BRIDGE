@@ -299,20 +299,31 @@ if __name__ == "__main__":
     def test_autoregressive_scaling():
         """Test autoregressive local attention scaling with different window sizes.
 
-        Tests scaling performance with context size 4096 and various window sizes.
+        Tests scaling performance with context size 8192 and various window sizes.
         Measures forward pass time for different window configurations.
         """
         print("=" * 60)
         print("Testing Autoregressive Local Attention Scaling")
         print("=" * 60)
 
-        # Test parameters
+        # Test parameters - Updated for larger context and more window sizes
         batch_size = 2  # Smaller batch for memory efficiency
-        seq_len = 4096  # Large context size
+        seq_len = 8192  # Larger context size
         d_model = 512
         nhead = 8
         num_layers = 2  # Fewer layers for faster testing
-        window_sizes = [16, 64, 128, 512, 4096]  # Different window sizes to test
+        window_sizes = [
+            16,
+            32,
+            64,
+            128,
+            256,
+            512,
+            1024,
+            2048,
+            4096,
+            8192,
+        ]  # Extended window sizes
         num_steps = 5  # Number of forward passes to average timing
 
         print(f"Test configuration:")
@@ -446,13 +457,13 @@ if __name__ == "__main__":
                 print()
 
         # Print summary results
-        print("=" * 60)
-        print("AUTOREGRESSIVE SCALING RESULTS SUMMARY")
-        print("=" * 60)
+        print("=" * 80)
+        print("AUTOREGRESSIVE SCALING RESULTS SUMMARY (Context Size: 8,192)")
+        print("=" * 80)
         print(
             f"{'Window Size':<12} {'Avg Time (s)':<12} {'Tokens/sec':<12} {'Memory (MB)':<12} {'Status':<8}"
         )
-        print("-" * 60)
+        print("-" * 80)
 
         successful_results = [r for r in results if r["success"]]
 
@@ -463,53 +474,107 @@ if __name__ == "__main__":
             )
 
         if len(successful_results) > 1:
-            print("\n" + "=" * 60)
+            print("\n" + "=" * 80)
             print("SCALING ANALYSIS")
-            print("=" * 60)
+            print("=" * 80)
 
             # Compare to baseline (smallest successful window)
             baseline = successful_results[0]
             print(f"Baseline (window size {baseline['window_size']}):")
             print(f"  Time: {baseline['avg_time']:.4f}s")
             print(f"  Tokens/sec: {baseline['tokens_per_sec']:.0f}")
-            if device == "cuda" and baseline["memory_mb"] > 0:
-                memory_ratio = result["memory_mb"] / baseline["memory_mb"]
-                print(
-                    f"  Window {result['window_size']:>4}: {memory_ratio:.2f}x memory"
-                )
+            if device == "cuda":
+                print(f"  Memory: {baseline['memory_mb']:.2f} MB")
             print()
 
             print("Relative performance:")
+            print(
+                f"{'Window':<8} {'Time Ratio':<12} {'Speed Ratio':<12} {'Memory Ratio':<12} {'Efficiency':<12}"
+            )
+            print("-" * 60)
+
             for result in successful_results[1:]:
                 time_ratio = result["avg_time"] / baseline["avg_time"]
                 speed_ratio = result["tokens_per_sec"] / baseline["tokens_per_sec"]
+                theoretical_ratio = result["window_size"] / baseline["window_size"]
+                efficiency = theoretical_ratio / time_ratio if time_ratio > 0 else 0
+
                 if device == "cuda" and baseline["memory_mb"] > 0:
                     memory_ratio = result["memory_mb"] / baseline["memory_mb"]
                     print(
-                        f"  Window {result['window_size']:>4}: {time_ratio:.2f}x time, {speed_ratio:.2f}x speed, {memory_ratio:.2f}x memory"
+                        f"{result['window_size']:<8} {time_ratio:<12.2f} {speed_ratio:<12.2f} {memory_ratio:<12.2f} {efficiency:<12.2f}"
                     )
                 else:
                     print(
-                        f"  Window {result['window_size']:>4}: {time_ratio:.2f}x time, {speed_ratio:.2f}x speed"
+                        f"{result['window_size']:<8} {time_ratio:<12.2f} {speed_ratio:<12.2f} {'N/A':<12} {efficiency:<12.2f}"
                     )
 
-            # Theoretical vs actual scaling
-            print(f"\nTheoretical scaling (assuming O(n*w) complexity):")
-            for result in successful_results[1:]:
-                theoretical_ratio = result["window_size"] / baseline["window_size"]
-                actual_ratio = result["avg_time"] / baseline["avg_time"]
-                efficiency = theoretical_ratio / actual_ratio if actual_ratio > 0 else 0
+            # Detailed theoretical vs actual scaling
+            print(f"\nDetailed scaling analysis:")
+            print(
+                f"{'Window':<8} {'Theoretical':<12} {'Actual':<12} {'Efficiency':<12} {'Time (s)':<12}"
+            )
+            print("-" * 60)
+
+            for result in successful_results:
+                if result == baseline:
+                    print(
+                        f"{result['window_size']:<8} {'1.00x':<12} {'1.00x':<12} {'baseline':<12} {result['avg_time']:<12.4f}"
+                    )
+                else:
+                    theoretical_ratio = result["window_size"] / baseline["window_size"]
+                    actual_ratio = result["avg_time"] / baseline["avg_time"]
+                    efficiency = (
+                        theoretical_ratio / actual_ratio if actual_ratio > 0 else 0
+                    )
+                    print(
+                        f"{result['window_size']:<8} {theoretical_ratio:<12.2f} {actual_ratio:<12.2f} {efficiency:<12.2f} {result['avg_time']:<12.4f}"
+                    )
+
+            # Performance sweet spots analysis
+            print(f"\nPerformance sweet spots:")
+            print(
+                f"{'Window':<8} {'Speed Drop':<12} {'Memory Cost':<12} {'Recommendation':<20}"
+            )
+            print("-" * 60)
+
+            for result in successful_results:
+                speed_drop = (
+                    (baseline["tokens_per_sec"] - result["tokens_per_sec"])
+                    / baseline["tokens_per_sec"]
+                    * 100
+                )
+                if device == "cuda" and baseline["memory_mb"] > 0:
+                    memory_increase = (
+                        (result["memory_mb"] - baseline["memory_mb"])
+                        / baseline["memory_mb"]
+                        * 100
+                    )
+                else:
+                    memory_increase = 0
+
+                if speed_drop < 10:
+                    recommendation = "Excellent"
+                elif speed_drop < 25:
+                    recommendation = "Very Good"
+                elif speed_drop < 50:
+                    recommendation = "Good"
+                elif speed_drop < 75:
+                    recommendation = "Acceptable"
+                else:
+                    recommendation = "Poor"
+
                 print(
-                    f"  Window {result['window_size']:>4}: theoretical {theoretical_ratio:.2f}x, actual {actual_ratio:.2f}x, efficiency {efficiency:.2f}"
+                    f"{result['window_size']:<8} {speed_drop:<12.1f}% {memory_increase:<12.1f}% {recommendation:<20}"
                 )
 
-        print("\n" + "=" * 60)
+        print("\n" + "=" * 80)
         if all(r["success"] for r in results):
             print("All autoregressive scaling tests PASSED! ✓")
         else:
             failed_count = sum(1 for r in results if not r["success"])
             print(f"{failed_count} out of {len(results)} tests FAILED! ❌")
-        print("=" * 60)
+        print("=" * 80)
 
         return all(r["success"] for r in results)
 
