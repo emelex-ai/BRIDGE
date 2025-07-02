@@ -53,7 +53,7 @@ class FlashAttentionEncoderLayer(TransformerEncoderLayer):
             device,
             dtype,
         )
-        print(f"Enter FlashAttentionEncoderLayer initialized with {kwargs}")
+        print(f"Enter FlashAttentionEncoderLayer")
 
         # Store parameters for Flash Attention
         self.d_model = d_model
