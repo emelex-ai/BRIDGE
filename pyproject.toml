@@ -28,6 +28,7 @@ dependencies = [
     "torchsummary>=1.5.1",
     "tqdm>=4.66.5,<5.0.0",
     "pandas",
+    "matplotlib>=3.10.3",
 ]
 
 [project.optional-dependencies]

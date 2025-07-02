@@ -312,6 +312,7 @@ if __name__ == "__main__":
         batch_size = 2
         seq_lens = [128, 512, 1024, 2048, 4096, 8192]  # 6 sequence lengths
         d_models = [256, 512, 768, 1024]  # 4 model dimensions
+        nheads = [8, 32]
         window_sizes = [
             16,
             32,
@@ -326,14 +327,15 @@ if __name__ == "__main__":
         ]  # 10 window sizes
         num_steps = 3  # Number of timing runs to average
 
-        total_tests = len(seq_lens) * len(d_models) * len(window_sizes)
+        total_tests = len(seq_lens) * len(d_models) * len(window_sizes) * len(nheads)
         print(
-            f"Total tests to run: {total_tests} ({len(seq_lens)} seq_lens × {len(d_models)} d_models × {len(window_sizes)} window_sizes)"
+            f"Total tests to run: {total_tests} ({len(seq_lens)} seq_lens × {len(d_models)} d_models × {len(window_sizes)} window_sizes × {len(nheads)} nheads)"
         )
         print(f"Test parameters:")
         print(f"  Batch size: {batch_size}")
         print(f"  Sequence lengths: {seq_lens}")
         print(f"  Model dimensions: {d_models}")
+        print(f"  Number of heads: {nheads}")
         print(f"  Window sizes: {window_sizes}")
         print(f"  Timing steps per test: {num_steps}")
         print()
@@ -348,20 +350,28 @@ if __name__ == "__main__":
 
         for seq_len in seq_lens:
             for d_model in d_models:
-                # Skip invalid combinations where window_size > seq_len
-                valid_window_sizes = [w for w in window_sizes if w <= seq_len]
+                for nhead in nheads:
+                    # Skip invalid combinations where nhead doesn't divide d_model evenly
+                    if d_model % nhead != 0:
+                        print(
+                            f"Skipping invalid combination: d_model={d_model}, nhead={nhead} (not divisible)"
+                        )
+                        continue
 
-                for window_size in valid_window_sizes:
-                    test_count += 1
-                    print(
-                        f"Test {test_count}/{total_tests}: seq_len={seq_len}, d_model={d_model}, window_size={window_size}"
-                    )
+                    # Skip invalid combinations where window_size > seq_len
+                    valid_window_sizes = [w for w in window_sizes if w <= seq_len]
+
+                    for window_size in valid_window_sizes:
+                        test_count += 1
+                        print(
+                            f"Test {test_count}/{total_tests}: seq_len={seq_len}, d_model={d_model}, nhead={nhead}, window_size={window_size}"
+                        )
 
                     try:
                         # Create encoder
                         encoder = EncoderLocal(
                             d_model=d_model,
-                            nhead=8,  # Fixed for simplicity
+                            nhead=nhead,  # Fixed for simplicity
                             num_layers=2,  # Fixed for simplicity
                             device=device,
                             window_size=window_size,
@@ -434,6 +444,7 @@ if __name__ == "__main__":
                         result = {
                             "seq_len": seq_len,
                             "d_model": d_model,
+                            "nhead": nhead,
                             "window_size": window_size,
                             "batch_size": batch_size,
                             "device": device,
@@ -460,6 +471,7 @@ if __name__ == "__main__":
                         result = {
                             "seq_len": seq_len,
                             "d_model": d_model,
+                            "nhead": nhead,
                             "window_size": window_size,
                             "batch_size": batch_size,
                             "device": device,
