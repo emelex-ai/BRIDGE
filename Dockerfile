@@ -8,6 +8,13 @@ RUN apt-get update && \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
+RUN mkdir -p /app/data /app/model_artifacts /app/results
+COPY  pyproject.toml /app/
+    
+# Install Poetry and dependencies (excluding GPU)
+RUN pip install poetry==1.8.5 && \
+    poetry config virtualenvs.create false && \
+    poetry install
 # Copy application code
 COPY bridge/ /app/bridge/
 COPY app/ /app/app/
@@ -16,17 +23,10 @@ COPY tests/application/training/data/ /app/tests/application/training/data/
 COPY pyproject.toml poetry.lock* ./
 
 # Create directories first
-RUN mkdir -p /app/data /app/model_artifacts /app/results
 
 # Copy data files 
 COPY data/phonreps.csv /app/data/
 
-COPY  pyproject.toml /app/
-
-# Install Poetry and dependencies (excluding GPU)
-RUN pip install poetry==1.8.5 && \
-    poetry config virtualenvs.create false && \
-    poetry install
 
 # Download NLTK data
 RUN python -m nltk.downloader cmudict

@@ -456,14 +456,14 @@ class TrainingPipeline:
 
     def load_model(self, model_path: str):
         try:
-            import bridge.domain.datamodels.model_config as old_module_reference
-            import bridge.domain.datamodels as bridge_datamodels  
-            import bridge.domain as bridge_domain
-            import bridge  
-            sys.modules['src'] = bridge
-            sys.modules['src.domain'] = bridge_domain
-            sys.modules['src.domain.datamodels'] = bridge_datamodels
-            sys.modules['src.domain.datamodels.model_config'] = old_module_reference
+            # import bridge.domain.datamodels.model_config as old_module_reference
+            # import bridge.domain.datamodels as bridge_datamodels  
+            # import bridge.domain as bridge_domain
+            # import bridge  
+            # sys.modules['src'] = bridge
+            # sys.modules['src.domain'] = bridge_domain
+            # sys.modules['src.domain.datamodels'] = bridge_datamodels
+            # sys.modules['src.domain.datamodels.model_config'] = old_module_reference
 
             checkpoint = torch.load(model_path, weights_only=False)
             self.model.load_state_dict(checkpoint["model_state_dict"])
