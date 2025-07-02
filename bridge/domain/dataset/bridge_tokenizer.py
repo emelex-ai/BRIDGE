@@ -98,7 +98,7 @@ class BridgeTokenizer:
 
                 if ortho_encoding is None:
                     logger.error(
-                        f"Orthographic encoding returned None for text: {text_preview}, "
+                        f"Orthographic encoding returned None for text: {text}, "
                         f"modality_filter: {modality_filter}"
                     )
                 else:
@@ -109,7 +109,7 @@ class BridgeTokenizer:
             except Exception as e:
                 logger.error(
                     f"Orthographic encoding failed with exception: {type(e).__name__}: {str(e)}, "
-                    f"text: {text_preview}, modality_filter: {modality_filter}",
+                    f"text: {text}, modality_filter: {modality_filter}",
                     exc_info=True,
                 )
                 ortho_encoding = None
@@ -124,7 +124,7 @@ class BridgeTokenizer:
                 if phono_encoding is None:
                     logger.warning(
                         f"Phonological encoding returned None - word not found in CMU dictionary. "
-                        f"Text: {text_preview}, modality_filter: {modality_filter}"
+                        f"Text: {text}, modality_filter: {modality_filter}"
                     )
                     # If phonological encoding fails and it's required, return None
                     if modality_filter in ["both", "phonology"]:
@@ -140,7 +140,7 @@ class BridgeTokenizer:
             except Exception as e:
                 logger.error(
                     f"Phonological encoding failed with exception: {type(e).__name__}: {str(e)}, "
-                    f"text: {text_preview}, modality_filter: {modality_filter}",
+                    f"text: {text}, modality_filter: {modality_filter}",
                     exc_info=True,
                 )
                 phono_encoding = None
@@ -161,7 +161,7 @@ class BridgeTokenizer:
                         f"Both encodings required but one failed. "
                         f"ortho_encoding is None: {ortho_encoding is None}, "
                         f"phono_encoding is None: {phono_encoding is None}, "
-                        f"text: {text_preview}"
+                        f"text: {text}"
                     )
                     return None
 
@@ -227,7 +227,7 @@ class BridgeTokenizer:
                 # Orthography-only mode for o2p pathway with nonwords
                 if ortho_encoding is None:
                     logger.error(
-                        f"Orthographic encoding required but failed for 'orthography' mode, text: {text_preview}"
+                        f"Orthographic encoding required but failed for 'orthography' mode, text: {text}"
                     )
                     return None
 
@@ -293,7 +293,7 @@ class BridgeTokenizer:
                 # Phonology-only mode (p2o pathway)
                 if phono_encoding is None:
                     logger.error(
-                        f"Phonological encoding required but failed for 'phonology' mode, text: {text_preview}"
+                        f"Phonological encoding required but failed for 'phonology' mode, text: {text}"
                     )
                     return None
 
@@ -359,7 +359,7 @@ class BridgeTokenizer:
         except Exception as e:
             logger.error(
                 f"Unexpected error in encode method: {type(e).__name__}: {str(e)}, "
-                f"text: {text_preview}, modality_filter: {modality_filter}",
+                f"text: {text}, modality_filter: {modality_filter}",
                 exc_info=True,
             )
             return None
