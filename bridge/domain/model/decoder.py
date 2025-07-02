@@ -1,6 +1,7 @@
 from typing import Optional
-import torch.nn as nn
+
 import torch
+from torch import nn
 
 
 class Decoder(nn.Module):
@@ -9,7 +10,9 @@ class Decoder(nn.Module):
         decoder_layer = nn.TransformerDecoderLayer(
             d_model=d_model, nhead=nhead, batch_first=True, dim_feedforward=4 * d_model
         )
-        self.transformer_decoder = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
+        self.transformer_decoder = nn.TransformerDecoder(
+            decoder_layer, num_layers=num_layers
+        )
 
     def forward(
         self,
