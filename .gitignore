@@ -17,6 +17,7 @@ venv/
 *.DS_Store
 */.ipynb_checkpoints
 *.lock
+!uv.lock
 *.env
 model_artifacts
 .devcontainer/platform-config.json
@@ -66,3 +67,6 @@ servacc.json
 
 # package files
 dist/*
+
+# SpecStory explanation file
+.specstory/.what-is-this.md

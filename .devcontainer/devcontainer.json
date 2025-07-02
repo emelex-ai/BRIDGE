@@ -2,40 +2,35 @@
 // README at: https://github.com/devcontainers/templates/tree/main/src/docker-existing-dockerfile
 {
 	"name": "Bridge Development",
-	// "initializeCommand": [
-	// 	"bash",
-	// 	"-c",
-	// 	"chmod +x .devcontainer/detect-platform.sh && ./.devcontainer/detect-platform.sh > .devcontainer/platform-config.json && echo 'Platform detection complete'"
-	// ],
+	"initializeCommand": [],
 	"build": {
 		"context": "..",
-		"dockerfile": "${localEnv:DOCKERFILE:Dockerfile.cpu.dev}"
+		"dockerfile": "${localEnv:DOCKERFILE:Dockerfile.dev}"
 	},
-	"updateContentCommand": "export DOCKERFILE=$(jq -r .dockerfile .devcontainer/platform-config.json) && export PLATFORM_ARGS=$(jq -r .platformArgs .devcontainer/platform-config.json)",
-	"onCreateCommand": "echo 'Container created for platform: '$(uname -a)",
+	"onCreateCommand": "uv sync --frozen --no-install-project",
+	"postCreateCommand": "uv run python -c \"import nltk; nltk.download('cmudict')\"",
 	"customizations": {
 		"vscode": {
 			"settings": {
-				"python.defaultInterpreterPath": "/usr/local/bin/python",
+				"python.defaultInterpreterPath": ".venv/bin/python",
 				"python.testing.pytestEnabled": true,
 				"python.testing.unittestEnabled": false,
-				"python.testing.nosetestsEnabled": false,
 				"python.testing.pytestArgs": [
 					"tests",
 					"-v",
 					"-s",
 					"--no-header"
 				],
-				"python.testing.autoTestDiscoverOnSaveEnabled": true,
+				// "python.testing.autoTestDiscoverOnSaveEnabled": true,
 				"editor.formatOnSave": true,
 				"[python]": {
-					"editor.defaultFormatter": "ms-python.black-formatter"
+					"editor.defaultFormatter": "charliermarsh.ruff"
 				}
 			},
 			"extensions": [
 				"ms-python.python",
 				"ms-azuretools.vscode-docker",
-				"ms-python.black-formatter",
+				"charliermarsh.ruff",
 				"ms-vscode-remote.remote-containers",
 				"ms-azuretools.vscode-docker",
 				"GrapeCity.gc-excelviewer",
@@ -50,11 +45,10 @@
 				"ms-vscode-remote.vscode-remote-extensionpack",
 				"ms-vscode.remote-repositories",
 				"vscodevim.vim",
-				"ms-python.vscode-pylance",
+				"ms-python.vscode-pylance"
 			]
 		}
 	},
-	"runArgs": "${localEnv:PLATFORM_ARGS}",
 	"remoteUser": "root",
 	"containerEnv": {
 		"PYTHONPATH": "${containerWorkspaceFolder}"
