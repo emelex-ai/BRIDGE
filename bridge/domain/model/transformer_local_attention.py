@@ -219,6 +219,13 @@ class LocalAttentionEncoderLayer(TransformerEncoderLayer):
         # Handle input mask for local attention
         input_mask = None
         if key_padding_mask is not None:
+            # Ensure key_padding_mask is boolean type before inversion
+            if not isinstance(key_padding_mask, torch.Tensor):
+                key_padding_mask = torch.tensor(key_padding_mask)
+
+            if key_padding_mask.dtype != torch.bool:
+                key_padding_mask = key_padding_mask.bool()
+
             # key_padding_mask is (batch_size, seq_len) - True for positions to ignore
             # Convert to input_mask for local attention - True for positions to attend to
             input_mask = ~key_padding_mask
