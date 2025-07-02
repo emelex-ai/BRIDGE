@@ -7,7 +7,7 @@ import torch.nn as nn
 from torch.nn import TransformerEncoderLayer
 
 # Add the local-attention module to the path
-sys.path.append(os.path.join(os.path.dirname(__file__), "local-attention"))
+# sys.path.append(os.path.join(os.path.dirname(__file__), "local-attention"))
 
 try:
     from einops import rearrange
