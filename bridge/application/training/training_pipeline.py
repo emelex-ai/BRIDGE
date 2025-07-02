@@ -15,7 +15,7 @@ from bridge.domain.dataset import BridgeDataset
 from bridge.domain.model import Model
 from bridge.utils import device_manager
 from bridge.infra.metrics.metrics_logger import MetricsLogger
-
+import sys
 min_interval = 1
 
 
@@ -456,6 +456,15 @@ class TrainingPipeline:
 
     def load_model(self, model_path: str):
         try:
+            import bridge.domain.datamodels.model_config as old_module_reference
+            import bridge.domain.datamodels as bridge_datamodels  
+            import bridge.domain as bridge_domain
+            import bridge  
+            sys.modules['src'] = bridge
+            sys.modules['src.domain'] = bridge_domain
+            sys.modules['src.domain.datamodels'] = bridge_datamodels
+            sys.modules['src.domain.datamodels.model_config'] = old_module_reference
+
             checkpoint = torch.load(model_path, weights_only=False)
             self.model.load_state_dict(checkpoint["model_state_dict"])
             self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -475,6 +484,7 @@ class TrainingPipeline:
                     "Checkpoint doesn't contain epoch information, starting from 0"
                 )
                 self.start_epoch = 0
+            self.start_epoch = 0
 
             return True
         except Exception as e:
