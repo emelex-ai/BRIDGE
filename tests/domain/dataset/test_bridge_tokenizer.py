@@ -30,6 +30,15 @@ class TestBridgeTokenizer:
         assert isinstance(encoding, BridgeEncoding)
         assert hasattr(encoding, "orth_enc_ids")
         assert hasattr(encoding, "phon_enc_ids")
+        
+    def test_encode_nan(self, bridge_tokenizer):
+        """Test encoding a word that is NaN."""
+        encoding = bridge_tokenizer.encode("nan", modality_filter="both")
+        assert encoding is not None
+        assert isinstance(encoding, BridgeEncoding)
+        assert hasattr(encoding, "orth_enc_ids")
+        assert hasattr(encoding, "phon_enc_ids")
+
 
     def test_encode_with_modality_filter_orthography(self, bridge_tokenizer):
         """Test encoding a word with modality_filter='orthography'."""
