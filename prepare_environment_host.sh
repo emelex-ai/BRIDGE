@@ -39,7 +39,7 @@ echo "Using cache directory: $SCRATCH_CACHE"
 
 # Create/update shared environment
 echo "Installing base dependencies with uv..."
-uv sync --no-config --extra cuda
+uv sync --no-config --extra cuda --extra wandb
 
 # Activate the shared environment
 echo "Activating shared virtual environment..."
