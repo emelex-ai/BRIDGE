@@ -227,12 +227,10 @@ def load_configs():
         os.environ["BUCKET_NAME"],
         f"finetuning/{finetuning_index}/{finetuning_index}.csv",
     ):
-        logger.error(
-            f"Data file not found in GCS: finetuning/{finetuning_index}/{finetuning_index}.csv"
+        logger.warning(
+            f"Data file not found in GCS: finetuning/{finetuning_index}/{finetuning_index}.csv. Marking as completed."
         )
-        raise FileNotFoundError(
-            f"Data file not found in GCS: finetuning/{finetuning_index}/{finetuning_index}.csv"
-        )
+        exit(0)
 
     data_path = f"gs://{os.environ['BUCKET_NAME']}/finetuning/{finetuning_index}/{finetuning_index}.csv"
     logger.info(f"Setting dataset path to: {data_path}")

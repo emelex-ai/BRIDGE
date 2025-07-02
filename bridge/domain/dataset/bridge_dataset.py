@@ -85,7 +85,7 @@ class BridgeDataset:
             return self._read_gcs_csv(bucket, blob)
         ext = Path(path).suffix.lower()
         if ext == ".csv":
-            return pd.read_csv(path)
+            return pd.read_csv(path, keep_default_na=False)
         if ext == ".pkl":
             data = pickle.load(open(path, "rb"))
             if not isinstance(data, dict):
