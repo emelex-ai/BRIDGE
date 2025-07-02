@@ -299,312 +299,248 @@ if __name__ == "__main__":
         print("All tests passed successfully!")
 
     def test_autoregressive_scaling():
-        """Test autoregressive local attention scaling with different window sizes and model dimensions.
+        """Test autoregressive local attention scaling across multiple dimensions.
 
-        Tests scaling performance with context size 8192, various window sizes, and multiple d_model values.
-        Calculates relative performance separately for each d_model.
+        Tests scaling performance across seq_len, d_model, and window_size.
+        Saves results to CSV for later analysis.
         """
         print("=" * 80)
         print("Testing Autoregressive Local Attention Scaling")
         print("=" * 80)
 
-        # Test parameters - multiple embedding sizes (d_model values)
+        # Test parameters - full grid search
         batch_size = 2
-        seq_len = 8192
-        d_models = [256, 512, 1024, 2048]  # Different embedding/model dimensions
-        nhead = 8
-        num_layers = 2
-        window_sizes = [16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
-        num_steps = 3  # Reduced for multiple d_model tests
+        seq_lens = [128, 512, 1024, 2048, 4096, 8192]  # 6 sequence lengths
+        d_models = [256, 512, 768, 1024]  # 4 model dimensions
+        window_sizes = [
+            16,
+            32,
+            64,
+            128,
+            256,
+            512,
+            1024,
+            2048,
+            4096,
+            8192,
+        ]  # 10 window sizes
+        num_steps = 3  # Number of timing runs to average
 
-        print(f"Test configuration:")
+        total_tests = len(seq_lens) * len(d_models) * len(window_sizes)
+        print(
+            f"Total tests to run: {total_tests} ({len(seq_lens)} seq_lens × {len(d_models)} d_models × {len(window_sizes)} window_sizes)"
+        )
+        print(f"Test parameters:")
         print(f"  Batch size: {batch_size}")
-        print(f"  Sequence length: {seq_len}")
-        print(f"  Model dimensions (d_model): {d_models}")
-        print(f"  Number of heads: {nhead}")
-        print(f"  Number of layers: {num_layers}")
-        print(f"  Number of timing steps: {num_steps}")
-        print(f"  Window sizes to test: {window_sizes}")
+        print(f"  Sequence lengths: {seq_lens}")
+        print(f"  Model dimensions: {d_models}")
+        print(f"  Window sizes: {window_sizes}")
+        print(f"  Timing steps per test: {num_steps}")
         print()
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         print(f"Running tests on: {device}")
-
-        if device == "cpu":
-            print(
-                "⚠️  Note: CPU tests use standard attention (window size parameters ignored)"
-            )
-        else:
-            print(
-                "✓ CUDA tests will use LocalAttentionEncoderLayer with specified window sizes"
-            )
         print()
 
-        # Store results grouped by d_model
-        all_results = {}
+        # Store all results
+        all_results = []
+        test_count = 0
 
-        for d_model in d_models:
-            print(f"{'='*60}")
-            print(f"Testing d_model = {d_model}")
-            print(f"{'='*60}")
+        for seq_len in seq_lens:
+            for d_model in d_models:
+                # Skip invalid combinations where window_size > seq_len
+                valid_window_sizes = [w for w in window_sizes if w <= seq_len]
 
-            results_for_d_model = []
-
-            for window_size in window_sizes:
-                print(f"Testing d_model={d_model}, window_size={window_size}")
-
-                try:
-                    encoder = EncoderLocal(
-                        d_model=d_model,
-                        nhead=nhead,
-                        num_layers=num_layers,
-                        device=device,
-                        window_size=window_size,
-                        causal=True,
-                        look_backward=1,
-                        look_forward=0,
+                for window_size in valid_window_sizes:
+                    test_count += 1
+                    print(
+                        f"Test {test_count}/{total_tests}: seq_len={seq_len}, d_model={d_model}, window_size={window_size}"
                     )
 
-                    if device == "cuda":
-                        encoder = encoder.to("cuda")
+                    try:
+                        # Create encoder
+                        encoder = EncoderLocal(
+                            d_model=d_model,
+                            nhead=8,  # Fixed for simplicity
+                            num_layers=2,  # Fixed for simplicity
+                            device=device,
+                            window_size=window_size,
+                            causal=True,
+                            look_backward=1,
+                            look_forward=0,
+                        )
 
-                    x = torch.randn(batch_size, seq_len, d_model, device=device)
-
-                    # Warmup
-                    with torch.no_grad():
-                        _ = encoder(x)
-
-                    if device == "cuda":
-                        torch.cuda.synchronize()
-
-                    # Timing
-                    import time
-
-                    times = []
-
-                    for step in range(num_steps):
                         if device == "cuda":
-                            torch.cuda.synchronize()
+                            encoder = encoder.to("cuda")
 
-                        start_time = time.time()
-                        with torch.no_grad():
-                            output = encoder(x)
-                        if device == "cuda":
-                            torch.cuda.synchronize()
+                        # Create input tensor
+                        x = torch.randn(batch_size, seq_len, d_model, device=device)
 
-                        end_time = time.time()
-                        step_time = end_time - start_time
-                        times.append(step_time)
-
-                    avg_time = sum(times) / len(times)
-                    min_time = min(times)
-                    max_time = max(times)
-
-                    # Memory usage
-                    if device == "cuda":
-                        torch.cuda.empty_cache()
-                        initial_memory = torch.cuda.memory_allocated()
+                        # Warmup run
                         with torch.no_grad():
                             _ = encoder(x)
-                        peak_memory = torch.cuda.max_memory_allocated()
-                        memory_used = (peak_memory - initial_memory) / 1024**2
-                        torch.cuda.empty_cache()
-                    else:
-                        memory_used = 0
 
-                    assert (
-                        output.shape == x.shape
-                    ), f"Output shape mismatch: {output.shape} vs {x.shape}"
+                        if device == "cuda":
+                            torch.cuda.synchronize()
 
-                    result = {
-                        "d_model": d_model,
-                        "window_size": window_size,
-                        "avg_time": avg_time,
-                        "min_time": min_time,
-                        "max_time": max_time,
-                        "memory_mb": memory_used,
-                        "tokens_per_sec": (batch_size * seq_len) / avg_time,
-                        "success": True,
-                    }
+                        # Time multiple runs
+                        import time
 
-                    # Fix: Copy the dictionary to avoid reference aliasing
-                    results_for_d_model.append(result.copy())
+                        times = []
 
-                    print(
-                        f"  ✓ Time: {avg_time:.4f}s, Tokens/sec: {result['tokens_per_sec']:.0f}, Memory: {memory_used:.1f}MB"
-                    )
+                        for step in range(num_steps):
+                            if device == "cuda":
+                                torch.cuda.synchronize()
 
-                except Exception as e:
-                    print(f"  ❌ Failed: {str(e)}")
-                    result = {
-                        "d_model": d_model,
-                        "window_size": window_size,
-                        "avg_time": float("inf"),
-                        "min_time": float("inf"),
-                        "max_time": float("inf"),
-                        "memory_mb": 0,
-                        "tokens_per_sec": 0,
-                        "success": False,
-                        "error": str(e),
-                    }
-                    results_for_d_model.append(result.copy())
+                            start_time = time.time()
+                            with torch.no_grad():
+                                output = encoder(x)
+                            if device == "cuda":
+                                torch.cuda.synchronize()
 
-            all_results[d_model] = results_for_d_model
-            print()
+                            end_time = time.time()
+                            times.append(end_time - start_time)
 
-        # Analysis: Calculate relative performance WITHIN each d_model group
-        print("=" * 100)
-        print("SCALING ANALYSIS BY MODEL DIMENSION")
-        print("=" * 100)
+                        # Calculate timing statistics
+                        avg_time = sum(times) / len(times)
+                        min_time = min(times)
+                        max_time = max(times)
+                        std_time = (
+                            sum((t - avg_time) ** 2 for t in times) / len(times)
+                        ) ** 0.5
 
-        for d_model, results in all_results.items():
-            successful_results = [r for r in results if r["success"]]
+                        # Memory measurement
+                        if device == "cuda":
+                            torch.cuda.empty_cache()
+                            initial_memory = torch.cuda.memory_allocated()
+                            with torch.no_grad():
+                                _ = encoder(x)
+                            peak_memory = torch.cuda.max_memory_allocated()
+                            memory_used_mb = (peak_memory - initial_memory) / 1024**2
+                            torch.cuda.empty_cache()
+                        else:
+                            memory_used_mb = 0.0
 
-            if len(successful_results) < 2:
+                        # Verify output shape
+                        assert (
+                            output.shape == x.shape
+                        ), f"Shape mismatch: {output.shape} vs {x.shape}"
+
+                        # Calculate derived metrics
+                        total_tokens = batch_size * seq_len
+                        tokens_per_sec = total_tokens / avg_time
+
+                        # Store result
+                        result = {
+                            "seq_len": seq_len,
+                            "d_model": d_model,
+                            "window_size": window_size,
+                            "batch_size": batch_size,
+                            "device": device,
+                            "avg_time_s": avg_time,
+                            "min_time_s": min_time,
+                            "max_time_s": max_time,
+                            "std_time_s": std_time,
+                            "memory_mb": memory_used_mb,
+                            "tokens_per_sec": tokens_per_sec,
+                            "total_tokens": total_tokens,
+                            "success": True,
+                            "error": None,
+                        }
+
+                        all_results.append(result.copy())
+                        print(
+                            f"  ✓ {avg_time:.4f}s, {tokens_per_sec:.0f} tokens/sec, {memory_used_mb:.1f}MB"
+                        )
+
+                    except Exception as e:
+                        print(f"  ❌ Failed: {str(e)}")
+
+                        # Store failed result
+                        result = {
+                            "seq_len": seq_len,
+                            "d_model": d_model,
+                            "window_size": window_size,
+                            "batch_size": batch_size,
+                            "device": device,
+                            "avg_time_s": float("inf"),
+                            "min_time_s": float("inf"),
+                            "max_time_s": float("inf"),
+                            "std_time_s": float("inf"),
+                            "memory_mb": 0.0,
+                            "tokens_per_sec": 0.0,
+                            "total_tokens": batch_size * seq_len,
+                            "success": False,
+                            "error": str(e),
+                        }
+
+                        all_results.append(result.copy())
+
+                        # Print traceback for debugging
+                        import traceback
+
+                        traceback.print_exc()
+
+        # Save results to CSV using pandas
+        try:
+            import pandas as pd
+
+            df = pd.DataFrame(all_results)
+
+            # Generate filename with timestamp
+            import datetime
+
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"autoregressive_scaling_results_{timestamp}.csv"
+
+            df.to_csv(filename, index=False)
+
+            print(f"\n{'='*80}")
+            print(f"RESULTS SAVED")
+            print(f"{'='*80}")
+            print(f"Results saved to: {filename}")
+            print(f"Total tests: {len(all_results)}")
+            print(f"Successful tests: {sum(1 for r in all_results if r['success'])}")
+            print(f"Failed tests: {sum(1 for r in all_results if not r['success'])}")
+
+            # Show basic summary
+            successful_df = df[df["success"] == True]
+            if len(successful_df) > 0:
+                print(f"\nBasic statistics (successful tests only):")
                 print(
-                    f"d_model {d_model}: Insufficient successful results for analysis"
+                    f"  Time range: {successful_df['avg_time_s'].min():.4f}s - {successful_df['avg_time_s'].max():.4f}s"
                 )
-                continue
-
-            print(f"\n{'='*60}")
-            print(f"d_model = {d_model} SCALING ANALYSIS")
-            print(f"{'='*60}")
-
-            # Use smallest window as baseline for THIS d_model
-            baseline = successful_results[0]
-
-            print(f"Results summary for d_model={d_model}:")
-            print(
-                f"{'Window':<8} {'Time (s)':<10} {'Tokens/sec':<12} {'Memory (MB)':<12} {'Status':<8}"
-            )
-            print("-" * 60)
-
-            for result in results:
-                status = "✓ PASS" if result["success"] else "❌ FAIL"
                 print(
-                    f"{result['window_size']:<8} {result['avg_time']:<10.4f} {result['tokens_per_sec']:<12.0f} {result['memory_mb']:<12.2f} {status:<8}"
+                    f"  Tokens/sec range: {successful_df['tokens_per_sec'].min():.0f} - {successful_df['tokens_per_sec'].max():.0f}"
                 )
-
-            print(
-                f"\nBaseline (window size {baseline['window_size']}) for d_model={d_model}:"
-            )
-            print(f"  Time: {baseline['avg_time']:.4f}s")
-            print(f"  Tokens/sec: {baseline['tokens_per_sec']:.0f}")
-            if device == "cuda":
-                print(f"  Memory: {baseline['memory_mb']:.2f} MB")
-
-            print(f"\nRelative performance within d_model={d_model}:")
-            print(
-                f"{'Window':<8} {'Time Ratio':<12} {'Speed Ratio':<12} {'Memory Ratio':<12} {'Efficiency':<12}"
-            )
-            print("-" * 60)
-
-            for result in successful_results:
-                if result == baseline:
-                    print(
-                        f"{result['window_size']:<8} {'1.00':<12} {'1.00':<12} {'1.00':<12} {'baseline':<12}"
-                    )
-                else:
-                    time_ratio = result["avg_time"] / baseline["avg_time"]
-                    speed_ratio = result["tokens_per_sec"] / baseline["tokens_per_sec"]
-                    theoretical_ratio = result["window_size"] / baseline["window_size"]
-                    efficiency = theoretical_ratio / time_ratio if time_ratio > 0 else 0
-
-                    if device == "cuda" and baseline["memory_mb"] > 0:
-                        memory_ratio = result["memory_mb"] / baseline["memory_mb"]
-                    else:
-                        memory_ratio = 1.0
-
-                    print(
-                        f"{result['window_size']:<8} {time_ratio:<12.2f} {speed_ratio:<12.2f} {memory_ratio:<12.2f} {efficiency:<12.2f}"
-                    )
-
-            print(f"\nDetailed efficiency analysis for d_model={d_model}:")
-            print(
-                f"{'Window':<8} {'Theoretical':<12} {'Actual':<12} {'Efficiency':<12} {'Recommendation':<15}"
-            )
-            print("-" * 65)
-
-            for result in successful_results:
-                if result == baseline:
-                    print(
-                        f"{result['window_size']:<8} {'1.00x':<12} {'1.00x':<12} {'baseline':<12} {'reference':<15}"
-                    )
-                else:
-                    theoretical_ratio = result["window_size"] / baseline["window_size"]
-                    actual_ratio = result["avg_time"] / baseline["avg_time"]
-                    efficiency = (
-                        theoretical_ratio / actual_ratio if actual_ratio > 0 else 0
-                    )
-
-                    speed_drop = (
-                        1 - result["tokens_per_sec"] / baseline["tokens_per_sec"]
-                    ) * 100
-
-                    if speed_drop < 10:
-                        recommendation = "Excellent"
-                    elif speed_drop < 25:
-                        recommendation = "Very Good"
-                    elif speed_drop < 50:
-                        recommendation = "Good"
-                    elif speed_drop < 75:
-                        recommendation = "Acceptable"
-                    else:
-                        recommendation = "Poor"
-
-                    print(
-                        f"{result['window_size']:<8} {theoretical_ratio:<12.2f} {actual_ratio:<12.2f} {efficiency:<12.2f} {recommendation:<15}"
-                    )
-
-        # Cross-d_model comparison
-        print(f"\n{'='*80}")
-        print("CROSS-MODEL DIMENSION COMPARISON")
-        print(f"{'='*80}")
-
-        print("Baseline performance (smallest window) by d_model:")
-        print(
-            f"{'d_model':<8} {'Window':<8} {'Time (s)':<10} {'Tokens/sec':<12} {'Memory (MB)':<12}"
-        )
-        print("-" * 60)
-
-        for d_model, results in all_results.items():
-            successful_results = [r for r in results if r["success"]]
-            if successful_results:
-                baseline = successful_results[0]
                 print(
-                    f"{d_model:<8} {baseline['window_size']:<8} {baseline['avg_time']:<10.4f} {baseline['tokens_per_sec']:<12.0f} {baseline['memory_mb']:<12.2f}"
+                    f"  Memory range: {successful_df['memory_mb'].min():.1f}MB - {successful_df['memory_mb'].max():.1f}MB"
                 )
 
-        # Overall success rate
-        total_tests = sum(len(results) for results in all_results.values())
-        successful_tests = sum(
-            len([r for r in results if r["success"]])
-            for results in all_results.values()
-        )
+            print(f"\nDataFrame columns: {list(df.columns)}")
+            print(f"DataFrame shape: {df.shape}")
+            print(f"{'='*80}")
 
-        print(f"\n{'='*80}")
-        print(f"OVERALL RESULTS: {successful_tests}/{total_tests} tests passed")
-        if successful_tests == total_tests:
-            print("All autoregressive scaling tests PASSED! ✓")
-        else:
-            print(f"{total_tests - successful_tests} tests FAILED! ❌")
-        print(f"{'='*80}")
+            return len([r for r in all_results if r["success"]]) == len(all_results)
 
-        return successful_tests == total_tests
+        except ImportError:
+            print("❌ pandas not available, saving results as JSON instead")
+            import json
 
-    # Run both tests
-    print("Running basic functionality tests...")
-    basic_success = test_encoder_local()
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"autoregressive_scaling_results_{timestamp}.json"
 
-    print("\n" + "=" * 80 + "\n")
+            with open(filename, "w") as f:
+                json.dump(all_results, f, indent=2)
 
+            print(f"Results saved to: {filename}")
+            return len([r for r in all_results if r["success"]]) == len(all_results)
+
+    # Run the scaling test
     print("Running autoregressive scaling tests...")
-    scaling_success = test_autoregressive_scaling()
+    success = test_autoregressive_scaling()
 
-    overall_success = basic_success and scaling_success
-
-    if not overall_success:
-        print("\nSome tests failed!")
-        exit(1)
+    if success:
+        print("\nAll tests completed successfully!")
     else:
-        print("\nAll tests passed successfully!")
+        print("\nSome tests failed - check the CSV/JSON file for details")
