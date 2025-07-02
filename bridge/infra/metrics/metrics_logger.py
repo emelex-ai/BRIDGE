@@ -3,6 +3,7 @@ import os
 from typing import Literal
 from bridge.domain.datamodels.metrics_config import MetricsConfig, OutputMode
 from abc import ABC, abstractmethod
+from bridge.domain.datamodels.training_config import TrainingConfig
 from bridge.infra.clients.gcp.gcs_client import GCSClient
 import torch
 
@@ -73,7 +74,7 @@ class CSVMetricsLogger(MetricsLogger):
             if isinstance(metrics[metric], torch.Tensor):
                 metrics[metric] = metrics[metric].item()
         # First log should include header columns
-        file_name = f"results/{self.metrics_config.filename.split(".")[0]}_{level}.{self.metrics_config.filename.split(".")[1]}"
+        file_name = f"results/{self.metrics_config.filename.split('.')[0]}_{level}.{self.metrics_config.filename.split('.')[1]}"
         if not self.opened[level]:
             with open(file_name, "w") as f:
                 f.write(",".join(metrics.keys()) + "\n")
@@ -88,23 +89,19 @@ class CSVMetricsLogger(MetricsLogger):
 
 
 class CSVGCPMetricsLogger(CSVMetricsLogger):
-    def __init__(self, metrics_config: MetricsConfig, gcs_client: GCSClient) -> None:
+    def __init__(self, metrics_config: MetricsConfig, gcs_client: GCSClient, gcs_path: str | None) -> None:
         super().__init__(metrics_config)
         self.gcs_client = gcs_client
+        self.gcs_path = gcs_path
 
     def save(self) -> None:
-        index = int(os.environ["CLOUD_RUN_TASK_INDEX"]) + 1
         for level in self.opened:
             if self.opened[level]:
                 file_name = f"results/{self.metrics_config.filename.split('.')[0]}_{level}.{self.metrics_config.filename.split('.')[1]}"
-                self.gcs_client.upload_file(
-                    os.environ["BUCKET_NAME"],
-                    file_name,
-                    f"pretraining/{index}/{file_name}",
-                )
+                self.gcs_client.upload_file(os.environ["BUCKET_NAME"], file_name, f"{self.gcs_path}/results/{file_name}")
 
 
-def metrics_logger_factory(metrics_config: MetricsConfig) -> MetricsLogger:
+def metrics_logger_factory(metrics_config: MetricsConfig, training_config: TrainingConfig) -> MetricsLogger:
     loggers = []
     if OutputMode.CSV in metrics_config.modes:
         if metrics_config.filename:
@@ -114,5 +111,5 @@ def metrics_logger_factory(metrics_config: MetricsConfig) -> MetricsLogger:
     if OutputMode.STDOUT in metrics_config.modes:
         loggers.append(STDOutMetricsLogger(metrics_config))
     if OutputMode.GCS in metrics_config.modes:
-        loggers.append(CSVGCPMetricsLogger(metrics_config, GCSClient()))
+        loggers.append(CSVGCPMetricsLogger(metrics_config, GCSClient(), training_config.gcs_path))
     return MultipleMetricsLogger(metrics_config, loggers)

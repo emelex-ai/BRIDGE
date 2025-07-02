@@ -34,4 +34,4 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONOPTIMIZE=2
 
 # Set entry point
-ENTRYPOINT ["./venv/bin/python", "-m", "app.bin.docker_entry"]
+ENTRYPOINT ["./venv/bin/python", "-m", "app.bin.finetuning_docker_entry"]

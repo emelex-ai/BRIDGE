@@ -62,9 +62,11 @@ terraform.rc
 
 # cached credentials
 token.pickle
+servacc.json
 
 
 # package files
 dist/*
+
 # SpecStory explanation file
 .specstory/.what-is-this.md
