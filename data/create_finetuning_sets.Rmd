@@ -56,6 +56,7 @@ ewfg = read_xlsx('raw/ewfg.xlsx') %>%
   filter(str_detect(word, "\\d+", negate = T)) %>% # remove rows with numeric characters (model can't deal with them)
   # note that this dataset doesn't require tolower()
   filter(word %in% cmu) %>% 
+  filter(word != "nan") %>% 
   select(word, gr1, gr2) %>% 
   pivot_longer(-word, values_to = "frequency", names_to = "grade") %>% 
   filter(!is.na(frequency)) %>% 
