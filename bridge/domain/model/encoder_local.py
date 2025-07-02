@@ -311,7 +311,7 @@ if __name__ == "__main__":
         # Test parameters - multiple embedding sizes (d_model values)
         batch_size = 2
         seq_len = 8192
-        d_models = [256, 512, 768]  # Different embedding/model dimensions
+        d_models = [256, 512, 1024, 2048]  # Different embedding/model dimensions
         nhead = 8
         num_layers = 2
         window_sizes = [16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
