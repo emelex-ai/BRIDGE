@@ -25,7 +25,7 @@ model_artifacts
 results/*.pkl
 *.ipynb
 data/into_reading/
-*.csv
+#*.csv
 *.json
 results/*.csv
 
