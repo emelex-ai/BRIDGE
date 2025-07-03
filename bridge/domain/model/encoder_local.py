@@ -84,7 +84,7 @@ class EncoderLocal(nn.Module):  # Renamed from EncoderFlash
 
     def forward(
         self,
-        src: torch.Tckensor,
+        src: torch.Tensor,
         src_mask: Optional[torch.Tensor] = None,
         src_key_padding_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
