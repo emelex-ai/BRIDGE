@@ -1,3 +1,4 @@
+import gc
 from typing import Optional
 
 import torch
@@ -351,6 +352,11 @@ if __name__ == "__main__":
         for seq_len in seq_lens:
             for d_model in d_models:
                 for nhead in nheads:
+                    # MEMORY CLEANUP AT START OF EACH d_model/nhead COMBINATION
+                    if device == "cuda":
+                        torch.cuda.empty_cache()
+                        gc.collect()
+
                     # Skip invalid combinations where nhead doesn't divide d_model evenly
                     if d_model % nhead != 0:
                         print(
@@ -371,7 +377,7 @@ if __name__ == "__main__":
                         # Create encoder
                         encoder = EncoderLocal(
                             d_model=d_model,
-                            nhead=nhead,  # Fixed for simplicity
+                            nhead=nhead,  # Now variable
                             num_layers=2,  # Fixed for simplicity
                             device=device,
                             window_size=window_size,
@@ -493,6 +499,48 @@ if __name__ == "__main__":
 
                         traceback.print_exc()
 
+                    finally:
+                        # AGGRESSIVE MEMORY CLEANUP AFTER EACH TEST
+                        # Delete all local variables
+                        locals_to_delete = ["encoder", "x", "output", "times", "result"]
+                        for var_name in locals_to_delete:
+                            if var_name in locals():
+                                del locals()[var_name]
+
+                        # Force garbage collection
+                        gc.collect()
+
+                        # Clear CUDA cache if using GPU
+                        if device == "cuda":
+                            torch.cuda.empty_cache()
+                            torch.cuda.synchronize()
+
+                        # Print memory status every 10 tests
+                        if test_count % 10 == 0 and device == "cuda":
+                            current_memory = torch.cuda.memory_allocated() / 1024**2
+                            max_memory = torch.cuda.max_memory_allocated() / 1024**2
+                            print(
+                                f"    Memory: {current_memory:.1f}MB current, {max_memory:.1f}MB peak"
+                            )
+                            torch.cuda.reset_peak_memory_stats()
+
+                    # PERIODIC SAVE EVERY 50 TESTS
+                    if test_count % 50 == 0 and len(all_results) > 0:
+                        try:
+                            import pandas as pd
+
+                            df_temp = pd.DataFrame(all_results)
+                            timestamp = datetime.datetime.now().strftime(
+                                "%Y%m%d_%H%M%S"
+                            )
+                            temp_filename = f"autoregressive_scaling_results_partial_{timestamp}.csv"
+                            df_temp.to_csv(temp_filename, index=False)
+                            print(f"    Saved partial results to {temp_filename}")
+                        except Exception as save_e:
+                            print(
+                                f"    Warning: Could not save partial results: {save_e}"
+                            )
+
         # Save results to CSV using pandas
         try:
             import pandas as pd
@@ -508,7 +556,7 @@ if __name__ == "__main__":
             df.to_csv(filename, index=False)
 
             print(f"\n{'='*80}")
-            print(f"RESULTS SAVED")
+            print("RESULTS SAVED")
             print(f"{'='*80}")
             print(f"Results saved to: {filename}")
             print(f"Total tests: {len(all_results)}")
@@ -518,7 +566,7 @@ if __name__ == "__main__":
             # Show basic summary
             successful_df = df[df["success"] == True]
             if len(successful_df) > 0:
-                print(f"\nBasic statistics (successful tests only):")
+                print("\nBasic statistics (successful tests only):")
                 print(
                     f"  Time range: {successful_df['avg_time_s'].min():.4f}s - {successful_df['avg_time_s'].max():.4f}s"
                 )
