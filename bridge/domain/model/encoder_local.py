@@ -349,6 +349,13 @@ if __name__ == "__main__":
         all_results = []
         test_count = 0
 
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.reset_peak_memory_stats()
+            print(
+                f"Starting with {torch.cuda.memory_allocated()/1024**3:.1f}GB GPU memory in use"
+            )
+
         for seq_len in seq_lens:
             for d_model in d_models:
                 for nhead in nheads:
