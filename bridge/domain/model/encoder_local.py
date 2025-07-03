@@ -34,7 +34,7 @@ class EncoderLocal(nn.Module):  # Renamed from EncoderFlash
         num_layers: int,
         device: str = "cpu",
         window_size: int = 512,
-        causal: bool = False,
+        causal: bool = True,  # LLM is the default
         look_backward: int = 1,
         look_forward: Optional[int] = None,
     ) -> None:
@@ -124,8 +124,7 @@ if __name__ == "__main__":
         print("=" * 60)
 
         # Test parameters
-        # batch_size, seq_len, d_model = 4, 256, 512  # Larger seq_len for local attention
-        batch_size, seq_len, d_model = 128, 256, 512  # Larger seq_len for local attention
+        batch_size, seq_len, d_model = 4, 256, 512  # Larger seq_len for local attention
         nhead = 8
         num_layers = 3
         window_size = 64
@@ -150,6 +149,7 @@ if __name__ == "__main__":
                 num_layers=num_layers,
                 device="cpu",
                 window_size=window_size,
+                causal=True,
             )
 
             # Create test input on CPU

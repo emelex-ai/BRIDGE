@@ -18,6 +18,8 @@ def compare_attention_implementations():
         {"seq_len": 1024, "d_model": 512, "nhead": 8},
         {"seq_len": 2048, "d_model": 512, "nhead": 8},
         {"seq_len": 4096, "d_model": 512, "nhead": 8},
+        {"seq_len": 8192, "d_model": 512, "nhead": 8},
+        {"seq_len": 16384, "d_model": 512, "nhead": 8},
     ]
 
     window_sizes = [64, 128, 256]
