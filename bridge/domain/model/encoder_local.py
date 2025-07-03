@@ -4,8 +4,8 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from bridge.domain.model.transformer_local_attention import (
-    LocalAttentionEncoderLayer,
+from bridge.domain.model.true_sliding_window_attention import (
+    TrueSlidingWindowEncoderLayer,
 )
 
 
@@ -70,8 +70,10 @@ class EncoderLocal(nn.Module):  # Renamed from EncoderFlash
                 "look_backward": look_backward,
                 "look_forward": look_forward,
             }
-            encoder_layer = LocalAttentionEncoderLayer(**local_kwargs)
-            print(f"Using LocalAttentionEncoderLayer with window_size={window_size}")
+            # encoder_layer = LocalAttentionEncoderLayer(**local_kwargs)
+            encoder_layer = TrueSlidingWindowEncoderLayer(**local_kwargs)
+            # print(f"Using LocalAttentionEncoderLayer with window_size={window_size}")
+            print(f"Using TrueSlidingWindowEncoderLayer with window_size={window_size}")
         else:
             encoder_layer = nn.TransformerEncoderLayer(**base_kwargs)
             print("Using standard TransformerEncoderLayer")
