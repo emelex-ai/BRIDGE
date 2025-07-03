@@ -9,6 +9,23 @@ from bridge.domain.model.transformer_local_attention import (
 )
 
 
+def check_cuda_memory():
+    if torch.cuda.is_available():
+        # Current memory allocated by PyTorch
+        allocated = torch.cuda.memory_allocated() / 1024**3  # GB
+
+        # Peak memory allocated
+        peak = torch.cuda.max_memory_allocated() / 1024**3  # GB
+
+        # Total GPU memory
+        total = torch.cuda.get_device_properties(0).total_memory / 1024**3  # GB
+
+        print(f"Allocated: {allocated:.2f}GB")
+        print(f"Peak: {peak:.2f}GB")
+        print(f"Total: {total:.2f}GB")
+        print(f"Free: {total - allocated:.2f}GB")
+
+
 class EncoderLocal(nn.Module):  # Renamed from EncoderFlash
     def __init__(
         self,
@@ -379,6 +396,7 @@ if __name__ == "__main__":
                         print(
                             f"Test {test_count}/{total_tests}: seq_len={seq_len}, d_model={d_model}, nhead={nhead}, window_size={window_size}"
                         )
+                        check_cuda_memory()
 
                     try:
                         # Create encoder
