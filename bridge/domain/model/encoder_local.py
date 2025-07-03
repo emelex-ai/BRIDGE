@@ -124,7 +124,8 @@ if __name__ == "__main__":
         print("=" * 60)
 
         # Test parameters
-        batch_size, seq_len, d_model = 4, 256, 512  # Larger seq_len for local attention
+        # batch_size, seq_len, d_model = 4, 256, 512  # Larger seq_len for local attention
+        batch_size, seq_len, d_model = 128, 256, 512  # Larger seq_len for local attention
         nhead = 8
         num_layers = 3
         window_size = 64
