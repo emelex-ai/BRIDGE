@@ -159,6 +159,10 @@ class TrueSlidingWindowEncoderLayer(TransformerEncoderLayer):
         dtype=None,
         window_size: int = 512,
         causal: bool = False,
+        # Compatibility parameters (ignored but accepted)
+        look_backward: int = 1,
+        look_forward: Optional[int] = None,
+        **kwargs,  # Accept any additional parameters and ignore them
     ):
         """Initialize TrueSlidingWindowEncoderLayer.
 
@@ -176,6 +180,9 @@ class TrueSlidingWindowEncoderLayer(TransformerEncoderLayer):
             dtype: Data type for tensors
             window_size: Size of the sliding attention window
             causal: Whether to use causal attention
+            look_backward: (Ignored - for compatibility with LocalAttentionEncoderLayer)
+            look_forward: (Ignored - for compatibility with LocalAttentionEncoderLayer)
+            **kwargs: Additional parameters (ignored for compatibility)
         """
         super().__init__(
             d_model,
@@ -200,6 +207,9 @@ class TrueSlidingWindowEncoderLayer(TransformerEncoderLayer):
         self.window_size = window_size
         self.causal = causal
 
+        # Note: look_backward and look_forward are ignored since we implement
+        # true sliding window attention, not chunked attention with overlap
+
         # Replace projection layers
         self.q_proj = nn.Linear(d_model, d_model, bias=bias, device=device, dtype=dtype)
         self.k_proj = nn.Linear(d_model, d_model, bias=bias, device=device, dtype=dtype)
@@ -219,6 +229,10 @@ class TrueSlidingWindowEncoderLayer(TransformerEncoderLayer):
         print(
             f"Initialized TrueSlidingWindowEncoderLayer with window_size={window_size}, causal={causal}"
         )
+        if look_backward != 1 or look_forward is not None:
+            print(
+                f"Note: look_backward={look_backward} and look_forward={look_forward} are ignored in true sliding window attention"
+            )
 
     def _sliding_window_attention_forward(
         self,
