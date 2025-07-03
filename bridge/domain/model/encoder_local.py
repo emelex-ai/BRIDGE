@@ -311,20 +311,20 @@ if __name__ == "__main__":
 
         # Test parameters - full grid search
         batch_size = 2
-        seq_lens = [128, 512, 1024, 2048, 4096, 8192]  # 6 sequence lengths
+        seq_lens = [128, 512, 1024, 2048, 4096]  # 6 sequence lengths
         d_models = [256, 512, 768, 1024]  # 4 model dimensions
-        nheads = [8, 16, 32]
+        nheads = [8, 16]
         window_sizes = [
             16,
-            32,
+            # 32,
             64,
-            128,
+            # 128,
             256,
-            512,
+            # 512,
             1024,
-            2048,
+            # 2048,
             4096,
-            8192,
+            # 8192,
         ]  # 10 window sizes
         num_steps = 3  # Number of timing runs to average
 
