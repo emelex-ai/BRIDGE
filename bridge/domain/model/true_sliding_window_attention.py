@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, cast
 
 import torch
 import torch.nn as nn
@@ -121,7 +121,9 @@ class TrueSlidingWindowAttention(nn.Module):
                 mask = mask.unsqueeze(1).expand(-1, n, -1)
             elif mask.dim() == 3 and mask.shape[0] != b:  # Handle different batch sizes
                 mask = mask.repeat(b // mask.shape[0], 1, 1)
-            sim = sim.masked_fill(~mask, mask_value)
+            mask_bool = mask.bool() if mask.dtype != torch.bool else mask
+            mask_bool = cast(torch.Tensor, mask_bool)
+            sim = sim.masked_fill(~mask_bool, mask_value)
 
         # Softmax and dropout
         attn = F.softmax(sim, dim=-1)
