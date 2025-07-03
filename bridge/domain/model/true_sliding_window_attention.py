@@ -117,13 +117,18 @@ class TrueSlidingWindowAttention(nn.Module):
 
         # Apply additional input mask if provided
         if exists(mask):
+            # Handle different mask shapes
             if mask.dim() == 2:  # (batch, seq_len) -> (batch, seq_len, seq_len)
-                mask = mask.unsqueeze(1).expand(-1, n, -1)
-            elif mask.dim() == 3 and mask.shape[0] != b:  # Handle different batch sizes
+                mask = mask.unsqueeze(2).expand(-1, -1, n)  # (batch, seq_len, seq_len)
+            elif mask.dim() == 1:  # (seq_len,) -> (batch, seq_len, seq_len)
+                mask = mask.unsqueeze(0).unsqueeze(0).expand(b, n, -1)
+
+            # Ensure mask matches sim dimensions (b, n, n)
+            if mask.shape[0] != b:
                 mask = mask.repeat(b // mask.shape[0], 1, 1)
+
             mask_bool = mask.bool() if mask.dtype != torch.bool else mask
-            mask_bool = cast(torch.Tensor, mask_bool)
-            sim = sim.masked_fill(~mask_bool, mask_value)
+            sim = sim.masked_fill(mask_bool == 0, mask_value)
 
         # Softmax and dropout
         attn = F.softmax(sim, dim=-1)
