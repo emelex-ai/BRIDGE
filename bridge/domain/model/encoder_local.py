@@ -313,7 +313,7 @@ if __name__ == "__main__":
         batch_size = 2
         seq_lens = [128, 512, 1024, 2048, 4096, 8192]  # 6 sequence lengths
         d_models = [256, 512, 768, 1024]  # 4 model dimensions
-        nheads = [8, 32]
+        nheads = [8, 16, 32]
         window_sizes = [
             16,
             32,
@@ -473,6 +473,7 @@ if __name__ == "__main__":
                         }
 
                         all_results.append(result.copy())
+                        print("nb results: ", len(all_results))
                         print(
                             f"  ✓ {avg_time:.4f}s, {tokens_per_sec:.0f} tokens/sec, {memory_used_mb:.1f}MB"
                         )
