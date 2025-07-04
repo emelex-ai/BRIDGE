@@ -4,12 +4,23 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import einsum, pack, rearrange, unpack
-from local_attention import (
-    LocalAttention,
-    default,
-    exists,
-    max_neg_value,
-)
+from local_attention import LocalAttention, apply_rotary_pos_emb
+
+
+# Helper functions (copied from local_attention since they're not exported)
+def exists(val):
+    """Helper function to check if value exists."""
+    return val is not None
+
+
+def default(value, d):
+    """Helper function to provide default values."""
+    return d if not exists(value) else value
+
+
+def max_neg_value(tensor):
+    """Get the maximum negative value for the tensor's dtype."""
+    return -torch.finfo(tensor.dtype).max
 
 
 class TrueSlidingWindowAttention(LocalAttention):
