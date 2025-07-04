@@ -12,14 +12,15 @@
 
 echo "Inside slurm script"
 
-# --- 1. Get Python script from command-line argument ---
+# --- 1. Get Python script and its arguments from command-line ---
 if [ -z "$1" ]; then
     echo "Error: No Python script provided."
-    echo "Usage: sbatch $0 your_script.py"
+    echo "Usage: sbatch $0 your_script.py [args...]"
     exit 1
 fi
 PYTHON_SCRIPT=$1
-shift # The python script's arguments are now in $@
+shift  # Shift off the script name, the rest are the arguments for it.
+SCRIPT_ARGS=("$@") # Store arguments in an array
 
 # --- 2. Set up cache directories in scratch space ---
 SCRATCH_CACHE="${TMPDIR:-/tmp}/cache_${SLURM_JOB_ID}"
@@ -29,8 +30,6 @@ export HF_HOME="$SCRATCH_CACHE/huggingface"
 export XDG_CACHE_HOME="$SCRATCH_CACHE"
 
 # --- 3. Set up paths using SLURM_SUBMIT_DIR ---
-# PROJECT_ROOT="$(dirname "$SLURM_SUBMIT_DIR")"  # Parent of submission directory
-# The .venv is in the directory submitted from
 PROJECT_ROOT="$SLURM_SUBMIT_DIR"
 echo "Project root: ${PROJECT_ROOT}"
 SHARED_VENV="$PROJECT_ROOT/.venv"
@@ -42,12 +41,20 @@ echo "Shared environment: $SHARED_VENV"
 echo "Container image: $CONTAINER_IMAGE"
 
 # --- 4. Run the container with shared environment ---
-echo "Running: $PYTHON_SCRIPT"
+echo "Running: $PYTHON_SCRIPT with args: ${SCRIPT_ARGS[*]}"
 
+# Use bash -c '...' and pass arguments to it to avoid complex quoting issues.
+# The first argument after the script string is $0 for the inner shell.
 apptainer exec \
     --nv \
     --bind "$PROJECT_ROOT:$PROJECT_ROOT" \
     --bind "$SHARED_VENV:$SHARED_VENV" \
     --bind "${TMPDIR:-/tmp}:${TMPDIR:-/tmp}" \
     "$CONTAINER_IMAGE" \
-    bash -c "cd $SLURM_SUBMIT_DIR && source $SHARED_VENV/bin/activate && uv run python $PYTHON_SCRIPT \"$@\""
+    bash -c '
+        echo "--- Inside container ---"
+        set -x # Enable debugging inside container
+        cd "$1"
+        source "$2/bin/activate"
+        python "$3" "${@:4}"
+    ' _bash "$SLURM_SUBMIT_DIR" "$SHARED_VENV" "$PYTHON_SCRIPT" "${SCRIPT_ARGS[@]}"
