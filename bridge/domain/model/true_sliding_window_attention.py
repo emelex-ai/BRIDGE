@@ -222,7 +222,7 @@ class TrueSlidingWindowAttention(LocalAttention):
             attention_mask = distance_mask
 
         # Compute attention scores
-        sim = einsum("b i d, b j d -> b i j", q, k)
+        sim = einsum(q, k, "b i d, b j d -> b i j")
 
         # Apply sliding window mask
         mask_value = max_neg_value(sim)
@@ -240,7 +240,7 @@ class TrueSlidingWindowAttention(LocalAttention):
         attn = self.dropout(attn)
 
         # Apply attention to values
-        out = einsum("b i j, b j d -> b i d", attn, v)
+        out = einsum(attn, v, "b i j, b j d -> b i d")
 
         # Unpack if necessary
         if packed_shape is not None:
