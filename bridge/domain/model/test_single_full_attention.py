@@ -51,6 +51,26 @@ def test_full_attention(seq_len, d_model, nhead, batch_size, output_csv, mode="t
         criterion = nn.MSELoss()
         # Create target tensor (same shape as output)
         target = torch.randn(batch_size, seq_len, d_model, device=device)
+
+        # Check optimizer state precision after first step
+        print(f"\n=== OPTIMIZER STATE PRECISION CHECK ===")
+        print(f"Model parameters dtype: {next(model.parameters()).dtype}")
+        print(f"Input tensor dtype: {x.dtype}")
+        print(f"Target tensor dtype: {target.dtype}")
+
+        # Do one forward/backward pass to initialize optimizer states
+        optimizer.zero_grad()
+        output = model(x)
+        loss = criterion(output, target)
+        loss.backward()
+        optimizer.step()
+
+        # Now check optimizer state precision
+        print(f"Optimizer states after first step:")
+        for group in optimizer.state_dict()["state"].values():
+            for k, v in group.items():
+                print(f"  {k}: {v.dtype}, {v.device}")
+        print(f"=========================================\n")
     else:
         model.eval()
 
