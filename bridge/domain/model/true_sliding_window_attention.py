@@ -65,26 +65,26 @@ class TrueSlidingWindowAttention(LocalAttention):
             f"look_backward=0, look_forward=0 (chunking disabled)"
         )
 
-    def forward(
-        self,
-        q: torch.Tensor,
-        k: torch.Tensor,
-        v: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        input_mask: Optional[torch.Tensor] = None,
-        attn_bias: Optional[torch.Tensor] = None,
-        window_size: Optional[int] = None,
-    ) -> torch.Tensor:
-        """Forward pass - delegate to parent with corrected parameters."""
-        return super().forward(
-            q,
-            k,
-            v,
-            mask=mask,
-            input_mask=input_mask,
-            attn_bias=attn_bias,
-            window_size=window_size,
-        )
+    # def forward(
+    #     self,
+    #     q: torch.Tensor,
+    #     k: torch.Tensor,
+    #     v: torch.Tensor,
+    #     mask: Optional[torch.Tensor] = None,
+    #     input_mask: Optional[torch.Tensor] = None,
+    #     attn_bias: Optional[torch.Tensor] = None,
+    #     window_size: Optional[int] = None,
+    # ) -> torch.Tensor:
+    #     """Forward pass - delegate to parent with corrected parameters."""
+    #     return super().forward(
+    #         q,
+    #         k,
+    #         v,
+    #         mask=mask,
+    #         input_mask=input_mask,
+    #         attn_bias=attn_bias,
+    #         window_size=window_size,
+    #     )
 
 
 class TrueSlidingWindowMHA(nn.Module):
