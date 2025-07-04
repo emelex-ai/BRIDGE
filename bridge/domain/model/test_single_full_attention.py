@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Test a single full attention configuration and append to CSV.
-Usage: python test_single_full_attention.py <seq_len> <d_model> <nhead> <batch_size> <output_csv>
+Enhanced to support both test and train modes with loss computation.
+Usage: python test_single_full_attention.py <seq_len> <d_model> <nhead> <batch_size> <output_csv> [mode]
 """
 
 import csv
@@ -15,7 +16,18 @@ import torch.nn as nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 
-def test_full_attention(seq_len, d_model, nhead, batch_size, output_csv):
+def test_full_attention(seq_len, d_model, nhead, batch_size, output_csv, mode="test"):
+    """Test full attention for a single configuration and append to CSV.
+
+    Args:
+        seq_len: Sequence length
+        d_model: Model dimension
+        nhead: Number of attention heads
+        batch_size: Batch size
+        output_csv: CSV file to append results to
+        mode: Either "test" or "train" mode
+
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Clear GPU memory
@@ -29,8 +41,18 @@ def test_full_attention(seq_len, d_model, nhead, batch_size, output_csv):
     )
     model = TransformerEncoder(encoder_layer, num_layers=1).to(device)
 
-    # Create input
+    # Create input and target for training mode
     x = torch.randn(batch_size, seq_len, d_model, device=device)
+
+    # Setup training components if in train mode
+    if mode == "train":
+        model.train()
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
+        criterion = nn.MSELoss()
+        # Create target tensor (same shape as output)
+        target = torch.randn(batch_size, seq_len, d_model, device=device)
+    else:
+        model.eval()
 
     # Reset memory tracking
     if device.type == "cuda":
@@ -39,8 +61,15 @@ def test_full_attention(seq_len, d_model, nhead, batch_size, output_csv):
 
     # Warmup
     for _ in range(3):
-        with torch.no_grad():
-            _ = model(x)
+        if mode == "train":
+            optimizer.zero_grad()
+            output = model(x)
+            loss = criterion(output, target)
+            loss.backward()
+            optimizer.step()
+        else:
+            with torch.no_grad():
+                _ = model(x)
 
     # Reset after warmup
     if device.type == "cuda":
@@ -51,9 +80,18 @@ def test_full_attention(seq_len, d_model, nhead, batch_size, output_csv):
         torch.cuda.synchronize()
     start_time = time.time()
 
-    for _ in range(10):
-        with torch.no_grad():
+    total_loss = 0.0
+    for i in range(10):
+        if mode == "train":
+            optimizer.zero_grad()
             output = model(x)
+            loss = criterion(output, target)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+        else:
+            with torch.no_grad():
+                output = model(x)
 
     if device.type == "cuda":
         torch.cuda.synchronize()
@@ -67,9 +105,12 @@ def test_full_attention(seq_len, d_model, nhead, batch_size, output_csv):
 
     avg_time_ms = (end_time - start_time) / 10 * 1000
     tokens_per_sec = (batch_size * seq_len * 10) / (end_time - start_time)
+    avg_loss = total_loss / 10 if mode == "train" else None
 
     # Clean up
     del model, x, output
+    if mode == "train":
+        del optimizer, criterion, target, loss
     if device.type == "cuda":
         torch.cuda.empty_cache()
     gc.collect()
@@ -82,37 +123,55 @@ def test_full_attention(seq_len, d_model, nhead, batch_size, output_csv):
             "d_model",
             "nhead",
             "batch_size",
+            "mode",
             "memory_mb",
             "time_ms",
             "tokens_per_sec",
         ]
+
+        if mode == "train":
+            fieldnames.append("avg_loss")
+
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
         if not file_exists:
             writer.writeheader()
 
-        writer.writerow(
-            {
-                "seq_len": seq_len,
-                "d_model": d_model,
-                "nhead": nhead,
-                "batch_size": batch_size,
-                "memory_mb": memory_mb,
-                "time_ms": avg_time_ms,
-                "tokens_per_sec": tokens_per_sec,
-            }
-        )
+        row_data = {
+            "seq_len": seq_len,
+            "d_model": d_model,
+            "nhead": nhead,
+            "batch_size": batch_size,
+            "mode": mode,
+            "memory_mb": memory_mb,
+            "time_ms": avg_time_ms,
+            "tokens_per_sec": tokens_per_sec,
+        }
 
-    print(
-        f"FULL_ATTENTION: seq_len={seq_len}, memory={memory_mb:.1f}MB, time={avg_time_ms:.3f}ms"
-    )
+        if mode == "train":
+            row_data["avg_loss"] = avg_loss
+
+        writer.writerow(row_data)
+
+    if mode == "train":
+        print(
+            f"FULL_ATTENTION ({mode.upper()}): seq_len={seq_len}, "
+            f"memory={memory_mb:.1f}MB, time={avg_time_ms:.3f}ms, "
+            f"avg_loss={avg_loss:.6f}"
+        )
+    else:
+        print(
+            f"FULL_ATTENTION ({mode.upper()}): seq_len={seq_len}, "
+            f"memory={memory_mb:.1f}MB, time={avg_time_ms:.3f}ms"
+        )
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 6:
+    if len(sys.argv) < 6 or len(sys.argv) > 7:
         print(
-            "Usage: python test_single_full_attention.py <seq_len> <d_model> <nhead> <batch_size> <output_csv>"
+            "Usage: python test_single_full_attention.py <seq_len> <d_model> <nhead> <batch_size> <output_csv> [mode]"
         )
+        print("mode: 'test' (default) or 'train'")
         sys.exit(1)
 
     seq_len = int(sys.argv[1])
@@ -120,7 +179,12 @@ if __name__ == "__main__":
     nhead = int(sys.argv[3])
     batch_size = int(sys.argv[4])
     output_csv = sys.argv[5]
+    mode = sys.argv[6] if len(sys.argv) == 7 else "test"
 
-    print("Inside test_single_attention: seq_len= ", seq_len)
+    if mode not in ["test", "train"]:
+        print("Error: mode must be 'test' or 'train'")
+        sys.exit(1)
 
-    test_full_attention(seq_len, d_model, nhead, batch_size, output_csv)
+    print(f"Inside test_single_attention: seq_len={seq_len}, mode={mode}")
+
+    test_full_attention(seq_len, d_model, nhead, batch_size, output_csv, mode)
