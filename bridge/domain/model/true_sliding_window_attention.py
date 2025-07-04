@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import einsum, pack, rearrange, unpack
-from local_attention import LocalAttention, apply_rotary_pos_emb
+from local_attention import LocalAttention
 
 
 # Helper functions (copied from local_attention since they're not exported)
@@ -38,7 +38,7 @@ class TrueSlidingWindowAttention(LocalAttention):
         dropout: float = 0.0,
         scale: Optional[float] = None,
         dim: Optional[int] = None,
-        use_rotary_pos_emb: bool = True,
+        use_rotary_pos_emb: bool = False,  # Disabled by default
         use_xpos: bool = False,
         xpos_scale_base: Optional[int] = None,
         **kwargs,
@@ -51,7 +51,7 @@ class TrueSlidingWindowAttention(LocalAttention):
             dropout: Dropout probability
             scale: Attention scale factor
             dim: Dimension for positional embeddings
-            use_rotary_pos_emb: Whether to use rotary positional embeddings
+            use_rotary_pos_emb: Whether to use rotary positional embeddings (disabled)
             use_xpos: Whether to use xpos scaling
             xpos_scale_base: Base for xpos scaling
             **kwargs: Additional arguments for compatibility
@@ -68,7 +68,7 @@ class TrueSlidingWindowAttention(LocalAttention):
             dim=dim,
             autopad=True,  # We'll handle padding ourselves
             exact_windowsize=True,
-            use_rotary_pos_emb=use_rotary_pos_emb,
+            use_rotary_pos_emb=False,  # Disabled since you have your own
             use_xpos=use_xpos,
             xpos_scale_base=xpos_scale_base,
             **kwargs,
@@ -121,14 +121,16 @@ class TrueSlidingWindowAttention(LocalAttention):
         scale = default(self.scale, dim_head**-0.5)
         q = q * scale
 
-        # Apply rotary embeddings if configured
-        if exists(self.rel_pos):
-            pos_emb, xpos_scale = self.rel_pos(k)
-            q, k = apply_rotary_pos_emb(q, k, pos_emb, scale=xpos_scale)
+        # Skip rotary embeddings since you have your own position embedding
+        # if exists(self.rel_pos):
+        #     pos_emb, xpos_scale = self.rel_pos(k)
+        #     q, k = apply_rotary_pos_emb(q, k, pos_emb, scale=xpos_scale)
 
         # If no mask provided, fall back to full computation with sliding window
         if not exists(mask):
-            return self._full_attention_with_window(q, k, v, window_size, attn_bias)
+            return self._full_attention_with_window(
+                q, k, v, window_size, attn_bias, packed_shape
+            )
 
         # Handle input mask - determine which positions are valid
         if mask.dim() == 1:  # (seq_len,) - same mask for all batches
@@ -201,6 +203,7 @@ class TrueSlidingWindowAttention(LocalAttention):
         v: torch.Tensor,
         window_size: int,
         attn_bias: Optional[torch.Tensor] = None,
+        packed_shape=None,
     ) -> torch.Tensor:
         """Fallback to full attention computation with sliding window mask."""
         b, n, dim_head, device = *q.shape, q.device
@@ -238,6 +241,10 @@ class TrueSlidingWindowAttention(LocalAttention):
 
         # Apply attention to values
         out = einsum("b i j, b j d -> b i d", attn, v)
+
+        # Unpack if necessary
+        if packed_shape is not None:
+            out, *_ = unpack(out, packed_shape, "* n d")
 
         return out
 
