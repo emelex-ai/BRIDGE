@@ -4,8 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import einsum, pack, rearrange, unpack
-
-from bridge.domain.model.local_attention_module.local_attention import (
+from local_attention import (
     LocalAttention,
     default,
     exists,
