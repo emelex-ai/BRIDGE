@@ -26,6 +26,7 @@ def test_sliding_window(seq_len, d_model, nhead, batch_size, window_size, output
 
     # Create model
     encoder_layer = TrueSlidingWindowMHA(
+        dim=d_model,
         d_model=d_model,
         nhead=nhead,
         dim_feedforward=d_model * 4,
