@@ -42,25 +42,13 @@ class TrueSlidingWindowAttention(LocalAttention):
         xpos_scale_base: Optional[int] = None,
         **kwargs,
     ):
-        """Initialize true sliding window attention.
-
-        Args:
-            window_size: Size of the attention window
-            causal: Whether to use causal attention
-            dropout: Dropout probability
-            scale: Attention scale factor
-            dim: Dimension for positional embeddings
-            use_rotary_pos_emb: Whether to use rotary positional embeddings (disabled)
-            use_xpos: Whether to use xpos scaling
-            xpos_scale_base: Base for xpos scaling
-            **kwargs: Additional arguments for compatibility
-        """
+        """Initialize true sliding window attention."""
         # CRITICAL FIX: Disable chunking and overlapping
         super().__init__(
             window_size=window_size,
             causal=causal,
-            look_backward=0,  # FIXED: Was 1, now 0 - disables backward overlap
-            look_forward=0,  # FIXED: Was 0 if causal else 1, now always 0 - disables forward overlap
+            look_backward=0,  # FIXED: No backward chunks (disable overlap)
+            look_forward=0,  # FIXED: No forward chunks (disable overlap)
             dropout=dropout,
             scale=scale,
             dim=dim,
@@ -71,10 +59,6 @@ class TrueSlidingWindowAttention(LocalAttention):
             xpos_scale_base=xpos_scale_base,
             **kwargs,
         )
-
-        # Store our true sliding window parameters
-        self.true_window_size = window_size
-        self.true_causal = causal
 
         print(
             f"Initialized TrueSlidingWindowAttention with window_size={window_size}, causal={causal}, "
@@ -91,168 +75,16 @@ class TrueSlidingWindowAttention(LocalAttention):
         attn_bias: Optional[torch.Tensor] = None,
         window_size: Optional[int] = None,
     ) -> torch.Tensor:
-        """Forward pass for true sliding window attention with sparse computation.
-
-        Only computes attention over valid (unmasked) key positions within the window.
-        Uses vectorized operations for better performance.
-
-        Args:
-            q: Query tensor
-            k: Key tensor
-            v: Value tensor
-            mask: Attention mask (True for valid positions, False for masked)
-            input_mask: Input mask (alias for mask)
-            attn_bias: Attention bias
-            window_size: Dynamic window size (if supported)
-
-        Returns:
-            Output tensor with same shape as q
-        """
-        mask = default(mask, input_mask)
-        window_size = default(window_size, self.true_window_size)
-
-        # Handle packed format
-        (q, packed_shape), (k, _), (v, _) = map(lambda t: pack([t], "* n d"), (q, k, v))
-
-        b, n, dim_head, device, dtype = *q.shape, q.device, q.dtype
-
-        # FORCE EFFICIENT PATH: Create a mask if none provided
-        # Artificial forcing for sliding window attention
-        # A better approach is required (GE)
-        if not exists(mask):
-            # Create a mask that marks all positions as valid (True = attend to this position)
-            mask = torch.ones(b, n, device=device, dtype=torch.bool)
-
-        # Set scale
-        scale = default(self.scale, dim_head**-0.5)
-        q = q * scale
-
-        # Skip rotary embeddings since you have your own position embedding
-        # if exists(self.rel_pos):
-        #     pos_emb, xpos_scale = self.rel_pos(k)
-        #     q, k = apply_rotary_pos_emb(q, k, pos_emb, scale=xpos_scale)
-
-        # If no mask provided, fall back to full computation with sliding window
-        if not exists(mask):
-            return self._full_attention_with_window(
-                q, k, v, window_size, attn_bias, packed_shape
-            )
-
-        # Handle input mask - determine which positions are valid
-        if mask.dim() == 1:  # (seq_len,) - same mask for all batches
-            valid_mask = mask.bool().unsqueeze(0).expand(b, -1)  # (batch, seq_len)
-        elif mask.dim() == 2:  # (batch, seq_len)
-            valid_mask = mask.bool()
-        else:
-            raise ValueError(f"Mask should be 1D or 2D, got {mask.dim()}D")
-
-        output = torch.zeros_like(q)
-
-        # Process each batch separately for sparse computation
-        for batch_idx in range(b):
-            batch_valid = valid_mask[batch_idx]  # (seq_len,)
-            valid_indices = torch.where(batch_valid)[0]  # Indices of valid positions
-
-            if len(valid_indices) == 0:
-                continue  # Skip if no valid positions
-
-            # Extract valid keys and values
-            k_valid = k[batch_idx, valid_indices]  # (num_valid, dim_head)
-            v_valid = v[batch_idx, valid_indices]  # (num_valid, dim_head)
-
-            # Create sliding window mask for this batch
-            # Shape: (seq_len, num_valid) - for each query, which valid keys are in window
-            q_indices = torch.arange(n, device=device).unsqueeze(1)  # (seq_len, 1)
-            k_indices = valid_indices.unsqueeze(0)  # (1, num_valid)
-
-            if self.true_causal:
-                # Causal: can only attend to positions <= current position and within window
-                causal_mask = k_indices <= q_indices  # (seq_len, num_valid)
-                window_mask = k_indices >= (
-                    q_indices - window_size + 1
-                )  # (seq_len, num_valid)
-                attention_mask = causal_mask & window_mask
-            else:
-                # Non-causal: can attend to window_size//2 positions on each side
-                half_window = window_size // 2
-                distance_mask = torch.abs(q_indices - k_indices) <= half_window
-                attention_mask = distance_mask
-
-            # Compute attention scores: (seq_len, num_valid)
-            scores = torch.matmul(
-                q[batch_idx], k_valid.transpose(-2, -1)
-            )  # (seq_len, num_valid)
-
-            # Apply sliding window mask
-            mask_value = max_neg_value(scores)
-            scores = scores.masked_fill(~attention_mask, mask_value)
-
-            # Apply softmax along valid key dimension
-            attn_weights = F.softmax(scores, dim=-1)  # (seq_len, num_valid)
-
-            # Apply dropout
-            attn_weights = self.dropout(attn_weights)
-
-            # Compute weighted sum of values: (seq_len, dim_head)
-            output[batch_idx] = torch.matmul(attn_weights, v_valid)
-
-        # Unpack if necessary
-        if packed_shape is not None:
-            output, *_ = unpack(output, packed_shape, "* n d")
-
-        return output
-
-    def _full_attention_with_window(
-        self,
-        q: torch.Tensor,
-        k: torch.Tensor,
-        v: torch.Tensor,
-        window_size: int,
-        attn_bias: Optional[torch.Tensor] = None,
-        packed_shape=None,
-    ) -> torch.Tensor:
-        """Fallback to full attention computation with sliding window mask."""
-        b, n, dim_head, device = *q.shape, q.device
-
-        # Create sliding window mask
-        if self.true_causal:
-            row_idx = torch.arange(n, device=device).unsqueeze(1)
-            col_idx = torch.arange(n, device=device).unsqueeze(0)
-            causal_mask = col_idx <= row_idx
-            window_mask = col_idx >= (row_idx - window_size + 1)
-            attention_mask = causal_mask & window_mask
-        else:
-            row_idx = torch.arange(n, device=device).unsqueeze(1)
-            col_idx = torch.arange(n, device=device).unsqueeze(0)
-            distance_mask = torch.abs(row_idx - col_idx) <= (window_size // 2)
-            attention_mask = distance_mask
-
-        # Compute attention scores
-        sim = einsum(q, k, "b i d, b j d -> b i j")
-
-        # Apply sliding window mask
-        mask_value = max_neg_value(sim)
-        sim = sim.masked_fill(~attention_mask.unsqueeze(0), mask_value)
-
-        # Apply attention bias if provided
-        if exists(attn_bias):
-            heads = attn_bias.shape[0]
-            assert (b % heads) == 0
-            attn_bias = attn_bias.repeat(b // heads, 1, 1)
-            sim = sim + attn_bias
-
-        # Softmax and dropout
-        attn = F.softmax(sim, dim=-1)
-        attn = self.dropout(attn)
-
-        # Apply attention to values
-        out = einsum(attn, v, "b i j, b j d -> b i d")
-
-        # Unpack if necessary
-        if packed_shape is not None:
-            out, *_ = unpack(out, packed_shape, "* n d")
-
-        return out
+        """Forward pass - delegate to parent with corrected parameters."""
+        return super().forward(
+            q,
+            k,
+            v,
+            mask=mask,
+            input_mask=input_mask,
+            attn_bias=attn_bias,
+            window_size=window_size,
+        )
 
 
 class TrueSlidingWindowMHA(nn.Module):
