@@ -121,4 +121,6 @@ if __name__ == "__main__":
     batch_size = int(sys.argv[4])
     output_csv = sys.argv[5]
 
+    print("Inside test_single_attention: seq_len= ", seq_len)
+
     test_full_attention(seq_len, d_model, nhead, batch_size, output_csv)

@@ -18,13 +18,28 @@ PREV_JOB=""
 
 for seq_len in "${SEQ_LENS[@]}"; do
     echo "Submitting job for seq_len=$seq_len"
-    
+
     if [ -z "$PREV_JOB" ]; then
         # First job - no dependency
-        JOB_ID=$(./submit_slurm.sh script.slurm bridge/domain/model/test_single_full_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE $OUTPUT_CSV | grep -o '[0-9]\+')
+	echo "First job, inside submission script"
+	echo $seq_len
+	echo $D_MODEL
+	echo $NHEAD
+	echo $BATCH_SIZE
+	echo $OUTPUT_CSV
+        JOB_ID=$(./submit_script.sh script.slurm bridge/domain/model/test_single_full_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE $OUTPUT_CSV | grep -o '[0-9]\+')
+	echo "(first) After JOB_ID: $JOB_ID"
+	#JOB_ID=$(./submit_script.sh script.slurm bridge/domain/model/test_single_full_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE $OUTPUT_CSV)
     else
+	echo "Subsequent job, inside submission script"
+	echo $seq_len
+	echo $D_MODEL
+	echo $NHEAD
+	echo $BATCH_SIZE
+	echo $OUTPUT_CSV
         # Subsequent jobs - depend on previous job
-        JOB_ID=$(./submit_slurm.sh --dependency=afterok:$PREV_JOB script.slurm bridge/domain/model/test_single_full_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE "$OUTPUT_CSV" | grep -o '[0-9]\+')
+        JOB_ID=$(./submit_script.sh --dependency=afterok:$PREV_JOB script.slurm bridge/domain/model/test_single_full_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE "$OUTPUT_CSV" | grep -o '[0-9]\+')
+	echo "(subsequent) After JOB_ID: $JOB_ID"
 
         #JOB_ID=$(sbatch --dependency=afterok:$PREV_JOB script.slurm bridge/domain/model/test_single_full_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE $OUTPUT_CSV | grep -o '[0-9]\+'
     fi

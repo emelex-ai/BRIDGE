@@ -6,9 +6,11 @@
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=32GB
+#SBATCH --mem=45GB
 #SBATCH --time=01:00:00
 #SBATCH -A pilotgpu
+
+echo "Inside slurm script"
 
 # --- 1. Get Python script from command-line argument ---
 if [ -z "$1" ]; then
