@@ -24,7 +24,9 @@ for seq_len in "${SEQ_LENS[@]}"; do
         JOB_ID=$(./submit_slurm.sh script.slurm bridge/domain/model/test_single_full_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE $OUTPUT_CSV | grep -o '[0-9]\+')
     else
         # Subsequent jobs - depend on previous job
-        JOB_ID=$(sbatch --dependency=afterok:$PREV_JOB script.slurm bridge/domain/model/test_single_full_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE $OUTPUT_CSV | grep -o '[0-9]\+')
+        JOB_ID=$(./submit_slurm.sh --dependency=afterok:$PREV_JOB script.slurm bridge/domain/model/test_single_full_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE "$OUTPUT_CSV" | grep -o '[0-9]\+')
+
+        #JOB_ID=$(sbatch --dependency=afterok:$PREV_JOB script.slurm bridge/domain/model/test_single_full_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE $OUTPUT_CSV | grep -o '[0-9]\+'
     fi
     
     echo "  Submitted job $JOB_ID"

@@ -1,38 +1,124 @@
-#!/bin/bash
+#!/usr/bin/env python3
+"""
+Test a single full attention configuration and append to CSV.
+Usage: python test_single_full_attention.py <seq_len> <d_model> <nhead> <batch_size> <output_csv>
+"""
 
-# Configuration
-SEQ_LENS=(512 1024 2048 4096 8192)
-D_MODEL=512
-NHEAD=8
-BATCH_SIZE=4
-OUTPUT_CSV="full_attention_results.csv"
+import csv
+import gc
+import os
+import sys
+import time
 
-# Remove existing CSV file
-rm -f $OUTPUT_CSV
+import torch
+import torch.nn as nn
+from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
-echo "Starting full attention tests..."
-echo "Results will be saved to: $OUTPUT_CSV"
 
-# Submit jobs sequentially with dependencies
-PREV_JOB=""
+def test_full_attention(seq_len, d_model, nhead, batch_size, output_csv):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-for seq_len in "${SEQ_LENS[@]}"; do
-    echo "Submitting job for seq_len=$seq_len"
-    
-    if [ -z "$PREV_JOB" ]; then
-        # First job - no dependency
-        JOB_ID=$(./submit_slurm.sh script.slurm bridge/domain/model/test_single_full_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE $OUTPUT_CSV | grep -o '[0-9]\+')
-    else
-        # Subsequent jobs - depend on previous job
-        JOB_ID=$(sbatch --dependency=afterok:$PREV_JOB script.slurm bridge/domain/model/test_single_full_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE $OUTPUT_CSV | grep -o '[0-9]\+')
-    fi
-    
-    echo "  Submitted job $JOB_ID"
-    PREV_JOB=$JOB_ID
-done
+    # Clear GPU memory
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+    gc.collect()
 
-echo ""
-echo "All full attention jobs submitted!"
-echo "Final job ID: $PREV_JOB"
-echo "Monitor progress with: squeue -u \$USER"
-echo "Check results with: cat $OUTPUT_CSV"
+    # Create model
+    encoder_layer = TransformerEncoderLayer(
+        d_model=d_model, nhead=nhead, dim_feedforward=d_model * 4, batch_first=True
+    )
+    model = TransformerEncoder(encoder_layer, num_layers=1).to(device)
+
+    # Create input
+    x = torch.randn(batch_size, seq_len, d_model, device=device)
+
+    # Reset memory tracking
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats()
+        torch.cuda.empty_cache()
+
+    # Warmup
+    for _ in range(3):
+        with torch.no_grad():
+            _ = model(x)
+
+    # Reset after warmup
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats()
+
+    # Benchmark
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    start_time = time.time()
+
+    for _ in range(10):
+        with torch.no_grad():
+            output = model(x)
+
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    end_time = time.time()
+
+    # Get measurements
+    if device.type == "cuda":
+        memory_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
+    else:
+        memory_mb = 0
+
+    avg_time_ms = (end_time - start_time) / 10 * 1000
+    tokens_per_sec = (batch_size * seq_len * 10) / (end_time - start_time)
+
+    # Clean up
+    del model, x, output
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+    gc.collect()
+
+    # Append to CSV
+    file_exists = os.path.isfile(output_csv)
+    with open(output_csv, "a", newline="") as csvfile:
+        fieldnames = [
+            "seq_len",
+            "d_model",
+            "nhead",
+            "batch_size",
+            "memory_mb",
+            "time_ms",
+            "tokens_per_sec",
+        ]
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+        if not file_exists:
+            writer.writeheader()
+
+        writer.writerow(
+            {
+                "seq_len": seq_len,
+                "d_model": d_model,
+                "nhead": nhead,
+                "batch_size": batch_size,
+                "memory_mb": memory_mb,
+                "time_ms": avg_time_ms,
+                "tokens_per_sec": tokens_per_sec,
+            }
+        )
+
+    print(
+        f"FULL_ATTENTION: seq_len={seq_len}, memory={memory_mb:.1f}MB, time={avg_time_ms:.3f}ms"
+    )
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 6:
+        print(
+            "Usage: python test_single_full_attention.py <seq_len> <d_model> <nhead> <batch_size> <output_csv>"
+        )
+        sys.exit(1)
+
+    seq_len = int(sys.argv[1])
+    d_model = int(sys.argv[2])
+    nhead = int(sys.argv[3])
+    batch_size = int(sys.argv[4])
+    output_csv = sys.argv[5]
+
+    test_full_attention(seq_len, d_model, nhead, batch_size, output_csv)
