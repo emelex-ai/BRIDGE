@@ -19,10 +19,11 @@ shift # Remove the SLURM file from the list.
 SCRIPT_AND_ARGS=("$@")
 
 # Use --parsable to get only the job ID, making output clean and reliable.
+# Echo informational messages to standard error (>&2) so they don't get captured by command substitution.
 if [ -n "$DEPENDENCY_ARG" ]; then
-    echo "Submitting with dependency: $DEPENDENCY_ARG"
+    echo "Submitting with dependency: $DEPENDENCY_ARG" >&2
     sbatch --parsable "$DEPENDENCY_ARG" "$SLURM_FILE" "${SCRIPT_AND_ARGS[@]}"
 else
-    echo "Submitting without dependency"
+    echo "Submitting without dependency" >&2
     sbatch --parsable "$SLURM_FILE" "${SCRIPT_AND_ARGS[@]}"
 fi
