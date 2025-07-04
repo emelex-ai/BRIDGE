@@ -19,6 +19,7 @@ if [ -z "$1" ]; then
     exit 1
 fi
 PYTHON_SCRIPT=$1
+shift # The python script's arguments are now in $@
 
 # --- 2. Set up cache directories in scratch space ---
 SCRATCH_CACHE="${TMPDIR:-/tmp}/cache_${SLURM_JOB_ID}"
@@ -49,4 +50,4 @@ apptainer exec \
     --bind "$SHARED_VENV:$SHARED_VENV" \
     --bind "${TMPDIR:-/tmp}:${TMPDIR:-/tmp}" \
     "$CONTAINER_IMAGE" \
-    bash -c "cd $SLURM_SUBMIT_DIR && source $SHARED_VENV/bin/activate && uv run python $PYTHON_SCRIPT"
+    bash -c "cd $SLURM_SUBMIT_DIR && source $SHARED_VENV/bin/activate && uv run python $PYTHON_SCRIPT \"$@\""
