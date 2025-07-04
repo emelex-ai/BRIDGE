@@ -6,7 +6,7 @@ D_MODEL=512
 NHEAD=8
 BATCH_SIZE=4
 WINDOW_SIZES=(64 128 256)
-OUTPUT_CSV="sliding_window_results.csv"
+OUTPUT_CSV="local_atention_results.csv"
 
 # Remove existing CSV file
 rm -f $OUTPUT_CSV
