@@ -22,12 +22,10 @@ def test_sliding_window(seq_len, d_model, nhead, batch_size, window_size, output
         torch.cuda.empty_cache()
     gc.collect()
 
-    from bridge.domain.model.true_sliding_window_attention import (
-        TrueSlidingWindowEncoderLayer,
-    )
+    from bridge.domain.model.true_sliding_window_attention import TrueSlidingWindowMHA
 
     # Create model
-    encoder_layer = TrueSlidingWindowEncoderLayer(
+    encoder_layer = TrueSlidingWindowMHA(
         d_model=d_model,
         nhead=nhead,
         dim_feedforward=d_model * 4,
