@@ -26,9 +26,8 @@ def max_neg_value(tensor):
 class TrueSlidingWindowAttention(LocalAttention):
     """True sliding window attention that removes chunking overhead.
 
-    This subclasses LocalAttention but implements proper sliding window
-    attention where each token attends to a fixed window around itself,
-    rather than chunked attention with overlap.
+    This subclasses LocalAttention but disables chunking and overlapping
+    to achieve true O(L) memory scaling.
     """
 
     def __init__(
@@ -56,18 +55,18 @@ class TrueSlidingWindowAttention(LocalAttention):
             xpos_scale_base: Base for xpos scaling
             **kwargs: Additional arguments for compatibility
         """
-        # Initialize parent with dummy values for chunking parameters
-        # We'll override the forward method to implement true sliding window
+        # CRITICAL FIX: Disable chunking and overlapping by setting look_backward=0, look_forward=0
+        # This forces LocalAttention to only look at the current window without overlap
         super().__init__(
             window_size=window_size,
             causal=causal,
-            look_backward=1,  # Will be ignored in our implementation
-            look_forward=0 if causal else 1,  # Will be ignored in our implementation
+            look_backward=0,  # FIXED: No backward chunks (disable overlap)
+            look_forward=0,  # FIXED: No forward chunks (disable overlap)
             dropout=dropout,
             scale=scale,
             dim=dim,
-            autopad=True,  # We'll handle padding ourselves
-            exact_windowsize=True,
+            autopad=True,
+            exact_windowsize=True,  # Force exact window size
             use_rotary_pos_emb=False,  # Disabled since you have your own
             use_xpos=use_xpos,
             xpos_scale_base=xpos_scale_base,
@@ -79,7 +78,8 @@ class TrueSlidingWindowAttention(LocalAttention):
         self.true_causal = causal
 
         print(
-            f"Initialized TrueSlidingWindowAttention with window_size={window_size}, causal={causal}"
+            f"Initialized TrueSlidingWindowAttention with window_size={window_size}, causal={causal}, "
+            f"look_backward=0, look_forward=0 (chunking disabled)"
         )
 
     def forward(
