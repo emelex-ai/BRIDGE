@@ -21,31 +21,25 @@ for seq_len in "${SEQ_LENS[@]}"; do
 
     if [ -z "$PREV_JOB" ]; then
         # First job - no dependency
-	echo "First job, inside submission script"
-	echo $seq_len
-	echo $D_MODEL
-	echo $NHEAD
-	echo $BATCH_SIZE
-	echo $OUTPUT_CSV
-        JOB_ID=$(./submit_script.sh script.slurm bridge/domain/model/test_single_full_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE $OUTPUT_CSV | grep -o '[0-9]\+')
-	echo "(first) After JOB_ID: $JOB_ID"
-	#JOB_ID=$(./submit_script.sh script.slurm bridge/domain/model/test_single_full_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE $OUTPUT_CSV)
+        JOB_ID=$(./submit_script.sh script.slurm bridge/domain/model/test_single_full_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE "$OUTPUT_CSV")
     else
-	echo "Subsequent job, inside submission script"
-	echo $seq_len
-	echo $D_MODEL
-	echo $NHEAD
-	echo $BATCH_SIZE
-	echo $OUTPUT_CSV
-        # Subsequent jobs - depend on previous job
-        JOB_ID=$(./submit_script.sh --dependency=afterok:$PREV_JOB script.slurm bridge/domain/model/test_single_full_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE "$OUTPUT_CSV" | grep -o '[0-9]\+')
-	echo "(subsequent) After JOB_ID: $JOB_ID"
-
-        #JOB_ID=$(sbatch --dependency=afterok:$PREV_JOB script.slurm bridge/domain/model/test_single_full_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE $OUTPUT_CSV | grep -o '[0-9]\+'
+        # Subsequent jobs - depend on previous job. No more grep!
+        JOB_ID=$(./submit_script.sh --dependency=afterok:$PREV_JOB script.slurm bridge/domain/model/test_single_full_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE "$OUTPUT_CSV")
     fi
-    
-    echo "  Submitted job $JOB_ID"
-    PREV_JOB=$JOB_ID
+
+    # Check if a valid job ID was returned.
+    if [[ -n "$JOB_ID" && "$JOB_ID" -gt 0 ]]; then
+        echo "  Submitted job $JOB_ID"
+        PREV_JOB=$JOB_ID
+    else
+        echo "  ERROR: Failed to submit job for seq_len=$seq_len. Aborting."
+        # Optional: Cancel previously submitted jobs in the chain.
+        if [ -n "$PREV_JOB" ]; then
+            scancel "$PREV_JOB"
+            echo "  Canceled job chain."
+        fi
+        exit 1
+    fi
 done
 
 echo ""

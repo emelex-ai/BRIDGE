@@ -1,33 +1,28 @@
-#!/bin/bash -x
+#!/bin/bash
 
-#SCRIPT=$1
-#PYTHON=$2
-#sbatch $1 $2
+# A more robust script for submitting SLURM jobs.
 
-# Example: 
-#
-# bash submit_script.sh run_in_apptainer.slurm my_script.py
-
-# #!/bin/bash
-# Modified submit_slurm.sh
-
-# Check if first argument starts with --dependency
+# Check if the first argument is a dependency flag.
 if [[ $1 == --dependency=* ]]; then
     DEPENDENCY_ARG="$1"
-    shift  # Remove dependency argument
+    shift  # Remove the dependency argument from the list.
 else
     DEPENDENCY_ARG=""
 fi
 
+# The next argument must be the SLURM script file.
 SLURM_FILE=$1
-SCRIPT_TO_RUN=$2
-shift 2
-SCRIPT_ARGS="$@"
+shift # Remove the SLURM file from the list.
 
+# All remaining arguments are for the Python script inside SLURM.
+# Store them in an array to preserve spaces and special characters.
+SCRIPT_AND_ARGS=("$@")
+
+# Use --parsable to get only the job ID, making output clean and reliable.
 if [ -n "$DEPENDENCY_ARG" ]; then
     echo "Submitting with dependency: $DEPENDENCY_ARG"
-    sbatch "$DEPENDENCY_ARG" "$SLURM_FILE" "$SCRIPT_TO_RUN" $SCRIPT_ARGS
+    sbatch --parsable "$DEPENDENCY_ARG" "$SLURM_FILE" "${SCRIPT_AND_ARGS[@]}"
 else
     echo "Submitting without dependency"
-    sbatch "$SLURM_FILE" "$SCRIPT_TO_RUN" $SCRIPT_ARGS
+    sbatch --parsable "$SLURM_FILE" "${SCRIPT_AND_ARGS[@]}"
 fi
