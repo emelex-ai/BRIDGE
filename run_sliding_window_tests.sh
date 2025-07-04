@@ -23,12 +23,10 @@ for seq_len in "${SEQ_LENS[@]}"; do
 
     if [ -z "$PREV_JOB" ]; then
         # First job - no dependency
-        # JOB_ID=$(./submit_script.sh script.slurm bridge/domain/model/test_single_sliding_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE $ws "$OUTPUT_CSV")
-        JOB_ID=$(./submit_script.sh script.slurm bridge/domain/model/test_single_local_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE $ws "$OUTPUT_CSV")
+        JOB_ID=$(./submit_script.sh script.slurm bridge/domain/model/test_single_sliding_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE $ws "$OUTPUT_CSV")
     else
         # Subsequent jobs - depend on previous job.
-        #JOB_ID=$(./submit_script.sh --dependency=afterok:$PREV_JOB script.slurm bridge/domain/model/test_single_sliding_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE $ws "$OUTPUT_CSV")
-        JOB_ID=$(./submit_script.sh --dependency=afterok:$PREV_JOB script.slurm bridge/domain/model/test_single_local_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE $ws "$OUTPUT_CSV")
+        JOB_ID=$(./submit_script.sh --dependency=afterok:$PREV_JOB script.slurm bridge/domain/model/test_single_sliding_attention.py $seq_len $D_MODEL $NHEAD $BATCH_SIZE $ws "$OUTPUT_CSV")
     fi
 
     # Check if a valid job ID was returned.
