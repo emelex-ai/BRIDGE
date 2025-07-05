@@ -6,13 +6,14 @@ authors = [
     {name = "Nathan Crock", email = "nathan@emelex.com"}
 ]
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.11,<3.14"
 keywords = ["nlp", "psycholinguistics", "phonology", "orthography", "deep-learning"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
 
@@ -25,6 +26,8 @@ dependencies = [
     "pydantic>=2.9.2,<3.0.0",
     "pyyaml>=6.0.2,<7.0.0",
     "torch>=2.4.0,<3.0.0",
+    # nightly
+    # "torch>=2.9.0.dev20250704",
     "torchsummary>=1.5.1",
     "tqdm>=4.66.5,<5.0.0",
     "pandas",
