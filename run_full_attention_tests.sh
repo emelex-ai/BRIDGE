@@ -1,10 +1,11 @@
 #!/bin/bash
 
 # Configuration
-SEQ_LENS=(512 1024 2048 4096 8192)
-D_MODEL=512
-NHEAD=8
-BATCH_SIZE=4
+SEQ_LENS=(512 1024 2048 4096 8192 16384)
+# D_MODEL=512
+D_MODEL=1024
+NHEAD=16
+BATCH_SIZE=64
 MODES=("test" "train")
 
 echo "Starting full attention tests for both TEST and TRAIN modes..."
