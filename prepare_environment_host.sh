@@ -45,6 +45,10 @@ uv sync --no-config --extra cuda --extra wandb
 echo "Activating shared virtual environment..."
 source "$SHARED_VENV/bin/activate"
 
+# Install PyTorch nightly for FlexAttention support
+echo "Installing PyTorch nightly for FlexAttention support..."
+uv pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu121
+
 # Install CUDA packages (only if not already installed)
 if ! python -c "import apex" 2>/dev/null; then
     echo "Installing Apex..."
@@ -67,6 +71,13 @@ echo "Verifying installations..."
 python -c "import torch; print(f'PyTorch: {torch.__version__}')"
 python -c "import apex; print('Apex: OK')"
 
+# Check FlexAttention availability
+if python -c "from torch.nn.attention.flex_attention import flex_attention" 2>/dev/null; then
+    echo "✅ FlexAttention: Available"
+else
+    echo "⚠️  FlexAttention: Not available (PyTorch nightly required)"
+fi
+
 # TransformerEngine can't be tested on frontend due to missing CUDA runtime
 echo "TransformerEngine: Installed (runtime test skipped - requires GPU node)"
 
@@ -75,7 +86,10 @@ echo "✅ Shared environment setup complete!"
 echo "📁 Shared virtual environment: $SHARED_VENV"
 echo "💾 Cache location: $SCRATCH_CACHE"
 echo ""
-echo "Note: TransformerEngine will work on GPU compute nodes but cannot be tested on frontend"
+echo "Notes:"
+echo "  - TransformerEngine will work on GPU compute nodes but cannot be tested on frontend"
+echo "  - PyTorch nightly installed for FlexAttention support (use attention_type='flex')"
+echo "  - BRIDGE architecture supports exact sliding window attention via FlexAttention"
 echo ""
 echo "Usage from any project folder:"
 echo "  source ../../../.venv/bin/activate  # Adjust path as needed"
