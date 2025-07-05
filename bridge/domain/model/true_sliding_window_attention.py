@@ -180,7 +180,7 @@ class TrueSlidingWindowMHA(nn.Module):
         Returns:
             Output tensor (batch, seq_len, dim)
         """
-        if exists(self.norm):
+        if self.norm is not None:
             x = self.norm(x)
 
         # Project to Q, K, V

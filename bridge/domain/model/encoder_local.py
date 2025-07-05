@@ -4,6 +4,14 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
+# Add FlexAttention import
+from bridge.domain.model.transformer_flex_attention import (
+    FLEX_ATTENTION_AVAILABLE,
+    FlexAttentionEncoderLayer,
+)
+from bridge.domain.model.transformer_local_attention import (
+    LocalAttentionEncoderLayer,
+)
 from bridge.domain.model.true_sliding_window_attention import (
     TrueSlidingWindowEncoderLayer,
 )
@@ -37,6 +45,7 @@ class EncoderLocal(nn.Module):  # Renamed from EncoderFlash
         causal: bool = True,  # LLM is the default
         look_backward: int = 1,
         look_forward: Optional[int] = None,
+        attention_type: str = "true_sliding_window",  # Add attention type option
     ) -> None:
         """Initialize EncoderLocal with local attention on CUDA, standard attention on CPU.
 
@@ -49,6 +58,7 @@ class EncoderLocal(nn.Module):  # Renamed from EncoderFlash
             causal: Whether to use causal attention (only used for CUDA)
             look_backward: Number of windows to look backward (only used for CUDA)
             look_forward: Number of windows to look forward (only used for CUDA)
+            attention_type: Type of attention to use ("local", "true_sliding_window", "flex")
 
         """
         super(EncoderLocal, self).__init__()
@@ -67,13 +77,50 @@ class EncoderLocal(nn.Module):  # Renamed from EncoderFlash
                 **base_kwargs,
                 "window_size": window_size,
                 "causal": causal,
-                "look_backward": look_backward,
-                "look_forward": look_forward,
             }
-            # encoder_layer = LocalAttentionEncoderLayer(**local_kwargs)
-            encoder_layer = TrueSlidingWindowEncoderLayer(**local_kwargs)
-            # print(f"Using LocalAttentionEncoderLayer with window_size={window_size}")
-            print(f"Using TrueSlidingWindowEncoderLayer with window_size={window_size}")
+
+            # Choose attention implementation based on attention_type
+            if attention_type == "flex" and FLEX_ATTENTION_AVAILABLE:
+                encoder_layer = FlexAttentionEncoderLayer(**local_kwargs)
+                print(f"Using FlexAttentionEncoderLayer with window_size={window_size}")
+            elif attention_type == "flex" and not FLEX_ATTENTION_AVAILABLE:
+                print(
+                    "Warning: FlexAttention requested but not available, falling back to TrueSlidingWindowEncoderLayer"
+                )
+                local_kwargs.update(
+                    {
+                        "look_backward": look_backward,
+                        "look_forward": look_forward,
+                    }
+                )
+                encoder_layer = TrueSlidingWindowEncoderLayer(**local_kwargs)
+                print(
+                    f"Using TrueSlidingWindowEncoderLayer with window_size={window_size}"
+                )
+            elif attention_type == "local":
+                local_kwargs.update(
+                    {
+                        "look_backward": look_backward,
+                        "look_forward": look_forward,
+                    }
+                )
+                encoder_layer = LocalAttentionEncoderLayer(**local_kwargs)
+                print(
+                    f"Using LocalAttentionEncoderLayer with window_size={window_size}"
+                )
+            elif attention_type == "true_sliding_window":
+                local_kwargs.update(
+                    {
+                        "look_backward": look_backward,
+                        "look_forward": look_forward,
+                    }
+                )
+                encoder_layer = TrueSlidingWindowEncoderLayer(**local_kwargs)
+                print(
+                    f"Using TrueSlidingWindowEncoderLayer with window_size={window_size}"
+                )
+            else:
+                raise ValueError(f"Unknown attention_type: {attention_type}")
         else:
             encoder_layer = nn.TransformerEncoderLayer(**base_kwargs)
             print("Using standard TransformerEncoderLayer")

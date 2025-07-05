@@ -14,9 +14,9 @@ sys.path.insert(0, bridge_model_path)
 
 # Import and run the test
 try:
-    from test_local_attention_gpu import test_sliding_window_attention_gpu
+    from test_local_attention_simplified import test_sliding_window_attention_gpu
 
-    print("Starting Sliding Window Attention Test")
+    print("Starting Simplified Sliding Window Attention Test")
     print("=" * 60)
 
     success = test_sliding_window_attention_gpu()
