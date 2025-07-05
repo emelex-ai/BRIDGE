@@ -65,7 +65,7 @@ class EncoderLocal(nn.Module):  # Renamed from EncoderFlash
             causal: Whether to use causal attention (only used for CUDA)
             look_backward: Number of windows to look backward (only used for CUDA)
             look_forward: Number of windows to look forward (only used for CUDA)
-            attention_type: Type of attention to use ("local", "true_sliding_window", "flex")
+            attention_type: Type of attention to use ("local", "true_sliding_window", "flex", "exact")
 
         """
         super(EncoderLocal, self).__init__()

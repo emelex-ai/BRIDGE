@@ -35,6 +35,9 @@ export PIP_CACHE_DIR="$SCRATCH_CACHE/pip"
 export HF_HOME="$SCRATCH_CACHE/huggingface"
 export XDG_CACHE_HOME="$SCRATCH_CACHE"
 
+# Suppress hardlink warnings on HPC (different filesystems)
+export UV_LINK_MODE=copy
+
 echo "Using cache directory: $SCRATCH_CACHE"
 
 # Create/update shared environment
