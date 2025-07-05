@@ -41,7 +41,8 @@ def test_flex_attention_integration():
     attention_types = [
         "true_sliding_window",  # Your existing implementation
         "local",  # LocalAttention (chunked)
-        "flex",  # FlexAttention (true sliding window)
+        "exact",  # ExactSlidingWindowAttention (stable PyTorch)
+        "flex",  # FlexAttention (requires PyTorch nightly)
     ]
 
     results = {}

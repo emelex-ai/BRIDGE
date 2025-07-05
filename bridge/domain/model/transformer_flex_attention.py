@@ -18,6 +18,7 @@ try:
     from torch.nn.attention.flex_attention import create_block_mask, flex_attention
 
     FLEX_ATTENTION_AVAILABLE = True
+    print("✅ Using official PyTorch nightly FlexAttention")
 except ImportError:
     FLEX_ATTENTION_AVAILABLE = False
     print(
@@ -279,11 +280,19 @@ class FlexAttentionEncoderLayer(TransformerEncoderLayer):
         k = self.k_proj(key).view(batch_size, seq_len, self.nhead, self.head_dim)
         v = self.v_proj(value).view(batch_size, seq_len, self.nhead, self.head_dim)
 
+        # Transpose to (batch, num_heads, seq_len, head_dim) for FlexAttention
+        q = q.transpose(1, 2)  # (batch, nhead, seq_len, head_dim)
+        k = k.transpose(1, 2)  # (batch, nhead, seq_len, head_dim)
+        v = v.transpose(1, 2)  # (batch, nhead, seq_len, head_dim)
+
         # Get block mask for this sequence length
         block_mask = self._get_block_mask(seq_len, device)
 
         # Apply FlexAttention
         output = flex_attention(q, k, v, block_mask=block_mask)
+
+        # Transpose back to (batch, seq_len, num_heads, head_dim)
+        output = output.transpose(1, 2)
 
         # Reshape and project output
         output = output.view(batch_size, seq_len, self.d_model)

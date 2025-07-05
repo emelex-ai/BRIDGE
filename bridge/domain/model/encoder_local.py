@@ -4,6 +4,13 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
+from bridge.domain.model.exact_sliding_window_attention import (
+    ExactSlidingWindowMHA,
+)
+from bridge.domain.model.transformer_exact_sliding_window import (
+    ExactSlidingWindowEncoderLayer,
+)
+
 # Add FlexAttention import
 from bridge.domain.model.transformer_flex_attention import (
     FLEX_ATTENTION_AVAILABLE,
@@ -118,6 +125,11 @@ class EncoderLocal(nn.Module):  # Renamed from EncoderFlash
                 encoder_layer = TrueSlidingWindowEncoderLayer(**local_kwargs)
                 print(
                     f"Using TrueSlidingWindowEncoderLayer with window_size={window_size}"
+                )
+            elif attention_type == "exact":
+                encoder_layer = ExactSlidingWindowEncoderLayer(**local_kwargs)
+                print(
+                    f"Using ExactSlidingWindowEncoderLayer with window_size={window_size}"
                 )
             else:
                 raise ValueError(f"Unknown attention_type: {attention_type}")
