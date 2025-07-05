@@ -252,6 +252,10 @@ class TrueSlidingWindowEncoderLayer(nn.TransformerEncoderLayer):
             causal: Whether to use causal attention
             **kwargs: Additional arguments for compatibility
         """
+        # Store batch_first before calling parent init
+        self.batch_first = batch_first
+        self.norm_first = norm_first
+
         # Initialize parent class with dummy self_attn (will be replaced)
         super().__init__(
             d_model=d_model,
