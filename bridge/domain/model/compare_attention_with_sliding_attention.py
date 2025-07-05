@@ -6,69 +6,97 @@ import torch.nn as nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 
-def benchmark_full_attention(seq_len, d_model, nhead, num_layers=1, batch_size=4):
-    """Benchmark standard TransformerEncoder with fixed batch size."""
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def measure_attention_only_timing(model, x, num_iterations=50, warmup_iterations=20):
+    """Measure only attention computation time, excluding model overhead."""
+    device = x.device
 
-    # Create model
-    encoder_layer = TransformerEncoderLayer(
-        d_model=d_model, nhead=nhead, dim_feedforward=d_model * 4, batch_first=True
-    )
-    model = TransformerEncoder(encoder_layer, num_layers=num_layers).to(device)
-
-    # Use fixed batch size
-    x = torch.randn(batch_size, seq_len, d_model, device=device)
-
-    # Warmup
-    for _ in range(3):
+    # Extended warmup for kernel compilation
+    print(f"  Warming up for {warmup_iterations} iterations...")
+    for i in range(warmup_iterations):
         with torch.no_grad():
             _ = model(x)
+        if i == 0:
+            print(f"    First iteration complete (kernel compilation)")
 
-    # Benchmark
+    print(f"  Running {num_iterations} timed iterations...")
+
+    # Clear cache and measure baseline memory
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
+    baseline_memory = torch.cuda.memory_allocated()
+
+    # Benchmark with more iterations for accuracy
     torch.cuda.synchronize()
     start_time = time.time()
 
-    for _ in range(10):
+    for _ in range(num_iterations):
         with torch.no_grad():
             _ = model(x)
 
     torch.cuda.synchronize()
     end_time = time.time()
 
-    avg_time_ms = (end_time - start_time) / 10 * 1000
-    memory_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
+    # Measure peak working memory (excluding baseline)
+    peak_memory = torch.cuda.max_memory_allocated()
+    working_memory = (peak_memory - baseline_memory) / 1024 / 1024  # MB
+
+    avg_time_ms = (end_time - start_time) / num_iterations * 1000
+    tokens_per_sec = (x.shape[0] * x.shape[1] * num_iterations) / (
+        end_time - start_time
+    )
 
     return {
-        "batch_size": batch_size,
         "time_ms": avg_time_ms,
-        "memory_mb": memory_mb,
-        "tokens_per_sec": (batch_size * seq_len * 10) / (end_time - start_time),
-        "attention_type": "full_standard",
+        "working_memory_mb": working_memory,
+        "peak_memory_mb": peak_memory / 1024 / 1024,
+        "tokens_per_sec": tokens_per_sec,
     }
 
 
-def benchmark_flex_full_attention(seq_len, d_model, nhead, num_layers=1, batch_size=4):
-    """Benchmark FlexAttention configured as full attention (no window limit)."""
+def benchmark_full_attention(seq_len, d_model, nhead, num_layers=1, batch_size=4):
+    """Benchmark standard TransformerEncoder with proper timing."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"  📊 Standard Full Attention")
+
+    # Create model ONCE and reuse
+    encoder_layer = TransformerEncoderLayer(
+        d_model=d_model, nhead=nhead, dim_feedforward=d_model * 4, batch_first=True
+    )
+    model = TransformerEncoder(encoder_layer, num_layers=num_layers).to(device)
+
+    x = torch.randn(batch_size, seq_len, d_model, device=device)
+
+    results = measure_attention_only_timing(model, x)
+    results.update(
+        {
+            "batch_size": batch_size,
+            "attention_type": "full_standard",
+        }
+    )
+
+    return results
+
+
+def benchmark_flex_full_attention(seq_len, d_model, nhead, num_layers=1, batch_size=4):
+    """Benchmark FlexAttention configured as full attention with proper timing."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"  📊 FlexAttention (Full Mode)")
 
     try:
-        # Import FlexAttention implementation
         from bridge.domain.model.transformer_flex_attention import (
             FlexAttentionEncoderLayer,
         )
 
-        # Create model with very large window size (effectively full attention)
+        # Create model ONCE with large window (effectively full attention)
         encoder_layer = FlexAttentionEncoderLayer(
             d_model=d_model,
             nhead=nhead,
             dim_feedforward=d_model * 4,
             batch_first=True,
-            window_size=seq_len
-            * 2,  # Much larger than sequence length = full attention
-            causal=False,  # Non-causal for true full attention
+            window_size=seq_len * 2,  # Much larger than sequence length
+            causal=False,
         )
 
-        # Create encoder with multiple layers if needed
         class FlexFullAttentionEncoder(nn.Module):
             def __init__(self, layer, num_layers):
                 super().__init__()
@@ -80,69 +108,46 @@ def benchmark_flex_full_attention(seq_len, d_model, nhead, num_layers=1, batch_s
                 return x
 
         model = FlexFullAttentionEncoder(encoder_layer, num_layers).to(device)
-
-        # Use fixed batch size
         x = torch.randn(batch_size, seq_len, d_model, device=device)
 
-        # Warmup
-        for _ in range(3):
-            with torch.no_grad():
-                _ = model(x)
+        results = measure_attention_only_timing(model, x)
+        results.update(
+            {
+                "batch_size": batch_size,
+                "window_size": seq_len * 2,
+                "attention_type": "flex_full",
+            }
+        )
 
-        # Benchmark
-        torch.cuda.synchronize()
-        start_time = time.time()
+        return results
 
-        for _ in range(10):
-            with torch.no_grad():
-                _ = model(x)
-
-        torch.cuda.synchronize()
-        end_time = time.time()
-
-        avg_time_ms = (end_time - start_time) / 10 * 1000
-        memory_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
-
-        return {
-            "batch_size": batch_size,
-            "time_ms": avg_time_ms,
-            "memory_mb": memory_mb,
-            "tokens_per_sec": (batch_size * seq_len * 10) / (end_time - start_time),
-            "window_size": seq_len * 2,
-            "attention_type": "flex_full",
-        }
-
-    except ImportError as e:
-        print(f"FlexAttention not available: {e}")
-        return None
     except Exception as e:
-        print(f"FlexAttention (full) benchmark failed: {e}")
+        print(f"    ❌ Error: {e}")
         return None
 
 
 def benchmark_flex_sliding_window(
     seq_len, d_model, nhead, window_size, num_layers=1, batch_size=4
 ):
-    """Benchmark FlexAttention with sliding window."""
+    """Benchmark FlexAttention with sliding window and proper timing."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"  📊 FlexAttention (Window={window_size})")
 
     try:
-        # Import FlexAttention implementation
         from bridge.domain.model.transformer_flex_attention import (
             FlexAttentionEncoderLayer,
         )
 
-        # Create model
+        # Create model ONCE and reuse
         encoder_layer = FlexAttentionEncoderLayer(
             d_model=d_model,
             nhead=nhead,
             dim_feedforward=d_model * 4,
             batch_first=True,
             window_size=window_size,
-            causal=False,  # Non-causal for fair comparison
+            causal=False,
         )
 
-        # Create encoder with multiple layers if needed
         class FlexSlidingWindowEncoder(nn.Module):
             def __init__(self, layer, num_layers):
                 super().__init__()
@@ -154,204 +159,209 @@ def benchmark_flex_sliding_window(
                 return x
 
         model = FlexSlidingWindowEncoder(encoder_layer, num_layers).to(device)
-
-        # Use fixed batch size
         x = torch.randn(batch_size, seq_len, d_model, device=device)
 
-        # Warmup
-        for _ in range(3):
-            with torch.no_grad():
-                _ = model(x)
+        results = measure_attention_only_timing(model, x)
+        results.update(
+            {
+                "batch_size": batch_size,
+                "window_size": window_size,
+                "attention_type": "flex_sliding",
+            }
+        )
 
-        # Benchmark
-        torch.cuda.synchronize()
-        start_time = time.time()
+        return results
 
-        for _ in range(10):
-            with torch.no_grad():
-                _ = model(x)
-
-        torch.cuda.synchronize()
-        end_time = time.time()
-
-        avg_time_ms = (end_time - start_time) / 10 * 1000
-        memory_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
-
-        return {
-            "batch_size": batch_size,
-            "time_ms": avg_time_ms,
-            "memory_mb": memory_mb,
-            "tokens_per_sec": (batch_size * seq_len * 10) / (end_time - start_time),
-            "window_size": window_size,
-            "attention_type": "flex_sliding",
-        }
-
-    except ImportError as e:
-        print(f"FlexAttention not available: {e}")
-        return None
     except Exception as e:
-        print(f"FlexAttention (sliding) benchmark failed: {e}")
+        print(f"    ❌ Error: {e}")
         return None
+
+
+def analyze_theoretical_vs_actual(seq_len, window_size, full_time, sliding_time):
+    """Analyze theoretical vs actual performance gains."""
+    theoretical_ratio = (seq_len * seq_len) / (seq_len * window_size)
+    actual_ratio = full_time / sliding_time
+    efficiency = (actual_ratio / theoretical_ratio) * 100
+
+    print(f"    🧮 Theoretical Analysis:")
+    print(f"       O(L²) vs O(L×W): {seq_len}² vs {seq_len}×{window_size}")
+    print(f"       Expected speedup: {theoretical_ratio:.1f}x")
+    print(f"       Actual speedup: {actual_ratio:.1f}x")
+    print(f"       Efficiency: {efficiency:.1f}% of theoretical")
+
+    return {
+        "theoretical_speedup": theoretical_ratio,
+        "actual_speedup": actual_ratio,
+        "efficiency_percent": efficiency,
+    }
+
+
+def compare_flex_attention_only():
+    """Focus on FlexAttention Full vs Sliding Window comparison."""
+
+    # Optimal parameters to maximize theoretical differences
+    seq_len = 16384  # Large sequence
+    window_size = 32  # Small window
+    d_model = 1024  # Large embedding (gains should be independent)
+    nhead = 1  # Single head to eliminate multi-head complexity
+    batch_size = 2  # Smaller batch to fit in memory
+    num_layers = 1  # Single layer to isolate attention performance
+
+    print(f"\n{'='*80}")
+    print(f"🔍 FlexAttention Focus Test")
+    print(
+        f"   seq_len={seq_len}, window={window_size}, d_model={d_model}, nhead={nhead}"
+    )
+    print(f"   batch_size={batch_size}, num_layers={num_layers}")
+    print(f"   Theoretical speedup: {(seq_len*seq_len)/(seq_len*window_size):.0f}x")
+    print(f"{'='*80}")
+
+    results = {}
+
+    # Skip Case 1: Standard Full Attention (keep for reference but don't run)
+    print(f"\n1️⃣ Standard Full Attention (SKIPPED)")
+    print(f"    ⏭️  Skipping to focus on FlexAttention comparison")
+
+    # Case 2: FlexAttention Full Mode (baseline for FlexAttention)
+    print(f"\n2️⃣ FlexAttention (Full Mode) - Baseline")
+    try:
+        torch.cuda.empty_cache()
+        flex_full_result = benchmark_flex_full_attention(
+            seq_len, d_model, nhead, num_layers, batch_size
+        )
+
+        if flex_full_result:
+            results["flex_full"] = flex_full_result
+            print(f"    ✓ Time: {flex_full_result['time_ms']:.2f}ms")
+            print(
+                f"    ✓ Working Memory: {flex_full_result['working_memory_mb']:.2f}MB"
+            )
+            print(f"    ✓ Tokens/sec: {flex_full_result['tokens_per_sec']:.0f}")
+        else:
+            print(f"    ❌ FlexAttention full mode failed")
+            return
+
+    except Exception as e:
+        print(f"    ❌ Error: {e}")
+        return
+
+    # Case 3: FlexAttention Sliding Window (the test case)
+    print(f"\n3️⃣ FlexAttention (Sliding Window={window_size}) - Test Case")
+    try:
+        torch.cuda.empty_cache()
+        flex_sliding_result = benchmark_flex_sliding_window(
+            seq_len, d_model, nhead, window_size, num_layers, batch_size
+        )
+
+        if flex_sliding_result:
+            print(f"    ✓ Time: {flex_sliding_result['time_ms']:.2f}ms")
+            print(
+                f"    ✓ Working Memory: {flex_sliding_result['working_memory_mb']:.2f}MB"
+            )
+            print(f"    ✓ Tokens/sec: {flex_sliding_result['tokens_per_sec']:.0f}")
+
+            # Compare FlexAttention Full vs Sliding
+            if "flex_full" in results:
+                flex_full = results["flex_full"]
+                time_ratio = flex_sliding_result["time_ms"] / flex_full["time_ms"]
+                memory_ratio = (
+                    flex_sliding_result["working_memory_mb"]
+                    / flex_full["working_memory_mb"]
+                )
+                speedup = 1.0 / time_ratio
+                memory_reduction = (1.0 - memory_ratio) * 100
+
+                print(f"\n    📊 FlexAttention Sliding vs Full Comparison:")
+                print(f"       Speedup: {speedup:.1f}x faster")
+                print(
+                    f"       Memory: {memory_ratio:.2f}x ({memory_reduction:+.1f}% reduction)"
+                )
+
+                # Theoretical analysis
+                analysis = analyze_theoretical_vs_actual(
+                    seq_len,
+                    window_size,
+                    flex_full["time_ms"],
+                    flex_sliding_result["time_ms"],
+                )
+
+                # Interpretation
+                if analysis["efficiency_percent"] > 50:
+                    print(f"    ✅ FlexAttention achieving good efficiency!")
+                elif analysis["efficiency_percent"] > 20:
+                    print(
+                        f"    ⚠️  FlexAttention showing some benefits but with overhead"
+                    )
+                else:
+                    print(f"    ❌ FlexAttention efficiency is very low")
+
+                # Memory analysis
+                if memory_ratio < 0.5:
+                    print(f"    ✅ Significant memory reduction achieved!")
+                elif memory_ratio < 0.8:
+                    print(f"    ⚠️  Moderate memory reduction")
+                else:
+                    print(f"    ❌ Minimal memory benefits")
+        else:
+            print(f"    ❌ FlexAttention sliding window failed")
+
+    except Exception as e:
+        print(f"    ❌ Error: {e}")
+
+    # Summary
+    print(f"\n{'='*80}")
+    print(f"🎯 FlexAttention Analysis Summary")
+    print(f"{'='*80}")
+
+    if "flex_full" in results and flex_sliding_result:
+        flex_full = results["flex_full"]
+        speedup = flex_full["time_ms"] / flex_sliding_result["time_ms"]
+        theoretical = (seq_len * seq_len) / (seq_len * window_size)
+        efficiency = (speedup / theoretical) * 100
+
+        print(f"Sequence Length: {seq_len}")
+        print(f"Window Size: {window_size}")
+        print(f"Theoretical Maximum Speedup: {theoretical:.0f}x")
+        print(f"Actual FlexAttention Speedup: {speedup:.1f}x")
+        print(f"Implementation Efficiency: {efficiency:.1f}%")
+
+        if efficiency > 50:
+            print(f"\n✅ CONCLUSION: FlexAttention is working well!")
+            print(f"   Recommendation: Use FlexAttention for sliding window attention")
+        elif efficiency > 20:
+            print(f"\n⚠️  CONCLUSION: FlexAttention has significant overhead")
+            print(f"   Recommendation: Consider alternatives or wait for optimizations")
+        else:
+            print(f"\n❌ CONCLUSION: FlexAttention is not performing as expected")
+            print(f"   Recommendation: Use alternative implementations")
+    else:
+        print(f"❌ Could not complete comparison - check FlexAttention availability")
 
 
 def compare_attention_implementations():
-    """Compare Full Attention vs FlexAttention (full) vs FlexAttention (sliding)."""
-    # Test configurations
-    configs = [
-        {"seq_len": 512, "d_model": 512, "nhead": 8},
-        {"seq_len": 1024, "d_model": 512, "nhead": 8},
-        {"seq_len": 2048, "d_model": 512, "nhead": 8},
-        {"seq_len": 4096, "d_model": 512, "nhead": 8},
-        {"seq_len": 8192, "d_model": 512, "nhead": 8},
-    ]
-
-    window_sizes = [64, 128, 256]
-    batch_size = 4  # Fixed batch size for fair comparison
-
-    for config in configs:
-        seq_len = config["seq_len"]
-        d_model = config["d_model"]
-        nhead = config["nhead"]
-
-        print(f"\n{'='*70}")
-        print(f"Testing seq_len={seq_len}, d_model={d_model}, nhead={nhead}")
-        print(f"Fixed batch_size={batch_size}")
-        print(f"{'='*70}")
-
-        results = {}
-
-        # Test 1: Standard Full Attention
-        print("\n1️⃣ Standard Full Attention (PyTorch)")
-        print("-" * 40)
-        try:
-            torch.cuda.empty_cache()
-            full_result = benchmark_full_attention(
-                seq_len, d_model, nhead, batch_size=batch_size
-            )
-            results["full_standard"] = full_result
-            print(f"✓ {full_result}")
-        except RuntimeError as e:
-            if "out of memory" in str(e):
-                print(f"❌ OOM at batch_size={batch_size}")
-                continue
-            else:
-                raise e
-
-        # Test 2: FlexAttention configured as Full Attention
-        print("\n2️⃣ FlexAttention (Full Attention Mode)")
-        print("-" * 40)
-        try:
-            torch.cuda.empty_cache()
-            flex_full_result = benchmark_flex_full_attention(
-                seq_len, d_model, nhead, batch_size=batch_size
-            )
-
-            if flex_full_result:
-                results["flex_full"] = flex_full_result
-                print(f"✓ {flex_full_result}")
-
-                # Compare with standard full attention
-                if "full_standard" in results:
-                    standard = results["full_standard"]
-                    memory_ratio = flex_full_result["memory_mb"] / standard["memory_mb"]
-                    speed_ratio = flex_full_result["time_ms"] / standard["time_ms"]
-                    speedup = 1.0 / speed_ratio
-
-                    print(f"  📊 vs Standard Full:")
-                    print(f"     Memory ratio: {memory_ratio:.2f}x")
-                    print(
-                        f"     Speed ratio: {speed_ratio:.2f}x ({speedup:.2f}x speedup)"
-                    )
-            else:
-                print("❌ FlexAttention not available")
-
-        except RuntimeError as e:
-            if "out of memory" in str(e):
-                print(f"❌ OOM at batch_size={batch_size}")
-            else:
-                print(f"❌ Error: {e}")
-
-        # Test 3: FlexAttention with Sliding Window
-        print("\n3️⃣ FlexAttention (Sliding Window)")
-        print("-" * 40)
-        for window_size in window_sizes:
-            try:
-                torch.cuda.empty_cache()
-                flex_sliding_result = benchmark_flex_sliding_window(
-                    seq_len, d_model, nhead, window_size, batch_size=batch_size
-                )
-
-                if flex_sliding_result:
-                    print(f"✓ Window={window_size}: {flex_sliding_result}")
-
-                    # Compare with both full attention methods
-                    if "full_standard" in results:
-                        standard = results["full_standard"]
-                        memory_ratio = (
-                            flex_sliding_result["memory_mb"] / standard["memory_mb"]
-                        )
-                        speed_ratio = (
-                            flex_sliding_result["time_ms"] / standard["time_ms"]
-                        )
-                        speedup = 1.0 / speed_ratio
-                        memory_reduction = (1.0 - memory_ratio) * 100
-
-                        print(f"  📊 vs Standard Full:")
-                        print(
-                            f"     Memory: {memory_ratio:.2f}x ({memory_reduction:+.1f}%)"
-                        )
-                        print(
-                            f"     Speed: {speed_ratio:.2f}x ({speedup:.2f}x speedup)"
-                        )
-
-                    if "flex_full" in results:
-                        flex_full = results["flex_full"]
-                        memory_ratio = (
-                            flex_sliding_result["memory_mb"] / flex_full["memory_mb"]
-                        )
-                        speed_ratio = (
-                            flex_sliding_result["time_ms"] / flex_full["time_ms"]
-                        )
-                        speedup = 1.0 / speed_ratio
-                        memory_reduction = (1.0 - memory_ratio) * 100
-
-                        print(f"  📊 vs FlexAttention Full:")
-                        print(
-                            f"     Memory: {memory_ratio:.2f}x ({memory_reduction:+.1f}%)"
-                        )
-                        print(
-                            f"     Speed: {speed_ratio:.2f}x ({speedup:.2f}x speedup)"
-                        )
-                else:
-                    print(f"❌ Window={window_size}: Not available")
-
-            except RuntimeError as e:
-                if "out of memory" in str(e):
-                    print(f"❌ Window={window_size}: OOM")
-                else:
-                    print(f"❌ Window={window_size}: Error - {e}")
-
-        print()  # Add spacing between configurations
+    """Legacy function - redirects to focused comparison."""
+    print("🔄 Redirecting to focused FlexAttention comparison...")
+    compare_flex_attention_only()
 
 
 if __name__ == "__main__":
-    print("🔍 Three-Way Attention Comparison")
-    print("=" * 70)
-    print("This benchmark compares:")
-    print("  1️⃣ Standard Full Attention: PyTorch TransformerEncoderLayer (O(L²))")
-    print("  2️⃣ FlexAttention Full Mode: FlexAttention without window limit (O(L²))")
-    print("  3️⃣ FlexAttention Sliding: FlexAttention with sliding window (O(L×W))")
-    print("=" * 70)
-    print("📊 Key Insights:")
-    print("  • Compare 1️⃣ vs 2️⃣ to see FlexAttention overhead")
-    print("  • Compare 2️⃣ vs 3️⃣ to see sliding window benefits")
-    print("  • Compare 1️⃣ vs 3️⃣ to see overall FlexAttention sliding window performance")
-    print("=" * 70)
+    print("🔍 FlexAttention Focused Benchmark")
+    print("=" * 80)
+    print("Focus: FlexAttention Full vs Sliding Window")
+    print("Goal: Measure pure FlexAttention sliding window benefits")
+    print("Parameters optimized for maximum theoretical difference:")
+    print("  • seq_len=16384 (large sequence)")
+    print("  • window=32 (small window)")
+    print("  • nhead=1 (single head)")
+    print("  • d_model=1024 (large embedding)")
+    print("  • Expected theoretical speedup: 512x")
+    print("=" * 80)
 
-    compare_attention_implementations()
+    compare_flex_attention_only()
 
-    print("\n🎯 Interpretation Guide:")
-    print("  • Memory/Speed ratio < 1.0 = improvement")
-    print("  • Memory/Speed ratio > 1.0 = overhead")
-    print("  • Window size determines attention span vs efficiency trade-off")
-    print("=" * 70)
+    print("\n🎯 Key Insights:")
+    print("  • Efficiency % shows FlexAttention implementation quality")
+    print("  • >50% efficiency = good implementation")
+    print("  • <20% efficiency = significant overhead issues")
+    print("  • Working memory should scale with O(L×W) not O(L²)")
+    print("=" * 80)
