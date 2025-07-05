@@ -65,6 +65,10 @@ class TrueSlidingWindowAttention(LocalAttention):
             f"look_backward=0, look_forward=0 (chunking disabled)"
         )
 
+        # Remove the malformed forward method - parent class handles this
+        # def forward(...):
+        #     return super().forward(...)
+
     # def forward(
     #     self,
     #     q: torch.Tensor,
