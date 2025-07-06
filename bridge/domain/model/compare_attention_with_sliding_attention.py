@@ -29,16 +29,16 @@ except ImportError:
 
 def measure_attention_only_timing(model, x, num_iterations=100, warmup_iterations=50):
     """Measure only attention computation time with proper warmup.
-    
+
     Args:
         model: The model to benchmark
         x: Input tensor
         num_iterations: Number of timed iterations
         warmup_iterations: Number of warmup iterations
-        
+
     Returns:
         Average time per iteration in milliseconds
-        
+
     """
     device = x.device
 
@@ -78,14 +78,14 @@ def measure_attention_only_timing(model, x, num_iterations=100, warmup_iteration
 
 def measure_memory_usage(model, x):
     """Measure peak memory usage during forward pass.
-    
+
     Args:
         model: The model to measure
         x: Input tensor
-        
+
     Returns:
         Peak memory usage in MB
-        
+
     """
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
@@ -101,7 +101,7 @@ def create_flex_attention_model(
     seq_len, d_model, nhead, window_size, device, use_causal=True
 ):
     """Create FlexAttention model with pre-computed block mask.
-    
+
     Args:
         seq_len: Sequence length
         d_model: Model dimension
@@ -109,10 +109,10 @@ def create_flex_attention_model(
         window_size: Sliding window size
         device: Device to use
         use_causal: Whether to use causal masking
-        
+
     Returns:
         Tuple of (model, mask_creation_time)
-        
+
     """
     if not FLEX_AVAILABLE:
         return None, None
@@ -151,7 +151,7 @@ def create_flex_attention_model(
             # FIX: Try compilation with fallback to eager mode
             self.use_compiled = False
             self.flex_attention = flex_attention
-            
+
             # Try to compile with safer settings
             try:
                 # Disable dynamic shapes and use default mode
@@ -161,9 +161,13 @@ def create_flex_attention_model(
                     mode="default",  # Use default instead of max-autotune
                 )
                 # Test compilation with small tensor
-                test_tensor = torch.randn(1, 1, 64, d_model, device=device, dtype=torch.bfloat16)
+                test_tensor = torch.randn(
+                    1, 1, 64, d_model, device=device, dtype=torch.bfloat16
+                )
                 with torch.no_grad():
-                    _ = self.compiled_flex(test_tensor, test_tensor, test_tensor, block_mask=block_mask)
+                    _ = self.compiled_flex(
+                        test_tensor, test_tensor, test_tensor, block_mask=block_mask
+                    )
                 self.use_compiled = True
                 print("  ✅ FlexAttention compilation successful")
             except Exception as e:
@@ -175,7 +179,7 @@ def create_flex_attention_model(
             B, S, D = x.shape
             # Simple projection to Q, K, V
             q = k = v = x.view(B, 1, S, D)  # Single head for simplicity
-            
+
             if self.use_compiled:
                 return self.compiled_flex(q, k, v, block_mask=self.block_mask)
             else:
@@ -188,7 +192,7 @@ def create_standard_attention_model(
     seq_len, d_model, nhead, window_size, device, use_causal=True
 ):
     """Create standard PyTorch attention model.
-    
+
     Args:
         seq_len: Sequence length
         d_model: Model dimension
@@ -196,10 +200,10 @@ def create_standard_attention_model(
         window_size: Sliding window size
         device: Device to use
         use_causal: Whether to use causal masking
-        
+
     Returns:
         Standard attention model
-        
+
     """
 
     class StandardAttentionModel(nn.Module):
@@ -237,23 +241,25 @@ def create_standard_attention_model(
             if self.use_compiled:
                 return self.compiled_sdpa(q, k, v, attn_mask=attn_mask)
             else:
-                return torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
+                return torch.nn.functional.scaled_dot_product_attention(
+                    q, k, v, attn_mask=attn_mask
+                )
 
     return StandardAttentionModel()
 
 
 def create_sdpa_causal_model(seq_len, d_model, nhead, device):
     """Create SDPA model with full causal mask.
-    
+
     Args:
         seq_len: Sequence length
         d_model: Model dimension
         nhead: Number of heads
         device: Device to use
-        
+
     Returns:
         SDPA causal model
-        
+
     """
 
     class SDPACausalModel(nn.Module):
@@ -278,24 +284,26 @@ def create_sdpa_causal_model(seq_len, d_model, nhead, device):
             if self.use_compiled:
                 return self.compiled_sdpa(q, k, v, is_causal=True)
             else:
-                return torch.nn.functional.scaled_dot_product_attention(q, k, v, is_causal=True)
+                return torch.nn.functional.scaled_dot_product_attention(
+                    q, k, v, is_causal=True
+                )
 
     return SDPACausalModel()
 
 
 def create_sdpa_sliding_window_model(seq_len, d_model, nhead, window_size, device):
     """Create SDPA model with sliding window + causal mask.
-    
+
     Args:
         seq_len: Sequence length
         d_model: Model dimension
         nhead: Number of heads
         window_size: Sliding window size
         device: Device to use
-        
+
     Returns:
         SDPA sliding window model
-        
+
     """
 
     class SDPASlidingWindowModel(nn.Module):
@@ -319,14 +327,14 @@ def create_sdpa_sliding_window_model(seq_len, d_model, nhead, window_size, devic
 
         def _create_sliding_window_mask(self, seq_len, device):
             """Create efficient sliding window + causal mask.
-            
+
             Args:
                 seq_len: Sequence length
                 device: Device to use
-                
+
             Returns:
                 Attention mask tensor
-                
+
             """
             # Start with causal mask (lower triangular)
             mask = torch.tril(
@@ -353,19 +361,19 @@ def create_sdpa_sliding_window_model(seq_len, d_model, nhead, window_size, devic
             mask = self.attn_mask[:S, :S]
             if mask.dtype != x.dtype:
                 mask = mask.to(x.dtype)
-            
+
             if self.use_compiled:
                 return self.compiled_sdpa(q, k, v, attn_mask=mask)
             else:
-                return torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+                return torch.nn.functional.scaled_dot_product_attention(
+                    q, k, v, attn_mask=mask
+                )
 
     return SDPASlidingWindowModel()
 
 
 def benchmark_sdpa_comparison():
-    """Compare SDPA with full causal vs sliding window masks.
-    
-    """
+    """Compare SDPA with full causal vs sliding window masks."""
     print("🔬 SDPA Causal vs Sliding Window Benchmark")
     print("=" * 60)
 
@@ -456,6 +464,7 @@ def benchmark_sdpa_comparison():
         except Exception as e:
             print(f"❌ Error in benchmark: {e}")
             import traceback
+
             traceback.print_exc()
             continue
 
@@ -507,4 +516,184 @@ def benchmark_sdpa_comparison():
         if avg_efficiency > 50:
             print(f"   ✅ Good implementation efficiency")
         else:
-            print(f"   ⚠️  Implementation coul
+            print(f"   ⚠️  Implementation could be more efficient")
+    else:
+        print("❌ No successful benchmark results")
+
+
+def benchmark_attention_comparison():
+    """Improved benchmark focusing on FlexAttention vs Standard PyTorch."""
+    print("🔬 FlexAttention vs Standard Attention Benchmark")
+    print("=" * 60)
+
+    if not FLEX_AVAILABLE:
+        print("❌ FlexAttention not available, skipping benchmark")
+        return
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Device: {device}")
+
+    # Test parameters - focusing on larger scales where benefits should emerge
+    test_configs = [
+        {"seq_len": 4096, "window_size": 128, "d_model": 1024, "nhead": 1},
+        {"seq_len": 8192, "window_size": 256, "d_model": 1024, "nhead": 1},
+        {"seq_len": 16384, "window_size": 512, "d_model": 1024, "nhead": 1},
+        {
+            "seq_len": 32768,
+            "window_size": 1024,
+            "d_model": 1024,
+            "nhead": 1,
+        },  # Large scale
+    ]
+
+    results = []
+
+    for config in test_configs:
+        seq_len = config["seq_len"]
+        window_size = config["window_size"]
+        d_model = config["d_model"]
+        nhead = config["nhead"]
+
+        print(f"\n📊 Testing seq_len={seq_len}, window={window_size}")
+        print("-" * 40)
+
+        # Create input data
+        x = torch.randn(1, seq_len, d_model, device=device, dtype=torch.bfloat16)
+
+        try:
+            # Test FlexAttention
+            print("🔧 Creating FlexAttention model...")
+            flex_model, mask_creation_time = create_flex_attention_model(
+                seq_len, d_model, nhead, window_size, device
+            )
+
+            if flex_model is not None:
+                print("⏱️  Benchmarking FlexAttention...")
+                flex_time = measure_attention_only_timing(flex_model, x)
+                flex_memory = measure_memory_usage(flex_model, x)
+                print(f"   FlexAttention: {flex_time:.2f}ms, {flex_memory:.1f}MB")
+                print(
+                    f"   (BlockMask creation: {mask_creation_time:.2f}ms - one-time cost)"
+                )
+            else:
+                flex_time, flex_memory = float("inf"), float("inf")
+                mask_creation_time = 0
+
+            # Test Standard Attention
+            print("🔧 Creating Standard Attention model...")
+            std_model = create_standard_attention_model(
+                seq_len, d_model, nhead, window_size, device
+            )
+
+            print("⏱️  Benchmarking Standard Attention...")
+            std_time = measure_attention_only_timing(std_model, x)
+            std_memory = measure_memory_usage(std_model, x)
+            print(f"   Standard Attention: {std_time:.2f}ms, {std_memory:.1f}MB")
+
+            # Calculate speedup
+            if flex_time != float("inf"):
+                speedup = std_time / flex_time
+                memory_ratio = std_memory / flex_memory if flex_memory > 0 else 1.0
+
+                print(f"\n📈 Results:")
+                print(f"   FlexAttention Speedup: {speedup:.2f}x")
+                print(f"   Memory Efficiency: {memory_ratio:.2f}x")
+
+                # Theoretical analysis
+                total_ops_full = seq_len * seq_len
+                effective_ops_windowed = seq_len * min(
+                    window_size * 2, seq_len
+                )  # Approximate
+                theoretical_speedup = total_ops_full / effective_ops_windowed
+                efficiency = (speedup / theoretical_speedup) * 100
+
+                print(f"   Theoretical Speedup: {theoretical_speedup:.2f}x")
+                print(f"   Implementation Efficiency: {efficiency:.1f}%")
+
+                results.append(
+                    {
+                        "seq_len": seq_len,
+                        "window_size": window_size,
+                        "flex_time": flex_time,
+                        "std_time": std_time,
+                        "speedup": speedup,
+                        "flex_memory": flex_memory,
+                        "std_memory": std_memory,
+                        "memory_ratio": memory_ratio,
+                        "theoretical_speedup": theoretical_speedup,
+                        "efficiency": efficiency,
+                        "mask_creation_time": mask_creation_time,
+                    }
+                )
+
+        except Exception as e:
+            print(f"❌ Error in benchmark: {e}")
+            import traceback
+
+            traceback.print_exc()
+            continue
+
+        # Cleanup
+        del x
+        if "flex_model" in locals():
+            del flex_model
+        if "std_model" in locals():
+            del std_model
+        torch.cuda.empty_cache()
+
+    # Summary
+    print("\n" + "=" * 60)
+    print("📊 BENCHMARK SUMMARY")
+    print("=" * 60)
+
+    if results:
+        print(
+            f"{'Seq Len':<8} {'Window':<8} {'Speedup':<10} {'Memory':<10} {'Efficiency':<12}"
+        )
+        print("-" * 60)
+        for r in results:
+            print(
+                f"{r['seq_len']:<8} {r['window_size']:<8} {r['speedup']:<10.2f} "
+                f"{r['memory_ratio']:<10.2f} {r['efficiency']:<12.1f}%"
+            )
+
+        # Find best performance
+        best_result = max(results, key=lambda x: x["speedup"])
+        print(f"\n🏆 Best FlexAttention performance:")
+        print(f"   Sequence Length: {best_result['seq_len']}")
+        print(f"   Speedup: {best_result['speedup']:.2f}x")
+        print(f"   Efficiency: {best_result['efficiency']:.1f}%")
+
+        # Analysis
+        print(f"\n🔍 Analysis:")
+        if best_result["speedup"] > 1.0:
+            print(f"   ✅ FlexAttention shows benefits at scale")
+        else:
+            print(f"   ⚠️  FlexAttention overhead dominates at these scales")
+            print(f"   💡 Try larger sequence lengths (64k+) or more complex patterns")
+    else:
+        print("❌ No successful benchmark results")
+
+
+if __name__ == "__main__":
+    """Main execution - run both benchmarks with comprehensive error handling.
+    
+    """
+    print("🚀 Starting Attention Benchmarks")
+    print("=" * 80)
+
+    try:
+        # Run SDPA benchmark
+        benchmark_sdpa_comparison()
+        print("\n" + "=" * 80 + "\n")
+
+        # Run FlexAttention benchmark
+        benchmark_attention_comparison()
+
+    except Exception as e:
+        print(f"❌ Critical error in benchmarking: {e}")
+        import traceback
+
+        traceback.print_exc()
+
+    print("\n🏁 Benchmarking complete!")
