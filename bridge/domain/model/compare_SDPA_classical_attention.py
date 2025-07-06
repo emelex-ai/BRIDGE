@@ -84,6 +84,98 @@ def benchmark_classical_full_attention(
     }
 
 
+def benchmark_classical_windowed_full_attention(
+    seq_len: int,
+    d_model: int = 1024,
+    nhead: int = 1,
+    window_size: int = 128,
+    num_layers: int = 1,
+    batch_size: int = 4,
+) -> dict:
+    """Benchmark classical full attention with a sliding window mask in TRAINING mode.
+
+    This uses PyTorch's TransformerEncoderLayer with a custom sliding window mask.
+    Attempts to minimize memory usage by constructing the mask efficiently.
+
+    Args:
+        seq_len: Sequence length
+        d_model: Model dimension (default 1024)
+        nhead: Number of attention heads (default 1)
+        window_size: Sliding window size
+        num_layers: Number of encoder layers
+        batch_size: Batch size for testing
+
+    Returns:
+        Dictionary with benchmark results
+
+    """
+    import time
+
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(
+        f"Benchmarking Classical Full Attention with Sliding Window Mask (TRAINING mode, O(nw)) on {device}"
+    )
+
+    # Create sliding window mask efficiently (lower-triangular banded mask)
+    # Only store the relevant band, not the full matrix if possible
+    mask = torch.full((seq_len, seq_len), float("-inf"), device=device)
+    for i in range(seq_len):
+        start = max(0, i - window_size + 1)
+        mask[i, start : i + 1] = 0.0
+
+    # Create classical transformer encoder
+    encoder_layer = nn.TransformerEncoderLayer(
+        d_model=d_model, nhead=nhead, dim_feedforward=d_model * 4, batch_first=True
+    )
+    classical_model = nn.TransformerEncoder(encoder_layer, num_layers=num_layers).to(
+        device
+    )
+    classical_model.train()
+
+    # Create input with gradient tracking
+    x = torch.randn(batch_size, seq_len, d_model, device=device, requires_grad=True)
+
+    # Warmup
+    print("  Warming up in training mode...")
+    for _ in range(3):
+        output = classical_model(x, mask=mask)
+        loss = output.sum()
+        loss.backward()
+        x.grad = None
+
+    # Benchmark
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    start_time = time.time()
+    for _ in range(10):
+        output = classical_model(x, mask=mask)
+        loss = output.sum()
+        loss.backward()
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    end_time = time.time()
+
+    avg_time_ms = (end_time - start_time) / 10 * 1000
+    memory_mb = (
+        torch.cuda.max_memory_allocated() / 1024 / 1024 if device.type == "cuda" else 0
+    )
+
+    return {
+        "attention_type": "Classical_Windowed_Full_Attention",
+        "mode": "TRAINING",
+        "complexity": "O(nw)",
+        "window_size": window_size,
+        "batch_size": batch_size,
+        "time_ms": avg_time_ms,
+        "memory_mb": memory_mb,
+        "tokens_per_sec": (batch_size * seq_len * 10) / (end_time - start_time),
+    }
+
+
 def benchmark_sdpa_full_attention(
     seq_len, d_model=1024, nhead=1, num_layers=1, batch_size=4
 ):
@@ -1178,9 +1270,9 @@ def compare_training_mode_attention():
         # {"seq_len": 4 * 8192},
     ]
 
-    window_sizes = [32, 128]  # Reasonable window sizes
-    d_model = 512  # Fixed as requested
-    nhead = 1  # Single head as requested
+    window_sizes = [32, 128, 512]  # Reasonable window sizes
+    d_model = 512  # or as set earlier
+    nhead = 1
     batch_size = 1
 
     for config in configs:
@@ -1232,8 +1324,31 @@ def compare_training_mode_attention():
                 print(f"❌ SDPA Full Attention error: {e}")
                 sdpa_full_result = None
 
-        # Test sliding window attention for different window sizes
-        for window_size in [32, 128, 512]:
+        for window_size in window_sizes:
+            # Test 1a: Classical Windowed Full Attention (O(n²))
+            try:
+                print(
+                    f"\n🔬 Test 1a: Classical Windowed Full Attention (TRAINING mode, O(n²), window={window_size})..."
+                )
+                classical_windowed_result = benchmark_classical_windowed_full_attention(
+                    seq_len,
+                    d_model=d_model,
+                    nhead=nhead,
+                    window_size=window_size,
+                    batch_size=batch_size,
+                )
+                print(f"✅ {classical_windowed_result}")
+            except RuntimeError as e:
+                if "out of memory" in str(e):
+                    print(
+                        f"❌ Classical Windowed Full Attention: OOM at seq_len={seq_len}, window={window_size}"
+                    )
+                    continue
+                else:
+                    print(f"❌ Classical Windowed Full Attention error: {e}")
+                    continue
+
+            # Test 3: SDPA Sliding Window (O(n))
             print(
                 f"\n🔬 Test 3: SDPA Sliding Window (TRAINING mode, O(n), window={window_size})..."
             )
@@ -1270,7 +1385,7 @@ def compare_training_mode_attention():
             else:
                 print(f"❌ SDPA Sliding Window (w={window_size}): Failed")
 
-            # Test fast sliding window (simple and efficient)
+            # Test 4: Fast Sliding Window (O(n))
             print(
                 f"\n🔬 Test 4: Fast Sliding Window (TRAINING mode, O(n), window={window_size})..."
             )
@@ -1307,7 +1422,7 @@ def compare_training_mode_attention():
             else:
                 print(f"❌ Fast Sliding Window (w={window_size}): Failed")
 
-            # Test true vectorized sliding window (no loops, no conditionals)
+            # Test 5: True Vectorized Sliding Window (O(n×w))
             chunk_size = 32  # Default chunk size
             print(
                 f"\n🔬 Test 5: True Vectorized Sliding Window (TRAINING mode, O(n×w), window={window_size})..."
@@ -1356,6 +1471,7 @@ def compare_training_mode_attention():
             else:
                 print(f"❌ True Vectorized Sliding Window (w={window_size}): Failed")
 
+            # Test 6: True Vectorized Sliding Window Outer Loop (O(n×w))
             print(
                 f"\n🔬 Test 6: True Vectorized Sliding Window Outer Loop (TRAINING mode, O(n×w), window={window_size})..."
             )
