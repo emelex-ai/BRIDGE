@@ -656,11 +656,10 @@ class TrueVectorizedSlidingWindowModel(nn.Module):
         )  # [batch_size, nhead, seq_len, window_size]
 
         # Apply attention weights to values (vectorized)
-        # attn_weights: [batch_size, nhead, seq_len, window_size] -> [batch_size, nhead, seq_len, window_size, 1]
+        # attn_weights: [batch_size, nhead, seq_len, window_size] -> [batch_size, nhead, seq_len, 1, window_size]
         # v_windows: [batch_size, nhead, seq_len, window_size, head_dim]
-        output = torch.matmul(
-            attn_weights.unsqueeze(-1), v_windows.transpose(-2, -1)
-        ).squeeze(-2)
+        # Result: [batch_size, nhead, seq_len, 1, head_dim] -> [batch_size, nhead, seq_len, head_dim]
+        output = torch.matmul(attn_weights.unsqueeze(-2), v_windows).squeeze(-2)
 
         return output
 
