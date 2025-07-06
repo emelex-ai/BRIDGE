@@ -522,19 +522,20 @@ def benchmark_fast_sliding_window(
     }
 
 
-class VectorizedSlidingWindowModel(nn.Module):
-    """Vectorized sliding window attention - no masks, no loops.
+class ChunkedVectorizedSlidingWindowModel(nn.Module):
+    """Memory-efficient chunked vectorized sliding window attention.
 
-    This implementation uses advanced indexing to gather only the relevant
-    key-value pairs for each query position, achieving true O(n×w) complexity
-    without any loops or mask creation.
+    This implementation processes chunks of queries simultaneously while
+    reusing temporary memory allocations. No masks needed - only computes
+    relevant attention pairs.
     """
 
-    def __init__(self, d_model, nhead, window_size):
+    def __init__(self, d_model, nhead, window_size, chunk_size=32):
         super().__init__()
         self.d_model = d_model
         self.nhead = nhead
         self.window_size = window_size
+        self.chunk_size = chunk_size
         self.head_dim = d_model // nhead
 
         # Linear projections for Q, K, V
@@ -543,41 +544,41 @@ class VectorizedSlidingWindowModel(nn.Module):
         self.v_proj = nn.Linear(d_model, d_model, bias=False)
         self.out_proj = nn.Linear(d_model, d_model, bias=False)
 
-    def create_sliding_window_indices(self, seq_len, device):
-        """Create indices for vectorized sliding window gathering.
+        # Pre-allocate temporary tensors (will be resized as needed)
+        self._temp_k_chunk = None
+        self._temp_v_chunk = None
+        self._temp_scores = None
+        self._temp_attn_weights = None
+        self._temp_output_chunk = None
 
-        Returns:
-            query_indices: [seq_len] - which query position
-            key_indices: [seq_len, window_size] - which key positions for each query
-            valid_mask: [seq_len, window_size] - which positions are valid (for padding)
-        """
-        # For each query position i, we want keys [max(0, i-w+1), i]
-        query_positions = torch.arange(seq_len, device=device)  # [seq_len]
+    def _allocate_temp_tensors(
+        self, batch_size, nhead, chunk_size, max_window_size, head_dim, device, dtype
+    ):
+        """Allocate temporary tensors once and reuse them."""
+        # Only allocate if not allocated or size changed
+        needed_shape_k = (batch_size, nhead, chunk_size, max_window_size, head_dim)
+        needed_shape_scores = (batch_size, nhead, chunk_size, max_window_size)
+        needed_shape_output = (batch_size, nhead, chunk_size, head_dim)
 
-        # Create relative offsets for the sliding window
-        # For window_size=3: offsets = [-2, -1, 0] (relative to query position)
-        window_offsets = torch.arange(
-            -self.window_size + 1, 1, device=device
-        )  # [window_size]
+        if (
+            self._temp_k_chunk is None
+            or self._temp_k_chunk.shape != needed_shape_k
+            or self._temp_k_chunk.device != device
+        ):
+            self._temp_k_chunk = torch.empty(needed_shape_k, device=device, dtype=dtype)
+            self._temp_v_chunk = torch.empty(needed_shape_k, device=device, dtype=dtype)
+            self._temp_scores = torch.empty(
+                needed_shape_scores, device=device, dtype=dtype
+            )
+            self._temp_attn_weights = torch.empty(
+                needed_shape_scores, device=device, dtype=dtype
+            )
+            self._temp_output_chunk = torch.empty(
+                needed_shape_output, device=device, dtype=dtype
+            )
 
-        # Broadcast to get absolute key positions for each query
-        # query_positions[:, None] + window_offsets[None, :] gives us the key indices
-        key_indices = (
-            query_positions[:, None] + window_offsets[None, :]
-        )  # [seq_len, window_size]
-
-        # Create mask for valid positions (handle boundaries)
-        valid_mask = (key_indices >= 0) & (
-            key_indices < seq_len
-        )  # [seq_len, window_size]
-
-        # Clamp indices to valid range (for gathering)
-        key_indices = torch.clamp(key_indices, 0, seq_len - 1)
-
-        return query_positions, key_indices, valid_mask
-
-    def vectorized_sliding_window_attention(self, q, k, v):
-        """Compute sliding window attention using pure vectorized operations.
+    def chunked_sliding_window_attention(self, q, k, v):
+        """Compute sliding window attention using memory-efficient chunking.
 
         Args:
             q, k, v: [batch_size, nhead, seq_len, head_dim]
@@ -586,54 +587,92 @@ class VectorizedSlidingWindowModel(nn.Module):
             output: [batch_size, nhead, seq_len, head_dim]
         """
         batch_size, nhead, seq_len, head_dim = q.shape
+        window_size = self.window_size
+        chunk_size = self.chunk_size
 
-        # Create sliding window indices
-        query_indices, key_indices, valid_mask = self.create_sliding_window_indices(
-            seq_len, q.device
+        # Pre-allocate temporary tensors
+        self._allocate_temp_tensors(
+            batch_size, nhead, chunk_size, window_size, head_dim, q.device, q.dtype
         )
 
-        # Gather keys and values for all sliding windows simultaneously
-        # key_indices: [seq_len, window_size]
-        # k: [batch_size, nhead, seq_len, head_dim]
-        # Result: [batch_size, nhead, seq_len, window_size, head_dim]
-        k_windows = k[:, :, key_indices, :]  # Advanced indexing - gathers relevant keys
-        v_windows = v[
-            :, :, key_indices, :
-        ]  # Advanced indexing - gathers relevant values
+        # Initialize output tensor
+        output = torch.zeros_like(q)
 
-        # Expand queries to match window structure
-        # q: [batch_size, nhead, seq_len, head_dim] -> [batch_size, nhead, seq_len, 1, head_dim]
-        q_expanded = q.unsqueeze(-2)  # [batch_size, nhead, seq_len, 1, head_dim]
+        # Process queries in chunks
+        for chunk_start in range(0, seq_len, chunk_size):
+            chunk_end = min(chunk_start + chunk_size, seq_len)
+            current_chunk_size = chunk_end - chunk_start
 
-        # Compute attention scores for all windows vectorized
-        # q_expanded @ k_windows.transpose(-2, -1): [batch_size, nhead, seq_len, 1, window_size]
-        scores = torch.matmul(q_expanded, k_windows.transpose(-2, -1)) / (head_dim**0.5)
-        scores = scores.squeeze(-2)  # [batch_size, nhead, seq_len, window_size]
+            # Extract query chunk
+            q_chunk = q[
+                :, :, chunk_start:chunk_end, :
+            ]  # [batch, nhead, chunk_size, head_dim]
 
-        # Apply boundary mask (set invalid positions to -inf)
-        # valid_mask: [seq_len, window_size] -> [1, 1, seq_len, window_size]
-        mask_expanded = valid_mask[
-            None, None, :, :
-        ]  # Broadcast for batch and head dims
-        scores = torch.where(
-            mask_expanded, scores, torch.tensor(float("-inf"), device=scores.device)
-        )
+            # For each position in the chunk, gather its sliding window keys/values
+            for i, pos in enumerate(range(chunk_start, chunk_end)):
+                # Calculate sliding window boundaries for this position
+                start_pos = max(0, pos - window_size + 1)
+                end_pos = pos + 1
+                actual_window_size = end_pos - start_pos
 
-        # Apply softmax to get attention weights
-        attn_weights = F.softmax(
-            scores, dim=-1
-        )  # [batch_size, nhead, seq_len, window_size]
+                # Extract keys and values for this position's window
+                k_window = k[
+                    :, :, start_pos:end_pos, :
+                ]  # [batch, nhead, actual_window_size, head_dim]
+                v_window = v[
+                    :, :, start_pos:end_pos, :
+                ]  # [batch, nhead, actual_window_size, head_dim]
 
-        # Apply attention weights to values
-        # attn_weights: [batch_size, nhead, seq_len, window_size]
-        # v_windows: [batch_size, nhead, seq_len, window_size, head_dim]
-        # Result: [batch_size, nhead, seq_len, head_dim]
-        output = torch.matmul(attn_weights.unsqueeze(-2), v_windows).squeeze(-2)
+                # Store in pre-allocated temporary tensors (reuse memory)
+                self._temp_k_chunk[:, :, i, :actual_window_size, :] = k_window
+                self._temp_v_chunk[:, :, i, :actual_window_size, :] = v_window
+
+                # Zero out unused parts of the window (for padding)
+                if actual_window_size < window_size:
+                    self._temp_k_chunk[:, :, i, actual_window_size:, :].zero_()
+                    self._temp_v_chunk[:, :, i, actual_window_size:, :].zero_()
+
+            # Vectorized computation for the entire chunk
+            # q_chunk: [batch, nhead, chunk_size, head_dim]
+            # temp_k_chunk: [batch, nhead, chunk_size, window_size, head_dim]
+
+            # Expand queries to match window structure
+            q_expanded = q_chunk.unsqueeze(
+                -2
+            )  # [batch, nhead, chunk_size, 1, head_dim]
+
+            # Compute attention scores for all positions in chunk simultaneously
+            scores = torch.matmul(
+                q_expanded,
+                self._temp_k_chunk[:, :, :current_chunk_size, :, :].transpose(-2, -1),
+            ) / (head_dim**0.5)
+            scores = scores.squeeze(-2)  # [batch, nhead, chunk_size, window_size]
+
+            # Handle padding by setting scores for padded positions to -inf
+            for i, pos in enumerate(range(chunk_start, chunk_end)):
+                start_pos = max(0, pos - window_size + 1)
+                end_pos = pos + 1
+                actual_window_size = end_pos - start_pos
+
+                if actual_window_size < window_size:
+                    scores[:, :, i, actual_window_size:] = float("-inf")
+
+            # Apply softmax
+            attn_weights = F.softmax(scores[:, :, :current_chunk_size, :], dim=-1)
+
+            # Apply attention weights to values
+            output_chunk = torch.matmul(
+                attn_weights.unsqueeze(-2),
+                self._temp_v_chunk[:, :, :current_chunk_size, :, :],
+            ).squeeze(-2)
+
+            # Store results
+            output[:, :, chunk_start:chunk_end, :] = output_chunk
 
         return output
 
     def forward(self, x):
-        """Forward pass with vectorized sliding window attention."""
+        """Forward pass with chunked sliding window attention."""
         batch_size, seq_len, d_model = x.shape
 
         # Project to Q, K, V
@@ -646,8 +685,8 @@ class VectorizedSlidingWindowModel(nn.Module):
         k = k.view(batch_size, seq_len, self.nhead, self.head_dim).transpose(1, 2)
         v = v.view(batch_size, seq_len, self.nhead, self.head_dim).transpose(1, 2)
 
-        # Apply vectorized sliding window attention
-        attn_output = self.vectorized_sliding_window_attention(q, k, v)
+        # Apply chunked sliding window attention
+        attn_output = self.chunked_sliding_window_attention(q, k, v)
 
         # Reshape back
         attn_output = (
@@ -660,26 +699,30 @@ class VectorizedSlidingWindowModel(nn.Module):
         return output
 
 
-def benchmark_vectorized_sliding_window(
-    seq_len, d_model=1024, nhead=1, window_size=128, batch_size=4
+def benchmark_chunked_vectorized_sliding_window(
+    seq_len, d_model=1024, nhead=1, window_size=128, chunk_size=32, batch_size=4
 ):
-    """Benchmark vectorized sliding window attention (no masks, no loops).
+    """Benchmark chunked vectorized sliding window attention.
 
-    This should achieve true O(n×w) complexity with efficient vectorized operations.
+    This should achieve O(n×w) complexity with controlled memory usage.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(
-        f"Benchmarking Vectorized Sliding Window (TRAINING mode, O(n×w), window={window_size}) on {device}"
+        f"Benchmarking Chunked Vectorized Sliding Window (TRAINING mode, O(n×w), window={window_size}, chunk={chunk_size}) on {device}"
     )
 
     # Create model
-    model = VectorizedSlidingWindowModel(d_model, nhead, window_size).to(device)
+    model = ChunkedVectorizedSlidingWindowModel(
+        d_model, nhead, window_size, chunk_size
+    ).to(device)
     model.train()
 
     # Create input data
     x = torch.randn(batch_size, seq_len, d_model, device=device, requires_grad=True)
 
-    print(f"  Using vectorized operations (no masks, no loops, true O(n×w))...")
+    print(
+        f"  Using chunked vectorized operations (controlled memory, chunk_size={chunk_size})..."
+    )
 
     # Warmup
     print("  Warming up in training mode...")
@@ -710,10 +753,11 @@ def benchmark_vectorized_sliding_window(
     memory_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
 
     return {
-        "attention_type": "Vectorized_Sliding_Window",
+        "attention_type": "Chunked_Vectorized_Sliding_Window",
         "mode": "TRAINING",
         "complexity": "O(n×w)",
         "window_size": window_size,
+        "chunk_size": chunk_size,
         "batch_size": batch_size,
         "time_ms": avg_time_ms,
         "memory_mb": memory_mb,
@@ -877,52 +921,56 @@ def compare_training_mode_attention():
             else:
                 print(f"❌ Fast Sliding Window (w={window_size}): Failed")
 
-            # Test vectorized sliding window (no masks, no loops)
+            # Test chunked vectorized sliding window (controlled memory, no masks)
+            chunk_size = 32  # Default chunk size
             print(
-                f"\n🔬 Test 5: Vectorized Sliding Window (TRAINING mode, O(n×w), window={window_size})..."
+                f"\n🔬 Test 5: Chunked Vectorized Sliding Window (TRAINING mode, O(n×w), window={window_size}, chunk={chunk_size})..."
             )
-            vectorized_result = benchmark_vectorized_sliding_window(
+            chunked_vectorized_result = benchmark_chunked_vectorized_sliding_window(
                 seq_len,
                 d_model=d_model,
                 nhead=nhead,
                 window_size=window_size,
+                chunk_size=chunk_size,
                 batch_size=batch_size,
             )
-            if vectorized_result:
-                print(f"✅ {vectorized_result}")
-                print(f"  📊 Vectorized vs Classical Full:")
+            if chunked_vectorized_result:
+                print(f"✅ {chunked_vectorized_result}")
+                print(f"  📊 Chunked Vectorized vs Classical Full:")
                 print(
-                    f"    Memory ratio: {vectorized_result['memory_mb'] / classical_result['memory_mb']:.2f}x"
+                    f"    Memory ratio: {chunked_vectorized_result['memory_mb'] / classical_result['memory_mb']:.2f}x"
                 )
                 print(
-                    f"    Speed ratio: {vectorized_result['time_ms'] / classical_result['time_ms']:.2f}x"
+                    f"    Speed ratio: {chunked_vectorized_result['time_ms'] / classical_result['time_ms']:.2f}x"
                 )
                 print(
-                    f"    Speedup: {classical_result['time_ms'] / vectorized_result['time_ms']:.2f}x"
+                    f"    Speedup: {classical_result['time_ms'] / chunked_vectorized_result['time_ms']:.2f}x"
                 )
-                print(f"  📊 Vectorized vs SDPA Full:")
+                print(f"  📊 Chunked Vectorized vs SDPA Full:")
                 print(
-                    f"    Memory ratio: {vectorized_result['memory_mb'] / sdpa_full_result['memory_mb']:.2f}x"
-                )
-                print(
-                    f"    Speed ratio: {vectorized_result['time_ms'] / sdpa_full_result['time_ms']:.2f}x"
+                    f"    Memory ratio: {chunked_vectorized_result['memory_mb'] / sdpa_full_result['memory_mb']:.2f}x"
                 )
                 print(
-                    f"    Speedup: {sdpa_full_result['time_ms'] / vectorized_result['time_ms']:.2f}x"
+                    f"    Speed ratio: {chunked_vectorized_result['time_ms'] / sdpa_full_result['time_ms']:.2f}x"
+                )
+                print(
+                    f"    Speedup: {sdpa_full_result['time_ms'] / chunked_vectorized_result['time_ms']:.2f}x"
                 )
                 if fast_sliding_result:
-                    print(f"  📊 Vectorized vs Fast Sliding:")
+                    print(f"  📊 Chunked Vectorized vs Fast Sliding:")
                     print(
-                        f"    Memory ratio: {vectorized_result['memory_mb'] / fast_sliding_result['memory_mb']:.2f}x"
+                        f"    Memory ratio: {chunked_vectorized_result['memory_mb'] / fast_sliding_result['memory_mb']:.2f}x"
                     )
                     print(
-                        f"    Speed ratio: {vectorized_result['time_ms'] / fast_sliding_result['time_ms']:.2f}x"
+                        f"    Speed ratio: {chunked_vectorized_result['time_ms'] / fast_sliding_result['time_ms']:.2f}x"
                     )
                     print(
-                        f"    Speedup: {fast_sliding_result['time_ms'] / vectorized_result['time_ms']:.2f}x"
+                        f"    Speedup: {fast_sliding_result['time_ms'] / chunked_vectorized_result['time_ms']:.2f}x"
                     )
             else:
-                print(f"❌ Vectorized Sliding Window (w={window_size}): Failed")
+                print(
+                    f"❌ Chunked Vectorized Sliding Window (w={window_size}, chunk={chunk_size}): Failed"
+                )
 
         # Clean up memory
         torch.cuda.empty_cache()
