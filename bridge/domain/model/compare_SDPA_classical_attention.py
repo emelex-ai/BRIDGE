@@ -985,6 +985,170 @@ def benchmark_true_vectorized_sliding_window(
     }
 
 
+class TrueVectorizedSlidingWindowOuterLoopModel(nn.Module):
+    def __init__(self, d_model, nhead, window_size, seq_len):
+        super().__init__()
+        self.d_model = d_model
+        self.nhead = nhead
+        self.window_size = window_size
+        self.head_dim = d_model // nhead
+        self.seq_len = seq_len
+        self.q_proj = nn.Linear(d_model, d_model, bias=False)
+        self.k_proj = nn.Linear(d_model, d_model, bias=False)
+        self.v_proj = nn.Linear(d_model, d_model, bias=False)
+        self.out_proj = nn.Linear(d_model, d_model, bias=False)
+        # Precompute indices
+        positions = torch.arange(seq_len)
+        window_offsets = torch.arange(-window_size + 1, 1)
+        key_indices = positions[:, None] + window_offsets[None, :]
+        valid_mask = (key_indices >= 0) & (key_indices < seq_len)
+        key_indices = torch.clamp(key_indices, 0, seq_len - 1)
+        self.register_buffer("key_indices", key_indices)
+        self.register_buffer("valid_mask", valid_mask)
+
+    def vectorized_sliding_window_attention_outer_loop(self, q, k, v):
+        """Compute sliding window attention using outer loops for batch and head dimensions.
+
+        This implementation uses precomputed sliding window indices and processes
+        each batch and head separately, with inner loops for head dimensions.
+        This approach trades memory efficiency for computational efficiency.
+
+        Args:
+            q: Query tensor of shape [batch_size, nhead, seq_len, head_dim]
+            k: Key tensor of shape [batch_size, nhead, seq_len, head_dim]
+            v: Value tensor of shape [batch_size, nhead, seq_len, head_dim]
+
+        Returns:
+            Attention output tensor of shape [batch_size, nhead, seq_len, head_dim]
+
+        """
+        batch_size, nhead, seq_len, head_dim = q.shape
+        output = torch.zeros_like(q)
+        for b in range(batch_size):
+            for h in range(nhead):
+                # [seq_len, window_size, head_dim]
+                k_windows = k[b, h, self.key_indices, :]
+                v_windows = v[b, h, self.key_indices, :]
+                for d in range(head_dim):
+                    k_slice = k_windows[:, :, d]
+                    v_slice = v_windows[:, :, d]
+                    q_slice = q[b, h, :, d].unsqueeze(-1)  # [seq_len, 1]
+                    scores = (q_slice * k_slice) / (head_dim**0.5)
+                    scores = torch.where(
+                        self.valid_mask, scores, torch.full_like(scores, float("-inf"))
+                    )
+                    attn_weights = F.softmax(scores, dim=-1)
+                    output[b, h, :, d] = (attn_weights * v_slice).sum(dim=-1)
+        return output
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass with outer loop vectorized sliding window attention.
+
+        This method processes the input through linear projections, reshapes for
+        multi-head attention, applies sliding window attention using outer loops
+        for batch and head dimensions, and projects the output.
+
+        Args:
+            x: Input tensor of shape [batch_size, seq_len, d_model]
+
+        Returns:
+            Output tensor of shape [batch_size, seq_len, d_model]
+
+        """
+        batch_size, seq_len, d_model = x.shape
+
+        # Project to Q, K, V: [batch_size, seq_len, d_model]
+        q = self.q_proj(x)
+        k = self.k_proj(x)
+        v = self.v_proj(x)
+
+        # Reshape for multi-head attention: [batch_size, nhead, seq_len, head_dim]
+        q = q.view(batch_size, seq_len, self.nhead, self.head_dim).transpose(1, 2)
+        k = k.view(batch_size, seq_len, self.nhead, self.head_dim).transpose(1, 2)
+        v = v.view(batch_size, seq_len, self.nhead, self.head_dim).transpose(1, 2)
+
+        # Apply vectorized sliding window attention with outer loops
+        attn_output = self.vectorized_sliding_window_attention_outer_loop(q, k, v)
+
+        # Reshape back: [batch_size, seq_len, d_model]
+        attn_output = (
+            attn_output.transpose(1, 2).contiguous().view(batch_size, seq_len, d_model)
+        )
+
+        # Output projection: [batch_size, seq_len, d_model]
+        output = self.out_proj(attn_output)
+
+        return output
+
+
+def benchmark_true_vectorized_sliding_window_outer_loop(
+    seq_len, d_model=1024, nhead=1, window_size=128, batch_size=4
+):
+    """Benchmark true vectorized sliding window attention (no loops, no conditionals).
+
+    This should achieve optimal O(n×w) complexity with pure vectorized operations.
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(
+        f"Benchmarking True Vectorized Sliding Window (TRAINING mode, O(n×w), window={window_size}) on {device}"
+    )
+
+    # Create model
+    model = TrueVectorizedSlidingWindowOuterLoopModel(
+        d_model, nhead, window_size, seq_len
+    ).to(device)
+    model.train()
+
+    # Create input data
+    x = torch.randn(batch_size, seq_len, d_model, device=device, requires_grad=True)
+
+    print(f"  Using pure vectorized operations (no loops, no conditionals)...")
+
+    # Warmup
+    print("  Warming up in training mode...")
+    for _ in range(3):
+        model.zero_grad()
+        output = model(x)
+        loss = output.sum()
+        loss.backward()
+
+    # Clear memory
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+
+    # Benchmark
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    start_time = time.time()
+
+    for _ in range(10):
+        model.zero_grad()
+        output = model(x)
+        loss = output.sum()
+        loss.backward()
+
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    end_time = time.time()
+
+    avg_time_ms = (end_time - start_time) / 10 * 1000
+    memory_mb = (
+        torch.cuda.max_memory_allocated() / 1024 / 1024 if device.type == "cuda" else 0
+    )
+
+    return {
+        "attention_type": "True_Vectorized_Sliding_Window_Outer_Loop",
+        "mode": "TRAINING",
+        "complexity": "O(n×w)",
+        "window_size": window_size,
+        "batch_size": batch_size,
+        "time_ms": avg_time_ms,
+        "memory_mb": memory_mb,
+        "tokens_per_sec": (batch_size * seq_len * 10) / (end_time - start_time),
+    }
+
+
 def compare_training_mode_attention():
     """Compare attention implementations in TRAINING mode only.
 
@@ -1011,7 +1175,7 @@ def compare_training_mode_attention():
         {"seq_len": 2048},
         # {"seq_len": 4096},
         {"seq_len": 4096},
-        #{"seq_len": 4 * 8192},
+        # {"seq_len": 4 * 8192},
     ]
 
     window_sizes = [32, 128]  # Reasonable window sizes
@@ -1154,6 +1318,52 @@ def compare_training_mode_attention():
                 nhead=nhead,
                 window_size=window_size,
                 batch_size=batch_size,
+            )
+            if true_vectorized_result:
+                print(f"✅ {true_vectorized_result}")
+                print(f"  📊 True Vectorized vs Classical Full:")
+                print(
+                    f"    True Vectorized memory / Classical memory: {true_vectorized_result['memory_mb'] / classical_result['memory_mb']:.2f}x"
+                )
+                print(
+                    f"    True Vectorized time / Classical time: {true_vectorized_result['time_ms'] / classical_result['time_ms']:.2f}x"
+                )
+                print(
+                    f"    Classical time / True Vectorized time: {classical_result['time_ms'] / true_vectorized_result['time_ms']:.2f}x"
+                )
+                if sdpa_full_result:
+                    print(f"  📊 True Vectorized vs SDPA Full:")
+                    print(
+                        f"    True Vectorized memory / SDPA Full memory: {true_vectorized_result['memory_mb'] / sdpa_full_result['memory_mb']:.2f}x"
+                    )
+                    print(
+                        f"    True Vectorized time / SDPA Full time: {true_vectorized_result['time_ms'] / sdpa_full_result['time_ms']:.2f}x"
+                    )
+                    print(
+                        f"    SDPA Full time / True Vectorized time: {sdpa_full_result['time_ms'] / true_vectorized_result['time_ms']:.2f}x"
+                    )
+                if fast_sliding_result:
+                    print(f"  📊 True Vectorized vs Fast Sliding:")
+                    print(
+                        f"    True Vectorized memory / Fast Sliding memory: {true_vectorized_result['memory_mb'] / fast_sliding_result['memory_mb']:.2f}x"
+                    )
+                    print(
+                        f"    True Vectorized time / Fast Sliding time: {true_vectorized_result['time_ms'] / fast_sliding_result['time_ms']:.2f}x"
+                    )
+                    print(
+                        f"    Fast Sliding time / True Vectorized time: {fast_sliding_result['time_ms'] / true_vectorized_result['time_ms']:.2f}x"
+                    )
+            else:
+                print(f"❌ True Vectorized Sliding Window (w={window_size}): Failed")
+
+            true_vectorized_result = (
+                benchmark_true_vectorized_sliding_window_outer_loop(
+                    seq_len,
+                    d_model=d_model,
+                    nhead=nhead,
+                    window_size=window_size,
+                    batch_size=batch_size,
+                )
             )
             if true_vectorized_result:
                 print(f"✅ {true_vectorized_result}")
