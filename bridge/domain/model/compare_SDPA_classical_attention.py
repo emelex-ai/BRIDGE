@@ -1305,17 +1305,6 @@ def compare_training_mode_attention():
                 seq_len, d_model=d_model, nhead=nhead, batch_size=batch_size
             )
             print(f"✅ {sdpa_full_result}")
-
-            # Compare SDPA vs Classical
-            memory_ratio = sdpa_full_result["memory_mb"] / classical_result["memory_mb"]
-            speed_ratio = sdpa_full_result["time_ms"] / classical_result["time_ms"]
-            speedup = classical_result["time_ms"] / sdpa_full_result["time_ms"]
-
-            print(f"  📊 SDPA Full vs Classical Full:")
-            print(f"    SDPA memory / Classical memory: {memory_ratio:.2f}x")
-            print(f"    SDPA time / Classical time: {speed_ratio:.2f}x")
-            print(f"    Classical time / SDPA time: {speedup:.2f}x")
-
         except RuntimeError as e:
             if "out of memory" in str(e):
                 print(f"❌ SDPA Full Attention: OOM at seq_len={seq_len}")
@@ -1338,6 +1327,21 @@ def compare_training_mode_attention():
                     batch_size=batch_size,
                 )
                 print(f"✅ {classical_windowed_result}")
+                # Comparison with Classical Full Attention
+                memory_ratio = (
+                    classical_windowed_result["memory_mb"]
+                    / classical_result["memory_mb"]
+                )
+                time_ratio = (
+                    classical_windowed_result["time_ms"] / classical_result["time_ms"]
+                )
+                speedup = (
+                    classical_result["time_ms"] / classical_windowed_result["time_ms"]
+                )
+                print(f"  📊 Classical Windowed vs Classical Full:")
+                print(f"    Windowed memory / Full memory: {memory_ratio:.2f}x")
+                print(f"    Windowed time / Full time: {time_ratio:.2f}x")
+                print(f"    Full time / Windowed time: {speedup:.2f}x")
             except RuntimeError as e:
                 if "out of memory" in str(e):
                     print(
