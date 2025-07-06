@@ -544,13 +544,14 @@ def compare_training_mode_attention():
 
     # Test configurations - single head, d_model=1024 as requested
     configs = [
-        {"seq_len": 1024},
+        #{"seq_len": 1024},
         {"seq_len": 2048},
-        {"seq_len": 4096},
+        #{"seq_len": 4096},
         {"seq_len": 8192},
+        {"seq_len": 4*8192},
     ]
 
-    window_sizes = [128, 256, 512]  # Reasonable window sizes
+    window_sizes = [32, 128, 512]  # Reasonable window sizes
     d_model = 1024  # Fixed as requested
     nhead = 1  # Single head as requested
     batch_size = 4

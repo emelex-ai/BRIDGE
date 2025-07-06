@@ -56,5 +56,5 @@ apptainer exec \
         set -x # Enable debugging inside container
         cd "$1"
         source "$2/bin/activate"
-        python "$3" "${@:4}"
+        python -u "$3" "${@:4}"
     ' _bash "$SLURM_SUBMIT_DIR" "$SHARED_VENV" "$PYTHON_SCRIPT" "${SCRIPT_ARGS[@]}"
