@@ -1356,6 +1356,9 @@ def compare_training_mode_attention():
             else:
                 print(f"❌ True Vectorized Sliding Window (w={window_size}): Failed")
 
+            print(
+                f"\n🔬 Test 6: True Vectorized Sliding Window Outer Loop (TRAINING mode, O(n×w), window={window_size})..."
+            )
             true_vectorized_result = (
                 benchmark_true_vectorized_sliding_window_outer_loop(
                     seq_len,
