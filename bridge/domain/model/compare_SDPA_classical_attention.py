@@ -7,6 +7,35 @@ import torch.nn.functional as F
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 
+def precompute_sliding_window_mask(seq_len, window_size, device):
+    """Precompute sliding window mask for efficiency.
+
+    Args:
+        seq_len: Sequence length
+        window_size: Window size for sliding window
+        device: Device to create mask on
+
+    Returns:
+        Precomputed attention mask
+
+    """
+    # Create base mask (all True = attend to all)
+    mask = torch.ones(seq_len, seq_len, device=device, dtype=torch.bool)
+
+    # Apply sliding window constraint efficiently
+    for i in range(seq_len):
+        # Zero out positions beyond window
+        start_pos = max(0, i - window_size)
+        end_pos = min(seq_len, i + window_size + 1)
+
+        # Mask out everything except window
+        mask[i, :start_pos] = False
+        mask[i, end_pos:] = False
+
+    # Convert to attention mask format (0 for attend, -inf for ignore)
+    return torch.where(mask, 0.0, float("-inf"))
+
+
 def benchmark_classical_full_attention(
     seq_len, d_model=1024, nhead=1, num_layers=1, batch_size=4
 ):
@@ -86,7 +115,7 @@ def benchmark_sdpa_full_attention(
     """Benchmark SDPA full attention in TRAINING mode (O(n²) complexity).
 
     Uses PyTorch's scaled_dot_product_attention directly with full attention
-    in training mode.
+    in training mode. NO MASKING - precomputed mask is None.
 
     Args:
         seq_len: Sequence length
@@ -103,7 +132,7 @@ def benchmark_sdpa_full_attention(
     print(f"Benchmarking SDPA Full Attention (TRAINING mode, O(n²)) on {device}")
 
     class SDPAFullAttentionLayer(nn.Module):
-        """Custom layer using SDPA for full attention."""
+        """Custom layer using SDPA for full attention with precomputed mask."""
 
         def __init__(self, d_model, nhead):
             super().__init__()
@@ -126,6 +155,9 @@ def benchmark_sdpa_full_attention(
                 nn.Linear(d_model * 4, d_model),
             )
 
+            # Precomputed mask (None for full attention)
+            self.register_buffer("attn_mask", None)
+
         def forward(self, x):
             # Self-attention with residual connection
             residual = x
@@ -138,7 +170,9 @@ def benchmark_sdpa_full_attention(
             v = self.v_proj(x).view(B, S, self.nhead, self.head_dim).transpose(1, 2)
 
             # SDPA full attention (no masking = full O(n²) attention)
-            attn_output = F.scaled_dot_product_attention(q, k, v)
+            attn_output = F.scaled_dot_product_attention(
+                q, k, v, attn_mask=self.attn_mask
+            )
 
             # Reshape and project
             attn_output = attn_output.transpose(1, 2).contiguous().view(B, S, D)
@@ -165,6 +199,9 @@ def benchmark_sdpa_full_attention(
             for layer in self.layers:
                 x = layer(x)
             return x
+
+    # Precompute mask (None for full attention)
+    print("  Precomputing mask (None for full attention)...")
 
     sdpa_model = SDPAFullAttentionModel(d_model, nhead, num_layers).to(device)
 
@@ -216,7 +253,7 @@ def benchmark_sdpa_sliding_window_attention(
 ):
     """Benchmark SDPA sliding window attention in TRAINING mode (O(n) complexity).
 
-    Uses PyTorch's scaled_dot_product_attention with sliding window mask
+    Uses PyTorch's scaled_dot_product_attention with PRECOMPUTED sliding window mask
     in training mode.
 
     Args:
@@ -237,14 +274,13 @@ def benchmark_sdpa_sliding_window_attention(
     )
 
     class SDPASlidingWindowLayer(nn.Module):
-        """Custom layer using SDPA for sliding window attention."""
+        """Custom layer using SDPA for sliding window attention with precomputed mask."""
 
-        def __init__(self, d_model, nhead, window_size):
+        def __init__(self, d_model, nhead, precomputed_mask):
             super().__init__()
             self.d_model = d_model
             self.nhead = nhead
             self.head_dim = d_model // nhead
-            self.window_size = window_size
 
             # Linear projections
             self.q_proj = nn.Linear(d_model, d_model)
@@ -261,23 +297,8 @@ def benchmark_sdpa_sliding_window_attention(
                 nn.Linear(d_model * 4, d_model),
             )
 
-        def create_sliding_window_mask(self, seq_len, device):
-            """Create sliding window mask."""
-            # Create base mask (all True = attend to all)
-            mask = torch.ones(seq_len, seq_len, device=device, dtype=torch.bool)
-
-            # Apply sliding window constraint
-            for i in range(seq_len):
-                # Zero out positions beyond window
-                start_pos = max(0, i - self.window_size)
-                end_pos = min(seq_len, i + self.window_size + 1)
-
-                # Mask out everything except window
-                mask[i, :start_pos] = False
-                mask[i, end_pos:] = False
-
-            # Convert to attention mask format (0 for attend, -inf for ignore)
-            return torch.where(mask, 0.0, float("-inf"))
+            # Store precomputed mask
+            self.register_buffer("attn_mask", precomputed_mask)
 
         def forward(self, x):
             # Self-attention with residual connection
@@ -290,11 +311,10 @@ def benchmark_sdpa_sliding_window_attention(
             k = self.k_proj(x).view(B, S, self.nhead, self.head_dim).transpose(1, 2)
             v = self.v_proj(x).view(B, S, self.nhead, self.head_dim).transpose(1, 2)
 
-            # Create sliding window mask
-            attn_mask = self.create_sliding_window_mask(S, x.device)
-
-            # SDPA sliding window attention
-            attn_output = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
+            # SDPA sliding window attention with precomputed mask
+            attn_output = F.scaled_dot_product_attention(
+                q, k, v, attn_mask=self.attn_mask
+            )
 
             # Reshape and project
             attn_output = attn_output.transpose(1, 2).contiguous().view(B, S, D)
@@ -311,11 +331,11 @@ def benchmark_sdpa_sliding_window_attention(
             return x
 
     class SDPASlidingWindowModel(nn.Module):
-        def __init__(self, d_model, nhead, num_layers, window_size):
+        def __init__(self, d_model, nhead, num_layers, precomputed_mask):
             super().__init__()
             self.layers = nn.ModuleList(
                 [
-                    SDPASlidingWindowLayer(d_model, nhead, window_size)
+                    SDPASlidingWindowLayer(d_model, nhead, precomputed_mask)
                     for _ in range(num_layers)
                 ]
             )
@@ -325,8 +345,12 @@ def benchmark_sdpa_sliding_window_attention(
                 x = layer(x)
             return x
 
+    # Precompute sliding window mask
+    print("  Precomputing sliding window mask...")
+    precomputed_mask = precompute_sliding_window_mask(seq_len, window_size, device)
+
     sdpa_sliding_model = SDPASlidingWindowModel(
-        d_model, nhead, num_layers, window_size
+        d_model, nhead, num_layers, precomputed_mask
     ).to(device)
 
     # CRITICAL: Set to training mode
@@ -376,19 +400,21 @@ def benchmark_sdpa_sliding_window_attention(
 def compare_training_mode_attention():
     """Compare attention implementations in TRAINING mode only.
 
-    Tests conducted (ALL IN TRAINING MODE):
+    Tests conducted (ALL IN TRAINING MODE with PRECOMPUTED MASKS):
     1. Classical Full Attention (O(n²)) - TransformerEncoderLayer.train()
-    2. SDPA Full Attention (O(n²)) - scaled_dot_product_attention with full matrix
-    3. SDPA Sliding Window (O(n)) - scaled_dot_product_attention with sliding window mask
+    2. SDPA Full Attention (O(n²)) - scaled_dot_product_attention with no mask
+    3. SDPA Sliding Window (O(n)) - scaled_dot_product_attention with precomputed sliding window mask
 
     """
-    print("🚀 TRAINING MODE Attention Comparison")
+    print("🚀 TRAINING MODE Attention Comparison (PRECOMPUTED MASKS)")
     print("=" * 80)
     print("ALL TESTS RUN IN TRAINING MODE (with backward pass)")
     print("Tests:")
     print("1. Classical Full Attention (O(n²)) - TransformerEncoderLayer.train()")
-    print("2. SDPA Full Attention (O(n²)) - F.scaled_dot_product_attention (full)")
-    print("3. SDPA Sliding Window (O(n)) - F.scaled_dot_product_attention (windowed)")
+    print("2. SDPA Full Attention (O(n²)) - F.scaled_dot_product_attention (no mask)")
+    print(
+        "3. SDPA Sliding Window (O(n)) - F.scaled_dot_product_attention (precomputed mask)"
+    )
     print("=" * 80)
 
     # Test configurations - single head, d_model=1024 as requested
