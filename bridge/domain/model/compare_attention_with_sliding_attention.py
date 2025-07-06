@@ -255,7 +255,7 @@ def compare_attention_implementations():
         {"seq_len": 8192, "d_model": 512, "nhead": 8},
     ]
 
-    window_sizes = [64, 128, 256]
+    window_sizes = [32, 64, 128, 256]
     batch_size = 4  # Fixed batch size for fair comparison
 
     for config in configs:
