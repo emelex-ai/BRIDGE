@@ -526,8 +526,8 @@ class ChunkedVectorizedSlidingWindowModel(nn.Module):
     """Memory-efficient chunked vectorized sliding window attention.
 
     This implementation processes chunks of queries simultaneously while
-    reusing temporary memory allocations. No masks needed - only computes
-    relevant attention pairs.
+    controlling memory usage. No masks needed - only computes
+    relevant attention pairs. Avoids in-place operations for gradient safety.
     """
 
     def __init__(self, d_model, nhead, window_size, chunk_size=32):
@@ -544,39 +544,6 @@ class ChunkedVectorizedSlidingWindowModel(nn.Module):
         self.v_proj = nn.Linear(d_model, d_model, bias=False)
         self.out_proj = nn.Linear(d_model, d_model, bias=False)
 
-        # Pre-allocate temporary tensors (will be resized as needed)
-        self._temp_k_chunk = None
-        self._temp_v_chunk = None
-        self._temp_scores = None
-        self._temp_attn_weights = None
-        self._temp_output_chunk = None
-
-    def _allocate_temp_tensors(
-        self, batch_size, nhead, chunk_size, max_window_size, head_dim, device, dtype
-    ):
-        """Allocate temporary tensors once and reuse them."""
-        # Only allocate if not allocated or size changed
-        needed_shape_k = (batch_size, nhead, chunk_size, max_window_size, head_dim)
-        needed_shape_scores = (batch_size, nhead, chunk_size, max_window_size)
-        needed_shape_output = (batch_size, nhead, chunk_size, head_dim)
-
-        if (
-            self._temp_k_chunk is None
-            or self._temp_k_chunk.shape != needed_shape_k
-            or self._temp_k_chunk.device != device
-        ):
-            self._temp_k_chunk = torch.empty(needed_shape_k, device=device, dtype=dtype)
-            self._temp_v_chunk = torch.empty(needed_shape_k, device=device, dtype=dtype)
-            self._temp_scores = torch.empty(
-                needed_shape_scores, device=device, dtype=dtype
-            )
-            self._temp_attn_weights = torch.empty(
-                needed_shape_scores, device=device, dtype=dtype
-            )
-            self._temp_output_chunk = torch.empty(
-                needed_shape_output, device=device, dtype=dtype
-            )
-
     def chunked_sliding_window_attention(self, q, k, v):
         """Compute sliding window attention using memory-efficient chunking.
 
@@ -590,13 +557,8 @@ class ChunkedVectorizedSlidingWindowModel(nn.Module):
         window_size = self.window_size
         chunk_size = self.chunk_size
 
-        # Pre-allocate temporary tensors
-        self._allocate_temp_tensors(
-            batch_size, nhead, chunk_size, window_size, head_dim, q.device, q.dtype
-        )
-
-        # Initialize output tensor
-        output = torch.zeros_like(q)
+        # Collect output chunks to concatenate at the end
+        output_chunks = []
 
         # Process queries in chunks
         for chunk_start in range(0, seq_len, chunk_size):
@@ -608,8 +570,12 @@ class ChunkedVectorizedSlidingWindowModel(nn.Module):
                 :, :, chunk_start:chunk_end, :
             ]  # [batch, nhead, chunk_size, head_dim]
 
-            # For each position in the chunk, gather its sliding window keys/values
-            for i, pos in enumerate(range(chunk_start, chunk_end)):
+            # Collect keys and values for all positions in this chunk
+            k_windows = []
+            v_windows = []
+            valid_lengths = []
+
+            for pos in range(chunk_start, chunk_end):
                 # Calculate sliding window boundaries for this position
                 start_pos = max(0, pos - window_size + 1)
                 end_pos = pos + 1
@@ -623,18 +589,28 @@ class ChunkedVectorizedSlidingWindowModel(nn.Module):
                     :, :, start_pos:end_pos, :
                 ]  # [batch, nhead, actual_window_size, head_dim]
 
-                # Store in pre-allocated temporary tensors (reuse memory)
-                self._temp_k_chunk[:, :, i, :actual_window_size, :] = k_window
-                self._temp_v_chunk[:, :, i, :actual_window_size, :] = v_window
-
-                # Zero out unused parts of the window (for padding)
+                # Pad to consistent window size if needed (without in-place ops)
                 if actual_window_size < window_size:
-                    self._temp_k_chunk[:, :, i, actual_window_size:, :].zero_()
-                    self._temp_v_chunk[:, :, i, actual_window_size:, :].zero_()
+                    pad_size = window_size - actual_window_size
+                    k_window = F.pad(
+                        k_window, (0, 0, 0, pad_size), mode="constant", value=0
+                    )
+                    v_window = F.pad(
+                        v_window, (0, 0, 0, pad_size), mode="constant", value=0
+                    )
+
+                k_windows.append(k_window)
+                v_windows.append(v_window)
+                valid_lengths.append(actual_window_size)
+
+            # Stack all windows for vectorized computation
+            # [batch, nhead, chunk_size, window_size, head_dim]
+            k_stacked = torch.stack(k_windows, dim=2)
+            v_stacked = torch.stack(v_windows, dim=2)
 
             # Vectorized computation for the entire chunk
             # q_chunk: [batch, nhead, chunk_size, head_dim]
-            # temp_k_chunk: [batch, nhead, chunk_size, window_size, head_dim]
+            # k_stacked: [batch, nhead, chunk_size, window_size, head_dim]
 
             # Expand queries to match window structure
             q_expanded = q_chunk.unsqueeze(
@@ -642,32 +618,36 @@ class ChunkedVectorizedSlidingWindowModel(nn.Module):
             )  # [batch, nhead, chunk_size, 1, head_dim]
 
             # Compute attention scores for all positions in chunk simultaneously
-            scores = torch.matmul(
-                q_expanded,
-                self._temp_k_chunk[:, :, :current_chunk_size, :, :].transpose(-2, -1),
-            ) / (head_dim**0.5)
+            scores = torch.matmul(q_expanded, k_stacked.transpose(-2, -1)) / (
+                head_dim**0.5
+            )
             scores = scores.squeeze(-2)  # [batch, nhead, chunk_size, window_size]
 
             # Handle padding by setting scores for padded positions to -inf
-            for i, pos in enumerate(range(chunk_start, chunk_end)):
-                start_pos = max(0, pos - window_size + 1)
-                end_pos = pos + 1
-                actual_window_size = end_pos - start_pos
-
-                if actual_window_size < window_size:
-                    scores[:, :, i, actual_window_size:] = float("-inf")
+            for i, valid_len in enumerate(valid_lengths):
+                if valid_len < window_size:
+                    # Create mask for invalid positions
+                    mask = torch.ones_like(scores[:, :, i, :])
+                    mask[:, :, valid_len:] = float("-inf")
+                    scores[:, :, i, :] = torch.where(
+                        mask == 1,
+                        scores[:, :, i, :],
+                        torch.full_like(scores[:, :, i, :], float("-inf")),
+                    )
 
             # Apply softmax
-            attn_weights = F.softmax(scores[:, :, :current_chunk_size, :], dim=-1)
+            attn_weights = F.softmax(scores, dim=-1)
 
             # Apply attention weights to values
-            output_chunk = torch.matmul(
-                attn_weights.unsqueeze(-2),
-                self._temp_v_chunk[:, :, :current_chunk_size, :, :],
-            ).squeeze(-2)
+            output_chunk = torch.matmul(attn_weights.unsqueeze(-2), v_stacked).squeeze(
+                -2
+            )
 
-            # Store results
-            output[:, :, chunk_start:chunk_end, :] = output_chunk
+            # Store chunk for concatenation
+            output_chunks.append(output_chunk)
+
+        # Concatenate all chunks to form final output
+        output = torch.cat(output_chunks, dim=2)
 
         return output
 
