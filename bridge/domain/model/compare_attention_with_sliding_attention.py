@@ -3,6 +3,7 @@ import time
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 # Import FlexAttention if available
@@ -14,6 +15,16 @@ try:
 except ImportError:
     FLEX_AVAILABLE = False
     print("❌ FlexAttention not available")
+
+# Import SDPA backend selection if available
+try:
+    from torch.nn.attention import SDPBackend, sdpa_kernel
+
+    SDPA_BACKENDS_AVAILABLE = True
+    print("✅ SDPA backend selection is available")
+except ImportError:
+    SDPA_BACKENDS_AVAILABLE = False
+    print("❌ SDPA backend selection not available")
 
 
 def measure_attention_only_timing(model, x, num_iterations=100, warmup_iterations=50):
