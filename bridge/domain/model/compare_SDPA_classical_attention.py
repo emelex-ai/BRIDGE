@@ -53,7 +53,8 @@ def benchmark_classical_full_attention(
         x.grad = None  # Clear gradients
 
     # Benchmark
-    torch.cuda.synchronize()
+    if device.type == "cuda":
+        torch.cuda.synchronize()
     start_time = time.time()
 
     for _ in range(10):
@@ -63,11 +64,14 @@ def benchmark_classical_full_attention(
         loss.backward()
         x.grad = None  # Clear gradients
 
-    torch.cuda.synchronize()
+    if device.type == "cuda":
+        torch.cuda.synchronize()
     end_time = time.time()
 
     avg_time_ms = (end_time - start_time) / 10 * 1000
-    memory_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
+    memory_mb = (
+        torch.cuda.max_memory_allocated() / 1024 / 1024 if device.type == "cuda" else 0
+    )
 
     return {
         "attention_type": "Classical_Full_Attention",
@@ -142,7 +146,10 @@ def benchmark_sdpa_full_attention(
 
             # SDPA full attention (no masking = full O(n²) attention)
             attn_output = F.scaled_dot_product_attention(
-                q, k, v, attn_mask=self.attn_mask
+                q,
+                k,
+                v,
+                attn_mask=None,  # Explicit None for full attention
             )
 
             # Reshape and project
@@ -192,7 +199,8 @@ def benchmark_sdpa_full_attention(
         x.grad = None  # Clear gradients
 
     # Benchmark
-    torch.cuda.synchronize()
+    if device.type == "cuda":
+        torch.cuda.synchronize()
     start_time = time.time()
 
     for _ in range(10):
@@ -202,11 +210,14 @@ def benchmark_sdpa_full_attention(
         loss.backward()
         x.grad = None  # Clear gradients
 
-    torch.cuda.synchronize()
+    if device.type == "cuda":
+        torch.cuda.synchronize()
     end_time = time.time()
 
     avg_time_ms = (end_time - start_time) / 10 * 1000
-    memory_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
+    memory_mb = (
+        torch.cuda.max_memory_allocated() / 1024 / 1024 if device.type == "cuda" else 0
+    )
 
     return {
         "attention_type": "SDPA_Full_Attention",
@@ -368,11 +379,13 @@ def benchmark_sdpa_sliding_window(
         loss.backward()
 
     # Clear memory before benchmark
-    torch.cuda.empty_cache()
-    torch.cuda.reset_peak_memory_stats()
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
 
     # Benchmark with backward pass
-    torch.cuda.synchronize()
+    if device.type == "cuda":
+        torch.cuda.synchronize()
     start_time = time.time()
 
     for _ in range(10):
@@ -381,11 +394,14 @@ def benchmark_sdpa_sliding_window(
         loss = output.sum()
         loss.backward()
 
-    torch.cuda.synchronize()
+    if device.type == "cuda":
+        torch.cuda.synchronize()
     end_time = time.time()
 
     avg_time_ms = (end_time - start_time) / 10 * 1000
-    memory_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
+    memory_mb = (
+        torch.cuda.max_memory_allocated() / 1024 / 1024 if device.type == "cuda" else 0
+    )
 
     return {
         "attention_type": "SDPA_Sliding_Window_Efficient",
@@ -491,11 +507,13 @@ def benchmark_fast_sliding_window(
         loss.backward()
 
     # Clear memory
-    torch.cuda.empty_cache()
-    torch.cuda.reset_peak_memory_stats()
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
 
     # Benchmark
-    torch.cuda.synchronize()
+    if device.type == "cuda":
+        torch.cuda.synchronize()
     start_time = time.time()
 
     for _ in range(10):
@@ -504,11 +522,14 @@ def benchmark_fast_sliding_window(
         loss = output.sum()
         loss.backward()
 
-    torch.cuda.synchronize()
+    if device.type == "cuda":
+        torch.cuda.synchronize()
     end_time = time.time()
 
     avg_time_ms = (end_time - start_time) / 10 * 1000
-    memory_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
+    memory_mb = (
+        torch.cuda.max_memory_allocated() / 1024 / 1024 if device.type == "cuda" else 0
+    )
 
     return {
         "attention_type": "Fast_Sliding_Window",
@@ -520,6 +541,155 @@ def benchmark_fast_sliding_window(
         "memory_mb": memory_mb,
         "tokens_per_sec": (batch_size * seq_len * 10) / (end_time - start_time),
     }
+
+
+class TrueVectorizedSlidingWindowModel(nn.Module):
+    """Fully vectorized sliding window attention - no loops, no conditionals.
+
+    This implementation uses advanced tensor indexing and broadcasting to create
+    all sliding windows simultaneously, achieving true O(n×w) complexity with
+    pure vectorized operations.
+    """
+
+    def __init__(self, d_model, nhead, window_size):
+        super().__init__()
+        self.d_model = d_model
+        self.nhead = nhead
+        self.window_size = window_size
+        self.head_dim = d_model // nhead
+
+        # Linear projections for Q, K, V
+        self.q_proj = nn.Linear(d_model, d_model, bias=False)
+        self.k_proj = nn.Linear(d_model, d_model, bias=False)
+        self.v_proj = nn.Linear(d_model, d_model, bias=False)
+        self.out_proj = nn.Linear(d_model, d_model, bias=False)
+
+    def create_sliding_window_indices(self, seq_len, device):
+        """Create indices for vectorized sliding window gathering.
+
+        Returns all sliding window indices in one vectorized operation.
+
+        Args:
+            seq_len: Sequence length
+            device: Device for tensors
+
+        Returns:
+            key_indices: [seq_len, window_size] - indices for gathering keys/values
+            valid_mask: [seq_len, window_size] - mask for valid positions
+        """
+        # Create base indices: [0, 1, 2, ..., seq_len-1]
+        positions = torch.arange(seq_len, device=device)  # [seq_len]
+
+        # Create window offsets: [-window_size+1, -window_size+2, ..., 0]
+        window_offsets = torch.arange(
+            -self.window_size + 1, 1, device=device
+        )  # [window_size]
+
+        # Broadcast to create all sliding window indices simultaneously
+        # positions[:, None] + window_offsets[None, :] creates [seq_len, window_size]
+        key_indices = (
+            positions[:, None] + window_offsets[None, :]
+        )  # [seq_len, window_size]
+
+        # Create validity mask (handles boundary conditions)
+        valid_mask = (key_indices >= 0) & (
+            key_indices < seq_len
+        )  # [seq_len, window_size]
+
+        # Clamp indices to valid range for safe gathering
+        key_indices = torch.clamp(key_indices, 0, seq_len - 1)  # [seq_len, window_size]
+
+        return key_indices, valid_mask
+
+    def vectorized_sliding_window_attention(self, q, k, v):
+        """Compute sliding window attention using pure vectorized operations.
+
+        No loops, no conditionals - everything is done with tensor operations.
+
+        Args:
+            q, k, v: [batch_size, nhead, seq_len, head_dim]
+
+        Returns:
+            output: [batch_size, nhead, seq_len, head_dim]
+        """
+        batch_size, nhead, seq_len, head_dim = q.shape
+
+        # Create sliding window indices (vectorized)
+        key_indices, valid_mask = self.create_sliding_window_indices(seq_len, q.device)
+
+        # Gather all sliding windows simultaneously using advanced indexing
+        # key_indices: [seq_len, window_size]
+        # k: [batch_size, nhead, seq_len, head_dim]
+        # Result: [batch_size, nhead, seq_len, window_size, head_dim]
+
+        # Expand k and v for gathering: [batch_size, nhead, seq_len, head_dim]
+        # Use advanced indexing to gather sliding windows
+        k_windows = k[
+            :, :, key_indices, :
+        ]  # [batch_size, nhead, seq_len, window_size, head_dim]
+        v_windows = v[
+            :, :, key_indices, :
+        ]  # [batch_size, nhead, seq_len, window_size, head_dim]
+
+        # Compute attention scores for all windows simultaneously
+        # q: [batch_size, nhead, seq_len, head_dim] -> [batch_size, nhead, seq_len, 1, head_dim]
+        q_expanded = q.unsqueeze(-2)  # [batch_size, nhead, seq_len, 1, head_dim]
+
+        # Compute scores: q @ k^T for all windows
+        # q_expanded: [batch_size, nhead, seq_len, 1, head_dim]
+        # k_windows: [batch_size, nhead, seq_len, window_size, head_dim]
+        scores = torch.matmul(q_expanded, k_windows.transpose(-2, -1)) / (head_dim**0.5)
+        scores = scores.squeeze(-2)  # [batch_size, nhead, seq_len, window_size]
+
+        # Apply validity mask (vectorized - no loops!)
+        # valid_mask: [seq_len, window_size] -> [1, 1, seq_len, window_size]
+        mask_expanded = valid_mask[
+            None, None, :, :
+        ]  # Broadcast for batch and head dims
+        scores = torch.where(
+            mask_expanded, scores, torch.full_like(scores, float("-inf"))
+        )
+
+        # Apply softmax
+        attn_weights = F.softmax(
+            scores, dim=-1
+        )  # [batch_size, nhead, seq_len, window_size]
+
+        # Apply attention weights to values (vectorized)
+        # attn_weights: [batch_size, nhead, seq_len, window_size] -> [batch_size, nhead, seq_len, window_size, 1]
+        # v_windows: [batch_size, nhead, seq_len, window_size, head_dim]
+        output = torch.matmul(
+            attn_weights.unsqueeze(-1), v_windows.transpose(-2, -1)
+        ).squeeze(-2)
+
+        return output
+
+    def forward(self, x):
+        """Forward pass with fully vectorized sliding window attention."""
+        batch_size, seq_len, d_model = x.shape
+
+        # Project to Q, K, V
+        q = self.q_proj(x)
+        k = self.k_proj(x)
+        v = self.v_proj(x)
+
+        # Reshape for multi-head attention
+        q = q.view(batch_size, seq_len, self.nhead, self.head_dim).transpose(1, 2)
+        k = k.view(batch_size, seq_len, self.nhead, self.head_dim).transpose(1, 2)
+        v = v.view(batch_size, seq_len, self.nhead, self.head_dim).transpose(1, 2)
+
+        # Apply vectorized sliding window attention
+        attn_output = self.vectorized_sliding_window_attention(q, k, v)
+
+        # Reshape back
+        attn_output = (
+            attn_output.transpose(1, 2).contiguous().view(batch_size, seq_len, d_model)
+        )
+
+        # Output projection
+        output = self.out_proj(attn_output)
+
+        return output
 
 
 class ChunkedVectorizedSlidingWindowModel(nn.Module):
@@ -713,11 +883,13 @@ def benchmark_chunked_vectorized_sliding_window(
         loss.backward()
 
     # Clear memory
-    torch.cuda.empty_cache()
-    torch.cuda.reset_peak_memory_stats()
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
 
     # Benchmark
-    torch.cuda.synchronize()
+    if device.type == "cuda":
+        torch.cuda.synchronize()
     start_time = time.time()
 
     for _ in range(10):
@@ -726,11 +898,14 @@ def benchmark_chunked_vectorized_sliding_window(
         loss = output.sum()
         loss.backward()
 
-    torch.cuda.synchronize()
+    if device.type == "cuda":
+        torch.cuda.synchronize()
     end_time = time.time()
 
     avg_time_ms = (end_time - start_time) / 10 * 1000
-    memory_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
+    memory_mb = (
+        torch.cuda.max_memory_allocated() / 1024 / 1024 if device.type == "cuda" else 0
+    )
 
     return {
         "attention_type": "Chunked_Vectorized_Sliding_Window",
@@ -738,6 +913,72 @@ def benchmark_chunked_vectorized_sliding_window(
         "complexity": "O(n×w)",
         "window_size": window_size,
         "chunk_size": chunk_size,
+        "batch_size": batch_size,
+        "time_ms": avg_time_ms,
+        "memory_mb": memory_mb,
+        "tokens_per_sec": (batch_size * seq_len * 10) / (end_time - start_time),
+    }
+
+
+def benchmark_true_vectorized_sliding_window(
+    seq_len, d_model=1024, nhead=1, window_size=128, batch_size=4
+):
+    """Benchmark true vectorized sliding window attention (no loops, no conditionals).
+
+    This should achieve optimal O(n×w) complexity with pure vectorized operations.
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(
+        f"Benchmarking True Vectorized Sliding Window (TRAINING mode, O(n×w), window={window_size}) on {device}"
+    )
+
+    # Create model
+    model = TrueVectorizedSlidingWindowModel(d_model, nhead, window_size).to(device)
+    model.train()
+
+    # Create input data
+    x = torch.randn(batch_size, seq_len, d_model, device=device, requires_grad=True)
+
+    print(f"  Using pure vectorized operations (no loops, no conditionals)...")
+
+    # Warmup
+    print("  Warming up in training mode...")
+    for _ in range(3):
+        model.zero_grad()
+        output = model(x)
+        loss = output.sum()
+        loss.backward()
+
+    # Clear memory
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+
+    # Benchmark
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    start_time = time.time()
+
+    for _ in range(10):
+        model.zero_grad()
+        output = model(x)
+        loss = output.sum()
+        loss.backward()
+
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    end_time = time.time()
+
+    avg_time_ms = (end_time - start_time) / 10 * 1000
+    memory_mb = (
+        torch.cuda.max_memory_allocated() / 1024 / 1024 if device.type == "cuda" else 0
+    )
+
+    return {
+        "attention_type": "True_Vectorized_Sliding_Window",
+        "mode": "TRAINING",
+        "complexity": "O(n×w)",
+        "window_size": window_size,
         "batch_size": batch_size,
         "time_ms": avg_time_ms,
         "memory_mb": memory_mb,
@@ -852,16 +1093,17 @@ def compare_training_mode_attention():
                 print(
                     f"    Speedup: {classical_result['time_ms'] / sdpa_sliding_result['time_ms']:.2f}x"
                 )
-                print(f"  📊 SDPA Sliding vs SDPA Full:")
-                print(
-                    f"    Memory ratio: {sdpa_sliding_result['memory_mb'] / sdpa_full_result['memory_mb']:.2f}x"
-                )
-                print(
-                    f"    Speed ratio: {sdpa_sliding_result['time_ms'] / sdpa_full_result['time_ms']:.2f}x"
-                )
-                print(
-                    f"    Speedup: {sdpa_full_result['time_ms'] / sdpa_sliding_result['time_ms']:.2f}x"
-                )
+                if sdpa_full_result:
+                    print(f"  📊 SDPA Sliding vs SDPA Full:")
+                    print(
+                        f"    Memory ratio: {sdpa_sliding_result['memory_mb'] / sdpa_full_result['memory_mb']:.2f}x"
+                    )
+                    print(
+                        f"    Speed ratio: {sdpa_sliding_result['time_ms'] / sdpa_full_result['time_ms']:.2f}x"
+                    )
+                    print(
+                        f"    Speedup: {sdpa_full_result['time_ms'] / sdpa_sliding_result['time_ms']:.2f}x"
+                    )
             else:
                 print(f"❌ SDPA Sliding Window (w={window_size}): Failed")
 
@@ -888,69 +1130,68 @@ def compare_training_mode_attention():
                 print(
                     f"    Speedup: {classical_result['time_ms'] / fast_sliding_result['time_ms']:.2f}x"
                 )
-                print(f"  📊 Fast Sliding vs SDPA Full:")
-                print(
-                    f"    Memory ratio: {fast_sliding_result['memory_mb'] / sdpa_full_result['memory_mb']:.2f}x"
-                )
-                print(
-                    f"    Speed ratio: {fast_sliding_result['time_ms'] / sdpa_full_result['time_ms']:.2f}x"
-                )
-                print(
-                    f"    Speedup: {sdpa_full_result['time_ms'] / fast_sliding_result['time_ms']:.2f}x"
-                )
+                if sdpa_full_result:
+                    print(f"  📊 Fast Sliding vs SDPA Full:")
+                    print(
+                        f"    Memory ratio: {fast_sliding_result['memory_mb'] / sdpa_full_result['memory_mb']:.2f}x"
+                    )
+                    print(
+                        f"    Speed ratio: {fast_sliding_result['time_ms'] / sdpa_full_result['time_ms']:.2f}x"
+                    )
+                    print(
+                        f"    Speedup: {sdpa_full_result['time_ms'] / fast_sliding_result['time_ms']:.2f}x"
+                    )
             else:
                 print(f"❌ Fast Sliding Window (w={window_size}): Failed")
 
-            # Test chunked vectorized sliding window (controlled memory, no masks)
+            # Test true vectorized sliding window (no loops, no conditionals)
             chunk_size = 32  # Default chunk size
             print(
-                f"\n🔬 Test 5: Chunked Vectorized Sliding Window (TRAINING mode, O(n×w), window={window_size}, chunk={chunk_size})..."
+                f"\n🔬 Test 5: True Vectorized Sliding Window (TRAINING mode, O(n×w), window={window_size})..."
             )
-            chunked_vectorized_result = benchmark_chunked_vectorized_sliding_window(
+            true_vectorized_result = benchmark_true_vectorized_sliding_window(
                 seq_len,
                 d_model=d_model,
                 nhead=nhead,
                 window_size=window_size,
-                chunk_size=chunk_size,
                 batch_size=batch_size,
             )
-            if chunked_vectorized_result:
-                print(f"✅ {chunked_vectorized_result}")
-                print(f"  📊 Chunked Vectorized vs Classical Full:")
+            if true_vectorized_result:
+                print(f"✅ {true_vectorized_result}")
+                print(f"  📊 True Vectorized vs Classical Full:")
                 print(
-                    f"    Memory ratio: {chunked_vectorized_result['memory_mb'] / classical_result['memory_mb']:.2f}x"
+                    f"    Memory ratio: {true_vectorized_result['memory_mb'] / classical_result['memory_mb']:.2f}x"
                 )
                 print(
-                    f"    Speed ratio: {chunked_vectorized_result['time_ms'] / classical_result['time_ms']:.2f}x"
+                    f"    Speed ratio: {true_vectorized_result['time_ms'] / classical_result['time_ms']:.2f}x"
                 )
                 print(
-                    f"    Speedup: {classical_result['time_ms'] / chunked_vectorized_result['time_ms']:.2f}x"
+                    f"    Speedup: {classical_result['time_ms'] / true_vectorized_result['time_ms']:.2f}x"
                 )
-                print(f"  📊 Chunked Vectorized vs SDPA Full:")
-                print(
-                    f"    Memory ratio: {chunked_vectorized_result['memory_mb'] / sdpa_full_result['memory_mb']:.2f}x"
-                )
-                print(
-                    f"    Speed ratio: {chunked_vectorized_result['time_ms'] / sdpa_full_result['time_ms']:.2f}x"
-                )
-                print(
-                    f"    Speedup: {sdpa_full_result['time_ms'] / chunked_vectorized_result['time_ms']:.2f}x"
-                )
+                if sdpa_full_result:
+                    print(f"  📊 True Vectorized vs SDPA Full:")
+                    print(
+                        f"    Memory ratio: {true_vectorized_result['memory_mb'] / sdpa_full_result['memory_mb']:.2f}x"
+                    )
+                    print(
+                        f"    Speed ratio: {true_vectorized_result['time_ms'] / sdpa_full_result['time_ms']:.2f}x"
+                    )
+                    print(
+                        f"    Speedup: {sdpa_full_result['time_ms'] / true_vectorized_result['time_ms']:.2f}x"
+                    )
                 if fast_sliding_result:
-                    print(f"  📊 Chunked Vectorized vs Fast Sliding:")
+                    print(f"  📊 True Vectorized vs Fast Sliding:")
                     print(
-                        f"    Memory ratio: {chunked_vectorized_result['memory_mb'] / fast_sliding_result['memory_mb']:.2f}x"
+                        f"    Memory ratio: {true_vectorized_result['memory_mb'] / fast_sliding_result['memory_mb']:.2f}x"
                     )
                     print(
-                        f"    Speed ratio: {chunked_vectorized_result['time_ms'] / fast_sliding_result['time_ms']:.2f}x"
+                        f"    Speed ratio: {true_vectorized_result['time_ms'] / fast_sliding_result['time_ms']:.2f}x"
                     )
                     print(
-                        f"    Speedup: {fast_sliding_result['time_ms'] / chunked_vectorized_result['time_ms']:.2f}x"
+                        f"    Speedup: {fast_sliding_result['time_ms'] / true_vectorized_result['time_ms']:.2f}x"
                     )
             else:
-                print(
-                    f"❌ Chunked Vectorized Sliding Window (w={window_size}, chunk={chunk_size}): Failed"
-                )
+                print(f"❌ True Vectorized Sliding Window (w={window_size}): Failed")
 
         # Clean up memory
         torch.cuda.empty_cache()
