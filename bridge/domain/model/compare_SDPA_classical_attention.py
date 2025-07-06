@@ -1059,7 +1059,7 @@ def compare_training_mode_attention():
             print(f"  📊 SDPA Full vs Classical Full:")
             print(f"    SDPA memory / Classical memory: {memory_ratio:.2f}x")
             print(f"    SDPA time / Classical time: {speed_ratio:.2f}x")
-            print(f"    SDPA speedup: {speedup:.2f}x")
+            print(f"    Classical time / SDPA time: {speedup:.2f}x")
 
         except RuntimeError as e:
             if "out of memory" in str(e):
@@ -1091,7 +1091,7 @@ def compare_training_mode_attention():
                     f"    SDPA Sliding time / Classical time: {sdpa_sliding_result['time_ms'] / classical_result['time_ms']:.2f}x"
                 )
                 print(
-                    f"    SDPA Sliding speedup: {classical_result['time_ms'] / sdpa_sliding_result['time_ms']:.2f}x"
+                    f"    Classical time / SDPA Sliding time: {classical_result['time_ms'] / sdpa_sliding_result['time_ms']:.2f}x"
                 )
                 if sdpa_full_result:
                     print(f"  📊 SDPA Sliding vs SDPA Full:")
@@ -1102,7 +1102,7 @@ def compare_training_mode_attention():
                         f"    SDPA Sliding time / SDPA Full time: {sdpa_sliding_result['time_ms'] / sdpa_full_result['time_ms']:.2f}x"
                     )
                     print(
-                        f"    SDPA Sliding speedup: {sdpa_full_result['time_ms'] / sdpa_sliding_result['time_ms']:.2f}x"
+                        f"    SDPA Full time / SDPA Sliding time: {sdpa_full_result['time_ms'] / sdpa_sliding_result['time_ms']:.2f}x"
                     )
             else:
                 print(f"❌ SDPA Sliding Window (w={window_size}): Failed")
@@ -1128,7 +1128,7 @@ def compare_training_mode_attention():
                     f"    Fast Sliding time / Classical time: {fast_sliding_result['time_ms'] / classical_result['time_ms']:.2f}x"
                 )
                 print(
-                    f"    Fast Sliding speedup: {classical_result['time_ms'] / fast_sliding_result['time_ms']:.2f}x"
+                    f"    Classical time / Fast Sliding time: {classical_result['time_ms'] / fast_sliding_result['time_ms']:.2f}x"
                 )
                 if sdpa_full_result:
                     print(f"  📊 Fast Sliding vs SDPA Full:")
@@ -1139,7 +1139,7 @@ def compare_training_mode_attention():
                         f"    Fast Sliding time / SDPA Full time: {fast_sliding_result['time_ms'] / sdpa_full_result['time_ms']:.2f}x"
                     )
                     print(
-                        f"    Fast Sliding speedup: {sdpa_full_result['time_ms'] / fast_sliding_result['time_ms']:.2f}x"
+                        f"    SDPA Full time / Fast Sliding time: {sdpa_full_result['time_ms'] / fast_sliding_result['time_ms']:.2f}x"
                     )
             else:
                 print(f"❌ Fast Sliding Window (w={window_size}): Failed")
@@ -1166,7 +1166,7 @@ def compare_training_mode_attention():
                     f"    True Vectorized time / Classical time: {true_vectorized_result['time_ms'] / classical_result['time_ms']:.2f}x"
                 )
                 print(
-                    f"    True Vectorized speedup: {classical_result['time_ms'] / true_vectorized_result['time_ms']:.2f}x"
+                    f"    Classical time / True Vectorized time: {classical_result['time_ms'] / true_vectorized_result['time_ms']:.2f}x"
                 )
                 if sdpa_full_result:
                                          print(f"  📊 True Vectorized vs SDPA Full:")
@@ -1177,7 +1177,7 @@ def compare_training_mode_attention():
                          f"    True Vectorized time / SDPA Full time: {true_vectorized_result['time_ms'] / sdpa_full_result['time_ms']:.2f}x"
                      )
                      print(
-                         f"    True Vectorized speedup: {sdpa_full_result['time_ms'] / true_vectorized_result['time_ms']:.2f}x"
+                                                   f"    SDPA Full time / True Vectorized time: {sdpa_full_result['time_ms'] / true_vectorized_result['time_ms']:.2f}x"
                      )
                 if fast_sliding_result:
                                          print(f"  📊 True Vectorized vs Fast Sliding:")
@@ -1188,7 +1188,7 @@ def compare_training_mode_attention():
                          f"    True Vectorized time / Fast Sliding time: {true_vectorized_result['time_ms'] / fast_sliding_result['time_ms']:.2f}x"
                      )
                      print(
-                         f"    True Vectorized speedup: {fast_sliding_result['time_ms'] / true_vectorized_result['time_ms']:.2f}x"
+                                                   f"    Fast Sliding time / True Vectorized time: {fast_sliding_result['time_ms'] / true_vectorized_result['time_ms']:.2f}x"
                      )
             else:
                 print(f"❌ True Vectorized Sliding Window (w={window_size}): Failed")
