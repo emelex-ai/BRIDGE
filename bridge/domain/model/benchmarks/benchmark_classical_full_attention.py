@@ -1,3 +1,7 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 def benchmark_classical_full_attention(
     seq_len, d_model=1024, nhead=1, num_layers=1, batch_size=4

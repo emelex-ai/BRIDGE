@@ -1,3 +1,8 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.nn import TransformerEncoder, TransformerEncoderLayer
+
 def benchmark_classical_windowed_full_attention(
     seq_len: int,
     d_model: int = 1024,

@@ -2,35 +2,86 @@ import gc
 import time
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
-from bridge.domain.model.benchmark_chunked_vectorized_sliding_window import (
+# Will only work if the benchmarks are in the same directory as this file
+#   python -m bridge.domain.model.compare_SDPA_classical_attention_refactored
+from .benchmarks import (
     benchmark_chunked_vectorized_sliding_window,
-)
-from bridge.domain.model.benchmark_fast_sliding_window import (
+    benchmark_classical_full_attention,
+    benchmark_classical_windowed_full_attention,
     benchmark_fast_sliding_window,
-)
-from bridge.domain.model.benchmark_true_vectorized_sliding_window_outer_loop import (
+    benchmark_sdpa_full_attention,
+    benchmark_sdpa_sliding_window,
+    benchmark_true_vectorized_sliding_window,
     benchmark_true_vectorized_sliding_window_outer_loop,
 )
-from bridge.domain.model.benchmark_classical_windowed_full_attention import (
-    benchmark_classical_windowed_full_attention,
-)
-from bridge.domain.model.benchmark_sdpa_full_attention import (
-    benchmark_sdpa_full_attention,
-)
-from bridge.domain.model.benchmark_true_vectorized_sliding_window import (
-    benchmark_true_vectorized_sliding_window,
-)
-from bridge.domain.model.benchmark_sdpa_sliding_window import (
-    benchmark_sdpa_sliding_window,
-)
 
-from bridge.domain.model.benchmark_classical_full_attention import (
-    benchmark_classical_full_attention,
-)
+
+def run_benchmark_tests(
+    *,
+    seq_len=128,
+    d_model=128,
+    nhead=1,
+    batch_size=1,
+    window_size=32,
+    run_full_attention=False,
+    run_sliding_window=True,
+) -> dict[str, dict]:
+    results = {}
+
+    if run_full_attention:
+        results["classical"] = benchmark_classical_full_attention(
+            seq_len, d_model=d_model, nhead=nhead, batch_size=batch_size
+        )
+
+        results["sdpa_full"] = benchmark_sdpa_full_attention(
+            seq_len, d_model=d_model, nhead=nhead, batch_size=batch_size
+        )
+
+    if run_sliding_window:
+        results["classical_windowed"] = benchmark_classical_windowed_full_attention(
+            seq_len,
+            d_model=d_model,
+            nhead=nhead,
+            window_size=window_size,
+            batch_size=batch_size,
+        )
+
+        results["sdpa_sliding"] = benchmark_sdpa_sliding_window(
+            seq_len,
+            d_model=d_model,
+            nhead=nhead,
+            window_size=window_size,
+            batch_size=batch_size,
+        )
+
+        results["fast_sliding"] = benchmark_fast_sliding_window(
+            seq_len,
+            d_model=d_model,
+            nhead=nhead,
+            window_size=window_size,
+            batch_size=batch_size,
+        )
+
+        results["true_vectorized_outer_loop"] = (
+            benchmark_true_vectorized_sliding_window_outer_loop(
+                seq_len,
+                d_model=d_model,
+                nhead=nhead,
+                window_size=window_size,
+                batch_size=batch_size,
+            )
+        )
+
+        results["true_vectorized"] = benchmark_true_vectorized_sliding_window(
+            seq_len,
+            d_model=d_model,
+            nhead=nhead,
+            window_size=window_size,
+            batch_size=batch_size,
+        )
+
+    return results
 
 
 def compare_training_mode_attention():
@@ -54,22 +105,20 @@ def compare_training_mode_attention():
     print("=" * 80)
 
     # Test configurations - single head, d_model=1024 as requested
-    configs = [
-        # {"seq_len": 1024},
-        {"seq_len": 2048},
-        # {"seq_len": 4096},
-        {"seq_len": 4096},
-        # {"seq_len": 4 * 8192},
-    ]
 
+    seq_lens = [1024, 2048, 4096]
     window_sizes = [32, 128, 512]  # Reasonable window sizes
     d_model = 512  # or as set earlier
     nhead = 1
     batch_size = 1
 
-    for config in configs:
-        seq_len = config["seq_len"]
-
+    for seq_len in seq_lens:
+        results_full = run_benchmark_tests(
+            seq_len=seq_len,
+            d_model=d_model,
+            run_full_attention=True,
+            run_sliding_window=False,
+        )
         print(f"\n{'='*60}")
         print(f"Testing seq_len={seq_len}, d_model={d_model}, nhead={nhead}")
         print(f"Fixed batch_size={batch_size} - TRAINING MODE")
@@ -78,9 +127,7 @@ def compare_training_mode_attention():
         # Test 1: Classical Full Attention (O(n²))
         try:
             print("\n🔬 Test 1: Classical Full Attention (TRAINING mode, O(n²))...")
-            classical_result = benchmark_classical_full_attention(
-                seq_len, d_model=d_model, nhead=nhead, batch_size=batch_size
-            )
+            classical_result = results_full["classical"]
             print(f"✅ {classical_result}")
         except RuntimeError as e:
             if "out of memory" in str(e):
@@ -93,9 +140,7 @@ def compare_training_mode_attention():
         # Test 2: SDPA Full Attention (O(n²))
         try:
             print("\n🔬 Test 2: SDPA Full Attention (TRAINING mode, O(n²))...")
-            sdpa_full_result = benchmark_sdpa_full_attention(
-                seq_len, d_model=d_model, nhead=nhead, batch_size=batch_size
-            )
+            sdpa_full_result = results_full["sdpa_full"]
             print(f"✅ {sdpa_full_result}")
         except RuntimeError as e:
             if "out of memory" in str(e):
@@ -106,18 +151,21 @@ def compare_training_mode_attention():
                 sdpa_full_result = None
 
         for window_size in window_sizes:
+            results_win = run_benchmark_tests(
+                seq_len=seq_len,
+                d_model=d_model,
+                nhead=nhead,
+                batch_size=batch_size,
+                window_size=window_size,
+                run_full_attention=False,
+                run_sliding_window=True,
+            )
             # Test 1a: Classical Windowed Full Attention (O(n²))
             try:
                 print(
                     f"\n🔬 Test 1a: Classical Windowed Full Attention (TRAINING mode, O(n²), window={window_size})..."
                 )
-                classical_windowed_result = benchmark_classical_windowed_full_attention(
-                    seq_len,
-                    d_model=d_model,
-                    nhead=nhead,
-                    window_size=window_size,
-                    batch_size=batch_size,
-                )
+                classical_windowed_result = results_win["classical_windowed"]
                 print(f"✅ {classical_windowed_result}")
                 # Comparison with Classical Full Attention
                 memory_ratio = (
@@ -148,13 +196,7 @@ def compare_training_mode_attention():
             print(
                 f"\n🔬 Test 3: SDPA Sliding Window (TRAINING mode, O(n), window={window_size})..."
             )
-            sdpa_sliding_result = benchmark_sdpa_sliding_window(
-                seq_len,
-                d_model=d_model,
-                nhead=nhead,
-                window_size=window_size,
-                batch_size=batch_size,
-            )
+            sdpa_sliding_result = results_win["sdpa_sliding"]
             if sdpa_sliding_result:
                 print(f"✅ {sdpa_sliding_result}")
                 print(f"  📊 SDPA Sliding vs Classical Full:")
@@ -195,13 +237,7 @@ def compare_training_mode_attention():
             print(
                 f"\n🔬 Test 4: Fast Sliding Window (TRAINING mode, O(n), window={window_size})..."
             )
-            fast_sliding_result = benchmark_fast_sliding_window(
-                seq_len,
-                d_model=d_model,
-                nhead=nhead,
-                window_size=window_size,
-                batch_size=batch_size,
-            )
+            fast_sliding_result = results_win["fast_sliding"]
             if fast_sliding_result:
                 print(f"✅ {fast_sliding_result}")
                 print(f"  📊 Fast Sliding vs Classical Full:")
@@ -229,17 +265,11 @@ def compare_training_mode_attention():
                 print(f"❌ Fast Sliding Window (w={window_size}): Failed")
 
             # Test 5: True Vectorized Sliding Window (O(n×w))
-            chunk_size = 32  # Default chunk size
+            # chunk_size = 32  # Default chunk size
             print(
                 f"\n🔬 Test 5: True Vectorized Sliding Window (TRAINING mode, O(n×w), window={window_size})..."
             )
-            true_vectorized_result = benchmark_true_vectorized_sliding_window(
-                seq_len,
-                d_model=d_model,
-                nhead=nhead,
-                window_size=window_size,
-                batch_size=batch_size,
-            )
+            true_vectorized_result = results_win["true_vectorized"]
             if true_vectorized_result:
                 print(f"✅ {true_vectorized_result}")
                 print(f"  📊 True Vectorized vs Classical Full:")
@@ -278,19 +308,11 @@ def compare_training_mode_attention():
                 print(f"❌ True Vectorized Sliding Window (w={window_size}): Failed")
 
             # Test 6: True Vectorized Sliding Window Outer Loop (O(n×w))
-            #run_test_6(seq_len, d_model=d_model, nhead=nhead, window_size=window_size, batch_size=batch_size,)
+            # run_test_6(seq_len, d_model=d_model, nhead=nhead, window_size=window_size, batch_size=batch_size,)
             print(
                 f"\n🔬 Test 6: True Vectorized Sliding Window Outer Loop (TRAINING mode, O(n×w), window={window_size})..."
             )
-            true_vectorized_result = (
-                benchmark_true_vectorized_sliding_window_outer_loop(
-                    seq_len,
-                    d_model=d_model,
-                    nhead=nhead,
-                    window_size=window_size,
-                    batch_size=batch_size,
-                )
-            )
+            true_vectorized_result = results_win["true_vectorized_outer_loop"]
             if true_vectorized_result:
                 print(f"✅ {true_vectorized_result}")
                 print(f"  📊 True Vectorized vs Classical Full:")
@@ -343,55 +365,3 @@ if __name__ == "__main__":
         import traceback
 
         traceback.print_exc()
-----------------------------------------------------------------------
-            classical_result = benchmark_classical_full_attention(
-                seq_len, d_model=d_model, nhead=nhead, batch_size=batch_size
-            )
-
-            sdpa_full_result = benchmark_sdpa_full_attention(
-                seq_len, d_model=d_model, nhead=nhead, batch_size=batch_size
-            )
-
-            classical_windowed_result = benchmark_classical_windowed_full_attention(
-                seq_len,
-                d_model=d_model,
-                nhead=nhead,
-                window_size=window_size,
-                batch_size=batch_size,
-            )
-
-            sdpa_sliding_result = benchmark_sdpa_sliding_window(
-                seq_len,
-                d_model=d_model,
-                nhead=nhead,
-                window_size=window_size,
-                batch_size=batch_size,
-            )
-
-            fast_sliding_result = benchmark_fast_sliding_window(
-                seq_len,
-                d_model=d_model,
-                nhead=nhead,
-                window_size=window_size,
-                batch_size=batch_size,
-            )
-
-            true_vectorized_result = (
-                benchmark_true_vectorized_sliding_window_outer_loop(
-                    seq_len,
-                    d_model=d_model,
-                    nhead=nhead,
-                    window_size=window_size,
-                    batch_size=batch_size,
-
-            sdpa_full_result = benchmark_sdpa_full_attention(
-                seq_len, d_model=d_model, nhead=nhead, batch_size=batch_size
-            )
-
-            true_vectorized_result = benchmark_true_vectorized_sliding_window(
-                seq_len,
-                d_model=d_model,
-                nhead=nhead,
-                window_size=window_size,
-                batch_size=batch_size,
-            )
