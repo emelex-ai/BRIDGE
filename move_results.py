@@ -2,10 +2,10 @@ import os
 
 import subprocess
 
-# for i in range(1, 23):
-#     source_bucket = f"gs://bridge-ml-training/finetuning/{i}/*"
-#     dest_bucket = f"gs://bridge-ml-training/finetuning/07-01-25/{i}/"
-#     subprocess.run(["gsutil", "mv", source_bucket, dest_bucket], shell=True)
+for i in range(1, 23):
+    source_bucket = f"gs://bridge-ml-training/finetuning/{i}/*"
+    dest_bucket = f"gs://bridge-ml-training/finetuning/07-02-25-10x/{i}/"
+    subprocess.run(["gsutil", "mv", source_bucket, dest_bucket], shell=True)
 
 
 
