@@ -1375,17 +1375,27 @@ def compare_training_mode_attention():
                 print(
                     f"    Classical time / SDPA Sliding time: {classical_result['time_ms'] / sdpa_sliding_result['time_ms']:.2f}x"
                 )
-                if sdpa_full_result:
-                    print(f"  📊 SDPA Sliding vs SDPA Full:")
-                    print(
-                        f"    SDPA Sliding memory / SDPA Full memory: {sdpa_sliding_result['memory_mb'] / sdpa_full_result['memory_mb']:.2f}x"
-                    )
-                    print(
-                        f"    SDPA Sliding time / SDPA Full time: {sdpa_sliding_result['time_ms'] / sdpa_full_result['time_ms']:.2f}x"
-                    )
-                    print(
-                        f"    SDPA Full time / SDPA Sliding time: {sdpa_full_result['time_ms'] / sdpa_sliding_result['time_ms']:.2f}x"
-                    )
+                print(f"  📊 SDPA Sliding vs SDPA Full:")
+                print(
+                    f"    SDPA Sliding memory / SDPA Full memory: {sdpa_sliding_result['memory_mb'] / sdpa_full_result['memory_mb']:.2f}x"
+                )
+                print(
+                    f"    SDPA Sliding time / SDPA Full time: {sdpa_sliding_result['time_ms'] / sdpa_full_result['time_ms']:.2f}x"
+                )
+                print(
+                    f"    SDPA Full time / SDPA Sliding time: {sdpa_full_result['time_ms'] / sdpa_sliding_result['time_ms']:.2f}x"
+                )
+                # New: Compare SDPA Sliding to Classical Windowed Full Attention
+                print(f"  📊 SDPA Sliding vs Classical Windowed Full Attention:")
+                print(
+                    f"    SDPA Sliding memory / Classical Windowed memory: {sdpa_sliding_result['memory_mb'] / classical_windowed_result['memory_mb']:.2f}x"
+                )
+                print(
+                    f"    SDPA Sliding time / Classical Windowed time: {sdpa_sliding_result['time_ms'] / classical_windowed_result['time_ms']:.2f}x"
+                )
+                print(
+                    f"    Classical Windowed time / SDPA Sliding time: {classical_windowed_result['time_ms'] / sdpa_sliding_result['time_ms']:.2f}x"
+                )
             else:
                 print(f"❌ SDPA Sliding Window (w={window_size}): Failed")
 
