@@ -296,8 +296,9 @@ def compare_training_mode_attention() -> list[dict[str, dict]]:
 
     # Test configurations - single head, d_model=1024 as requested
 
+    # seq_lens = [1024, 2048, 4096]
     seq_lens = [1024, 2048, 4096]
-    window_sizes = [32, 128, 512]  # Reasonable window sizes
+    window_sizes = [32, 64, 128]  # Reasonable window sizes
     d_model = 512  # or as set earlier
     nhead = 1
     batch_size = 1
