@@ -121,6 +121,7 @@ def print_results(result1: dict, result2: dict) -> None:
     label_time_reverse = (
         f"{result2['attention_type']} time / {result1['attention_type']} time"
     )
+    print()
     print(f"    {label_memory}: {memory_ratio:.2f}x")
     print(f"    {label_time}: {time_ratio:.2f}x")
     print(f"    {label_time_reverse}: {1. / time_ratio:.2f}x")
@@ -184,6 +185,10 @@ def run_test3(
     sdpa_sliding_result = results_win["sdpa_sliding"]
     classical_result = results_full["classical"]
     classical_windowed_result = results_win["classical_windowed"]
+    print(f"✅ {sdpa_full_result}")
+    print(f"✅ {sdpa_sliding_result}")
+    print(f"✅ {classical_result}")
+    print(f"✅ {classical_windowed_result}")
     print_results(classical_result, classical_windowed_result)
     print_results(sdpa_full_result, sdpa_sliding_result)
     print_results(sdpa_full_result, classical_result)
@@ -208,6 +213,10 @@ def run_test4(
     classical_windowed_result = results_win["classical_windowed"]
     classical_result = results_full["classical"]
     sdpa_full_result = results_full["sdpa_full"]
+    print(f"✅ {sdpa_full_result}")
+    print(f"✅ {fast_sliding_result}")
+    print(f"✅ {classical_result}")
+    print(f"✅ {classical_windowed_result}")
     print_results(sdpa_full_result, fast_sliding_result)
     print_results(fast_sliding_result, classical_windowed_result)
 
@@ -229,6 +238,10 @@ def run_test5(
     classical_result = results_full["classical"]
     sdpa_full_result = results_full["sdpa_full"]
     fast_sliding_result = results_win["fast_sliding"]
+    print(f"✅ {true_vectorized_result}")
+    print(f"✅ {classical_result}")
+    print(f"✅ {sdpa_full_result}")
+    print(f"✅ {fast_sliding_result}")
     print_results(classical_result, true_vectorized_result)
     print_results(sdpa_full_result, true_vectorized_result)
     print_results(fast_sliding_result, true_vectorized_result)
@@ -251,6 +264,10 @@ def run_test6(
     classical_result = results_full["classical"]
     sdpa_full_result = results_full["sdpa_full"]
     fast_sliding_result = results_win["fast_sliding"]
+    print(f"✅ {true_vectorized_result}")
+    print(f"✅ {classical_result}")
+    print(f"✅ {sdpa_full_result}")
+    print(f"✅ {fast_sliding_result}")
     print_results(classical_result, true_vectorized_result)
     print_results(sdpa_full_result, true_vectorized_result)
     print_results(fast_sliding_result, true_vectorized_result)
@@ -284,7 +301,6 @@ def compare_training_mode_attention() -> None:
     d_model = 512  # or as set earlier
     nhead = 1
     batch_size = 1
-
 
     for seq_len in seq_lens:
         # Clean up memory
