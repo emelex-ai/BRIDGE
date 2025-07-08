@@ -1,3 +1,8 @@
+import time
+from torch.nn import functional as F
+import torch
+from torch import nn
+
 class FastSlidingWindowModel(nn.Module):
     """Fast sliding window attention using efficient tensor operations.
 

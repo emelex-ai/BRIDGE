@@ -1,3 +1,12 @@
+import time
+
+import torch
+
+from bridge.domain.model.benchmarks.true_vectorized_sliding_window_outer_loop import (
+    TrueVectorizedSlidingWindowOuterLoopModel,
+)
+
+
 def benchmark_true_vectorized_sliding_window_outer_loop(
     seq_len, d_model=1024, nhead=1, window_size=128, batch_size=4
 ):

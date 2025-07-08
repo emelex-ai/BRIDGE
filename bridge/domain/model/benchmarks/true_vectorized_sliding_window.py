@@ -1,3 +1,8 @@
+import torch
+from torch import nn
+from torch.nn import functional as F
+
+
 class TrueVectorizedSlidingWindowModel(nn.Module):
     """Fully vectorized sliding window attention - no loops, no conditionals.
 
