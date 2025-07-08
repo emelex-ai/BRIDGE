@@ -451,20 +451,20 @@ def compare_training_mode_attention() -> None:
                 run_sliding_window=True,
             )
             # Test 1a: Classical Windowed Full Attention (O(n²))
-            run_test1a(results_win)
+            run_test1a(results_win, window_size)
 
             # Test 3: SDPA Sliding Window (O(n))
-            run_test3(results_win)
+            run_test3(results_win, window_size)
 
             # Test 4: Fast Sliding Window (O(n))
-            run_test4(results_win)
+            run_test4(results_win, window_size)
 
             # Test 5: True Vectorized Sliding Window (O(n×w))
             # chunk_size = 32  # Default chunk size
-            run_test5(results_win)
+            run_test5(results_win, window_size)
 
             # Test 6: True Vectorized Sliding Window Outer Loop (O(n×w))
-            run_test6(results_win)
+            run_test6(results_win, window_size)
 
         # Clean up memory
         torch.cuda.empty_cache()
