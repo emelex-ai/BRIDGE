@@ -196,7 +196,7 @@ def run_test3(
     )
     sdpa_sliding_result = results_win["sdpa_sliding"]
     classical_result = results_full["classical"]
-    sdpa_full_result = results_win["sdpa_full"]
+    sdpa_full_result = results_full["sdpa_full"]
     if sdpa_sliding_result:
         print(f"✅ {sdpa_sliding_result}")
         print(f"  📊 SDPA Sliding vs Classical Full:")
@@ -260,7 +260,7 @@ def run_test4(
     )
     fast_sliding_result = results_win["fast_sliding"]
     classical_result = results_full["classical"]
-    sdpa_full_result = results_win["sdpa_full"]
+    sdpa_full_result = results_full["sdpa_full"]
     if fast_sliding_result:
         print(f"✅ {fast_sliding_result}")
         print(f"  📊 Fast Sliding vs Classical Full:")
@@ -305,7 +305,7 @@ def run_test5(
     )
     true_vectorized_result = results_win["true_vectorized"]
     classical_result = results_full["classical"]
-    sdpa_full_result = results_win["sdpa_full"]
+    sdpa_full_result = results_full["sdpa_full"]
     fast_sliding_result = results_win["fast_sliding"]
     if true_vectorized_result:
         print(f"✅ {true_vectorized_result}")
