@@ -139,7 +139,9 @@ def run_test2(results_full: dict[str, dict]) -> None:
             print(f"❌ SDPA Full Attention error: {e}")
 
 
-def run_test1a(results_win: dict[str, dict], window_size: int) -> None:
+def run_test1a(
+    results_full: dict[str, dict], results_win: dict[str, dict], window_size: int
+) -> None:
     """Run test 1a.
 
     Args:
@@ -150,7 +152,7 @@ def run_test1a(results_win: dict[str, dict], window_size: int) -> None:
             f"\n🔬 Test 1a: Classical Windowed Full Attention (TRAINING mode, O(n²), window={window_size})..."
         )
         classical_windowed_result = results_win["classical_windowed"]
-        classical_result = results_win["classical"]
+        classical_result = results_full["classical"]
         print(f"✅ {classical_windowed_result}")
         # Comparison with Classical Full Attention
         memory_ratio = safe_divide(
@@ -181,7 +183,9 @@ def run_test1a(results_win: dict[str, dict], window_size: int) -> None:
             print(f"❌ Classical Windowed Full Attention error: {e}")
 
 
-def run_test3(results_win: dict[str, dict], window_size: int) -> None:
+def run_test3(
+    results_full: dict[str, dict], results_win: dict[str, dict], window_size: int
+) -> None:
     """Run test 3.
 
     Args:
@@ -191,7 +195,7 @@ def run_test3(results_win: dict[str, dict], window_size: int) -> None:
         f"\n🔬 Test 3: SDPA Sliding Window (TRAINING mode, O(n), window={window_size})..."
     )
     sdpa_sliding_result = results_win["sdpa_sliding"]
-    classical_result = results_win["classical"]
+    classical_result = results_full["classical"]
     sdpa_full_result = results_win["sdpa_full"]
     if sdpa_sliding_result:
         print(f"✅ {sdpa_sliding_result}")
@@ -242,7 +246,9 @@ def run_test3(results_win: dict[str, dict], window_size: int) -> None:
         print(f"❌ SDPA Sliding Window (w={window_size}): Failed")
 
 
-def run_test4(results_win: dict[str, dict], window_size: int) -> None:
+def run_test4(
+    results_full: dict[str, dict], results_win: dict[str, dict], window_size: int
+) -> None:
     """Run test 4.
 
     Args:
@@ -253,7 +259,7 @@ def run_test4(results_win: dict[str, dict], window_size: int) -> None:
         f"\n🔬 Test 4: Fast Sliding Window (TRAINING mode, O(n), window={window_size})..."
     )
     fast_sliding_result = results_win["fast_sliding"]
-    classical_result = results_win["classical"]
+    classical_result = results_full["classical"]
     sdpa_full_result = results_win["sdpa_full"]
     if fast_sliding_result:
         print(f"✅ {fast_sliding_result}")
@@ -286,7 +292,9 @@ def run_test4(results_win: dict[str, dict], window_size: int) -> None:
         print(f"❌ Fast Sliding Window (w={window_size}): Failed")
 
 
-def run_test5(results_win: dict[str, dict], window_size: int) -> None:
+def run_test5(
+    results_full: dict[str, dict], results_win: dict[str, dict], window_size: int
+) -> None:
     """Run test 6.
 
     Args:
@@ -296,7 +304,7 @@ def run_test5(results_win: dict[str, dict], window_size: int) -> None:
         f"\n🔬 Test 5: True Vectorized Sliding Window (TRAINING mode, O(n×w), window={window_size})..."
     )
     true_vectorized_result = results_win["true_vectorized"]
-    classical_result = results_win["classical"]
+    classical_result = results_full["classical"]
     sdpa_full_result = results_win["sdpa_full"]
     fast_sliding_result = results_win["fast_sliding"]
     if true_vectorized_result:
@@ -345,7 +353,9 @@ def run_test5(results_win: dict[str, dict], window_size: int) -> None:
         print(f"❌ True Vectorized Sliding Window (w={window_size}): Failed")
 
 
-def run_test6(results_win: dict[str, dict], window_size: int) -> None:
+def run_test6(
+    results_full: dict[str, dict], results_win: dict[str, dict], window_size: int
+) -> None:
     """Run test 6.
 
     Args:
@@ -355,7 +365,7 @@ def run_test6(results_win: dict[str, dict], window_size: int) -> None:
         f"\n🔬 Test 6: True Vectorized Sliding Window Outer Loop (TRAINING mode, O(n×w), window={window_size})..."
     )
     true_vectorized_result = results_win["true_vectorized_outer_loop"]
-    classical_result = results_win["classical"]
+    classical_result = results_full["classical"]
     sdpa_full_result = results_win["sdpa_full"]
     fast_sliding_result = results_win["fast_sliding"]
     if true_vectorized_result:
@@ -462,20 +472,20 @@ def compare_training_mode_attention() -> None:
                 run_sliding_window=True,
             )
             # Test 1a: Classical Windowed Full Attention (O(n²))
-            run_test1a(results_win, window_size)
+            run_test1a(results_full, results_win, window_size)
 
             # Test 3: SDPA Sliding Window (O(n))
-            run_test3(results_win, window_size)
+            run_test3(results_full, results_win, window_size)
 
             # Test 4: Fast Sliding Window (O(n))
-            run_test4(results_win, window_size)
+            run_test4(results_full, results_win, window_size)
 
             # Test 5: True Vectorized Sliding Window (O(n×w))
             # chunk_size = 32  # Default chunk size
-            run_test5(results_win, window_size)
+            run_test5(results_full, results_win, window_size)
 
             # Test 6: True Vectorized Sliding Window Outer Loop (O(n×w))
-            run_test6(results_win, window_size)
+            run_test6(results_full, results_win, window_size)
 
         # Clean up memory
         torch.cuda.empty_cache()
