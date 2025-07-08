@@ -150,6 +150,7 @@ def run_test1a(results_win: dict[str, dict], window_size: int) -> None:
             f"\n🔬 Test 1a: Classical Windowed Full Attention (TRAINING mode, O(n²), window={window_size})..."
         )
         classical_windowed_result = results_win["classical_windowed"]
+        classical_result = results_win["classical"]
         print(f"✅ {classical_windowed_result}")
         # Comparison with Classical Full Attention
         memory_ratio = safe_divide(
@@ -190,6 +191,8 @@ def run_test3(results_win: dict[str, dict], window_size: int) -> None:
         f"\n🔬 Test 3: SDPA Sliding Window (TRAINING mode, O(n), window={window_size})..."
     )
     sdpa_sliding_result = results_win["sdpa_sliding"]
+    classical_result = results_win["classical"]
+    sdpa_full_result = results_win["sdpa_full"]
     if sdpa_sliding_result:
         print(f"✅ {sdpa_sliding_result}")
         print(f"  📊 SDPA Sliding vs Classical Full:")
@@ -250,6 +253,8 @@ def run_test4(results_win: dict[str, dict], window_size: int) -> None:
         f"\n🔬 Test 4: Fast Sliding Window (TRAINING mode, O(n), window={window_size})..."
     )
     fast_sliding_result = results_win["fast_sliding"]
+    classical_result = results_win["classical"]
+    sdpa_full_result = results_win["sdpa_full"]
     if fast_sliding_result:
         print(f"✅ {fast_sliding_result}")
         print(f"  📊 Fast Sliding vs Classical Full:")
@@ -291,6 +296,9 @@ def run_test5(results_win: dict[str, dict], window_size: int) -> None:
         f"\n🔬 Test 5: True Vectorized Sliding Window (TRAINING mode, O(n×w), window={window_size})..."
     )
     true_vectorized_result = results_win["true_vectorized"]
+    classical_result = results_win["classical"]
+    sdpa_full_result = results_win["sdpa_full"]
+    fast_sliding_result = results_win["fast_sliding"]
     if true_vectorized_result:
         print(f"✅ {true_vectorized_result}")
         print(f"  📊 True Vectorized vs Classical Full:")
@@ -347,6 +355,9 @@ def run_test6(results_win: dict[str, dict], window_size: int) -> None:
         f"\n🔬 Test 6: True Vectorized Sliding Window Outer Loop (TRAINING mode, O(n×w), window={window_size})..."
     )
     true_vectorized_result = results_win["true_vectorized_outer_loop"]
+    classical_result = results_win["classical"]
+    sdpa_full_result = results_win["sdpa_full"]
+    fast_sliding_result = results_win["fast_sliding"]
     if true_vectorized_result:
         print(f"✅ {true_vectorized_result}")
         print(f"  📊 True Vectorized vs Classical Full:")
