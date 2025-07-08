@@ -117,7 +117,7 @@ def run_test1(results_full: dict[str, dict]) -> None:
         print(f"✅ {classical_result}")
     except RuntimeError as e:
         if "out of memory" in str(e):
-            print(f"❌ Classical Full Attention: OOM at seq_len={seq_len}")
+            print("❌ Classical Full Attention: OOM")
         else:
             print(f"❌ Classical Full Attention error: {e}")
 
@@ -134,7 +134,7 @@ def run_test2(results_full: dict[str, dict]) -> None:
         print(f"✅ {sdpa_full_result}")
     except RuntimeError as e:
         if "out of memory" in str(e):
-            print(f"❌ SDPA Full Attention: OOM at seq_len={seq_len}")
+            print("❌ SDPA Full Attention: OOM")
         else:
             print(f"❌ SDPA Full Attention error: {e}")
 
@@ -176,9 +176,7 @@ def run_test1a(
         print(f"    Full time / Windowed time: {speedup:.2f}x")
     except RuntimeError as e:
         if "out of memory" in str(e):
-            print(
-                f"❌ Classical Windowed Full Attention: OOM at seq_len={seq_len}, window={window_size}"
-            )
+            print("❌ Classical Windowed Full Attention: OOM")
         else:
             print(f"❌ Classical Windowed Full Attention error: {e}")
 
@@ -227,11 +225,11 @@ def run_test3(
         print(f"  📊 SDPA Sliding vs Classical Windowed Full Attention:")
         memory_ratio = safe_divide(
             sdpa_sliding_result["memory_mb"],
-            classical_windowed_result["memory_mb"],
+            classical_result["memory_mb"],
         )
         memory_ratio = safe_divide(
             sdpa_sliding_result["memory_mb"],
-            classical_windowed_result["memory_mb"],
+            classical_result["memory_mb"],
         )
         print(
             f"    SDPA Sliding memory / Classical Windowed memory: {memory_ratio:.2f}x"
