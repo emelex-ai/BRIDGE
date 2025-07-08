@@ -111,15 +111,19 @@ def print_results(result1: dict, result2: dict) -> None:
         result1["memory_mb"],
         result2["memory_mb"],
     )
-    print(
-        f"    {result1['name']} memory / {result2['name']} memory: {memory_ratio:.2f}x"
+    time1 = result1["time_ms"]
+    time2 = result2["time_ms"]
+    time_ratio = time1 / time2
+    label_memory = (
+        f"{result1['attention_type']} memory / {result2['attention_type']} memory"
     )
-    print(
-        f"    {result1['name']} time / {result2['name']} time: {result1['time_ms'] / result2['time_ms']:.2f}x"
+    label_time = f"{result1['attention_type']} time / {result2['attention_type']} time"
+    label_time_reverse = (
+        f"{result2['attention_type']} time / {result1['attention_type']} time"
     )
-    print(
-        f"    {result2['name']} time / {result1['name']} time: {result2['time_ms'] / result1['time_ms']:.2f}x"
-    )
+    print(f"    {label_memory}: {memory_ratio:.2f}x")
+    print(f"    {label_time}: {time_ratio:.2f}x")
+    print(f"    {label_time_reverse}: {1. / time_ratio:.2f}x")
 
 
 def run_test1(results_full: dict[str, dict]) -> None:
@@ -145,12 +149,15 @@ def run_test2(results_full: dict[str, dict]) -> None:
 
 
 def run_test1a(
-    results_full: dict[str, dict], results_win: dict[str, dict], window_size: int
+    results_full: dict[str, dict],
+    results_win: dict[str, dict],
+    window_size: int,
 ) -> None:
     """Run test 1a.
 
     Args:
         results_win: The results of the windowed full attention benchmark.
+
     """
     print(
         f"\n🔬 Test 1a: Classical Windowed Full Attention (TRAINING mode, O(n²), window={window_size})..."
@@ -161,7 +168,9 @@ def run_test1a(
 
 
 def run_test3(
-    results_full: dict[str, dict], results_win: dict[str, dict], window_size: int
+    results_full: dict[str, dict],
+    results_win: dict[str, dict],
+    window_size: int,
 ) -> None:
     """Run test 3.
 
@@ -182,7 +191,9 @@ def run_test3(
 
 
 def run_test4(
-    results_full: dict[str, dict], results_win: dict[str, dict], window_size: int
+    results_full: dict[str, dict],
+    results_win: dict[str, dict],
+    window_size: int,
 ) -> None:
     """Run test 4.
 
@@ -202,7 +213,9 @@ def run_test4(
 
 
 def run_test5(
-    results_full: dict[str, dict], results_win: dict[str, dict], window_size: int
+    results_full: dict[str, dict],
+    results_win: dict[str, dict],
+    window_size: int,
 ) -> None:
     """Run test 6.
 
@@ -222,7 +235,9 @@ def run_test5(
 
 
 def run_test6(
-    results_full: dict[str, dict], results_win: dict[str, dict], window_size: int
+    results_full: dict[str, dict],
+    results_win: dict[str, dict],
+    window_size: int,
 ) -> None:
     """Run test 6.
 
