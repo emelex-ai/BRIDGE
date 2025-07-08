@@ -23,7 +23,7 @@ def benchmark_sdpa_full_attention(
 
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Benchmarking SDPA Full Attention (TRAINING mode, O(n²)) on {device}")
+    # print(f"Benchmarking SDPA Full Attention (TRAINING mode, O(n²)) on {device}")
 
     class SDPAFullAttentionLayer(nn.Module):
         """Custom layer using SDPA for full attention with precomputed mask."""
@@ -98,7 +98,7 @@ def benchmark_sdpa_full_attention(
             return x
 
     # Precompute mask (None for full attention)
-    print("  Precomputing mask (None for full attention)...")
+    #print("  Precomputing mask (None for full attention)...")
 
     sdpa_model = SDPAFullAttentionModel(d_model, nhead, num_layers).to(device)
 
@@ -109,7 +109,7 @@ def benchmark_sdpa_full_attention(
     x = torch.randn(batch_size, seq_len, d_model, device=device, requires_grad=True)
 
     # Warmup
-    print("  Warming up in training mode...")
+    #print("  Warming up in training mode...")
     for _ in range(3):
         output = sdpa_model(x)
         # Simulate backward pass for training

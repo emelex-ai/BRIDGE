@@ -24,7 +24,7 @@ def benchmark_classical_full_attention(
 
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Benchmarking Classical Full Attention (TRAINING mode, O(n²)) on {device}")
+    #print(f"Benchmarking Classical Full Attention (TRAINING mode, O(n²)) on {device}")
 
     # Create classical transformer in TRAINING mode
     encoder_layer = TransformerEncoderLayer(
@@ -41,7 +41,7 @@ def benchmark_classical_full_attention(
     x = torch.randn(batch_size, seq_len, d_model, device=device, requires_grad=True)
 
     # Warmup
-    print("  Warming up in training mode...")
+    #print("  Warming up in training mode...")
     for _ in range(3):
         output = classical_model(x)
         # Simulate backward pass for training

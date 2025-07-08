@@ -15,9 +15,9 @@ def benchmark_true_vectorized_sliding_window_outer_loop(
     This should achieve optimal O(n×w) complexity with pure vectorized operations.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(
-        f"Benchmarking True Vectorized Sliding Window (TRAINING mode, O(n×w), window={window_size}) on {device}"
-    )
+    #print(
+        #f"Benchmarking True Vectorized Sliding Window (TRAINING mode, O(n×w), window={window_size}) on {device}"
+    #)
 
     # Create model
     model = TrueVectorizedSlidingWindowOuterLoopModel(
@@ -28,10 +28,10 @@ def benchmark_true_vectorized_sliding_window_outer_loop(
     # Create input data
     x = torch.randn(batch_size, seq_len, d_model, device=device, requires_grad=True)
 
-    print(f"  Using pure vectorized operations (no loops, no conditionals)...")
-
+    #print(f"  Using pure vectorized operations (no loops, no conditionals)...")
+#
     # Warmup
-    print("  Warming up in training mode...")
+    #print("  Warming up in training mode...")
     for _ in range(3):
         model.zero_grad()
         output = model(x)

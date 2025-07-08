@@ -35,9 +35,9 @@ def benchmark_classical_windowed_full_attention(
     import torch.nn.functional as F
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(
-        f"Benchmarking Classical Full Attention with Sliding Window Mask (TRAINING mode, O(nw)) on {device}"
-    )
+    #print(
+        #f"Benchmarking Classical Full Attention with Sliding Window Mask (TRAINING mode, O(nw)) on {device}"
+    #)
 
     # Create sliding window mask efficiently (lower-triangular banded mask)
     # Only store the relevant band, not the full matrix if possible
@@ -59,7 +59,7 @@ def benchmark_classical_windowed_full_attention(
     x = torch.randn(batch_size, seq_len, d_model, device=device, requires_grad=True)
 
     # Warmup
-    print("  Warming up in training mode...")
+    #print("  Warming up in training mode...")
     for _ in range(3):
         output = classical_model(x, mask=mask)
         loss = output.sum()

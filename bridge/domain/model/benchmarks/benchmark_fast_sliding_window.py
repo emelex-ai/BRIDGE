@@ -73,9 +73,9 @@ def benchmark_fast_sliding_window(
     This should be much faster than the chunked version.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(
-        f"Benchmarking Fast Sliding Window (TRAINING mode, O(n), window={window_size}) on {device}"
-    )
+    #print(
+        #f"Benchmarking Fast Sliding Window (TRAINING mode, O(n), window={window_size}) on {device}"
+    #)
 
     # Create model
     model = FastSlidingWindowModel(d_model, nhead, window_size).to(device)
@@ -84,10 +84,10 @@ def benchmark_fast_sliding_window(
     # Create input data
     x = torch.randn(batch_size, seq_len, d_model, device=device, requires_grad=True)
 
-    print(f"  Using simple mask-based approach (single SDPA call)...")
+    #print(f"  Using simple mask-based approach (single SDPA call)...")
 
     # Warmup
-    print("  Warming up in training mode...")
+    #print("  Warming up in training mode...")
     for _ in range(3):
         model.zero_grad()
         output = model(x)
