@@ -184,5 +184,6 @@ def benchmark_sdpa_sliding_window(
         "batch_size": batch_size,
         "time_ms": avg_time_ms,
         "memory_mb": memory_mb,
+        "seq_len": seq_len,
         "tokens_per_sec": (batch_size * seq_len * 10) / (end_time - start_time),
     }

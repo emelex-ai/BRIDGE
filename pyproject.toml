@@ -33,6 +33,7 @@ dependencies = [
     "pandas",
     "matplotlib>=3.10.3",
     "local-attention>=1.11.1",
+    "seaborn>=0.13.2",
 ]
 
 [project.optional-dependencies]
