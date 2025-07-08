@@ -294,11 +294,9 @@ def run_test5(results_win: dict[str, dict]) -> None:
     if true_vectorized_result:
         print(f"✅ {true_vectorized_result}")
         print(f"  📊 True Vectorized vs Classical Full:")
-        memory_ratio = safe_divide(
-            true_vectorized_result["memory_mb"],
-            classical_result["memory_mb"],
+        print(
+            f"    True Vectorized memory / Classical memory: {true_vectorized_result['memory_mb'] / classical_result['memory_mb']:.2f}x"
         )
-        print(f"    True Vectorized memory / Classical memory: {memory_ratio:.2f}x")
         print(
             f"    True Vectorized time / Classical time: {true_vectorized_result['time_ms'] / classical_result['time_ms']:.2f}x"
         )
@@ -307,11 +305,9 @@ def run_test5(results_win: dict[str, dict]) -> None:
         )
         if sdpa_full_result:
             print(f"  📊 True Vectorized vs SDPA Full:")
-            memory_ratio = safe_divide(
-                true_vectorized_result["memory_mb"],
-                sdpa_full_result["memory_mb"],
+            print(
+                f"    True Vectorized memory / SDPA Full memory: {true_vectorized_result['memory_mb'] / sdpa_full_result['memory_mb']:.2f}x"
             )
-            print(f"    True Vectorized memory / SDPA Full memory: {memory_ratio:.2f}x")
             print(
                 f"    True Vectorized time / SDPA Full time: {true_vectorized_result['time_ms'] / sdpa_full_result['time_ms']:.2f}x"
             )
@@ -320,12 +316,56 @@ def run_test5(results_win: dict[str, dict]) -> None:
             )
         if fast_sliding_result:
             print(f"  📊 True Vectorized vs Fast Sliding:")
-            memory_ratio = safe_divide(
-                true_vectorized_result["memory_mb"],
-                fast_sliding_result["memory_mb"],
+            print(
+                f"    True Vectorized memory / Fast Sliding memory: {true_vectorized_result['memory_mb'] / fast_sliding_result['memory_mb']:.2f}x"
             )
             print(
-                f"    True Vectorized memory / Fast Sliding memory: {memory_ratio:.2f}x"
+                f"    True Vectorized time / Fast Sliding time: {true_vectorized_result['time_ms'] / fast_sliding_result['time_ms']:.2f}x"
+            )
+            print(
+                f"    Fast Sliding time / True Vectorized time: {fast_sliding_result['time_ms'] / true_vectorized_result['time_ms']:.2f}x"
+            )
+    else:
+        print(f"❌ True Vectorized Sliding Window (w={window_size}): Failed")
+
+
+def run_test6(results_win: dict[str, dict]) -> None:
+    """Run test 6.
+
+    Args:
+        results_win: The results of the sliding window benchmark.
+    """
+    print(
+        f"\n🔬 Test 6: True Vectorized Sliding Window Outer Loop (TRAINING mode, O(n×w), window={window_size})..."
+    )
+    true_vectorized_result = results_win["true_vectorized_outer_loop"]
+    if true_vectorized_result:
+        print(f"✅ {true_vectorized_result}")
+        print(f"  📊 True Vectorized vs Classical Full:")
+        print(
+            f"    True Vectorized memory / Classical memory: {true_vectorized_result['memory_mb'] / classical_result['memory_mb']:.2f}x"
+        )
+        print(
+            f"    True Vectorized time / Classical time: {true_vectorized_result['time_ms'] / classical_result['time_ms']:.2f}x"
+        )
+        print(
+            f"    Classical time / True Vectorized time: {classical_result['time_ms'] / true_vectorized_result['time_ms']:.2f}x"
+        )
+        if sdpa_full_result:
+            print(f"  📊 True Vectorized vs SDPA Full:")
+            print(
+                f"    True Vectorized memory / SDPA Full memory: {true_vectorized_result['memory_mb'] / sdpa_full_result['memory_mb']:.2f}x"
+            )
+            print(
+                f"    True Vectorized time / SDPA Full time: {true_vectorized_result['time_ms'] / sdpa_full_result['time_ms']:.2f}x"
+            )
+            print(
+                f"    SDPA Full time / True Vectorized time: {sdpa_full_result['time_ms'] / true_vectorized_result['time_ms']:.2f}x"
+            )
+        if fast_sliding_result:
+            print(f"  📊 True Vectorized vs Fast Sliding:")
+            print(
+                f"    True Vectorized memory / Fast Sliding memory: {true_vectorized_result['memory_mb'] / fast_sliding_result['memory_mb']:.2f}x"
             )
             print(
                 f"    True Vectorized time / Fast Sliding time: {true_vectorized_result['time_ms'] / fast_sliding_result['time_ms']:.2f}x"
