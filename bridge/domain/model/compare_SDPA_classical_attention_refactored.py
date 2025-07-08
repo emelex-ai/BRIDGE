@@ -376,10 +376,36 @@ if __name__ == "__main__":
 
         traceback.print_exc()
 
-    # save all resutls to a pandas dataframe file
+    # save all results to a pandas dataframe file
     import pandas as pd
 
+    # Process all_results to create the desired format
+    records = []
+
+    # Loop over each experiment result in all_results
+    for experiment_results in all_results:
+        # Each experiment_results is a dict with keys like 'classical', 'sdpa_full', etc.
+        for attention_type, result_dict in experiment_results.items():
+            if result_dict is not None:  # Skip None results
+                # Add the attention_type to the result dict for clarity
+                result_dict["attention_type"] = attention_type
+                records.append(result_dict)
+
+    # Create DataFrame from the records
+    pivot_df = pd.DataFrame(records)
+
+    # Reorder columns to put attention_type first
+    cols = list(pivot_df.columns)
+    if "attention_type" in cols:
+        cols.insert(0, cols.pop(cols.index("attention_type")))
+    pivot_df = pivot_df[cols]
+
+    # Save the pivoted table
+    pivot_df.to_csv("pivoted_attention_results.csv", index=False)
+    print("✅ Saved pivoted results to pivoted_attention_results.csv")
+    print(pivot_df.head())
+
+    # Also save the original format for reference
     df = pd.DataFrame(all_results)
     df.to_csv("training_mode_attention_results.csv", index=False)
-
-    print("✅ Saved results to training_mode_attention_results.csv")
+    print("✅ Saved original results to training_mode_attention_results.csv")
