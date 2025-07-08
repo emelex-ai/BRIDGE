@@ -273,7 +273,7 @@ def run_test6(
     print_results(fast_sliding_result, true_vectorized_result)
 
 
-def compare_training_mode_attention() -> None:
+def compare_training_mode_attention() -> list[dict[str, dict]]:
     """Compare attention implementations in TRAINING mode only.
 
     Tests conducted (ALL IN TRAINING MODE with PRECOMPUTED MASKS):
@@ -302,6 +302,8 @@ def compare_training_mode_attention() -> None:
     nhead = 1
     batch_size = 1
 
+    all_results = []
+
     for seq_len in seq_lens:
         # Clean up memory
         torch.cuda.empty_cache()
@@ -312,6 +314,7 @@ def compare_training_mode_attention() -> None:
             run_full_attention=True,
             run_sliding_window=False,
         )
+        all_results.append(results_full)
         print(f"\n{'='*60}")
         print(f"Testing seq_len={seq_len}, d_model={d_model}, nhead={nhead}")
         print(f"Fixed batch_size={batch_size} - TRAINING MODE")
@@ -336,6 +339,8 @@ def compare_training_mode_attention() -> None:
                 run_full_attention=False,
                 run_sliding_window=True,
             )
+            all_results.append(results_win)
+
             # Test 1a: Classical Windowed Full Attention (O(n²))
             run_test1a(results_full, results_win, window_size)
 
@@ -357,14 +362,24 @@ def compare_training_mode_attention() -> None:
 
     print("\n🏁 TRAINING MODE Comparison complete!")
 
+    return all_results
+
 
 # --------------------------------------------------------------------------------------
 if __name__ == "__main__":
     """Main execution with error handling."""
     try:
-        compare_training_mode_attention()
+        all_results = compare_training_mode_attention()
     except Exception as e:
         print(f"❌ Critical error: {e}")
         import traceback
 
         traceback.print_exc()
+
+    # save all resutls to a pandas dataframe file
+    import pandas as pd
+
+    df = pd.DataFrame(all_results)
+    df.to_csv("training_mode_attention_results.csv", index=False)
+
+    print("✅ Saved results to training_mode_attention_results.csv")
