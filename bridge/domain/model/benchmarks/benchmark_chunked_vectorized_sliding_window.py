@@ -39,6 +39,7 @@ def benchmark_chunked_vectorized_sliding_window(
     # Benchmark
     if device.type == "cuda":
         torch.cuda.synchronize()
+
     start_time = time.time()
 
     for _ in range(10):

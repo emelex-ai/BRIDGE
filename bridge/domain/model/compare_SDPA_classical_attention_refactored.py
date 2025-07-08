@@ -285,7 +285,11 @@ def compare_training_mode_attention() -> None:
     nhead = 1
     batch_size = 1
 
+
     for seq_len in seq_lens:
+        # Clean up memory
+        torch.cuda.empty_cache()
+
         results_full = run_benchmark_tests(
             seq_len=seq_len,
             d_model=d_model,
@@ -304,6 +308,9 @@ def compare_training_mode_attention() -> None:
         run_test2(results_full)
 
         for window_size in window_sizes:
+            # Clean up memory
+            torch.cuda.empty_cache()
+
             results_win = run_benchmark_tests(
                 seq_len=seq_len,
                 d_model=d_model,
