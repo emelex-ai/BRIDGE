@@ -105,21 +105,32 @@ def run_benchmark_tests(
     return results
 
 
+def print_results(result1: dict, result2: dict) -> None:
+    """Print the results of two benchmarks."""
+    memory_ratio = safe_divide(
+        result1["memory_mb"],
+        result2["memory_mb"],
+    )
+    print(
+        f"    {result1['name']} memory / {result2['name']} memory: {memory_ratio:.2f}x"
+    )
+    print(
+        f"    {result1['name']} time / {result2['name']} time: {result1['time_ms'] / result2['time_ms']:.2f}x"
+    )
+    print(
+        f"    {result2['name']} time / {result1['name']} time: {result2['time_ms'] / result1['time_ms']:.2f}x"
+    )
+
+
 def run_test1(results_full: dict[str, dict]) -> None:
     """Run test 1.
 
     Args:
         results_full: The results of the full attention benchmark.
     """
-    try:
-        print("\n🔬 Test 1: Classical Full Attention (TRAINING mode, O(n²))...")
-        classical_result = results_full["classical"]
-        print(f"✅ {classical_result}")
-    except RuntimeError as e:
-        if "out of memory" in str(e):
-            print("❌ Classical Full Attention: OOM")
-        else:
-            print(f"❌ Classical Full Attention error: {e}")
+    print("\n🔬 Test 1: Classical Full Attention (TRAINING mode, O(n²))...")
+    classical_result = results_full["classical"]
+    print(f"✅ {classical_result}")
 
 
 def run_test2(results_full: dict[str, dict]) -> None:
@@ -128,15 +139,9 @@ def run_test2(results_full: dict[str, dict]) -> None:
     Args:
         results_full: The results of the full attention benchmark.
     """
-    try:
-        print("\n🔬 Test 2: SDPA Full Attention (TRAINING mode, O(n²))...")
-        sdpa_full_result = results_full["sdpa_full"]
-        print(f"✅ {sdpa_full_result}")
-    except RuntimeError as e:
-        if "out of memory" in str(e):
-            print("❌ SDPA Full Attention: OOM")
-        else:
-            print(f"❌ SDPA Full Attention error: {e}")
+    print("\n🔬 Test 2: SDPA Full Attention (TRAINING mode, O(n²))...")
+    sdpa_full_result = results_full["sdpa_full"]
+    print(f"✅ {sdpa_full_result}")
 
 
 def run_test1a(
@@ -147,38 +152,12 @@ def run_test1a(
     Args:
         results_win: The results of the windowed full attention benchmark.
     """
-    try:
-        print(
-            f"\n🔬 Test 1a: Classical Windowed Full Attention (TRAINING mode, O(n²), window={window_size})..."
-        )
-        classical_windowed_result = results_win["classical_windowed"]
-        classical_result = results_full["classical"]
-        print(f"✅ {classical_windowed_result}")
-        # Comparison with Classical Full Attention
-        memory_ratio = safe_divide(
-            classical_windowed_result["memory_mb"],
-            classical_result["memory_mb"],
-        )
-        print(f"    Windowed memory / Full memory: {memory_ratio:.2f}x")
-        time_ratio = classical_windowed_result["time_ms"] / classical_result["time_ms"]
-        speedup = classical_result["time_ms"] / classical_windowed_result["time_ms"]
-        print(f"  📊 Classical Windowed vs Classical Full:")
-        memory_ratio = safe_divide(
-            classical_windowed_result["memory_mb"],
-            classical_result["memory_mb"],
-        )
-        print(f"    Windowed memory / Full memory: {memory_ratio:.2f}x")
-        time_ratio = safe_divide(
-            classical_windowed_result["time_ms"],
-            classical_result["time_ms"],
-        )
-        print(f"    Windowed time / Full time: {time_ratio:.2f}x")
-        print(f"    Full time / Windowed time: {speedup:.2f}x")
-    except RuntimeError as e:
-        if "out of memory" in str(e):
-            print("❌ Classical Windowed Full Attention: OOM")
-        else:
-            print(f"❌ Classical Windowed Full Attention error: {e}")
+    print(
+        f"\n🔬 Test 1a: Classical Windowed Full Attention (TRAINING mode, O(n²), window={window_size})..."
+    )
+    classical_windowed_result = results_win["classical_windowed"]
+    classical_result = results_full["classical"]
+    print_results(classical_result, classical_windowed_result)
 
 
 def run_test3(
@@ -192,56 +171,14 @@ def run_test3(
     print(
         f"\n🔬 Test 3: SDPA Sliding Window (TRAINING mode, O(n), window={window_size})..."
     )
+    sdpa_full_result = results_full["sdpa_full"]
     sdpa_sliding_result = results_win["sdpa_sliding"]
     classical_result = results_full["classical"]
-    sdpa_full_result = results_full["sdpa_full"]
-    if sdpa_sliding_result:
-        print(f"✅ {sdpa_sliding_result}")
-        print(f"  📊 SDPA Sliding vs Classical Full:")
-        memory_ratio = safe_divide(
-            sdpa_sliding_result["memory_mb"],
-            classical_result["memory_mb"],
-        )
-        print(f"    SDPA Sliding memory / Classical memory: {memory_ratio:.2f}x")
-        print(
-            f"    SDPA Sliding time / Classical time: {sdpa_sliding_result['time_ms'] / classical_result['time_ms']:.2f}x"
-        )
-        print(
-            f"    Classical time / SDPA Sliding time: {classical_result['time_ms'] / sdpa_sliding_result['time_ms']:.2f}x"
-        )
-        print(f"  📊 SDPA Sliding vs SDPA Full:")
-        memory_ratio = safe_divide(
-            sdpa_sliding_result["memory_mb"],
-            sdpa_full_result["memory_mb"],
-        )
-        print(f"    SDPA Sliding memory / SDPA Full memory: {memory_ratio:.2f}x")
-        print(
-            f"    SDPA Sliding time / SDPA Full time: {sdpa_sliding_result['time_ms'] / sdpa_full_result['time_ms']:.2f}x"
-        )
-        print(
-            f"    SDPA Full time / SDPA Sliding time: {sdpa_full_result['time_ms'] / sdpa_sliding_result['time_ms']:.2f}x"
-        )
-        # New: Compare SDPA Sliding to Classical Windowed Full Attention
-        print(f"  📊 SDPA Sliding vs Classical Windowed Full Attention:")
-        memory_ratio = safe_divide(
-            sdpa_sliding_result["memory_mb"],
-            classical_result["memory_mb"],
-        )
-        memory_ratio = safe_divide(
-            sdpa_sliding_result["memory_mb"],
-            classical_result["memory_mb"],
-        )
-        print(
-            f"    SDPA Sliding memory / Classical Windowed memory: {memory_ratio:.2f}x"
-        )
-        print(
-            f"    SDPA Sliding time / Classical Windowed time: {sdpa_sliding_result['time_ms'] / classical_windowed_result['time_ms']:.2f}x"
-        )
-        print(
-            f"    Classical Windowed time / SDPA Sliding time: {classical_windowed_result['time_ms'] / sdpa_sliding_result['time_ms']:.2f}x"
-        )
-    else:
-        print(f"❌ SDPA Sliding Window (w={window_size}): Failed")
+    classical_windowed_result = results_win["classical_windowed"]
+    print_results(classical_result, classical_windowed_result)
+    print_results(sdpa_full_result, sdpa_sliding_result)
+    print_results(sdpa_full_result, classical_result)
+    print_results(sdpa_sliding_result, classical_windowed_result)
 
 
 def run_test4(
@@ -251,43 +188,17 @@ def run_test4(
 
     Args:
         results_win: The results of the sliding window benchmark.
-    """
 
+    """
     print(
         f"\n🔬 Test 4: Fast Sliding Window (TRAINING mode, O(n), window={window_size})..."
     )
     fast_sliding_result = results_win["fast_sliding"]
+    classical_windowed_result = results_win["classical_windowed"]
     classical_result = results_full["classical"]
     sdpa_full_result = results_full["sdpa_full"]
-    if fast_sliding_result:
-        print(f"✅ {fast_sliding_result}")
-        print(f"  📊 Fast Sliding vs Classical Full:")
-        memory_ratio = safe_divide(
-            fast_sliding_result["memory_mb"],
-            classical_result["memory_mb"],
-        )
-        print(f"    Fast Sliding memory / Classical memory: {memory_ratio:.2f}x")
-        print(
-            f"    Fast Sliding time / Classical time: {fast_sliding_result['time_ms'] / classical_result['time_ms']:.2f}x"
-        )
-        print(
-            f"    Classical time / Fast Sliding time: {classical_result['time_ms'] / fast_sliding_result['time_ms']:.2f}x"
-        )
-        if sdpa_full_result:
-            print(f"  📊 Fast Sliding vs SDPA Full:")
-            memory_ratio = safe_divide(
-                fast_sliding_result["memory_mb"],
-                sdpa_full_result["memory_mb"],
-            )
-            print(f"    Fast Sliding memory / SDPA Full memory: {memory_ratio:.2f}x")
-            print(
-                f"    Fast Sliding time / SDPA Full time: {fast_sliding_result['time_ms'] / sdpa_full_result['time_ms']:.2f}x"
-            )
-            print(
-                f"    SDPA Full time / Fast Sliding time: {sdpa_full_result['time_ms'] / fast_sliding_result['time_ms']:.2f}x"
-            )
-    else:
-        print(f"❌ Fast Sliding Window (w={window_size}): Failed")
+    print_results(sdpa_full_result, fast_sliding_result)
+    print_results(fast_sliding_result, classical_windowed_result)
 
 
 def run_test5(
@@ -305,50 +216,9 @@ def run_test5(
     classical_result = results_full["classical"]
     sdpa_full_result = results_full["sdpa_full"]
     fast_sliding_result = results_win["fast_sliding"]
-    if true_vectorized_result:
-        print(f"✅ {true_vectorized_result}")
-        print(f"  📊 True Vectorized vs Classical Full:")
-        memory_ratio = safe_divide(
-            true_vectorized_result["memory_mb"],
-            classical_result["memory_mb"],
-        )
-        print(f"    True Vectorized memory / Classical memory: {memory_ratio:.2f}x")
-        print(
-            f"    True Vectorized time / Classical time: {true_vectorized_result['time_ms'] / classical_result['time_ms']:.2f}x"
-        )
-        print(
-            f"    Classical time / True Vectorized time: {classical_result['time_ms'] / true_vectorized_result['time_ms']:.2f}x"
-        )
-        if sdpa_full_result:
-            print(f"  📊 True Vectorized vs SDPA Full:")
-            memory_ratio = safe_divide(
-                true_vectorized_result["memory_mb"],
-                sdpa_full_result["memory_mb"],
-            )
-            print(f"    True Vectorized memory / SDPA Full memory: {memory_ratio:.2f}x")
-            print(
-                f"    True Vectorized time / SDPA Full time: {true_vectorized_result['time_ms'] / sdpa_full_result['time_ms']:.2f}x"
-            )
-            print(
-                f"    SDPA Full time / True Vectorized time: {sdpa_full_result['time_ms'] / true_vectorized_result['time_ms']:.2f}x"
-            )
-        if fast_sliding_result:
-            print(f"  📊 True Vectorized vs Fast Sliding:")
-            memory_ratio = safe_divide(
-                true_vectorized_result["memory_mb"],
-                fast_sliding_result["memory_mb"],
-            )
-            print(
-                f"    True Vectorized memory / Fast Sliding memory: {memory_ratio:.2f}x"
-            )
-            print(
-                f"    True Vectorized time / Fast Sliding time: {true_vectorized_result['time_ms'] / fast_sliding_result['time_ms']:.2f}x"
-            )
-            print(
-                f"    Fast Sliding time / True Vectorized time: {fast_sliding_result['time_ms'] / true_vectorized_result['time_ms']:.2f}x"
-            )
-    else:
-        print(f"❌ True Vectorized Sliding Window (w={window_size}): Failed")
+    print_results(classical_result, true_vectorized_result)
+    print_results(sdpa_full_result, true_vectorized_result)
+    print_results(fast_sliding_result, true_vectorized_result)
 
 
 def run_test6(
@@ -364,52 +234,11 @@ def run_test6(
     )
     true_vectorized_result = results_win["true_vectorized_outer_loop"]
     classical_result = results_full["classical"]
-    sdpa_full_result = results_win["sdpa_full"]
+    sdpa_full_result = results_full["sdpa_full"]
     fast_sliding_result = results_win["fast_sliding"]
-    if true_vectorized_result:
-        print(f"✅ {true_vectorized_result}")
-        print(f"  📊 True Vectorized vs Classical Full:")
-        memory_ratio = safe_divide(
-            true_vectorized_result["memory_mb"],
-            classical_result["memory_mb"],
-        )
-        print(f"    True Vectorized memory / Classical memory: {memory_ratio:.2f}x")
-        print(
-            f"    True Vectorized time / Classical time: {true_vectorized_result['time_ms'] / classical_result['time_ms']:.2f}x"
-        )
-        print(
-            f"    Classical time / True Vectorized time: {classical_result['time_ms'] / true_vectorized_result['time_ms']:.2f}x"
-        )
-        if sdpa_full_result:
-            print(f"  📊 True Vectorized vs SDPA Full:")
-            memory_ratio = safe_divide(
-                true_vectorized_result["memory_mb"],
-                sdpa_full_result["memory_mb"],
-            )
-            print(f"    True Vectorized memory / SDPA Full memory: {memory_ratio:.2f}x")
-            print(
-                f"    True Vectorized time / SDPA Full time: {true_vectorized_result['time_ms'] / sdpa_full_result['time_ms']:.2f}x"
-            )
-            print(
-                f"    SDPA Full time / True Vectorized time: {sdpa_full_result['time_ms'] / true_vectorized_result['time_ms']:.2f}x"
-            )
-        if fast_sliding_result:
-            print(f"  📊 True Vectorized vs Fast Sliding:")
-            memory_ratio = safe_divide(
-                true_vectorized_result["memory_mb"],
-                fast_sliding_result["memory_mb"],
-            )
-            print(
-                f"    True Vectorized memory / Fast Sliding memory: {memory_ratio:.2f}x"
-            )
-            print(
-                f"    True Vectorized time / Fast Sliding time: {true_vectorized_result['time_ms'] / fast_sliding_result['time_ms']:.2f}x"
-            )
-            print(
-                f"    Fast Sliding time / True Vectorized time: {fast_sliding_result['time_ms'] / true_vectorized_result['time_ms']:.2f}x"
-            )
-    else:
-        print(f"❌ True Vectorized Sliding Window (w={window_size}): Failed")
+    print_results(classical_result, true_vectorized_result)
+    print_results(sdpa_full_result, true_vectorized_result)
+    print_results(fast_sliding_result, true_vectorized_result)
 
 
 def compare_training_mode_attention() -> None:
