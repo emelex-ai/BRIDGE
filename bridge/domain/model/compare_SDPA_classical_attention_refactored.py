@@ -5,7 +5,9 @@ import torch
 
 # Will only work if the benchmarks are in the same directory as this file
 #   python -m bridge.domain.model.compare_SDPA_classical_attention_refactored
-from .benchmarks import (
+# I can also run as
+#  `python bridge.domain.model.compare_SDPA_classical_attention_refactored.py``
+from bridge.domain.model.benchmarks import (
     benchmark_chunked_vectorized_sliding_window,
     benchmark_classical_full_attention,
     benchmark_classical_windowed_full_attention,
