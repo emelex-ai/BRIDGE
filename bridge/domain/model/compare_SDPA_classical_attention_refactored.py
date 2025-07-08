@@ -139,7 +139,7 @@ def run_test2(results_full: dict[str, dict]) -> None:
             print(f"❌ SDPA Full Attention error: {e}")
 
 
-def run_test1a(results_win: dict[str, dict]) -> None:
+def run_test1a(results_win: dict[str, dict], window_size: int) -> None:
     """Run test 1a.
 
     Args:
@@ -180,7 +180,7 @@ def run_test1a(results_win: dict[str, dict]) -> None:
             print(f"❌ Classical Windowed Full Attention error: {e}")
 
 
-def run_test3(results_win: dict[str, dict]) -> None:
+def run_test3(results_win: dict[str, dict], window_size: int) -> None:
     """Run test 3.
 
     Args:
@@ -239,7 +239,7 @@ def run_test3(results_win: dict[str, dict]) -> None:
         print(f"❌ SDPA Sliding Window (w={window_size}): Failed")
 
 
-def run_test4(results_win: dict[str, dict]) -> None:
+def run_test4(results_win: dict[str, dict], window_size: int) -> None:
     """Run test 4.
 
     Args:
@@ -281,7 +281,7 @@ def run_test4(results_win: dict[str, dict]) -> None:
         print(f"❌ Fast Sliding Window (w={window_size}): Failed")
 
 
-def run_test5(results_win: dict[str, dict]) -> None:
+def run_test5(results_win: dict[str, dict], window_size: int) -> None:
     """Run test 6.
 
     Args:
@@ -337,7 +337,7 @@ def run_test5(results_win: dict[str, dict]) -> None:
         print(f"❌ True Vectorized Sliding Window (w={window_size}): Failed")
 
 
-def run_test6(results_win: dict[str, dict]) -> None:
+def run_test6(results_win: dict[str, dict], window_size: int) -> None:
     """Run test 6.
 
     Args:
