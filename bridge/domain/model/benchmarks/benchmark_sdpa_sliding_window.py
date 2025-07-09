@@ -88,6 +88,7 @@ class SDPASlidingWindowModel(nn.Module):
 
         # Create sliding window mask (only when needed)
         attn_mask = self.create_sliding_window_mask(seq_len, x.device)
+        print(f"==> {attn_mask.shape=}")
 
         # Apply SDPA with sliding window mask
         attn_output = F.scaled_dot_product_attention(
@@ -98,6 +99,7 @@ class SDPASlidingWindowModel(nn.Module):
             dropout_p=0.0,
             is_causal=False,  # We handle causality in our custom mask
         )
+        print(f"==> {attn_output.shape=}")
 
         # Reshape back
         attn_output = (
