@@ -153,3 +153,6 @@ class ChunkedVectorizedSlidingWindowModel(nn.Module):
         output = self.out_proj(attn_output)
 
         return output
+
+if __name__ == "__main__":
+    pass

@@ -80,5 +80,3 @@ def benchmark_classical_full_attention(
         "seq_len": seq_len,
         "tokens_per_sec": (batch_size * seq_len * 10) / (end_time - start_time),
     }
-
-
