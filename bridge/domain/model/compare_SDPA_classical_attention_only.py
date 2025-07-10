@@ -246,6 +246,9 @@ if __name__ == "__main__":
     # save all results to a pandas dataframe file
     import pandas as pd
 
+    pd.set_option("display.max_columns", None)
+    pd.set_option("display.width", None)
+
     # Process all_results to create the desired format
     records = []
 
