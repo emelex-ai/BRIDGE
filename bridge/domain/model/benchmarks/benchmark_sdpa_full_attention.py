@@ -4,8 +4,8 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from bridge.domain.model.benchmarks.sdpa_full_attention import (
-    SDPAFullAttentionModel
+from bridge.domain.model.benchmarks.sdpa_full_attention_model import (
+    SDPAFullAttention
 )
 
 
@@ -35,7 +35,7 @@ def benchmark_sdpa_full_attention(
     # Precompute mask (None for full attention)
     # print("  Precomputing mask (None for full attention)...")
 
-    sdpa_model = SDPAFullAttentionModel(d_model, nhead, num_layers).to(device)
+    sdpa_model = SDPAFullAttention(d_model, nhead, num_layers).to(device)
 
     # CRITICAL: Set to training mode
     sdpa_model.train()

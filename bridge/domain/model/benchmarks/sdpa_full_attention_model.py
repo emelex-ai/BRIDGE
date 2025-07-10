@@ -1,4 +1,3 @@
-import time
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -65,7 +64,7 @@ class SDPAFullAttentionLayer(nn.Module):
 
         return x
 
-class SDPAFullAttentionModel(nn.Module):
+class SDPAFullAttention(nn.Module):
     def __init__(self, d_model, nhead, num_layers):
         super().__init__()
         self.layers = nn.ModuleList(

@@ -2,8 +2,8 @@ import time
 
 import torch
 
-from bridge.domain.model.benchmarks.true_vectorized_sliding_window_outer_loop import (
-    TrueVectorizedSlidingWindowOuterLoopModel,
+from bridge.domain.model.benchmarks.true_vectorized_sliding_window_outer_loop_model import (
+    TrueVectorizedSlidingWindowOuterLoopAttention,
 )
 
 
@@ -20,7 +20,7 @@ def benchmark_true_vectorized_sliding_window_outer_loop(
     #)
 
     # Create model
-    model = TrueVectorizedSlidingWindowOuterLoopModel(
+    model = TrueVectorizedSlidingWindowOuterLoopAttention(
         d_model, nhead, window_size, seq_len
     ).to(device)
     model.train()

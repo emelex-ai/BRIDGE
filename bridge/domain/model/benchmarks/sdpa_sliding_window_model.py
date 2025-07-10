@@ -3,7 +3,7 @@ from torch.nn import functional as F
 import torch
 from torch import nn
 
-class SDPASlidingWindowModel(nn.Module):
+class SDPASlidingWindowAttention(nn.Module):
     """SDPA model with efficient sliding window attention.
 
     This implementation avoids storing large precomputed masks by computing

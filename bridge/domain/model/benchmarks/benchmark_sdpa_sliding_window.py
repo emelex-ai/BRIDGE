@@ -3,8 +3,8 @@ from torch.nn import functional as F
 import torch
 from torch import nn
 
-from bridge.domain.model.benchmarks.sdpa_sliding_window import (
-    SDPASlidingWindowModel
+from bridge.domain.model.benchmarks.sdpa_sliding_window_model import (
+    SDPASlidingWindowAttention
 )
 
 def benchmark_sdpa_sliding_window(
@@ -32,7 +32,7 @@ def benchmark_sdpa_sliding_window(
     #)
 
     # Create model with efficient sliding window
-    model = SDPASlidingWindowModel(d_model, nhead, window_size).to(device)
+    model = SDPASlidingWindowAttention(d_model, nhead, window_size).to(device)
     model.train()  # Training mode
 
     # Create input data

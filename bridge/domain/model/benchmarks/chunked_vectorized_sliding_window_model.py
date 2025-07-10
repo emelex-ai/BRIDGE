@@ -1,4 +1,8 @@
-class ChunkedVectorizedSlidingWindowModel(nn.Module):
+import torch
+from torch import nn
+from torch.nn import functional as F
+
+class ChunkedVectorizedSlidingWindowAttention(nn.Module):
     """Memory-efficient chunked vectorized sliding window attention.
 
     This implementation processes chunks of queries simultaneously while

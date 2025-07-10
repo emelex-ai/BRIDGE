@@ -1,3 +1,12 @@
+import time
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+from bridge.domain.model.benchmarks.chunked_vectorized_sliding_window_model import (
+    ChunkedVectorizedSlidingWindowAttention
+)
+
 def benchmark_chunked_vectorized_sliding_window(
     seq_len, d_model=1024, nhead=1, window_size=128, chunk_size=32, batch_size=4
 ):
@@ -11,7 +20,7 @@ def benchmark_chunked_vectorized_sliding_window(
     #)
 
     # Create model
-    model = ChunkedVectorizedSlidingWindowModel(
+    model = ChunkedVectorizedSlidingWindowAttention(
         d_model, nhead, window_size, chunk_size
     ).to(device)
     model.train()

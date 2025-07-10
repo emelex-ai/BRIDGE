@@ -3,8 +3,8 @@ from torch.nn import functional as F
 import torch
 from torch import nn
 
-from bridge.domain.model.benchmarks.fast_sliding_window import (
-    FastSlidingWindowModel
+from bridge.domain.model.benchmarks.fast_sliding_window_model import (
+    FastSlidingWindowAttention
 )
 
 
@@ -21,7 +21,7 @@ def benchmark_fast_sliding_window(
     #)
 
     # Create model
-    model = FastSlidingWindowModel(d_model, nhead, window_size).to(device)
+    model = FastSlidingWindowAttention(d_model, nhead, window_size).to(device)
     model.train()
 
     # Create input data

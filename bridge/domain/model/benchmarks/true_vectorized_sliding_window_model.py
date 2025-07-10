@@ -3,7 +3,7 @@ from torch import nn
 from torch.nn import functional as F
 
 
-class TrueVectorizedSlidingWindowModel(nn.Module):
+class TrueVectorizedSlidingWindowAttention(nn.Module):
     """Fully vectorized sliding window attention - no loops, no conditionals.
 
     This implementation uses advanced tensor indexing and broadcasting to create
