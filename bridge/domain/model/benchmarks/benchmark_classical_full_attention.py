@@ -35,6 +35,9 @@ def benchmark_classical_full_attention(
     # Used in torch.nn.TransformerEncoderLayer
     classical_model = MultiheadAttention(d_model, nhead, batch_first=True)
 
+    # FIX: Move model to the same device as input tensors
+    classical_model = classical_model.to(device)
+
     # CRITICAL: Set to training mode (uses classical attention, not SDPA)
     classical_model.train()
 
