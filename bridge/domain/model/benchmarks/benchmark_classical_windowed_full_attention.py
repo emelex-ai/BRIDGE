@@ -1,14 +1,19 @@
+import time
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn import TransformerEncoder, TransformerEncoderLayer
+
+# from torch.nn import TransformerEncoder, TransformerEncoderLayer
+from torch.nn.modules.activation import MultiheadAttention
+
 
 def benchmark_classical_windowed_full_attention(
     seq_len: int,
     d_model: int = 1024,
     nhead: int = 1,
     window_size: int = 128,
-    num_layers: int = 1,
+    # num_layers: int = 1,
     batch_size: int = 4,
 ) -> dict:
     """Benchmark classical full attention with a sliding window mask in TRAINING mode.
@@ -21,23 +26,14 @@ def benchmark_classical_windowed_full_attention(
         d_model: Model dimension (default 1024)
         nhead: Number of attention heads (default 1)
         window_size: Sliding window size
-        num_layers: Number of encoder layers
+        # num_layers: Number of encoder layers
         batch_size: Batch size for testing
 
     Returns:
         Dictionary with benchmark results
 
     """
-    import time
-
-    import torch
-    import torch.nn as nn
-    import torch.nn.functional as F
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    #print(
-        #f"Benchmarking Classical Full Attention with Sliding Window Mask (TRAINING mode, O(nw)) on {device}"
-    #)
 
     # Create sliding window mask efficiently (lower-triangular banded mask)
     # Only store the relevant band, not the full matrix if possible
@@ -46,23 +42,18 @@ def benchmark_classical_windowed_full_attention(
         start = max(0, i - window_size + 1)
         mask[i, start : i + 1] = 0.0
 
-    # Create classical transformer encoder
-    encoder_layer = nn.TransformerEncoderLayer(
-        d_model=d_model, nhead=nhead, dim_feedforward=d_model * 4, batch_first=True
-    )
-    classical_model = nn.TransformerEncoder(encoder_layer, num_layers=num_layers).to(
-        device
-    )
+    # Used in torch.nn.TransformerEncoderLayer
+    classical_model = MultiheadAttention(d_model, nhead, batch_first=True)
     classical_model.train()
 
     # Create input with gradient tracking
     x = torch.randn(batch_size, seq_len, d_model, device=device, requires_grad=True)
 
     # Warmup
-    #print("  Warming up in training mode...")
+    # print("  Warming up in training mode...")
     for _ in range(3):
-        output = classical_model(x, mask=mask)
-        loss = output.sum()
+        output = classical_model(x, x, x, attn_mask=mask)
+        loss = output[0].sum()
         loss.backward()
         x.grad = None
 
@@ -71,8 +62,8 @@ def benchmark_classical_windowed_full_attention(
         torch.cuda.synchronize()
     start_time = time.time()
     for _ in range(10):
-        output = classical_model(x, mask=mask)
-        loss = output.sum()
+        output = classical_model(x, x, x, attn_mask=mask)
+        loss = output[0].sum()
         loss.backward()
     if device.type == "cuda":
         torch.cuda.synchronize()
