@@ -182,7 +182,7 @@ class SDPASlidingWindowLayer(nn.TransformerEncoderLayer):
         return residual + ff_output
 
 
-class SDPASlidingWindowLayer(nn.Module):
+class SDPASlidingWindowLayerNotSubclassed(nn.Module):
     """Custom layer using SDPA for sliding window attention with precomputed mask."""
 
     def __init__(
