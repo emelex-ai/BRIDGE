@@ -158,13 +158,15 @@ class SDPASlidingWindowLayer(nn.TransformerEncoderLayer):
         src: torch.Tensor,
         src_mask: torch.Tensor | None = None,
         src_key_padding_mask: torch.Tensor | None = None,
+        is_causal: bool = False,
     ) -> torch.Tensor:
         """Forward pass with SDPA sliding window attention.
 
         Args:
             src: Input tensor [batch_size, seq_len, d_model]
-            src_mask: Attention mask (ignored for SDPA sliding window)
-            src_key_padding_mask: Padding mask (ignored for SDPA sliding window)
+            src_mask: Attention mask (ignored for SDPA)
+            src_key_padding_mask: Padding mask (ignored for SDPA)
+            is_causal: Whether to use causal attention (ignored for SDPA)
 
         Returns:
             Output tensor [batch_size, seq_len, d_model]
