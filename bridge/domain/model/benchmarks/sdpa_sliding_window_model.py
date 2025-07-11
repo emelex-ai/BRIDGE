@@ -153,16 +153,30 @@ class SDPASlidingWindowLayer(nn.TransformerEncoderLayer):
             nn.Linear(d_model * 4, d_model),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass with SDPA sliding window attention."""
-        residual = x
-        x = self.norm1(x)
-        attention_output = self.attention(x)
-        x = residual + attention_output
+    def forward(
+        self,
+        src: torch.Tensor,
+        src_mask: torch.Tensor | None = None,
+        src_key_padding_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Forward pass with SDPA sliding window attention.
 
-        residual = x
-        x = self.norm2(x)
-        ff_output = self.feedforward(x)
+        Args:
+            src: Input tensor [batch_size, seq_len, d_model]
+            src_mask: Attention mask (ignored for SDPA sliding window)
+            src_key_padding_mask: Padding mask (ignored for SDPA sliding window)
+
+        Returns:
+            Output tensor [batch_size, seq_len, d_model]
+        """
+        residual = src
+        src = self.norm1(src)
+        attention_output = self.attention(src)
+        src = residual + attention_output
+
+        residual = src
+        src = self.norm2(src)
+        ff_output = self.feedforward(src)
         return residual + ff_output
 
 
