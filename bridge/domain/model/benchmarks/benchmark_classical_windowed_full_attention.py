@@ -88,5 +88,6 @@ def benchmark_classical_windowed_full_attention(
         "memory_mb": memory_mb,
         "seq_len": seq_len,
         "d_model": d_model,
+        "nhead": nhead,
         "tokens_per_sec": (batch_size * seq_len * 10) / (end_time - start_time),
     }
