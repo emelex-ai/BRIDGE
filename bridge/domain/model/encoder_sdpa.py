@@ -88,7 +88,8 @@ class EncoderSDPA(nn.Module):
             local_kwargs = {
                 **base_kwargs,
                 "window_size": window_size,
-                "causal": causal,
+                # Not used for SDPA. Might be used for classical attention. (Not sure)
+                # "causal": causal,
             }
 
             # Choose attention implementation based on attention_type
