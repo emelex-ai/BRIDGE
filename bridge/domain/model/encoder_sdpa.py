@@ -620,26 +620,6 @@ if __name__ == "__main__":
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"autoregressive_scaling_results_{timestamp}.csv"
 
-            # Round numeric columns to 5 significant digits before saving
-            numeric_columns = [
-                "avg_time_s",
-                "min_time_s",
-                "max_time_s",
-                "std_time_s",
-                "memory_mb",
-                "tokens_per_sec",
-            ]
-
-            # Much simpler approach using pandas built-in methods
-            for col in numeric_columns:
-                if col in df.columns:
-                    if col == "tokens_per_sec":
-                        # Convert to integer, handling inf values
-                        df[col] = df[col].replace([float("inf")], 0).astype(int)
-                    else:
-                        # Round to 5 significant digits, handling inf values
-                        df[col] = df[col].replace([float("inf")], 0).round(5)
-
             df.to_csv(filename, index=False)
 
             print(f"\n{'='*80}")
@@ -677,33 +657,8 @@ if __name__ == "__main__":
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"autoregressive_scaling_results_{timestamp}.json"
 
-            # Round numeric values in the results before saving to JSON
-            rounded_results = []
-            for result in all_results:
-                rounded_result = result.copy()
-                numeric_keys = [
-                    "avg_time_s",
-                    "min_time_s",
-                    "max_time_s",
-                    "std_time_s",
-                    "memory_mb",
-                    "tokens_per_sec",
-                ]
-                for key in numeric_keys:
-                    if key in rounded_result and isinstance(
-                        rounded_result[key], (int, float)
-                    ):
-                        if rounded_result[key] != float("inf"):
-                            if key == "tokens_per_sec":
-                                rounded_result[key] = int(rounded_result[key])
-                            else:
-                                rounded_result[key] = float(
-                                    f"{rounded_result[key]:.5g}"
-                                )
-                rounded_results.append(rounded_result)
-
             with open(filename, "w") as f:
-                json.dump(rounded_results, f, indent=2)
+                json.dump(all_results, f, indent=2)
 
             print(f"Results saved to: {filename}")
             return len([r for r in all_results if r["success"]]) == len(all_results)

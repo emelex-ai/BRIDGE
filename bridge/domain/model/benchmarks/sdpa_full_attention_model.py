@@ -137,7 +137,8 @@ class SDPAFullLayer(nn.TransformerEncoderLayer):
         super().__init__(
             d_model=d_model,
             nhead=nhead,
-            dim_feedforward=4 * d_model,
+            # Included in kwargs
+            # dim_feedforward=4 * d_model,
             dropout=dropout,
             activation="relu",
             layer_norm_eps=1e-5,
