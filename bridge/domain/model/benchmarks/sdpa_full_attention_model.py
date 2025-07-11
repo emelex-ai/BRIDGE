@@ -133,6 +133,9 @@ class SDPAFullLayer(nn.TransformerEncoderLayer):
         dropout: float = 0.0,
         **kwargs: Any,
     ) -> None:
+        # Filter out seq_len from kwargs to avoid passing it to TransformerEncoderLayer
+        parent_kwargs = {k: v for k, v in kwargs.items() if k != "seq_len"}
+
         # Initialize parent class with dummy self_attn (will be replaced)
         super().__init__(
             d_model=d_model,
@@ -144,7 +147,7 @@ class SDPAFullLayer(nn.TransformerEncoderLayer):
             layer_norm_eps=1e-5,
             batch_first=batch_first,
             norm_first=norm_first,
-            **kwargs,
+            **parent_kwargs,
         )
 
         self.attention = SDPAFullAttention(d_model, nhead)
