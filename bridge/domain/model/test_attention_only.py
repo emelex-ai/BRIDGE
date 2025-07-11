@@ -3,112 +3,149 @@
 Test attention modules in isolation to debug memory usage.
 """
 
+import datetime
+import gc
+import time
+
 import torch
 import torch.nn as nn
 
-from bridge.domain.model.benchmarks.sdpa_full_attention_model import SDPAFullAttention
-from bridge.domain.model.benchmarks.sdpa_sliding_window_model import (
-    SDPASlidingWindowAttention,
+# Use the existing benchmark functions
+from bridge.domain.model.benchmarks import (
+    benchmark_sdpa_full_attention,
+    benchmark_sdpa_sliding_window,
 )
 
 
 def test_attention_only():
-    """Test attention modules in isolation."""
+    """Test attention modules in isolation and save results to CSV."""
     print("=" * 60)
     print("Testing Attention Modules in Isolation")
     print("=" * 60)
 
-    # Test parameters
-    seq_len = 4096
-    d_model = 512
-    nhead = 1
-    window_size = 32
-    batch_size = 1
+    # Test parameters - match your encoder_sdpa.py test
+    seq_lens = [4096]
+    d_models = [512]
+    nheads = [1]
+    batch_sizes = [1]
+    window_sizes = [32]
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    print(f"Test configuration:")
-    print(f"  Sequence length: {seq_len}")
-    print(f"  Model dimension: {d_model}")
-    print(f"  Number of heads: {nhead}")
-    print(f"  Window size: {window_size}")
-    print(f"  Batch size: {batch_size}")
-    print(f"  Device: {device}")
+    print(f"Running tests on: {device}")
     print()
 
-    # Create input tensor
-    x = torch.randn(batch_size, seq_len, d_model, device=device)
+    # Store all results
+    all_results = []
 
-    # Test 1: SDPA Full Attention
-    print("Test 1: SDPA Full Attention")
+    for seq_len in seq_lens:
+        for batch_size in batch_sizes:
+            for d_model in d_models:
+                for nhead in nheads:
+                    # Skip invalid combinations
+                    if d_model % nhead != 0:
+                        continue
+
+                    for window_size in window_sizes:
+                        # Skip invalid combinations
+                        if window_size > seq_len:
+                            continue
+
+                        print(
+                            f"Testing: seq_len={seq_len}, d_model={d_model}, nhead={nhead}, window_size={window_size}, batch_size={batch_size}"
+                        )
+
+                        # Clean up memory
+                        if device == "cuda":
+                            torch.cuda.empty_cache()
+                            gc.collect()
+
+                        # Test 1: SDPA Full Attention
+                        try:
+                            print("  Running SDPA Full Attention...")
+                            full_result = benchmark_sdpa_full_attention(
+                                seq_len,
+                                d_model=d_model,
+                                nhead=nhead,
+                                batch_size=batch_size,
+                            )
+                            full_result["test_type"] = "attention_only"
+                            full_result["seq_len"] = seq_len
+                            full_result["d_model"] = d_model
+                            full_result["nhead"] = nhead
+                            full_result["window_size"] = None
+                            full_result["batch_size"] = batch_size
+                            all_results.append(full_result)
+                            print(
+                                f"    ✓ Memory: {full_result['memory_mb']:.1f}MB, Time: {full_result['time_ms']:.2f}ms"
+                            )
+                        except Exception as e:
+                            print(f"    ❌ SDPA Full failed: {str(e)}")
+
+                        # Test 2: SDPA Sliding Window Attention
+                        try:
+                            print("  Running SDPA Sliding Window Attention...")
+                            sliding_result = benchmark_sdpa_sliding_window(
+                                seq_len,
+                                d_model=d_model,
+                                nhead=nhead,
+                                window_size=window_size,
+                                batch_size=batch_size,
+                            )
+                            sliding_result["test_type"] = "attention_only"
+                            sliding_result["seq_len"] = seq_len
+                            sliding_result["d_model"] = d_model
+                            sliding_result["nhead"] = nhead
+                            sliding_result["window_size"] = window_size
+                            sliding_result["batch_size"] = batch_size
+                            all_results.append(sliding_result)
+                            print(
+                                f"    ✓ Memory: {sliding_result['memory_mb']:.1f}MB, Time: {sliding_result['time_ms']:.2f}ms"
+                            )
+                        except Exception as e:
+                            print(f"    ❌ SDPA Sliding failed: {str(e)}")
+
+                        print()
+
+    # Save results to CSV
     try:
-        # Clear memory
-        torch.cuda.empty_cache()
-        torch.cuda.reset_peak_memory_stats()
+        import pandas as pd
 
-        # Create model
-        full_attention = SDPAFullAttention(
-            d_model, nhead, seq_len=seq_len, device=device
-        )
-        full_attention = full_attention.to(device)
+        df = pd.DataFrame(all_results)
 
-        print(f"  Model created on {device}")
-        print(f"  Initial memory: {torch.cuda.memory_allocated()/1024**2:.1f}MB")
+        # Generate filename with timestamp
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"attention_only_results_{timestamp}.csv"
 
-        # Forward pass
-        with torch.no_grad():
-            output = full_attention(x)
+        df.to_csv(filename, index=False)
 
-        peak_memory = torch.cuda.max_memory_allocated() / 1024**2
-        print(f"  Peak memory: {peak_memory:.1f}MB")
-        print(f"  Output shape: {output.shape}")
-        print()
+        print("=" * 60)
+        print("RESULTS SAVED")
+        print("=" * 60)
+        print(f"Results saved to: {filename}")
+        print(f"Total tests: {len(all_results)}")
 
-    except Exception as e:
-        print(f"  ❌ Failed: {str(e)}")
-        import traceback
+        # Show summary
+        if len(df) > 0:
+            print("\nSummary:")
+            print(
+                df[["attention_type", "memory_mb", "time_ms", "window_size"]].to_string(
+                    index=False
+                )
+            )
 
-        traceback.print_exc()
-        print()
+        print("=" * 60)
 
-    # Test 2: SDPA Sliding Window Attention
-    print("Test 2: SDPA Sliding Window Attention")
-    try:
-        # Clear memory
-        torch.cuda.empty_cache()
-        torch.cuda.reset_peak_memory_stats()
+    except ImportError:
+        print("❌ pandas not available, saving results as JSON instead")
+        import json
 
-        # Create model
-        sliding_attention = SDPASlidingWindowAttention(
-            d_model, nhead, window_size, seq_len=seq_len, device=device
-        )
-        sliding_attention = sliding_attention.to(device)
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"attention_only_results_{timestamp}.json"
 
-        print(f"  Model created on {device}")
-        print(f"  Initial memory: {torch.cuda.memory_allocated()/1024**2:.1f}MB")
+        with open(filename, "w") as f:
+            json.dump(all_results, f, indent=2)
 
-        # Forward pass
-        with torch.no_grad():
-            output = sliding_attention(x)
-
-        peak_memory = torch.cuda.max_memory_allocated() / 1024**2
-        print(f"  Peak memory: {peak_memory:.1f}MB")
-        print(f"  Output shape: {output.shape}")
-        print()
-
-    except Exception as e:
-        print(f"  ❌ Failed: {str(e)}")
-        import traceback
-
-        traceback.print_exc()
-        print()
-
-    # Test 3: Compare with benchmark results
-    print("Test 3: Comparison with Benchmark Results")
-    print("  Expected from compare_SDPA_classical_attention_only.py:")
-    print("    - SDPA Full: ~96MB")
-    print("    - SDPA Sliding: ~120MB")
-    print("  If memory is constant, there's an issue with mask creation.")
-    print()
+        print(f"Results saved to: {filename}")
 
 
 if __name__ == "__main__":
