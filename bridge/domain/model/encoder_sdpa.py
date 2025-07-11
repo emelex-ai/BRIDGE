@@ -91,6 +91,8 @@ class EncoderSDPA(nn.Module):
             local_kwargs = {
                 **base_kwargs,
                 "window_size": window_size,
+                "seq_len": seq_len,
+                "device": device,
                 # Not used for SDPA. Might be used for classical attention. (Not sure)
                 # "causal": causal,
             }
@@ -394,7 +396,9 @@ if __name__ == "__main__":
         seq_lens = [4096]  # 6 sequence lengths
         d_models = [512]  # 4 model dimensions
         nheads = [1]
-        batch_sizes = [1, 8]
+        batch_sizes = [
+            1,
+        ]
         window_sizes = [
             # 16,
             32,

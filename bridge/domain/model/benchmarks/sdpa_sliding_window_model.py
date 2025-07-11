@@ -16,6 +16,9 @@ class SDPASlidingWindowAttention(nn.Module):
 
     def __init__(self, d_model, nhead, window_size, seq_len=None, device=None):
         super().__init__()
+        print(
+            f"DEBUG: SDPASlidingWindowAttention.__init__ called with seq_len={seq_len}, device={device}"
+        )
         self.d_model = d_model
         self.nhead = nhead
         self.window_size = window_size
@@ -30,7 +33,10 @@ class SDPASlidingWindowAttention(nn.Module):
         # Create mask in constructor if seq_len and device are provided
         self.mask = None
         if seq_len is not None and device is not None:
+            print(f"DEBUG: Creating mask with seq_len={seq_len}, device={device}")
             self.mask = self.create_sliding_window_mask(seq_len, device)
+        else:
+            print(f"DEBUG: Not creating mask - seq_len={seq_len}, device={device}")
 
     def create_sliding_window_mask(self, seq_len, device):
         """Create sliding window mask efficiently using broadcasting.
@@ -131,6 +137,8 @@ class SDPASlidingWindowLayer(nn.TransformerEncoderLayer):
         d_model: int,
         nhead: int,
         window_size: int,
+        seq_len: int | None = None,
+        device: str | None = None,
         batch_first: bool = True,
         norm_first: bool = False,
         dropout: float = 0.0,
@@ -149,7 +157,9 @@ class SDPASlidingWindowLayer(nn.TransformerEncoderLayer):
             **kwargs,
         )
 
-        self.attention = SDPASlidingWindowAttention(d_model, nhead, window_size)
+        self.attention = SDPASlidingWindowAttention(
+            d_model, nhead, window_size, seq_len, device
+        )
 
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
@@ -196,13 +206,17 @@ class SDPASlidingWindowLayerNotSubclassed(nn.Module):
         d_model: int,
         nhead: int,
         window_size: int,
+        seq_len: int | None = None,
+        device: str | None = None,
         batch_first: bool = True,
         norm_first: bool = False,
         dropout: float = 0.0,
         **kwargs: Any,
     ) -> None:
         super().__init__()
-        self.attention = SDPASlidingWindowAttention(d_model, nhead, window_size)
+        self.attention = SDPASlidingWindowAttention(
+            d_model, nhead, window_size, seq_len, device
+        )
         # for compability with nn.TransformerEncoderLayer
         self.self_attn = self.attention
 
@@ -252,6 +266,8 @@ class SDPASlidingWindowModelNotSubclassed(nn.Module):
         nhead: int,
         num_layers: int,
         window_size: int,
+        seq_len: int | None = None,
+        device: str | None = None,
         batch_first: bool = True,
         dropout: float = 0.0,
         **kwargs: Any,
@@ -270,6 +286,8 @@ class SDPASlidingWindowModelNotSubclassed(nn.Module):
                     d_model=d_model,
                     nhead=nhead,
                     window_size=window_size,
+                    seq_len=seq_len,
+                    device=device,
                     batch_first=batch_first,
                     dropout=dropout,
                     **kwargs,
