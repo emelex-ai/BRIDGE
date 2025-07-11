@@ -207,6 +207,8 @@ class SDPAFullLayerNotSubclassed(nn.Module):
         super().__init__()
 
         self.attention = SDPAFullAttention(d_model, nhead)
+        # for compability with nn.TransformerEncoderLayer
+        self.self_attn = self.attention
 
         # Layer norm and feedforward (to match TransformerEncoderLayer)
         self.norm1 = nn.LayerNorm(d_model)
