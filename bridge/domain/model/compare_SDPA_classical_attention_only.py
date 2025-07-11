@@ -190,6 +190,8 @@ def compare_training_mode_attention() -> list[dict[str, dict]]:
         results_full = run_benchmark_tests(
             seq_len=seq_len,
             d_model=d_model,
+            nhead=nhead,
+            batch_size=batch_size,
             run_full_attention=True,
             run_sliding_window=False,
         )

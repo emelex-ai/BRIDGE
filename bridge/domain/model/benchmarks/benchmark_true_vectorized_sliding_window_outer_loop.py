@@ -72,5 +72,6 @@ def benchmark_true_vectorized_sliding_window_outer_loop(
         "time_ms": avg_time_ms,
         "memory_mb": memory_mb,
         "seq_len": seq_len,
+        "d_model": d_model,
         "tokens_per_sec": (batch_size * seq_len * 10) / (end_time - start_time),
     }
