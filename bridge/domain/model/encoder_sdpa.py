@@ -393,7 +393,7 @@ if __name__ == "__main__":
             f"Total tests to run: {total_tests} ({len(seq_lens)} seq_lens × {len(d_models)} d_models × {len(window_sizes)} window_sizes × {len(nheads)} nheads × {len(attention_types)} attention_types)"
         )
         print(f"Test parameters:")
-        print(f"  Batch size: {batch_size}")
+        print(f"  Batch sizes: {batch_sizes}")
         print(f"  Sequence lengths: {seq_lens}")
         print(f"  Model dimensions: {d_models}")
         print(f"  Number of heads: {nheads}")
@@ -418,221 +418,223 @@ if __name__ == "__main__":
             )
 
         for seq_len in seq_lens:
-            for d_model in d_models:
-                for nhead in nheads:
-                    # MEMORY CLEANUP AT START OF EACH d_model/nhead COMBINATION
-                    if device == "cuda":
-                        torch.cuda.empty_cache()
-                        gc.collect()
+            for batch_size in batch_sizes:
+                for d_model in d_models:
+                    for nhead in nheads:
+                        # MEMORY CLEANUP AT START OF EACH d_model/nhead COMBINATION
+                        if device == "cuda":
+                            torch.cuda.empty_cache()
+                            gc.collect()
 
-                    # Skip invalid combinations where nhead doesn't divide d_model evenly
-                    if d_model % nhead != 0:
-                        print(
-                            f"Skipping invalid combination: d_model={d_model}, nhead={nhead} (not divisible)"
-                        )
-                        continue
-
-                    # Skip invalid combinations where window_size > seq_len
-                    valid_window_sizes = [w for w in window_sizes if w <= seq_len]
-
-                    for window_size in valid_window_sizes:
-                        for attention_type in attention_types:
-                            test_count += 1
+                        # Skip invalid combinations where nhead doesn't divide d_model evenly
+                        if d_model % nhead != 0:
                             print(
-                                f"Test {test_count}/{total_tests}: seq_len={seq_len}, d_model={d_model}, nhead={nhead}, window_size={window_size}, attention_type={attention_type}"
+                                f"Skipping invalid combination: d_model={d_model}, nhead={nhead} (not divisible)"
                             )
-                            print("\n==> Before model creation")
-                            check_cuda_memory()
+                            continue
 
-                            try:
-                                # Create encoder
-                                encoder = EncoderSDPA(
-                                    d_model=d_model,
-                                    nhead=nhead,  # Now variable
-                                    num_layers=2,  # Fixed for simplicity
-                                    device=device,
-                                    window_size=window_size,
-                                    causal=True,
-                                    attention_type=attention_type,  # Pass attention type
-                                    # look_backward=1,
-                                    # look_forward=0,
+                        # Skip invalid combinations where window_size > seq_len
+                        valid_window_sizes = [w for w in window_sizes if w <= seq_len]
+
+                        for window_size in valid_window_sizes:
+                            for attention_type in attention_types:
+                                test_count += 1
+                                print(
+                                    f"Test {test_count}/{total_tests}: seq_len={seq_len}, d_model={d_model}, nhead={nhead}, window_size={window_size}, attention_type={attention_type}"
                                 )
+                                print("\n==> Before model creation")
+                                check_cuda_memory()
 
-                                if device == "cuda":
-                                    encoder = encoder.to("cuda")
-                                    print("\n==> After model creation")
-                                    check_cuda_memory()
+                                try:
+                                    # Create encoder
+                                    encoder = EncoderSDPA(
+                                        d_model=d_model,
+                                        nhead=nhead,  # Now variable
+                                        num_layers=2,  # Fixed for simplicity
+                                        device=device,
+                                        window_size=window_size,
+                                        causal=True,
+                                        attention_type=attention_type,  # Pass attention type
+                                        # look_backward=1,
+                                        # look_forward=0,
+                                    )
 
-                                # Create input tensor
-                                x = torch.randn(
-                                    batch_size, seq_len, d_model, device=device
-                                )
-
-                                # Warmup run
-                                with torch.no_grad():
-                                    _ = encoder(x)
-
-                                if device == "cuda":
-                                    torch.cuda.synchronize()
-
-                                # Time multiple runs
-                                import time
-
-                                times = []
-
-                                for step in range(num_steps):
                                     if device == "cuda":
-                                        torch.cuda.synchronize()
+                                        encoder = encoder.to("cuda")
+                                        print("\n==> After model creation")
+                                        check_cuda_memory()
 
-                                    start_time = time.time()
-                                    with torch.no_grad():
-                                        output = encoder(x)
-                                    if device == "cuda":
-                                        torch.cuda.synchronize()
+                                    # Create input tensor
+                                    x = torch.randn(
+                                        batch_size, seq_len, d_model, device=device
+                                    )
 
-                                    end_time = time.time()
-                                    times.append(end_time - start_time)
-
-                                # Calculate timing statistics
-                                avg_time = sum(times) / len(times)
-                                min_time = min(times)
-                                max_time = max(times)
-                                std_time = (
-                                    sum((t - avg_time) ** 2 for t in times) / len(times)
-                                ) ** 0.5
-
-                                # Memory measurement
-                                if device == "cuda":
-                                    torch.cuda.empty_cache()
-                                    initial_memory = torch.cuda.memory_allocated()
+                                    # Warmup run
                                     with torch.no_grad():
                                         _ = encoder(x)
-                                    peak_memory = torch.cuda.max_memory_allocated()
-                                    memory_used_mb = (
-                                        peak_memory - initial_memory
-                                    ) / 1024**2
-                                    torch.cuda.empty_cache()
-                                else:
-                                    memory_used_mb = 0.0
 
-                                # Verify output shape
-                                assert (
-                                    output.shape == x.shape
-                                ), f"Shape mismatch: {output.shape} vs {x.shape}"
+                                    if device == "cuda":
+                                        torch.cuda.synchronize()
 
-                                # Calculate derived metrics
-                                total_tokens = batch_size * seq_len
-                                tokens_per_sec = total_tokens / avg_time
+                                    # Time multiple runs
+                                    import time
 
-                                # Store result
-                                result = {
-                                    "model_type": attention_type,  # First column as requested
-                                    "seq_len": seq_len,
-                                    "d_model": d_model,
-                                    "nhead": nhead,
-                                    "window_size": window_size,
-                                    "batch_size": batch_size,
-                                    "device": device,
-                                    "avg_time_s": avg_time,
-                                    "min_time_s": min_time,
-                                    "max_time_s": max_time,
-                                    "std_time_s": std_time,
-                                    "memory_mb": memory_used_mb,
-                                    "tokens_per_sec": tokens_per_sec,
-                                    "total_tokens": total_tokens,
-                                    "success": True,
-                                    "error": None,
-                                }
+                                    times = []
 
-                                all_results.append(result.copy())
-                                print("nb results: ", len(all_results))
-                                print(
-                                    f"  ✓ {avg_time:.4f}s, {tokens_per_sec:.0f} tokens/sec, {memory_used_mb:.1f}MB"
-                                )
+                                    for step in range(num_steps):
+                                        if device == "cuda":
+                                            torch.cuda.synchronize()
 
-                            except Exception as e:
-                                print(f"  ❌ Failed: {str(e)}")
+                                        start_time = time.time()
+                                        with torch.no_grad():
+                                            output = encoder(x)
+                                        if device == "cuda":
+                                            torch.cuda.synchronize()
 
-                                # Store failed result
-                                result = {
-                                    "model_type": attention_type,  # First column as requested
-                                    "seq_len": seq_len,
-                                    "d_model": d_model,
-                                    "nhead": nhead,
-                                    "window_size": window_size,
-                                    "batch_size": batch_size,
-                                    "device": device,
-                                    "avg_time_s": float("inf"),
-                                    "min_time_s": float("inf"),
-                                    "max_time_s": float("inf"),
-                                    "std_time_s": float("inf"),
-                                    "memory_mb": 0.0,
-                                    "tokens_per_sec": 0.0,
-                                    "total_tokens": batch_size * seq_len,
-                                    "success": False,
-                                    "error": str(e),
-                                }
+                                        end_time = time.time()
+                                        times.append(end_time - start_time)
 
-                                all_results.append(result.copy())
+                                    # Calculate timing statistics
+                                    avg_time = sum(times) / len(times)
+                                    min_time = min(times)
+                                    max_time = max(times)
+                                    std_time = (
+                                        sum((t - avg_time) ** 2 for t in times)
+                                        / len(times)
+                                    ) ** 0.5
 
-                                # Print traceback for debugging
-                                import traceback
+                                    # Memory measurement
+                                    if device == "cuda":
+                                        torch.cuda.empty_cache()
+                                        initial_memory = torch.cuda.memory_allocated()
+                                        with torch.no_grad():
+                                            _ = encoder(x)
+                                        peak_memory = torch.cuda.max_memory_allocated()
+                                        memory_used_mb = (
+                                            peak_memory - initial_memory
+                                        ) / 1024**2
+                                        torch.cuda.empty_cache()
+                                    else:
+                                        memory_used_mb = 0.0
 
-                                traceback.print_exc()
+                                    # Verify output shape
+                                    assert (
+                                        output.shape == x.shape
+                                    ), f"Shape mismatch: {output.shape} vs {x.shape}"
 
-                            finally:
-                                # AGGRESSIVE MEMORY CLEANUP AFTER EACH TEST
-                                # Delete all local variables
-                                locals_to_delete = [
-                                    "encoder",
-                                    "x",
-                                    "output",
-                                    "times",
-                                    "result",
-                                ]
-                                for var_name in locals_to_delete:
-                                    if var_name in locals():
-                                        del locals()[var_name]
+                                    # Calculate derived metrics
+                                    total_tokens = batch_size * seq_len
+                                    tokens_per_sec = total_tokens / avg_time
 
-                                # Force garbage collection
-                                gc.collect()
+                                    # Store result
+                                    result = {
+                                        "model_type": attention_type,  # First column as requested
+                                        "seq_len": seq_len,
+                                        "d_model": d_model,
+                                        "nhead": nhead,
+                                        "window_size": window_size,
+                                        "batch_size": batch_size,
+                                        "device": device,
+                                        "avg_time_s": avg_time,
+                                        "min_time_s": min_time,
+                                        "max_time_s": max_time,
+                                        "std_time_s": std_time,
+                                        "memory_mb": memory_used_mb,
+                                        "tokens_per_sec": tokens_per_sec,
+                                        "total_tokens": total_tokens,
+                                        "success": True,
+                                        "error": None,
+                                    }
 
-                                # Clear CUDA cache if using GPU
-                                if device == "cuda":
-                                    torch.cuda.empty_cache()
-                                    torch.cuda.synchronize()
-
-                                # Print memory status every 10 tests
-                                if test_count % 10 == 0 and device == "cuda":
-                                    current_memory = (
-                                        torch.cuda.memory_allocated() / 1024**2
-                                    )
-                                    max_memory = (
-                                        torch.cuda.max_memory_allocated() / 1024**2
-                                    )
+                                    all_results.append(result.copy())
+                                    print("nb results: ", len(all_results))
                                     print(
-                                        f"    Memory: {current_memory:.1f}MB current, {max_memory:.1f}MB peak"
+                                        f"  ✓ {avg_time:.4f}s, {tokens_per_sec:.0f} tokens/sec, {memory_used_mb:.1f}MB"
                                     )
-                                    torch.cuda.reset_peak_memory_stats()
 
-                            # PERIODIC SAVE EVERY 50 TESTS
-                            if test_count % 50 == 0 and len(all_results) > 0:
-                                try:
-                                    import pandas as pd
+                                except Exception as e:
+                                    print(f"  ❌ Failed: {str(e)}")
 
-                                    df_temp = pd.DataFrame(all_results)
-                                    timestamp = datetime.datetime.now().strftime(
-                                        "%Y%m%d_%H%M%S"
-                                    )
-                                    temp_filename = f"autoregressive_scaling_results_partial_{timestamp}.csv"
-                                    df_temp.to_csv(temp_filename, index=False)
-                                    print(
-                                        f"    Saved partial results to {temp_filename}"
-                                    )
-                                except Exception as save_e:
-                                    print(
-                                        f"    Warning: Could not save partial results: {save_e}"
-                                    )
+                                    # Store failed result
+                                    result = {
+                                        "model_type": attention_type,  # First column as requested
+                                        "seq_len": seq_len,
+                                        "d_model": d_model,
+                                        "nhead": nhead,
+                                        "window_size": window_size,
+                                        "batch_size": batch_size,
+                                        "device": device,
+                                        "avg_time_s": float("inf"),
+                                        "min_time_s": float("inf"),
+                                        "max_time_s": float("inf"),
+                                        "std_time_s": float("inf"),
+                                        "memory_mb": 0.0,
+                                        "tokens_per_sec": 0.0,
+                                        "total_tokens": batch_size * seq_len,
+                                        "success": False,
+                                        "error": str(e),
+                                    }
+
+                                    all_results.append(result.copy())
+
+                                    # Print traceback for debugging
+                                    import traceback
+
+                                    traceback.print_exc()
+
+                                finally:
+                                    # AGGRESSIVE MEMORY CLEANUP AFTER EACH TEST
+                                    # Delete all local variables
+                                    locals_to_delete = [
+                                        "encoder",
+                                        "x",
+                                        "output",
+                                        "times",
+                                        "result",
+                                    ]
+                                    for var_name in locals_to_delete:
+                                        if var_name in locals():
+                                            del locals()[var_name]
+
+                                    # Force garbage collection
+                                    gc.collect()
+
+                                    # Clear CUDA cache if using GPU
+                                    if device == "cuda":
+                                        torch.cuda.empty_cache()
+                                        torch.cuda.synchronize()
+
+                                    # Print memory status every 10 tests
+                                    if test_count % 10 == 0 and device == "cuda":
+                                        current_memory = (
+                                            torch.cuda.memory_allocated() / 1024**2
+                                        )
+                                        max_memory = (
+                                            torch.cuda.max_memory_allocated() / 1024**2
+                                        )
+                                        print(
+                                            f"    Memory: {current_memory:.1f}MB current, {max_memory:.1f}MB peak"
+                                        )
+                                        torch.cuda.reset_peak_memory_stats()
+
+                                # PERIODIC SAVE EVERY 50 TESTS
+                                if test_count % 50 == 0 and len(all_results) > 0:
+                                    try:
+                                        import pandas as pd
+
+                                        df_temp = pd.DataFrame(all_results)
+                                        timestamp = datetime.datetime.now().strftime(
+                                            "%Y%m%d_%H%M%S"
+                                        )
+                                        temp_filename = f"autoregressive_scaling_results_partial_{timestamp}.csv"
+                                        df_temp.to_csv(temp_filename, index=False)
+                                        print(
+                                            f"    Saved partial results to {temp_filename}"
+                                        )
+                                    except Exception as save_e:
+                                        print(
+                                            f"    Warning: Could not save partial results: {save_e}"
+                                        )
 
         # Save results to CSV using pandas
         try:
