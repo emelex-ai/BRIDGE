@@ -4,9 +4,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from bridge.domain.model.benchmarks.sdpa_full_attention_model import (
-    SDPAFullAttention
-)
+from bridge.domain.model.benchmarks.sdpa_full_attention_model import SDPAFullAttention
 
 
 def benchmark_sdpa_full_attention(
@@ -31,7 +29,6 @@ def benchmark_sdpa_full_attention(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # print(f"Benchmarking SDPA Full Attention (TRAINING mode, O(n²)) on {device}")
 
-
     # Precompute mask (None for full attention)
     # print("  Precomputing mask (None for full attention)...")
 
@@ -51,6 +48,11 @@ def benchmark_sdpa_full_attention(
         loss = output.sum()
         loss.backward()
         x.grad = None  # Clear gradients
+
+    # Clear memory before benchmark
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
 
     # Benchmark
     if device.type == "cuda":
