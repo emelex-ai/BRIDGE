@@ -621,7 +621,32 @@ if __name__ == "__main__":
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"autoregressive_scaling_results_{timestamp}.csv"
 
+            # Much simpler approach using pandas built-in methods
+            numeric_columns = [
+                "avg_time_s",
+                "min_time_s",
+                "max_time_s",
+                "std_time_s",
+                "memory_mb",
+                "tokens_per_sec",
+            ]
+
+            for col in numeric_columns:
+                if col in df.columns:
+                    if col == "tokens_per_sec":
+                        # Convert to integer, handling inf values
+                        df[col] = df[col].replace([float("inf")], 0).astype(int)
+                    else:
+                        # Round to 5 significant digits, handling inf values
+                        df[col] = df[col].replace([float("inf")], 0).round(5)
+
             df.to_csv(filename, index=False)
+
+            # Set pandas display options for nice formatting
+            pd.set_option("display.max_columns", None)
+            pd.set_option("display.width", None)
+            pd.set_option("display.max_rows", None)
+            pd.set_option("display.float_format", "{:.5g}".format)
 
             print(f"\n{'='*80}")
             print("RESULTS SAVED")
@@ -647,6 +672,12 @@ if __name__ == "__main__":
 
             print(f"\nDataFrame columns: {list(df.columns)}")
             print(f"DataFrame shape: {df.shape}")
+
+            # Display the full DataFrame nicely formatted
+            print(f"\n{'='*80}")
+            print("FULL RESULTS TABLE")
+            print(f"{'='*80}")
+            print(df.to_string(index=False))
             print(f"{'='*80}")
 
             return len([r for r in all_results if r["success"]]) == len(all_results)
