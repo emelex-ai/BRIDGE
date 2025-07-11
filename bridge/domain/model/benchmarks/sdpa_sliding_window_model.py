@@ -182,6 +182,60 @@ class SDPASlidingWindowLayer(nn.TransformerEncoderLayer):
         return residual + ff_output
 
 
+class SDPASlidingWindowLayerNotSubclassed(nn.Module):
+    """Custom layer using SDPA for sliding window attention with precomputed mask."""
+
+    def __init__(
+        self,
+        d_model: int,
+        nhead: int,
+        window_size: int,
+        batch_first: bool = True,
+        norm_first: bool = False,
+        dropout: float = 0.0,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__()
+
+        self.attention = SDPASlidingWindowAttention(d_model, nhead, window_size)
+
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.feedforward = nn.Sequential(
+            nn.Linear(d_model, d_model * 4),
+            nn.ReLU(),
+            nn.Linear(d_model * 4, d_model),
+        )
+
+    def forward(
+        self,
+        src: torch.Tensor,
+        src_mask: torch.Tensor | None = None,
+        src_key_padding_mask: torch.Tensor | None = None,
+        is_causal: bool = False,
+    ) -> torch.Tensor:
+        """Forward pass with SDPA sliding window attention.
+
+        Args:
+            src: Input tensor [batch_size, seq_len, d_model]
+            src_mask: Attention mask (ignored for SDPA)
+            src_key_padding_mask: Padding mask (ignored for SDPA)
+            is_causal: Whether to use causal attention (ignored for SDPA)
+
+        Returns:
+            Output tensor [batch_size, seq_len, d_model]
+        """
+        residual = src
+        src = self.norm1(src)
+        attention_output = self.attention(src)
+        src = residual + attention_output
+
+        residual = src
+        src = self.norm2(src)
+        ff_output = self.feedforward(src)
+        return residual + ff_output
+
+
 class SDPASlidingWindowModel(nn.Module):
     def __init__(self, d_model: int, nhead: int, num_layers: int, window_size: int):
         super().__init__()

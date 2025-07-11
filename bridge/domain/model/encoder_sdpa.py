@@ -7,9 +7,11 @@ import torch.nn as nn
 
 from bridge.domain.model.benchmarks.sdpa_full_attention_model import (
     SDPAFullLayer,
+    SDPAFullLayerNotSubclassed,
 )
 from bridge.domain.model.benchmarks.sdpa_sliding_window_model import (
     SDPASlidingWindowLayer,
+    SDPASlidingWindowLayerNotSubclassed,
 )
 
 
@@ -96,9 +98,19 @@ class EncoderSDPA(nn.Module):
             if attention_type == "sdpa_full":
                 encoder_layer = SDPAFullLayer(**local_kwargs)
                 print(f"Using SDPAFullLayer with window_size={window_size}")
+            elif attention_type == "sdpa_full_not_subclassed":
+                encoder_layer = SDPAFullLayerNotSubclassed(**local_kwargs)
+                print(
+                    f"Using SDPAFullLayerNotSubclassed with window_size={window_size}"
+                )
             elif attention_type == "sdpa_sliding_window":
                 encoder_layer = SDPASlidingWindowLayer(**local_kwargs)
                 print(f"Using SDPASlidingWindowLayer with window_size={window_size}")
+            elif attention_type == "sdpa_sliding_window_not_subclassed":
+                encoder_layer = SDPASlidingWindowLayerNotSubclassed(**local_kwargs)
+                print(
+                    f"Using SDPASlidingWindowLayerNotSubclassed with window_size={window_size}"
+                )
             else:
                 encoder_layer = nn.TransformerEncoderLayer(**base_kwargs)
                 print("Using standard TransformerEncoderLayer")
@@ -379,7 +391,12 @@ if __name__ == "__main__":
             # 4096,
             # 8192,
         ]  # 10 window sizes
-        attention_types = ["sdpa_full", "sdpa_sliding_window"]  # Test both models
+        attention_types = [
+            "sdpa_full",
+            "sdpa_full_not_subclassed",
+            "sdpa_sliding_window",
+            "sdpa_sliding_window_not_subclassed",
+        ]  # Test both models
         num_steps = 3  # Number of timing runs to average
 
         total_tests = (
