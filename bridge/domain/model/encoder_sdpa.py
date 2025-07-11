@@ -7,11 +7,11 @@ import torch.nn as nn
 
 from bridge.domain.model.benchmarks.sdpa_full_attention_model import (
     SDPAFullLayer,
-    SDPAFullLayerNotSubclassed,
+    SDPAFullModelNotSubclassed,
 )
 from bridge.domain.model.benchmarks.sdpa_sliding_window_model import (
     SDPASlidingWindowLayer,
-    SDPASlidingWindowLayerNotSubclassed,
+    SDPASlidingWindowModelNotSubclassed,
 )
 
 
@@ -98,19 +98,35 @@ class EncoderSDPA(nn.Module):
             if attention_type == "sdpa_full":
                 encoder_layer = SDPAFullLayer(**local_kwargs)
                 print(f"Using SDPAFullLayer with window_size={window_size}")
-            elif attention_type == "sdpa_full_not_subclassed":
-                encoder_layer = SDPAFullLayerNotSubclassed(**local_kwargs)
-                print(
-                    f"Using SDPAFullLayerNotSubclassed with window_size={window_size}"
-                )
             elif attention_type == "sdpa_sliding_window":
                 encoder_layer = SDPASlidingWindowLayer(**local_kwargs)
                 print(f"Using SDPASlidingWindowLayer with window_size={window_size}")
-            elif attention_type == "sdpa_sliding_window_not_subclassed":
-                encoder_layer = SDPASlidingWindowLayerNotSubclassed(**local_kwargs)
-                print(
-                    f"Using SDPASlidingWindowLayerNotSubclassed with window_size={window_size}"
+            elif attention_type == "sdpa_full_not_subclassed":
+                self.model = SDPAFullModelNotSubclassed(
+                    d_model=d_model,
+                    nhead=nhead,
+                    num_layers=num_layers,
+                    window_size=window_size,
+                    batch_first=True,
+                    dropout=0.0,
                 )
+                print(
+                    f"Using SDPAFullModelNotSubclassed with window_size={window_size}"
+                )
+                return  # Early return since we're not using transformer_encoder
+            elif attention_type == "sdpa_sliding_window_not_subclassed":
+                self.model = SDPASlidingWindowModelNotSubclassed(
+                    d_model=d_model,
+                    nhead=nhead,
+                    num_layers=num_layers,
+                    window_size=window_size,
+                    batch_first=True,
+                    dropout=0.0,
+                )
+                print(
+                    f"Using SDPASlidingWindowModelNotSubclassed with window_size={window_size}"
+                )
+                return  # Early return since we're not using transformer_encoder
             else:
                 encoder_layer = nn.TransformerEncoderLayer(**base_kwargs)
                 print("Using standard TransformerEncoderLayer")
@@ -119,9 +135,11 @@ class EncoderSDPA(nn.Module):
             encoder_layer = nn.TransformerEncoderLayer(**base_kwargs)
             print("Using standard TransformerEncoderLayer on CPU")
 
-        self.transformer_encoder = nn.TransformerEncoder(
-            encoder_layer, num_layers=num_layers
-        )
+        # Only create transformer_encoder for the subclassed versions
+        if attention_type in ["sdpa_full", "sdpa_sliding_window"] or device == "cpu":
+            self.transformer_encoder = nn.TransformerEncoder(
+                encoder_layer, num_layers=num_layers
+            )
 
     def forward(
         self,
@@ -129,21 +147,16 @@ class EncoderSDPA(nn.Module):
         src_mask: torch.Tensor | None = None,
         src_key_padding_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """Forward pass through the encoder.
-
-        Args:
-            src: Input tensor
-            src_mask: Attention mask
-            src_key_padding_mask: Padding mask
-
-        Returns:
-            Encoded output tensor
-
-        """
-        output = self.transformer_encoder(
-            src, mask=src_mask, src_key_padding_mask=src_key_padding_mask
-        )
-        return output
+        """Forward pass through the encoder."""
+        # Use the appropriate forward method based on attention_type
+        if hasattr(self, "model"):
+            # NotSubclassed versions
+            return self.model(src, src_mask, src_key_padding_mask)
+        else:
+            # Subclassed versions
+            return self.transformer_encoder(
+                src, mask=src_mask, src_key_padding_mask=src_key_padding_mask
+            )
 
 
 # ----------------------------------------------------------------------

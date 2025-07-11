@@ -238,20 +238,51 @@ class SDPASlidingWindowLayerNotSubclassed(nn.Module):
         return residual + ff_output
 
 
-class SDPASlidingWindowModel(nn.Module):
-    def __init__(self, d_model: int, nhead: int, num_layers: int, window_size: int):
+class SDPASlidingWindowModelNotSubclassed(nn.Module):
+    """Standalone SDPA sliding window model without subclassing TransformerEncoderLayer."""
+
+    def __init__(
+        self,
+        d_model: int,
+        nhead: int,
+        num_layers: int,
+        window_size: int,
+        batch_first: bool = True,
+        dropout: float = 0.0,
+        **kwargs: Any,
+    ) -> None:
         super().__init__()
+        self.d_model = d_model
+        self.nhead = nhead
+        self.num_layers = num_layers
+        self.window_size = window_size
+        self.batch_first = batch_first
+
+        # Create layers
         self.layers = nn.ModuleList(
             [
-                SDPASlidingWindowLayer(d_model, nhead, window_size)
+                SDPASlidingWindowLayerNotSubclassed(
+                    d_model=d_model,
+                    nhead=nhead,
+                    window_size=window_size,
+                    batch_first=batch_first,
+                    dropout=dropout,
+                    **kwargs,
+                )
                 for _ in range(num_layers)
-            ],
+            ]
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        src: torch.Tensor,
+        src_mask: torch.Tensor | None = None,
+        src_key_padding_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Forward pass through all layers."""
         for layer in self.layers:
-            x = layer(x)
-        return x
+            src = layer(src, src_mask, src_key_padding_mask)
+        return src
 
 
 # --------------------------------------------------------------------------------

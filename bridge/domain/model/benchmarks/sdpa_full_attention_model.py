@@ -274,3 +274,49 @@ if __name__ == "__main__":
     batch_size = 2
     x = torch.randn(batch_size, seq_len, d_model)
     print(model(x).shape)
+
+
+class SDPAFullModelNotSubclassed(nn.Module):
+    """Standalone SDPA full attention model without subclassing TransformerEncoderLayer."""
+
+    def __init__(
+        self,
+        d_model: int,
+        nhead: int,
+        num_layers: int,
+        window_size: int | None = None,
+        batch_first: bool = True,
+        dropout: float = 0.0,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__()
+        self.d_model = d_model
+        self.nhead = nhead
+        self.num_layers = num_layers
+        self.batch_first = batch_first
+
+        # Create layers
+        self.layers = nn.ModuleList(
+            [
+                SDPAFullLayerNotSubclassed(
+                    d_model=d_model,
+                    nhead=nhead,
+                    window_size=window_size,
+                    batch_first=batch_first,
+                    dropout=dropout,
+                    **kwargs,
+                )
+                for _ in range(num_layers)
+            ]
+        )
+
+    def forward(
+        self,
+        src: torch.Tensor,
+        src_mask: torch.Tensor | None = None,
+        src_key_padding_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Forward pass through all layers."""
+        for layer in self.layers:
+            src = layer(src, src_mask, src_key_padding_mask)
+        return src
