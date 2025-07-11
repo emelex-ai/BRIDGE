@@ -14,7 +14,7 @@ class SDPASlidingWindowAttention(nn.Module):
 
     """
 
-    def __init__(self, d_model, nhead, window_size):
+    def __init__(self, d_model, nhead, window_size, seq_len=None, device=None):
         super().__init__()
         self.d_model = d_model
         self.nhead = nhead
@@ -27,7 +27,10 @@ class SDPASlidingWindowAttention(nn.Module):
         self.v_proj = nn.Linear(d_model, d_model, bias=False)
         self.out_proj = nn.Linear(d_model, d_model, bias=False)
 
-        # No precomputed mask - compute on-the-fly
+        # Create mask in constructor if seq_len and device are provided
+        self.mask = None
+        if seq_len is not None and device is not None:
+            self.mask = self.create_sliding_window_mask(seq_len, device)
 
     def create_sliding_window_mask(self, seq_len, device):
         """Create sliding window mask efficiently using broadcasting.
@@ -90,8 +93,11 @@ class SDPASlidingWindowAttention(nn.Module):
             1, 2
         )  # [batch_size, nhead, seq_len, head_dim]
 
-        # Create sliding window mask (only when needed)
-        attn_mask = self.create_sliding_window_mask(seq_len, x.device)
+        # Use pre-computed mask or create on-the-fly if not available
+        if self.mask is not None:
+            attn_mask = self.mask
+        else:
+            attn_mask = self.create_sliding_window_mask(seq_len, x.device)
 
         # Apply SDPA with sliding window mask
         attn_output = F.scaled_dot_product_attention(
@@ -196,7 +202,6 @@ class SDPASlidingWindowLayerNotSubclassed(nn.Module):
         **kwargs: Any,
     ) -> None:
         super().__init__()
-
         self.attention = SDPASlidingWindowAttention(d_model, nhead, window_size)
         # for compability with nn.TransformerEncoderLayer
         self.self_attn = self.attention

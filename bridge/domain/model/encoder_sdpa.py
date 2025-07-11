@@ -56,6 +56,7 @@ class EncoderSDPA(nn.Module):
         device: str = "cpu",
         window_size: int = 512,
         causal: bool = True,  # LLM is the default
+        seq_len: int | None = None,  # Add seq_len parameter
         # look_backward: int = 1,
         # look_forward: int | None = None,
         attention_type: str = "sdpa_sliding_window",  # Fixed default
@@ -120,6 +121,8 @@ class EncoderSDPA(nn.Module):
                     nhead=nhead,
                     num_layers=num_layers,
                     window_size=window_size,
+                    seq_len=seq_len,  # Pass the seq_len parameter
+                    device=device,
                     batch_first=True,
                     dropout=0.0,
                 )
@@ -484,6 +487,7 @@ if __name__ == "__main__":
                                         device=device,
                                         window_size=window_size,
                                         causal=True,
+                                        seq_len=seq_len,  # Pass seq_len for mask pre-computation
                                         attention_type=attention_type,  # Pass attention type
                                         # look_backward=1,
                                         # look_forward=0,
