@@ -363,9 +363,9 @@ if __name__ == "__main__":
         # Test parameters - full grid search
         batch_size = 2
         # seq_lens = [128, 512, 1024, 2048, 4096]  # 6 sequence lengths
-        seq_lens = [1024, 4096]  # 6 sequence lengths
-        d_models = [128, 512]  # 4 model dimensions
-        nheads = [1, 8]
+        seq_lens = [4096]  # 6 sequence lengths
+        d_models = [512]  # 4 model dimensions
+        nheads = [1]
         batch_sizes = [1, 8]
         window_sizes = [
             # 16,
@@ -441,6 +441,7 @@ if __name__ == "__main__":
                             print(
                                 f"Test {test_count}/{total_tests}: seq_len={seq_len}, d_model={d_model}, nhead={nhead}, window_size={window_size}, attention_type={attention_type}"
                             )
+                            print("\n==> Before model creation")
                             check_cuda_memory()
 
                             try:
@@ -459,6 +460,8 @@ if __name__ == "__main__":
 
                                 if device == "cuda":
                                     encoder = encoder.to("cuda")
+                                    print("\n==> After model creation")
+                                    check_cuda_memory()
 
                                 # Create input tensor
                                 x = torch.randn(
