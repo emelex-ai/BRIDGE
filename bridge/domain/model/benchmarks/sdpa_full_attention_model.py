@@ -1,21 +1,152 @@
+from typing import Any
+
 import torch
 from torch import nn
 from torch.nn import functional as F
 
-class SDPAFullAttentionLayer(nn.Module):
-    """Custom layer using SDPA for full attention with precomputed mask."""
 
-    def __init__(self, d_model, nhead):
+# ----
+class SDPAFullAttention(nn.Module):
+    """SDPA attention with full causal mask."""
+
+    def __init__(
+        self,
+        d_model: int,
+        nhead: int,
+        window_size: int | None = None,
+        **kwargs: Any,
+    ):
         super().__init__()
         self.d_model = d_model
         self.nhead = nhead
+        self.window_size = window_size
         self.head_dim = d_model // nhead
 
-        # Linear projections
-        self.q_proj = nn.Linear(d_model, d_model)
-        self.k_proj = nn.Linear(d_model, d_model)
-        self.v_proj = nn.Linear(d_model, d_model)
-        self.out_proj = nn.Linear(d_model, d_model)
+        # Linear projections for Q, K, V
+        self.q_proj = nn.Linear(d_model, d_model, bias=False)
+        self.k_proj = nn.Linear(d_model, d_model, bias=False)
+        self.v_proj = nn.Linear(d_model, d_model, bias=False)
+        self.out_proj = nn.Linear(d_model, d_model, bias=False)
+
+        # No precomputed mask - compute on-the-fly
+
+    def create_sliding_window_mask(self, seq_len, device):
+        """Create sliding window mask efficiently using broadcasting.
+
+        This avoids creating large dense matrices by using torch's
+        efficient broadcasting operations.
+
+        Args:
+            seq_len: Sequence length
+            device: Device to create mask on
+
+        Returns:
+            Sliding window mask with minimal memory footprint
+
+        """
+        print(f"==> create_sliding_window_mask, {seq_len=}")
+        # Create position indices (minimal memory: 2 * seq_len)
+        positions = torch.arange(seq_len, device=device)
+
+        # Use broadcasting to create mask pattern (still creates full matrix, but efficiently)
+        query_pos = positions.unsqueeze(1)  # [seq_len, 1]
+        key_pos = positions.unsqueeze(0)  # [1, seq_len]
+
+        # Sliding window: can attend to positions [i-window_size+1, i]
+        # Causal: can't attend to future positions (key_pos > query_pos)
+        valid_mask = (key_pos >= query_pos - self.window_size + 1) & (
+            key_pos <= query_pos
+        )
+
+        # Convert to SDPA format (0.0 = attend, -inf = mask out)
+        attention_mask = torch.where(valid_mask, 0.0, float("-inf"))
+
+        return attention_mask.to(torch.float32)
+
+    def forward(self, x):
+        """Forward pass with efficient sliding window attention.
+
+        Args:
+            x: Input tensor [batch_size, seq_len, d_model]
+
+        Returns:
+            Output tensor [batch_size, seq_len, d_model]
+
+        """
+        batch_size, seq_len, d_model = x.shape
+
+        # Project to Q, K, V
+        q = self.q_proj(x)  # [batch_size, seq_len, d_model]
+        k = self.k_proj(x)  # [batch_size, seq_len, d_model]
+        v = self.v_proj(x)  # [batch_size, seq_len, d_model]
+
+        # Reshape for multi-head attention
+        q = q.view(batch_size, seq_len, self.nhead, self.head_dim).transpose(
+            1, 2
+        )  # [batch_size, nhead, seq_len, head_dim]
+        k = k.view(batch_size, seq_len, self.nhead, self.head_dim).transpose(
+            1, 2
+        )  # [batch_size, nhead, seq_len, head_dim]
+        v = v.view(batch_size, seq_len, self.nhead, self.head_dim).transpose(
+            1, 2
+        )  # [batch_size, nhead, seq_len, head_dim]
+
+        # Create sliding window mask (only when needed)
+        # attn_mask = self.create_sliding_window_mask(seq_len, x.device)
+
+        # Apply SDPA with sliding window mask
+        attn_output = F.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=None,
+            dropout_p=0.0,
+            is_causal=True,
+        )
+        # print(f"==> skpa_sliding_window, {attn_mask.shape=}, {attn_output.shape=}, {x.shape=}")
+
+        # Reshape back
+        attn_output = (
+            attn_output.transpose(1, 2).contiguous().view(batch_size, seq_len, d_model)
+        )
+
+        # Output projection
+        output = self.out_proj(attn_output)
+
+        return output
+
+
+# ----
+
+
+# class SDPAFullLayer(nn.Module):
+class SDPAFullLayer(nn.TransformerEncoderLayer):
+    """Custom layer using SDPA for full attention with precomputed mask."""
+
+    def __init__(
+        self,
+        d_model: int,
+        nhead: int,
+        window_size: None = None,
+        batch_first: bool = True,
+        norm_first: bool = False,
+        dropout: float = 0.0,
+        **kwargs: Any,
+    ) -> None:
+        # Initialize parent class with dummy self_attn (will be replaced)
+        super().__init__(
+            d_model=d_model,
+            nhead=nhead,
+            dim_feedforward=4 * d_model,
+            dropout=dropout,
+            activation="relu",
+            layer_norm_eps=1e-5,
+            batch_first=batch_first,
+            norm_first=norm_first,
+            **kwargs,
+        )
+
+        self.attention = SDPAFullAttention(d_model, nhead)
 
         # Layer norm and feedforward (to match TransformerEncoderLayer)
         self.norm1 = nn.LayerNorm(d_model)
@@ -26,52 +157,42 @@ class SDPAFullAttentionLayer(nn.Module):
             nn.Linear(d_model * 4, d_model),
         )
 
-        # Precomputed mask (None for full attention)
-        # This is useful for future assignment or for consistent model structure,
-        # even if the buffer is not currently used.
-        self.register_buffer("attn_mask", None)
-
-    def forward(self, x):
-        # Self-attention with residual connection
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass with SDPA full attention."""
         residual = x
         x = self.norm1(x)
+        attention_output = self.attention(x)
+        x = residual + attention_output
 
-        # Project to Q, K, V
-        B, S, D = x.shape
-        q = self.q_proj(x).view(B, S, self.nhead, self.head_dim).transpose(1, 2)
-        k = self.k_proj(x).view(B, S, self.nhead, self.head_dim).transpose(1, 2)
-        v = self.v_proj(x).view(B, S, self.nhead, self.head_dim).transpose(1, 2)
-
-        # SDPA full attention (no masking = full O(n²) attention)
-        attn_output = F.scaled_dot_product_attention(
-            q,
-            k,
-            v,
-            attn_mask=None,  # Explicit None for full attention
-        )
-
-        # Reshape and project
-        attn_output = attn_output.transpose(1, 2).contiguous().view(B, S, D)
-        attn_output = self.out_proj(attn_output)
-
-        # Add residual
-        x = residual + attn_output
-
-        # Feedforward with residual connection
         residual = x
         x = self.norm2(x)
-        x = residual + self.feedforward(x)
+        ff_output = self.feedforward(x)
+        return residual + ff_output
 
-        return x
 
-class SDPAFullAttention(nn.Module):
-    def __init__(self, d_model, nhead, num_layers):
+class SDPAFullModel(nn.Module):
+    def __init__(
+        self,
+        d_model: int,
+        nhead: int,
+        num_layers: int,
+    ) -> None:
         super().__init__()
         self.layers = nn.ModuleList(
-            [SDPAFullAttentionLayer(d_model, nhead) for _ in range(num_layers)]
+            [SDPAFullLayer(d_model, nhead) for _ in range(num_layers)]
         )
 
     def forward(self, x):
         for layer in self.layers:
             x = layer(x)
         return x
+
+
+# --------------------------------------------------------------------------------
+if __name__ == "__main__":
+    model = SDPAFullModel(d_model=512, nhead=8, num_layers=2)
+    seq_len = 1024
+    d_model = 512
+    batch_size = 2
+    x = torch.randn(batch_size, seq_len, d_model)
+    print(model(x).shape)

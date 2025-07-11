@@ -1,7 +1,10 @@
 import time
-from torch.nn import functional as F
+from typing import Any
+
 import torch
 from torch import nn
+from torch.nn import functional as F
+
 
 class SDPASlidingWindowAttention(nn.Module):
     """SDPA model with efficient sliding window attention.
@@ -99,7 +102,9 @@ class SDPASlidingWindowAttention(nn.Module):
             dropout_p=0.0,
             is_causal=False,  # We handle causality in our custom mask
         )
-        print(f"==> skpa_sliding_window, {attn_mask.shape=}, {attn_output.shape=}, {x.shape=}")
+        print(
+            f"==> skpa_sliding_window, {attn_mask.shape=}, {attn_output.shape=}, {x.shape=}"
+        )
 
         # Reshape back
         attn_output = (
@@ -112,5 +117,75 @@ class SDPASlidingWindowAttention(nn.Module):
         return output
 
 
+class SDPASlidingWindowLayer(nn.TransformerEncoderLayer):
+    """Custom layer using SDPA for sliding window attention with precomputed mask."""
+
+    def __init__(
+        self,
+        d_model: int,
+        nhead: int,
+        window_size: int,
+        batch_first: bool = True,
+        norm_first: bool = False,
+        dropout: float = 0.0,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(
+            d_model=d_model,
+            nhead=nhead,
+            dim_feedforward=4 * d_model,
+            dropout=dropout,
+            activation="relu",
+            layer_norm_eps=1e-5,
+            batch_first=batch_first,
+            norm_first=norm_first,
+            **kwargs,
+        )
+
+        self.attention = SDPASlidingWindowAttention(d_model, nhead, window_size)
+
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.feedforward = nn.Sequential(
+            nn.Linear(d_model, d_model * 4),
+            nn.ReLU(),
+            nn.Linear(d_model * 4, d_model),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass with SDPA sliding window attention."""
+        residual = x
+        x = self.norm1(x)
+        attention_output = self.attention(x)
+        x = residual + attention_output
+
+        residual = x
+        x = self.norm2(x)
+        ff_output = self.feedforward(x)
+        return residual + ff_output
+
+
+class SDPASlidingWindowModel(nn.Module):
+    def __init__(self, d_model: int, nhead: int, num_layers: int, window_size: int):
+        super().__init__()
+        self.layers = nn.ModuleList(
+            [
+                SDPASlidingWindowLayer(d_model, nhead, window_size)
+                for _ in range(num_layers)
+            ],
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for layer in self.layers:
+            x = layer(x)
+        return x
+
+
+# --------------------------------------------------------------------------------
 if __name__ == "__main__":
-    pass
+    model = SDPASlidingWindowModel(d_model=512, nhead=8, num_layers=2, window_size=1024)
+    seq_len = 1024
+    d_model = 512
+    batch_size = 2
+    x = torch.randn(batch_size, seq_len, d_model)
+    print(model(x).shape)

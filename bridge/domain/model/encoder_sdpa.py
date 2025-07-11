@@ -1,6 +1,6 @@
 import datetime
 import gc
-from typing import Optional
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -54,8 +54,8 @@ class EncoderSDPA(nn.Module):
         device: str = "cpu",
         window_size: int = 512,
         causal: bool = True,  # LLM is the default
-        look_backward: int = 1,
-        look_forward: Optional[int] = None,
+        # look_backward: int = 1,
+        # look_forward: int | None = None,
         attention_type: str = "sdpa_sliding_window",  # Fixed default
     ) -> None:
         """Initialize EncoderSDPA with local attention on CUDA, standard attention on CPU.
@@ -67,8 +67,8 @@ class EncoderSDPA(nn.Module):
             device: Device to use ("cpu" or "cuda")
             window_size: Local attention window size (only used for CUDA)
             causal: Whether to use causal attention (only used for CUDA)
-            look_backward: Number of windows to look backward (only used for CUDA)
-            look_forward: Number of windows to look forward (only used for CUDA)
+            # look_backward: Number of windows to look backward (only used for CUDA)
+            # look_forward: Number of windows to look forward (only used for CUDA)
             attention_type: Type of attention to use:
                 ("sdpa_full", "sdpa_sliding_window")
 
@@ -113,8 +113,8 @@ class EncoderSDPA(nn.Module):
     def forward(
         self,
         src: torch.Tensor,
-        src_mask: Optional[torch.Tensor] = None,
-        src_key_padding_mask: Optional[torch.Tensor] = None,
+        src_mask: torch.Tensor | None = None,
+        src_key_padding_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Forward pass through the encoder.
 
@@ -135,21 +135,24 @@ class EncoderSDPA(nn.Module):
 
 # ----------------------------------------------------------------------
 if __name__ == "__main__":
+    """Execute EncoderSDPA testing and benchmarking suite.
+    
+    This module provides comprehensive testing for the EncoderSDPA class,
+    including unit tests and performance benchmarks.
+    
+    Execution Flow:
+        1. Run basic functionality tests (test_encoder_sdpa)
+        2. If successful, run performance benchmarks (test_autoregressive_scaling)
+        3. Save results to timestamped files
+        
+    Output Files:
+        - autoregressive_scaling_results_YYYYMMDD_HHMMSS.csv
+        - autoregressive_scaling_results_partial_*.csv (periodic saves)
+        
+    """
 
-    def test_encoder_local():
-        """Test EncoderSDPA functionality for both CPU and CUDA devices.
-
-        Tests:
-        1. CPU device with standard TransformerEncoderLayer
-        2. CUDA device with LocalAttentionEncoderLayer (if available)
-        3. Shape consistency
-        4. Gradient flow
-        5. Forward pass correctness
-
-        Returns:
-            bool: True if all tests pass, False otherwise
-
-        """
+    def test_encoder_sdpa() -> bool:
+        """Test basic EncoderSDPA functionality across devices."""
         print("=" * 60)
         print("Testing EncoderSDPA")
         print("=" * 60)
@@ -342,7 +345,7 @@ if __name__ == "__main__":
         return success
 
     # Run the test
-    success = test_encoder_local()
+    success = test_encoder_sdpa()
 
     if not success:
         print("Tests failed!")
@@ -350,35 +353,29 @@ if __name__ == "__main__":
     else:
         print("All tests passed successfully!")
 
-    def test_autoregressive_scaling():
-        """Test autoregressive local attention scaling across multiple dimensions.
-
-        Tests scaling performance across seq_len, d_model, and window_size.
-        Saves results to CSV for later analysis.
-
-        Returns:
-            bool: True if all tests pass, False otherwise
-
-        """
+    def test_autoregressive_scaling() -> bool:
+        """Benchmark EncoderSDPA performance across parameter space."""
         print("=" * 80)
         print("Testing Autoregressive Local Attention Scaling")
         print("=" * 80)
 
         # Test parameters - full grid search
         batch_size = 2
-        seq_lens = [128, 512, 1024, 2048, 4096]  # 6 sequence lengths
-        d_models = [256, 512, 768, 1024]  # 4 model dimensions
-        nheads = [8, 16]
+        # seq_lens = [128, 512, 1024, 2048, 4096]  # 6 sequence lengths
+        seq_lens = [1024, 4096]  # 6 sequence lengths
+        d_models = [128, 512]  # 4 model dimensions
+        nheads = [1, 8]
+        batch_sizes = [1, 8]
         window_sizes = [
-            16,
-            # 32,
-            64,
+            # 16,
+            32,
+            # 64,
             # 128,
-            256,
+            # 256,
             # 512,
-            1024,
+            # 1024,
             # 2048,
-            4096,
+            # 4096,
             # 8192,
         ]  # 10 window sizes
         num_steps = 3  # Number of timing runs to average
@@ -445,8 +442,8 @@ if __name__ == "__main__":
                                 device=device,
                                 window_size=window_size,
                                 causal=True,
-                                look_backward=1,
-                                look_forward=0,
+                                # look_backward=1,
+                                # look_forward=0,
                             )
 
                             if device == "cuda":
@@ -623,6 +620,26 @@ if __name__ == "__main__":
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"autoregressive_scaling_results_{timestamp}.csv"
 
+            # Round numeric columns to 5 significant digits before saving
+            numeric_columns = [
+                "avg_time_s",
+                "min_time_s",
+                "max_time_s",
+                "std_time_s",
+                "memory_mb",
+                "tokens_per_sec",
+            ]
+
+            # Much simpler approach using pandas built-in methods
+            for col in numeric_columns:
+                if col in df.columns:
+                    if col == "tokens_per_sec":
+                        # Convert to integer, handling inf values
+                        df[col] = df[col].replace([float("inf")], 0).astype(int)
+                    else:
+                        # Round to 5 significant digits, handling inf values
+                        df[col] = df[col].replace([float("inf")], 0).round(5)
+
             df.to_csv(filename, index=False)
 
             print(f"\n{'='*80}")
@@ -660,8 +677,33 @@ if __name__ == "__main__":
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"autoregressive_scaling_results_{timestamp}.json"
 
+            # Round numeric values in the results before saving to JSON
+            rounded_results = []
+            for result in all_results:
+                rounded_result = result.copy()
+                numeric_keys = [
+                    "avg_time_s",
+                    "min_time_s",
+                    "max_time_s",
+                    "std_time_s",
+                    "memory_mb",
+                    "tokens_per_sec",
+                ]
+                for key in numeric_keys:
+                    if key in rounded_result and isinstance(
+                        rounded_result[key], (int, float)
+                    ):
+                        if rounded_result[key] != float("inf"):
+                            if key == "tokens_per_sec":
+                                rounded_result[key] = int(rounded_result[key])
+                            else:
+                                rounded_result[key] = float(
+                                    f"{rounded_result[key]:.5g}"
+                                )
+                rounded_results.append(rounded_result)
+
             with open(filename, "w") as f:
-                json.dump(all_results, f, indent=2)
+                json.dump(rounded_results, f, indent=2)
 
             print(f"Results saved to: {filename}")
             return len([r for r in all_results if r["success"]]) == len(all_results)
