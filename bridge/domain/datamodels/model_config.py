@@ -1,7 +1,7 @@
-from pydantic import BaseModel, Field, field_validator, ValidationInfo
+from dataclasses import dataclass
 from typing import Optional
 
-from pydantic import ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 
 class ModelConfig(BaseModel):
@@ -21,3 +21,12 @@ class ModelConfig(BaseModel):
         if nhead is not None and v % nhead != 0:
             raise ValueError("d_model must be divisible by nhead")
         return v
+
+    # Sliding window configuration
+    window_size: int = Field(
+        default=61, description="±30 characters + current position"
+    )
+
+    use_sliding_window: bool = Field(
+        default=False, description="Enable sliding window attention"
+    )
