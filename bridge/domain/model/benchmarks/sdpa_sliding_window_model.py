@@ -68,6 +68,7 @@ class SDPASlidingWindowAttention(nn.Module):
 
         # Convert to SDPA format (0.0 = attend, -inf = mask out)
         attention_mask = torch.where(valid_mask, 0.0, float("-inf"))
+        print(f"DEBUG: attention_mask.shape={attention_mask.shape}")
 
         return attention_mask.to(torch.float32)
 
@@ -157,6 +158,9 @@ class SDPASlidingWindowLayer(nn.TransformerEncoderLayer):
             **kwargs,
         )
 
+        # self.attention should not be required.
+        # I should use the parent class
+
         self.attention = SDPASlidingWindowAttention(
             d_model, nhead, window_size, seq_len, device
         )
@@ -168,6 +172,8 @@ class SDPASlidingWindowLayer(nn.TransformerEncoderLayer):
             nn.ReLU(),
             nn.Linear(d_model * 4, d_model),
         )
+
+        # Define sliding mask
 
     def forward(
         self,
@@ -187,6 +193,11 @@ class SDPASlidingWindowLayer(nn.TransformerEncoderLayer):
         Returns:
             Output tensor [batch_size, seq_len, d_model]
         """
+
+        src_mask = self.mask
+        # super().forward(src, src_mask, src_key_padding_mask, is_causal,)
+
+        # Call forward of derived class
         residual = src
         src = self.norm1(src)
         attention_output = self.attention(src)

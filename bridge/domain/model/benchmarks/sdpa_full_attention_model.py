@@ -1,9 +1,17 @@
 from typing import Any
 
 import torch
+from jaxtyping import Float
 from torch import nn
 from torch.nn import functional as F
 
+__all__ = [
+    "SDPAFullAttention",
+    "SDPAFullLayer",
+    "SDPAFullLayerNotSubclassed",
+    "SDPAFullModel",
+    "SDPAFullModelNotSubclassed",
+]
 
 # ----
 class SDPAFullAttention(nn.Module):
@@ -224,11 +232,37 @@ class SDPAFullLayerNotSubclassed(nn.Module):
 
     def forward(
         self,
-        src: torch.Tensor,
-        src_mask: torch.Tensor | None = None,
-        src_key_padding_mask: torch.Tensor | None = None,
-        is_causal: bool = False,
+        src: Float[torch.Tensor, "batch_size seq_len d_model"],
+        src_mask: Float[torch.Tensor, "seq_len seq_len"] | None = None,
+        src_key_padding_mask: Float[torch.Tensor, "batch_size seq_len"] | None = None,
+        is_causal: bool = True,
     ) -> torch.Tensor:
+        """Forward pass with SDPA full attention.
+
+        If `src_mask` is None and `is_causal=True`, PyTorch's scaled_dot_product_attention
+        will automatically use an internal causal mask. You are not required to pass a mask
+        in that case; the function will handle causality internally.
+
+        Args:
+            src: Input tensor [batch_size, seq_len, d_model]
+            src_mask: Attention mask (ignored for SDPA if None and is_causal is set)
+            src_key_padding_mask: Padding mask (ignored for SDPA)
+            is_causal: Whether to use causal attention. If True and src_mask is None,
+                an internal causal mask will be used.
+
+        Returns:
+            Output tensor [batch_size, seq_len, d_model]
+
+        """
+        residual = src
+        src = self.norm1(src)
+        attention_output = self.attention(src, attn_mask=src_mask, is_causal=is_causal)
+        src = residual + attention_output
+
+        residual = src
+        src = self.norm2(src)
+        ff_output = self.feedforward(src)
+        return residual + ff_output
         """Forward pass with SDPA full attention.
 
         Args:

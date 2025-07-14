@@ -5,10 +5,18 @@ from torch import nn
 
 
 class Encoder(nn.Module):
-    def __init__(self, d_model: int, nhead: int, num_layers: int) -> None:
-        super(Encoder, self).__init__()
+    def __init__(
+        self,
+        d_model: int,
+        nhead: int,
+        num_layers: int,
+    ) -> None:
+        super().__init__()
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=d_model, nhead=nhead, batch_first=True, dim_feedforward=4 * d_model
+            d_model=d_model,
+            nhead=nhead,
+            batch_first=True,
+            dim_feedforward=4 * d_model,
         )
         self.transformer_encoder = nn.TransformerEncoder(
             encoder_layer, num_layers=num_layers
@@ -17,10 +25,12 @@ class Encoder(nn.Module):
     def forward(
         self,
         src: torch.Tensor,
-        src_mask: Optional[torch.Tensor] = None,
-        src_key_padding_mask: Optional[torch.Tensor] = None,
+        src_mask: torch.Tensor | None = None,
+        src_key_padding_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         output = self.transformer_encoder(
-            src, mask=src_mask, src_key_padding_mask=src_key_padding_mask
+            src,
+            mask=src_mask,
+            src_key_padding_mask=src_key_padding_mask,
         )
         return output
