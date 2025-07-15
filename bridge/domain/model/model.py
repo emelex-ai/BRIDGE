@@ -9,8 +9,8 @@ from bridge.domain.dataset import BridgeDataset
 from bridge.domain.model.decoder import Decoder
 from bridge.domain.model.encoder import Encoder
 from bridge.domain.model.sliding_window_wrapper import (
-    SlidingWindowEncoderWrapper, 
-    SlidingWindowDecoderWrapper
+    SlidingWindowDecoderWrapper,
+    SlidingWindowEncoderWrapper,
 )
 from bridge.utils import device_manager
 from bridge.utils.helper_functions import set_seed
@@ -62,7 +62,7 @@ class Model(nn.Module):
             / self.model_config.d_model**0.5,
             requires_grad=True,
         )
-        
+
         # Create base encoders
         base_orthography_encoder = Encoder(
             d_model=self.model_config.d_model,
@@ -77,19 +77,19 @@ class Model(nn.Module):
         )
 
         # Wrap encoders with sliding window capability
-        window_size = getattr(self.model_config, 'window_size', 61)  # Default ±30 chars
-        sliding_window_enabled = getattr(self.model_config, 'use_sliding_window', False)
-        
+        window_size = getattr(self.model_config, "window_size", 61)  # Default ±30 chars
+        sliding_window_enabled = getattr(self.model_config, "use_sliding_window", False)
+
         self.orthography_encoder = SlidingWindowEncoderWrapper(
-            base_orthography_encoder, 
+            base_orthography_encoder,
             window_size=window_size,
-            enabled=sliding_window_enabled
+            enabled=sliding_window_enabled,
         )
 
         self.phonology_encoder = SlidingWindowEncoderWrapper(
-            base_phonology_encoder, 
+            base_phonology_encoder,
             window_size=window_size,
-            enabled=sliding_window_enabled
+            enabled=sliding_window_enabled,
         )
 
         # Multihead attentions and layer norms
@@ -113,11 +113,11 @@ class Model(nn.Module):
             nhead=self.model_config.nhead,
             num_layers=self.model_config.num_mixing_enc_layers,
         )
-        
+
         self.transformer_mixer = SlidingWindowEncoderWrapper(
             base_transformer_mixer,
             window_size=window_size,
-            enabled=sliding_window_enabled
+            enabled=sliding_window_enabled,
         )
 
         self.reduce = torch.nn.Linear(
@@ -131,7 +131,7 @@ class Model(nn.Module):
             nhead=self.model_config.nhead,
             num_layers=self.model_config.num_orth_dec_layers,
         )
-        
+
         base_phonology_decoder = Decoder(
             d_model=self.model_config.d_model,
             nhead=self.model_config.nhead,
@@ -142,13 +142,13 @@ class Model(nn.Module):
         self.orthography_decoder = SlidingWindowDecoderWrapper(
             base_orthography_decoder,
             window_size=window_size,
-            enabled=sliding_window_enabled
+            enabled=sliding_window_enabled,
         )
-        
+
         self.phonology_decoder = SlidingWindowDecoderWrapper(
             base_phonology_decoder,
             window_size=window_size,
-            enabled=sliding_window_enabled
+            enabled=sliding_window_enabled,
         )
 
         self.linear_orthography_decoder = nn.Linear(
@@ -163,7 +163,7 @@ class Model(nn.Module):
     # Add method to toggle sliding window on/off
     def set_sliding_window(self, enabled: bool) -> None:
         """Enable or disable sliding window attention for all encoders and decoders.
-        
+
         Args:
             enabled: Whether to enable sliding window attention
         """
@@ -171,17 +171,17 @@ class Model(nn.Module):
         self.orthography_encoder.enabled = enabled
         self.phonology_encoder.enabled = enabled
         self.transformer_mixer.enabled = enabled
-        
+
         # Update decoder wrappers
         self.orthography_decoder.enabled = enabled
         self.phonology_decoder.enabled = enabled
-        
+
         print(f"Sliding window attention {'enabled' if enabled else 'disabled'}")
 
     # Add method to get current sliding window status
     def get_sliding_window_status(self) -> bool:
         """Get current sliding window attention status.
-        
+
         Returns:
             True if sliding window attention is enabled, False otherwise
         """
@@ -829,6 +829,8 @@ class Model(nn.Module):
                     phon_enc_input, phon_enc_pad_mask
                 )
 
+            print(f"==> {pathway=}")
+
             # All these pathways have "2p" meaning we need to run the phonological decoder loop
             if pathway in ["op2op", "o2p", "p2p"]:
                 mask = self.generate_triangular_mask(self.max_phon_seq_len)
@@ -847,6 +849,7 @@ class Model(nn.Module):
                 generated_phon_embeddings = self.embed_phon_tokens(
                     generated_phon_tokens
                 )
+                print(f"====> _geneate(), {mask.shape=}")
                 generated_phon_results = self.phonology_decoder_loop(
                     mask,
                     generated_phon_embeddings,
