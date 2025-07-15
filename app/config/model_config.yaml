@@ -1,12 +1,16 @@
-d_model: 1024
+d_model: 256
 d_embedding: 1
-nhead: 32
+nhead: 1
 seed: 1337
-num_phon_enc_layers: 32
-num_orth_enc_layers: 32
-num_mixing_enc_layers: 32
-num_phon_dec_layers: 32
-num_orth_dec_layers: 32
+num_phon_enc_layers: 2
+num_orth_enc_layers: 2
+num_mixing_enc_layers: 2
+num_phon_dec_layers: 2
+num_orth_dec_layers: 2
+
+# Add these lines:
+window_size: 5         # ±30 characters + current position
+use_sliding_window: true  # or false to disable
 
 #d_model: 128
 #d_embedding: 1
