@@ -20,6 +20,9 @@ class SyntheticBridgeDataset:
         """
         self.device = device_manager.device
         self.tokenizer = BridgeTokenizer()
+
+        # Get real words from the CMU dictionary
+        self.real_words = self._get_real_words_from_cmu_dict()
         self.words = self._generate_synthetic_words(num_samples)
 
         # Set vocabulary sizes using the tokenizer
@@ -27,29 +30,50 @@ class SyntheticBridgeDataset:
         self.orthographic_vocabulary_size = vocab_sizes["orthographic"]
         self.phonological_vocabulary_size = vocab_sizes["phonological"]
 
-    def _generate_synthetic_words(self, num_samples: int) -> list[str]:
+    def _get_real_words_from_cmu_dict(self) -> list[str]:
         """
-        Generate a list of synthetic words.
+        Get real words from the CMU dictionary that the tokenizer uses.
+
+        Returns:
+            List of real English words that can be properly encoded.
+        """
+        # Access the pronunciation dictionary from the phoneme tokenizer
+        pronunciation_dict = self.tokenizer.phoneme_tokenizer.pronunciation_dict
+
+        # Convert to list and filter for reasonable word lengths
+        real_words = []
+        for word in pronunciation_dict.keys():
+            # Filter for words that are reasonable for testing (3-10 characters)
+            if 3 <= len(word) <= 10 and word.isalpha():
+                real_words.append(word)
+
+        # Sort for reproducibility
+        real_words.sort()
+
+        print(f"Loaded {len(real_words)} real words from CMU dictionary")
+        return real_words
+
+    def _generate_synthetic_words(self, num_samples: int) -> list[str]:
+        """Generate a list of synthetic words using real words from CMU dictionary.
 
         Args:
             num_samples: Number of synthetic words to generate.
 
         Returns:
-            A list of synthetic words.
+            A list of real words randomly selected from CMU dictionary.
         """
-        # Generate random words using printable characters
-        return [
-            "".join(random.choices(string.ascii_lowercase, k=random.randint(3, 10)))
-            for _ in range(num_samples)
-        ]
+        if not self.real_words:
+            raise RuntimeError("No real words available from CMU dictionary")
+
+        # Randomly sample from real words
+        return random.sample(self.real_words, min(num_samples, len(self.real_words)))
 
     def __len__(self) -> int:
         """Return the number of synthetic words in the dataset."""
         return len(self.words)
 
     def __getitem__(self, idx: int) -> BridgeEncoding:
-        """
-        Retrieve encoded data for a specified index.
+        """Retrieve encoded data for a specified index.
 
         Args:
             idx: Index of the word to retrieve.
@@ -61,9 +85,11 @@ class SyntheticBridgeDataset:
             raise IndexError(f"Index {idx} out of range [0, {len(self.words)})")
 
         word = self.words[idx]
+
+        # Encode the real word - this should always work since it's from CMU dict
         encoding = self.tokenizer.encode(word)
         if encoding is None:
-            raise RuntimeError(f"Failed to encode word: {word}")
+            raise RuntimeError(f"Failed to encode word from CMU dictionary: {word}")
 
         return encoding
 
@@ -84,15 +110,14 @@ class SyntheticBridgeDatasetMultiWord:
         word_length_range: tuple[int, int] = (3, 10),
         seed: Optional[int] = None,
     ):
-        """
-        Initialize the multi-word synthetic dataset.
+        """Initialize the multi-word synthetic dataset.
 
         Args:
             num_samples: Number of sequence samples to generate.
             max_seq_len: Maximum sequence length in tokens (including BOS/EOS).
             min_words_per_sequence: Minimum number of words per sequence.
             max_words_per_sequence: Maximum number of words per sequence.
-                                   If None, will be determined dynamically.
+                                    If None, will be determined dynamically.
             word_length_range: Range of word lengths (min, max) in characters.
             seed: Random seed for reproducibility.
         """
@@ -106,10 +131,8 @@ class SyntheticBridgeDatasetMultiWord:
         self.max_words_per_sequence = max_words_per_sequence
         self.word_length_range = word_length_range
 
-        # Generate vocabulary of individual words first
-        self.word_vocabulary = self._generate_word_vocabulary(
-            num_samples * 10
-        )  # Generate more words than needed
+        # Get real words from the CMU dictionary
+        self.real_words = self._get_real_words_from_cmu_dict()
 
         # Generate multi-word sequences
         self.sequences = self._generate_multi_word_sequences(num_samples)
@@ -119,29 +142,33 @@ class SyntheticBridgeDatasetMultiWord:
         self.orthographic_vocabulary_size = vocab_sizes["orthographic"]
         self.phonological_vocabulary_size = vocab_sizes["phonological"]
 
-    def _generate_word_vocabulary(self, num_words: int) -> list[str]:
-        """
-        Generate a vocabulary of individual words.
-
-        Args:
-            num_words: Number of words to generate.
+    def _get_real_words_from_cmu_dict(self) -> list[str]:
+        """Get real words from the CMU dictionary that the tokenizer uses.
 
         Returns:
-            A list of synthetic words.
+            List of real English words that can be properly encoded.
         """
+        # Access the pronunciation dictionary from the phoneme tokenizer
+        pronunciation_dict = self.tokenizer.phoneme_tokenizer.pronunciation_dict
+
+        # Convert to list and filter for reasonable word lengths
         min_len, max_len = self.word_length_range
-        return [
-            "".join(
-                random.choices(
-                    string.ascii_lowercase, k=random.randint(min_len, max_len)
-                )
-            )
-            for _ in range(num_words)
-        ]
+        real_words = []
+        for word in pronunciation_dict.keys():
+            # Filter for words that match the specified length range
+            if min_len <= len(word) <= max_len and word.isalpha():
+                real_words.append(word)
+
+        # Sort for reproducibility
+        real_words.sort()
+
+        print(
+            f"Loaded {len(real_words)} real words from CMU dictionary (length {min_len}-{max_len})"
+        )
+        return real_words
 
     def _estimate_tokens_for_words(self, words: list[str]) -> int:
-        """
-        Estimate the number of tokens that a sequence of words will produce.
+        """Estimate the number of tokens that a sequence of words will produce.
 
         This is an approximation since we don't want to tokenize every combination.
         We assume each word adds roughly its length + 1 (for space) tokens.
@@ -168,8 +195,7 @@ class SyntheticBridgeDatasetMultiWord:
         return total_tokens
 
     def _generate_multi_word_sequences(self, num_samples: int) -> list[list[str]]:
-        """
-        Generate multi-word sequences that respect max_seq_len.
+        """Generate multi-word sequences that respect max_seq_len.
 
         Args:
             num_samples: Number of sequences to generate.
@@ -177,6 +203,9 @@ class SyntheticBridgeDatasetMultiWord:
         Returns:
             List of word sequences, where each sequence is a list of words.
         """
+        if not self.real_words:
+            raise RuntimeError("No real words available from CMU dictionary")
+
         sequences = []
 
         for _ in range(num_samples):
@@ -189,9 +218,9 @@ class SyntheticBridgeDatasetMultiWord:
                     (self.max_seq_len - 2)
                     // (avg_word_len + 1),  # -2 for BOS/EOS, +1 for space
                 )
-                max_words = min(estimated_max_words, len(self.word_vocabulary))
+                max_words = min(estimated_max_words, len(self.real_words))
             else:
-                max_words = min(self.max_words_per_sequence, len(self.word_vocabulary))
+                max_words = min(self.max_words_per_sequence, len(self.real_words))
 
             # Randomly choose number of words for this sequence
             num_words = random.randint(self.min_words_per_sequence, max_words)
@@ -202,7 +231,7 @@ class SyntheticBridgeDatasetMultiWord:
 
             for _ in range(num_words):
                 # Try to add a word
-                word = random.choice(self.word_vocabulary)
+                word = random.choice(self.real_words)
 
                 # Estimate tokens if we add this word
                 test_sequence = sequence + [word]
@@ -218,7 +247,7 @@ class SyntheticBridgeDatasetMultiWord:
             # Ensure we have at least min_words_per_sequence
             if len(sequence) < self.min_words_per_sequence:
                 # Take first min_words_per_sequence words from vocabulary
-                sequence = self.word_vocabulary[: self.min_words_per_sequence]
+                sequence = self.real_words[: self.min_words_per_sequence]
 
             sequences.append(sequence)
 
@@ -229,8 +258,7 @@ class SyntheticBridgeDatasetMultiWord:
         return len(self.sequences)
 
     def __getitem__(self, idx: int) -> BridgeEncoding:
-        """
-        Retrieve encoded data for a specified index.
+        """Retrieve encoded data for a specified index.
 
         Args:
             idx: Index of the sequence to retrieve.
@@ -245,16 +273,17 @@ class SyntheticBridgeDatasetMultiWord:
         word_sequence = self.sequences[idx]
         text_sequence = " ".join(word_sequence)
 
-        # Encode the entire sequence
+        # Encode the real word sequence - this should always work since words are from CMU dict
         encoding = self.tokenizer.encode(text_sequence)
         if encoding is None:
-            raise RuntimeError(f"Failed to encode sequence: {text_sequence}")
+            raise RuntimeError(
+                f"Failed to encode sequence from CMU dictionary: {text_sequence}"
+            )
 
         return encoding
 
     def get_sequence_info(self, idx: int) -> dict:
-        """
-        Get information about a specific sequence.
+        """Get information about a specific sequence.
 
         Args:
             idx: Index of the sequence.
