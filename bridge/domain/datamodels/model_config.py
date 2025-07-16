@@ -30,3 +30,32 @@ class ModelConfig(BaseModel):
     use_sliding_window: bool = Field(
         default=False, description="Enable sliding window attention"
     )
+
+    is_causal: bool = Field(
+        default=False, description="Whether to apply causal masking (for encoders)"
+    )
+
+    max_seq_len: int = Field(
+        default=4096, description="Maximum sequence length for pre-computed masks"
+    )
+
+    ensure_contiguous: bool = Field(
+        default=False,
+        description="Whether to ensure sliced masks are contiguous for GPU performance",
+    )
+
+    @field_validator("max_seq_len")
+    def validate_max_seq_len(cls, v):
+        if v <= 0:
+            raise ValueError("max_seq_len must be positive")
+        if v > 65536:  # Reasonable upper limit
+            raise ValueError("max_seq_len should not exceed 65536")
+        return v
+
+    @field_validator("window_size")
+    def validate_window_size(cls, v):
+        if v <= 0:
+            raise ValueError("window_size must be positive")
+        if v % 2 == 0:
+            raise ValueError("window_size should be odd for symmetric windows")
+        return v
