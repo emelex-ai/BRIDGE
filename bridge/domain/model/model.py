@@ -79,17 +79,28 @@ class Model(nn.Module):
         # Wrap encoders with sliding window capability
         window_size = getattr(self.model_config, "window_size", 61)  # Default ±30 chars
         sliding_window_enabled = getattr(self.model_config, "use_sliding_window", False)
+        is_causal = getattr(self.model_config, "is_causal", False)  # New parameter
+        max_seq_len = getattr(self.model_config, "max_seq_len", 4096)  # New parameter
+        ensure_contiguous = getattr(
+            self.model_config, "ensure_contiguous", False
+        )  # New parameter
 
         self.orthography_encoder = SlidingWindowEncoderWrapper(
             base_orthography_encoder,
             window_size=window_size,
             enabled=sliding_window_enabled,
+            is_causal=is_causal,  # New parameter
+            max_seq_len=max_seq_len,  # New parameter
+            ensure_contiguous=ensure_contiguous,  # New parameter
         )
 
         self.phonology_encoder = SlidingWindowEncoderWrapper(
             base_phonology_encoder,
             window_size=window_size,
             enabled=sliding_window_enabled,
+            is_causal=is_causal,  # New parameter
+            max_seq_len=max_seq_len,  # New parameter
+            ensure_contiguous=ensure_contiguous,  # New parameter
         )
 
         # Multihead attentions and layer norms
@@ -118,6 +129,9 @@ class Model(nn.Module):
             base_transformer_mixer,
             window_size=window_size,
             enabled=sliding_window_enabled,
+            is_causal=is_causal,  # New parameter
+            max_seq_len=max_seq_len,  # New parameter
+            ensure_contiguous=ensure_contiguous,  # New parameter
         )
 
         self.reduce = torch.nn.Linear(
@@ -143,12 +157,16 @@ class Model(nn.Module):
             base_orthography_decoder,
             window_size=window_size,
             enabled=sliding_window_enabled,
+            max_seq_len=max_seq_len,  # New parameter
+            ensure_contiguous=ensure_contiguous,  # New parameter
         )
 
         self.phonology_decoder = SlidingWindowDecoderWrapper(
             base_phonology_decoder,
             window_size=window_size,
             enabled=sliding_window_enabled,
+            max_seq_len=max_seq_len,  # New parameter
+            ensure_contiguous=ensure_contiguous,  # New parameter
         )
 
         self.linear_orthography_decoder = nn.Linear(
