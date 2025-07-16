@@ -37,6 +37,8 @@ class Model(nn.Module):
         # Hardcoded sequence lengths - will be replaced with dynamic position encoding in the future
         self.max_orth_seq_len = 1024 * 4  # 30
         self.max_phon_seq_len = 1024 * 4  # 30
+        self.max_orth_seq_len = 30 # original
+        self.max_phon_seq_len = 30 # original
 
         # Initialize embeddings and position embeddings
         self.orthography_embedding = nn.Embedding(
