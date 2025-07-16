@@ -2,18 +2,18 @@ d_model: 256
 d_embedding: 1
 nhead: 1
 seed: 1337
-num_phon_enc_layers: 2
-num_orth_enc_layers: 2
-num_mixing_enc_layers: 2
-num_phon_dec_layers: 2
-num_orth_dec_layers: 2
+num_phon_enc_layers: 1
+num_orth_enc_layers: 1
+num_mixing_enc_layers: 1
+num_phon_dec_layers: 1
+num_orth_dec_layers: 1
 
 # Sliding window attention configuration
 window_size: 5         # ±30 characters + current position
 use_sliding_window: true  # or false to disable
 is_causal: false        # Whether to apply causal masking (for encoders)
 max_seq_len: 4096       # Maximum sequence length for pre-computed masks
-ensure_contiguous: false # Whether to ensure sliced masks are contiguous for GPU performance
+ensure_contiguous: true # Whether to ensure sliced masks are contiguous for GPU performance
 
 #d_model: 128
 #d_embedding: 1

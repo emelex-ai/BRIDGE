@@ -1,3 +1,4 @@
+import time
 from typing import Optional
 
 import torch
@@ -74,6 +75,10 @@ class SlidingWindowEncoderWrapper(nn.Module):
         Returns:
             Float mask where 0.0 means attend, -inf means mask out
         """
+        # Add debugging for long sequences
+        if seq_len > 512:
+            print(f"    [DEBUG] Creating mask for long sequence: {seq_len}")
+
         positions = torch.arange(seq_len, device=device)
         query_pos = positions.unsqueeze(1)  # [seq_len, 1]
         key_pos = positions.unsqueeze(0)  # [1, seq_len]
@@ -103,6 +108,18 @@ class SlidingWindowEncoderWrapper(nn.Module):
         # Convert to PyTorch attention mask format directly (0.0 = attend, -inf = mask out)
         # This avoids the conversion cost in F._canonical_mask
         attention_mask = torch.where(combined_mask, 0.0, float("-inf"))
+
+        # Add debugging for mask properties
+        if seq_len > 512:
+            print(
+                f"    [DEBUG] Mask stats: min={attention_mask.min().item():.6f}, max={attention_mask.max().item():.6f}"
+            )
+            print(f"    [DEBUG] Mask unique values: {torch.unique(attention_mask)}")
+            if torch.isnan(attention_mask).any():
+                print(f"    ⚠ [DEBUG] WARNING: NaN detected in mask creation!")
+                nan_count = torch.isnan(attention_mask).sum().item()
+                print(f"    [DEBUG] NaN count: {nan_count}/{attention_mask.numel()}")
+
         return attention_mask.to(torch.float32)
 
     def create_sliding_window_mask(
@@ -151,9 +168,16 @@ class SlidingWindowEncoderWrapper(nn.Module):
         """
         if not self.enabled:
             # Pass through unchanged when sliding window is disabled
-            return self.encoder(src, src_mask, src_key_padding_mask)
+            start_time = time.time()
+            result = self.encoder(src, src_mask, src_key_padding_mask)
+            end_time = time.time() - start_time
+            print(
+                f"    [DEBUG] Encoder forward pass time: {end_time:.6f}s, {self.enabled=}"
+            )
+            return result
 
         # Create sliding window mask
+        start_time = time.time()
         seq_len = src.shape[1]
         sliding_mask = self.create_sliding_window_mask(seq_len, src.device)
 
@@ -170,7 +194,12 @@ class SlidingWindowEncoderWrapper(nn.Module):
         else:
             final_mask = sliding_mask
 
-        return self.encoder(src, final_mask, src_key_padding_mask)
+        result = self.encoder(src, final_mask, src_key_padding_mask)
+        end_time = time.time() - start_time
+        print(
+            f"    [DEBUG] Encoder forward pass time: {end_time:.6f}s, {self.enabled=}"
+        )
+        return result
 
 
 class SlidingWindowDecoderWrapper(nn.Module):
@@ -244,6 +273,10 @@ class SlidingWindowDecoderWrapper(nn.Module):
         Returns:
             Float mask where 0.0 means attend, -inf means mask out
         """
+        # Add debugging for long sequences
+        if seq_len > 512:
+            print(f"    [DEBUG] Creating causal mask for long sequence: {seq_len}")
+
         positions = torch.arange(seq_len, device=device)
         query_pos = positions.unsqueeze(1)  # [seq_len, 1]
         key_pos = positions.unsqueeze(0)  # [1, seq_len]
@@ -263,6 +296,20 @@ class SlidingWindowDecoderWrapper(nn.Module):
         # Convert to PyTorch attention mask format directly (0.0 = attend, -inf = mask out)
         # This avoids the conversion cost in F._canonical_mask
         attention_mask = torch.where(combined_mask, 0.0, float("-inf"))
+
+        # Add debugging for mask properties
+        if seq_len > 512:
+            print(
+                f"    [DEBUG] Causal mask stats: min={attention_mask.min().item():.6f}, max={attention_mask.max().item():.6f}"
+            )
+            print(
+                f"    [DEBUG] Causal mask unique values: {torch.unique(attention_mask)}"
+            )
+            if torch.isnan(attention_mask).any():
+                print(f"    ⚠ [DEBUG] WARNING: NaN detected in causal mask creation!")
+                nan_count = torch.isnan(attention_mask).sum().item()
+                print(f"    [DEBUG] NaN count: {nan_count}/{attention_mask.numel()}")
+
         return attention_mask.to(torch.float32)
 
     def create_sliding_window_causal_mask(
@@ -317,7 +364,8 @@ class SlidingWindowDecoderWrapper(nn.Module):
         """
         if not self.enabled:
             # Pass through unchanged when sliding window is disabled
-            return self.decoder(
+            start_time = time.time()
+            result = self.decoder(
                 tgt,
                 memory,
                 tgt_mask,
@@ -325,8 +373,14 @@ class SlidingWindowDecoderWrapper(nn.Module):
                 tgt_key_padding_mask,
                 memory_key_padding_mask,
             )
+            end_time = time.time() - start_time
+            print(
+                f"    [DEBUG] Decoder forward pass time: {end_time:.6f}s, {self.enabled=}"
+            )
+            return result
 
         # Create sliding window causal mask for target
+        start_time = time.time()
         seq_len = tgt.shape[1]
         sliding_causal_mask = self.create_sliding_window_causal_mask(
             seq_len, tgt.device
@@ -345,7 +399,7 @@ class SlidingWindowDecoderWrapper(nn.Module):
         else:
             final_tgt_mask = sliding_causal_mask
 
-        return self.decoder(
+        result = self.decoder(
             tgt,
             memory,
             final_tgt_mask,
@@ -353,6 +407,11 @@ class SlidingWindowDecoderWrapper(nn.Module):
             tgt_key_padding_mask,
             memory_key_padding_mask,
         )
+        end_time = time.time() - start_time
+        print(
+            f"    [DEBUG] Decoder forward pass time: {end_time:.6f}s, {self.enabled=}"
+        )
+        return result
 
 
 def create_sliding_window_mask(
