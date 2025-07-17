@@ -319,7 +319,7 @@ if __name__ == "__main__":
     print("\n=== Multi-Word Dataset ===")
     multi_word_dataset = SyntheticBridgeDatasetMultiWord(
         num_samples=10,
-        max_seq_len=64,
+        max_seq_len=20,
         min_words_per_sequence=2,
         max_words_per_sequence=8,
     )
@@ -327,10 +327,17 @@ if __name__ == "__main__":
 
     # Show some sequence examples
     for i in range(min(3, len(multi_word_dataset))):
+        print("================================================")
         info = multi_word_dataset.get_sequence_info(i)
         sample = multi_word_dataset[i]
-        print(f"Sequence {i}: {info['text']}")
-        print(f"  Words: {info['num_words']}, Length: {info['text_length']}")
-        print(f"  Orthographic tokens: {sample.orthographic.enc_input_ids.shape}")
-        print(f"  Phonological tokens: {len(sample.phonological.enc_input_ids[0])}")
+        # Print the list of words
+        print(f"Sample {i} words: {info['words']}")
+        # Print the full sequence as a string (words joined by space)
+        print(f"Sample {i} sequence: {' '.join(info['words'])}")
+        # Print the list of phonemes
+        if hasattr(sample.phonological, "enc_input_phonemes"):
+            phonemes = sample.phonological.enc_input_phonemes
+            print(f"Sample {i} phonemes: {phonemes}")
+        else:
+            print(f"Sample {i} phonemes: (phoneme information not available)")
         print()
