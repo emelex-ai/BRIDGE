@@ -17,6 +17,151 @@ from bridge.domain.model.synthetic_dataset import SyntheticBridgeDatasetMultiWor
 from torch import Tensor, tensor
 
 
+def debug_nan_trace(model, input_dict):
+    """Trace where NaNs first appear in the model forward pass."""
+    import torch
+
+    def check_tensor(name, tensor):
+        if isinstance(tensor, torch.Tensor):
+            print(
+                f"{name}: min={tensor.min().item()}, max={tensor.max().item()}, mean={tensor.mean().item()}"
+            )
+            if torch.isnan(tensor).any():
+                print(f"❌ NaN detected in {name}: {tensor.shape}")
+                return True
+        return False
+
+    # Check embeddings
+    ortho_emb = model.embed_orth_tokens(input_dict["orth_enc_input"])
+    if check_tensor("orthography_embedding", ortho_emb):
+        return
+
+    # Encoder output
+    ortho_enc = model.orthography_encoder(
+        ortho_emb, src_key_padding_mask=input_dict["orth_enc_pad_mask"]
+    )
+    if check_tensor("orthography_encoder", ortho_enc):
+        return
+
+    # Decoder input
+    phon_emb = model.embed_phon_tokens(input_dict["phon_dec_input"])
+    if check_tensor("phonology_embedding", phon_emb):
+        return
+
+    # Decoder output
+    phon_out = model.phonology_decoder(
+        tgt=phon_emb,
+        tgt_key_padding_mask=input_dict["phon_dec_pad_mask"],
+        memory=ortho_enc,
+    )
+    if check_tensor("phonology_decoder", phon_out):
+        return
+
+    # Linear output
+    B, PC, E = phon_out.shape
+    phon_token_logits = (
+        model.linear_phonology_decoder(phon_out).view(B, PC, 2, -1).transpose(1, 2)
+    )
+    if check_tensor("linear_phonology_decoder", phon_token_logits):
+        return
+
+    # If you have a similar linear layer for orthographic output, check it too:
+    if hasattr(model, "linear_orthography_decoder"):
+        # The orthographic output is likely computed as:
+        ortho_out = model.linear_orthography_decoder(ortho_enc)
+        if check_tensor("linear_orthography_decoder", ortho_out):
+            return
+
+    print("No NaNs detected in major modules.")
+
+
+def full_nan_debug(model, ortho, phon):
+    import torch
+
+    print("\n=== INPUT DEBUG ===")
+    print("orth_enc_input shape:", ortho.enc_input_ids.shape)
+    print("orth_enc_input max index:", ortho.enc_input_ids.max().item())
+    print("orth_enc_input NaN:", torch.isnan(ortho.enc_input_ids).any())
+    print("orth_enc_pad_mask shape:", ortho.enc_pad_mask.shape)
+    print("phon_dec_input type:", type(phon.dec_input_ids))
+    if isinstance(phon.dec_input_ids, list):
+        print(
+            "phon_dec_input lens:", [[tt.shape for tt in t] for t in phon.dec_input_ids]
+        )
+        print(
+            "phon_dec_input NaN:",
+            any(torch.isnan(tt).any() for t in phon.dec_input_ids for tt in t),
+        )
+    else:
+        print("phon_dec_input shape:", phon.dec_input_ids.shape)
+        print("phon_dec_input NaN:", torch.isnan(phon.dec_input_ids).any())
+    print("phon_dec_pad_mask shape:", phon.dec_pad_mask.shape)
+
+    print("\n=== MODEL PARAMETER DEBUG ===")
+    for name, param in model.named_parameters():
+        if torch.isnan(param).any():
+            print(f"❌ NaN in parameter: {name}")
+        if torch.isinf(param).any():
+            print(f"❌ Inf in parameter: {name}")
+
+    print("\n=== POSITION EMBEDDING DEBUG ===")
+    print("orth_position_embedding size:", model.orth_position_embedding.num_embeddings)
+    print("phon_position_embedding size:", model.phon_position_embedding.num_embeddings)
+    seq_len = ortho.enc_input_ids.shape[1]
+    assert (
+        seq_len <= model.orth_position_embedding.num_embeddings
+    ), f"Input sequence length {seq_len} exceeds orth_position_embedding size {model.orth_position_embedding.num_embeddings}"
+    if isinstance(phon.dec_input_ids, list):
+        phon_seq_len = max(len(t) for t in phon.dec_input_ids)
+    else:
+        phon_seq_len = phon.dec_input_ids.shape[1]
+    assert (
+        phon_seq_len <= model.phon_position_embedding.num_embeddings
+    ), f"Phonological sequence length {phon_seq_len} exceeds phon_position_embedding size {model.phon_position_embedding.num_embeddings}"
+
+    print("\n=== DEVICE DEBUG ===")
+    print("Model device:", model.device)
+    print("orth_enc_input device:", ortho.enc_input_ids.device)
+    print(
+        "phon_dec_input device:",
+        phon.dec_input_ids[0][0].device
+        if isinstance(phon.dec_input_ids, list)
+        else phon.dec_input_ids.device,
+    )
+
+    print("\n=== LAYERNORM VARIANCE DEBUG ===")
+    # Check variance before each LayerNorm (if possible)
+    # This is a simple example for the first LayerNorm in the model
+    for name, module in model.named_modules():
+        if isinstance(module, torch.nn.LayerNorm):
+            # Try to get input to LayerNorm (requires forward hook for full coverage)
+            print(f"LayerNorm: {name} (cannot check input variance here without hooks)")
+
+    print("\n=== MASK DEBUG ===")
+    # If you use masks, check for all-False rows
+    if hasattr(model, "orthography_encoder"):
+        enc = model.orthography_encoder
+        if hasattr(enc, "create_sliding_window_mask"):
+            mask = enc.create_sliding_window_mask(seq_len, ortho.enc_input_ids.device)
+            all_masked = (~mask).all(dim=-1)
+            if all_masked.any():
+                print("❌ Some rows in encoder mask are all masked out!")
+    if hasattr(model, "phonology_decoder"):
+        dec = model.phonology_decoder
+        if hasattr(dec, "create_sliding_window_causal_mask"):
+            mask = dec.create_sliding_window_causal_mask(
+                phon_seq_len, phon.dec_input_ids[0][0].device
+            )
+            all_masked = (~mask).all(dim=-1)
+            if all_masked.any():
+                print("❌ Some rows in decoder mask are all masked out!")
+
+    print("\n=== PYTORCH VERSION ===")
+    import torch
+
+    print("PyTorch version:", torch.__version__)
+
+
 @pytest.fixture
 def sample_dataset():
     """Create a sample multi-word dataset for testing."""
@@ -372,14 +517,18 @@ def configured_model(sample_dataset, model_config):
     model.eval()
 
     # Configure model for longer sequences
-    model.max_orth_seq_len = 148
-    model.max_phon_seq_len = 148
+    model.max_orth_seq_len = 1024
+    model.max_phon_seq_len = 1024
 
     # Update position embeddings
     device = model.device
     d_model = model.model_config.d_model
-    model.orth_position_embedding = torch.nn.Embedding(148, d_model, device=device)
-    model.phon_position_embedding = torch.nn.Embedding(148, d_model, device=device)
+    model.orth_position_embedding = torch.nn.Embedding(
+        model.max_orth_seq_len, d_model, device=device
+    )
+    model.phon_position_embedding = torch.nn.Embedding(
+        model.max_phon_seq_len, d_model, device=device
+    )
 
     return model
 
@@ -700,9 +849,25 @@ def test_model_output_vocabulary_sizes(model_output, configured_model):
         print(f"   This might indicate a bug in the model's forward pass")
 
 
-def test_model_output_quality(model_output):
-    """Test that model outputs are reasonable (not all zeros, no NaN, etc.)."""
+def test_model_output_quality(model_output, sample_encoding, configured_model):
+    ortho = sample_encoding.orthographic
+    phon = sample_encoding.phonological
+    full_nan_debug(configured_model, ortho, phon)
+    # --- Add this block to help debug NaNs ---
+    ortho = sample_encoding.orthographic
+    phon = sample_encoding.phonological
+    debug_nan_trace(
+        configured_model,
+        {
+            "orth_enc_input": ortho.enc_input_ids,
+            "orth_enc_pad_mask": ortho.enc_pad_mask,
+            "phon_dec_input": phon.dec_input_ids,
+            "phon_dec_pad_mask": phon.dec_pad_mask,
+        },
+    )
+    # --- End debug block ---
     # Check output quality
+    # assert False, "PREMATURE END"
     assert not torch.allclose(
         model_output["orth"], torch.zeros_like(model_output["orth"])
     )
@@ -896,8 +1061,8 @@ def test_two_word_phonological_format(
     model.eval()
 
     # Mock sequence lengths to handle longer sequences
-    model.max_orth_seq_len = 1024 # 128
-    model.max_phon_seq_len = 1024 # 128
+    model.max_orth_seq_len = 1024  # 128
+    model.max_phon_seq_len = 1024  # 128
 
     # Update position embeddings
     device = model.device
@@ -924,6 +1089,80 @@ def test_two_word_phonological_format(
     # Just verify the model produces output - don't check exact shapes
     assert "phon" in output, "Model should produce phonological output"
     assert "orth" in output, "Model should produce orthographic output"
+
+
+def test_decoder_output_length_and_nan(configured_model):
+    """Test if model output is always one shorter than input and last position is NaN.
+
+    This test checks for off-by-one errors in the decoder output length and NaN in the last position.
+    """
+    import torch
+
+    min_len = 10
+    max_len = 50
+    batch_size = 1
+    model = configured_model
+
+    # Use the model's vocab size for valid token indices
+    vocab_size = model.orthographic_vocabulary_size
+    phon_vocab_size = model.phonological_vocabulary_size
+    print(f"===>+++ {phon_vocab_size=}")
+
+    for seq_len in range(min_len, max_len + 1, 5):
+        # Create dummy input of shape (batch_size, seq_len)
+        input_ids = torch.randint(0, vocab_size, (batch_size, seq_len))
+        pad_mask = torch.zeros((batch_size, seq_len), dtype=torch.bool)
+
+        # For phonological input, create a dummy list of lists of tensors
+        # (You may need to adapt this to your actual phonological input format)
+        phon_enc_input = [
+            [torch.randint(0, phon_vocab_size, (2,)) for _ in range(seq_len)]
+            for _ in range(batch_size)
+        ]
+        phon_enc_pad_mask = torch.zeros((batch_size, seq_len), dtype=torch.bool)
+
+        # Use the same for decoder input for simplicity
+        dec_input = input_ids.clone()
+        dec_pad_mask = pad_mask.clone()
+
+        # Run the model
+        with torch.no_grad():
+            output = model.forward_op2op(
+                orth_enc_input=input_ids,
+                orth_enc_pad_mask=pad_mask,
+                phon_enc_input=phon_enc_input,
+                phon_enc_pad_mask=phon_enc_pad_mask,
+                orth_dec_input=dec_input,
+                orth_dec_pad_mask=dec_pad_mask,
+                phon_dec_input=dec_input,
+                phon_dec_pad_mask=dec_pad_mask,
+            )
+
+        orth_out = output["orth"]
+        # orth_out shape: (batch_size, vocab_size, seq_len)
+        out_seq_len = orth_out.shape[2]
+
+        print(f"Input seq_len: {seq_len}, Output seq_len: {out_seq_len}")
+
+        # Check if output is one shorter than input
+        if out_seq_len == seq_len - 1:
+            # Check if last position is NaN
+            last_col = orth_out[:, :, -1]
+            has_nan = torch.isnan(last_col).any().item()
+            print(f"  Last output position is NaN: {has_nan}")
+            assert has_nan, f"Expected NaN in last position for seq_len={seq_len}"
+        else:
+            print(
+                f"  Output seq_len is not one less than input (no off-by-one bug for seq_len={seq_len})"
+            )
+            # Optionally, assert that output matches input length
+            assert (
+                out_seq_len == seq_len
+            ), f"Unexpected output length for seq_len={seq_len}"
+
+    print(
+        "✓ Off-by-one and NaN pattern test completed for all tested sequence lengths."
+    )
 
 
 if __name__ == "__main__":

@@ -228,6 +228,11 @@ def test_1_1_disabled_vs_enabled_sliding_window():
         test_data = create_test_data(batch_size=4, seq_len=64)
         print("✓ Created test data with batch_size=4, seq_len=64")
 
+        # Check for NaN in inputs
+        if torch.isnan(test_data["orth_enc_input"]).any():
+            print(f"⚠ WARNING: Input contains NaN before forward pass!")
+            return
+
         # Measure memory before forward pass
         memory_before = get_memory_usage()
 
@@ -252,6 +257,17 @@ def test_1_1_disabled_vs_enabled_sliding_window():
         # Measure memory after forward pass
         memory_after = get_memory_usage()
         memory_used = memory_after - memory_before
+
+        # Check for NaN in outputs
+        for key, value in output.items():
+            if isinstance(value, torch.Tensor) and torch.isnan(value).any():
+                nan_count = torch.isnan(value).sum().item()
+                total_elements = value.numel()
+                print(
+                    f"⚠ WARNING: NaN found in output '{key}': {nan_count}/{total_elements} elements"
+                )
+                print(f"⚠ Output shape: {value.shape}")
+                print(f"⚠ Output min/max: {value.min().item()}/{value.max().item()}")
 
         # Store results
         results[config_name] = {
@@ -328,6 +344,21 @@ def test_1_1_disabled_vs_enabled_sliding_window():
     # Compare orthographic outputs
     orth_disabled = disabled_output["orth"]
     orth_enabled = enabled_output["orth"]
+
+    # Check for NaN before comparison
+    if torch.isnan(orth_disabled).any():
+        print("⚠ WARNING: Disabled orthographic output contains NaN values!")
+        nan_count = torch.isnan(orth_disabled).sum().item()
+        total_elements = orth_disabled.numel()
+        print(f"⚠ NaN count: {nan_count}/{total_elements}")
+        return
+
+    if torch.isnan(orth_enabled).any():
+        print("⚠ WARNING: Enabled orthographic output contains NaN values!")
+        nan_count = torch.isnan(orth_enabled).sum().item()
+        total_elements = orth_enabled.numel()
+        print(f"⚠ NaN count: {nan_count}/{total_elements}")
+        return
 
     # Check that outputs are different (not identical)
     orth_diff = torch.abs(orth_disabled - orth_enabled).mean().item()
