@@ -1114,16 +1114,24 @@ def test_decoder_output_length_and_nan(configured_model):
         pad_mask = torch.zeros((batch_size, seq_len), dtype=torch.bool)
 
         # For phonological input, create a dummy list of lists of tensors
-        # (You may need to adapt this to your actual phonological input format)
+        # FIXED: Each tensor should contain single feature indices, not multiple elements
         phon_enc_input = [
-            [torch.randint(0, phon_vocab_size, (2,)) for _ in range(seq_len)]
+            [torch.randint(0, phon_vocab_size, (1,)) for _ in range(seq_len)]
             for _ in range(batch_size)
         ]
         phon_enc_pad_mask = torch.zeros((batch_size, seq_len), dtype=torch.bool)
 
-        # Use the same for decoder input for simplicity
-        dec_input = input_ids.clone()
-        dec_pad_mask = pad_mask.clone()
+        # FIXED: Create separate decoder inputs for orthographic and phonological
+        # Orthographic decoder input can use the same as encoder input
+        orth_dec_input = input_ids.clone()
+        orth_dec_pad_mask = pad_mask.clone()
+
+        # Phonological decoder input must use phonological vocabulary size
+        phon_dec_input = [
+            [torch.randint(0, phon_vocab_size, (1,)) for _ in range(seq_len)]
+            for _ in range(batch_size)
+        ]
+        phon_dec_pad_mask = pad_mask.clone()
 
         # Run the model
         with torch.no_grad():
@@ -1132,10 +1140,10 @@ def test_decoder_output_length_and_nan(configured_model):
                 orth_enc_pad_mask=pad_mask,
                 phon_enc_input=phon_enc_input,
                 phon_enc_pad_mask=phon_enc_pad_mask,
-                orth_dec_input=dec_input,
-                orth_dec_pad_mask=dec_pad_mask,
-                phon_dec_input=dec_input,
-                phon_dec_pad_mask=dec_pad_mask,
+                orth_dec_input=orth_dec_input,
+                orth_dec_pad_mask=orth_dec_pad_mask,
+                phon_dec_input=phon_dec_input,
+                phon_dec_pad_mask=phon_dec_pad_mask,
             )
 
         orth_out = output["orth"]
