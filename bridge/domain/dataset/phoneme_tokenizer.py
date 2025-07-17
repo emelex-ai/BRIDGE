@@ -74,6 +74,7 @@ class PhonemeTokenizer:
             "[PAD]": self.base_dim + 4,
         }
         self.vocabulary_size = self.base_dim + len(self.special_token_dims)
+        print("=====> self.vocabulary_size: ", self.vocabulary_size)
 
         # Pre-compute special token vectors as PyTorch tensors
         self.special_vecs = {

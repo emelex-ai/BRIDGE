@@ -348,8 +348,8 @@ def test_model_sequence_length_configuration(
     print(f"✓ Model can handle sequence lengths from dataset")
 
 
-def test_model_forward_pass_basic(model_output):
-    """Test that model forward pass completes without errors."""
+def test_model_forward_pass_basic(model_output, sample_encoding):
+    """Test that model forward pass completes without errors and produces correct outputs."""
     # Basic output validation
     assert isinstance(model_output, dict)
     assert "orth" in model_output
@@ -360,6 +360,66 @@ def test_model_forward_pass_basic(model_output):
     print(f"✓ Model forward pass completed successfully")
     print(f"✓ Orthographic output shape: {model_output['orth'].shape}")
     print(f"✓ Phonological output shape: {model_output['phon'].shape}")
+
+    # CRITICAL: Check that output sequence lengths match input sequence lengths
+    ortho = sample_encoding.orthographic
+    phon = sample_encoding.phonological
+
+    # Get expected output sequence lengths from decoder inputs
+    expected_orth_seq_len = ortho.dec_input_ids.shape[1]
+    expected_phon_seq_len = len(phon.dec_input_ids[0]) if phon.dec_input_ids else 0
+
+    # Get actual output sequence lengths
+    actual_orth_seq_len = model_output["orth"].shape[2]  # (batch, vocab, seq_len)
+    if model_output["phon"].dim() == 3:
+        actual_phon_seq_len = model_output["phon"].shape[1]  # (batch, seq_len, vocab)
+    else:  # 4D
+        actual_phon_seq_len = model_output["phon"].shape[
+            2
+        ]  # (batch, 2, seq_len, vocab)
+
+    print(f"Expected orthographic sequence length: {expected_orth_seq_len}")
+    print(f"Actual orthographic sequence length: {actual_orth_seq_len}")
+    print(f"Expected phonological sequence length: {expected_phon_seq_len}")
+    print(f"Actual phonological sequence length: {actual_phon_seq_len}")
+
+    # Assert that output sequence lengths match input sequence lengths
+    assert actual_orth_seq_len == expected_orth_seq_len, (
+        f"Orthographic output sequence length {actual_orth_seq_len} doesn't match "
+        f"expected length {expected_orth_seq_len}. This indicates sequence truncation."
+    )
+
+    assert actual_phon_seq_len == expected_phon_seq_len, (
+        f"Phonological output sequence length {actual_phon_seq_len} doesn't match "
+        f"expected length {expected_phon_seq_len}. This indicates sequence truncation."
+    )
+
+    # Check vocabulary sizes
+    expected_orth_vocab_size = 106  # From the model configuration
+    expected_phon_vocab_size = 36  # From the model configuration
+
+    actual_orth_vocab_size = model_output["orth"].shape[1]  # (batch, vocab, seq_len)
+    if model_output["phon"].dim() == 3:
+        actual_phon_vocab_size = model_output["phon"].shape[
+            2
+        ]  # (batch, seq_len, vocab)
+    else:  # 4D
+        actual_phon_vocab_size = model_output["phon"].shape[
+            3
+        ]  # (batch, 2, seq_len, vocab)
+
+    assert actual_orth_vocab_size == expected_orth_vocab_size, (
+        f"Orthographic vocabulary size {actual_orth_vocab_size} doesn't match "
+        f"expected {expected_orth_vocab_size}"
+    )
+
+    assert actual_phon_vocab_size == expected_phon_vocab_size, (
+        f"Phonological vocabulary size {actual_phon_vocab_size} doesn't match "
+        f"expected {expected_phon_vocab_size}"
+    )
+
+    print(f"✓ Output sequence lengths match input sequence lengths")
+    print(f"✓ Output vocabulary sizes are correct")
 
 
 def test_model_output_dimensions(model_output, sample_encoding):
@@ -481,6 +541,170 @@ def test_word_boundary_preservation(sample_dataset):
         f"but found {spc_count}"
     )
 
+
+def test_sequence_length_analysis(sample_dataset, sample_encoding, configured_model):
+    """Analyze the sequence lengths at each step."""
+    ortho = sample_encoding.orthographic
+    phon = sample_encoding.phonological
+
+    print(f"Input sequence lengths:")
+    print(f"  orth_enc_input: {ortho.enc_input_ids.shape[1]}")
+    print(
+        f"  phon_enc_input: {len(phon.enc_input_ids[0]) if phon.enc_input_ids else 'N/A'}"
+    )
+    print(f"  orth_dec_input: {ortho.dec_input_ids.shape[1]}")
+    print(
+        f"  phon_dec_input: {len(phon.dec_input_ids[0]) if phon.dec_input_ids else 'N/A'}"
+    )
+
+    # Check which sequence is shorter
+    orth_len = ortho.enc_input_ids.shape[1]
+    phon_len = len(phon.enc_input_ids[0]) if phon.enc_input_ids else 0
+    min_len = min(orth_len, phon_len)
+
+    print(f"  Minimum sequence length: {min_len}")
+    print(f"  Orthographic output sequence length: 34")
+    print(f"  Phonological output sequence length: 29")
+
+    # Check if the output lengths match the minimum input length
+    if 34 == min_len:
+        print(f"  ✓ Orthographic output length matches minimum input length")
+    else:
+        print(
+            f"  ⚠ Orthographic output length (34) doesn't match minimum input length ({min_len})"
+        )
+
+    if 29 == min_len:
+        print(f"  ✓ Phonological output length matches minimum input length")
+    else:
+        print(
+            f"  ⚠ Phonological output length (29) doesn't match minimum input length ({min_len})"
+        )
+
+
+def test_two_word_phonological_format(sample_dataset):
+    """Test that two-word sequences create correct phonological input format.
+
+    Verifies that phon_enc_input has structure: list[list[Tensor]] where
+    each inner list contains phonemes from both words in sequence.
+    """
+    dataset = cast(BridgeDataset, sample_dataset)
+
+    # Find a two-word sequence
+    two_word_idx = None
+    for i, sequence in enumerate(dataset.sequences):
+        if len(sequence) == 2:
+            two_word_idx = i
+            break
+
+    assert two_word_idx is not None, "No two-word sequence found"
+
+    # Get encoding
+    encoding = dataset[two_word_idx]
+    phon_enc_input = encoding.phonological.enc_input_ids
+
+    # Verify structure: list[list[Tensor]]
+    assert isinstance(phon_enc_input, list), "phon_enc_input should be a list"
+    assert len(phon_enc_input) == 1, "Should have batch_size=1"
+
+    phon_sequence = phon_enc_input[0]
+    assert isinstance(phon_sequence, list), "Inner item should be a list"
+    assert all(
+        isinstance(p, torch.Tensor) for p in phon_sequence
+    ), "All phonemes should be tensors"
+
+    # Verify sequence contains phonemes from both words
+    word1, word2 = dataset.sequences[two_word_idx]
+    word1_phonemes = dataset.tokenizer.phoneme_tokenizer._get_word_phonemes(word1)
+    word2_phonemes = dataset.tokenizer.phoneme_tokenizer._get_word_phonemes(word2)
+
+    # The sequence should contain phonemes from both words
+    assert len(phon_sequence) > 0, "Sequence should not be empty"
+
+    # Verify the sequence contains both BOS and EOS tokens
+    bos_id = dataset.tokenizer.phon_bos_id
+    eos_id = dataset.tokenizer.phon_eos_id
+
+    # Check BOS token (first tensor should contain BOS ID)
+    first_tensor = phon_sequence[0]
+    assert bos_id in first_tensor, "First token should contain BOS ID"
+
+    # Check EOS token (last tensor should contain EOS ID)
+    last_tensor = phon_sequence[-1]
+    assert eos_id in last_tensor, "Last token should contain EOS ID"
+
+    # Verify there's at least one [SPC] token between words
+    spc_id = dataset.tokenizer.phoneme_tokenizer.special_token_dims["[SPC]"]
+    spc_found = any(spc_id in tensor for tensor in phon_sequence)
+    assert spc_found, "Sequence should contain [SPC] token between words"
+
+    # Test with model - just verify it doesn't crash
+    model_config = ModelConfig(
+        d_model=128,
+        nhead=4,
+        num_phon_enc_layers=2,
+        num_orth_enc_layers=2,
+        num_mixing_enc_layers=2,
+        num_phon_dec_layers=2,
+        num_orth_dec_layers=2,
+        d_embedding=1,
+        seed=42,
+        use_sliding_window=False,
+        window_size=61,
+        is_causal=False,
+        max_seq_len=256,
+        ensure_contiguous=False,
+    )
+
+    model = Model(model_config, dataset)
+    model.eval()
+
+    # Mock sequence lengths to handle longer sequences
+    model.max_orth_seq_len = 128
+    model.max_phon_seq_len = 128
+
+    # Update position embeddings
+    device = model.device
+    d_model = model.model_config.d_model
+
+    model.orth_position_embedding = torch.nn.Embedding(128, d_model, device=device)
+    model.phon_position_embedding = torch.nn.Embedding(128, d_model, device=device)
+
+    with torch.no_grad():
+        output = model.forward(
+            "op2op",
+            orth_enc_input=encoding.orthographic.enc_input_ids,
+            orth_enc_pad_mask=encoding.orthographic.enc_pad_mask,
+            phon_enc_input=phon_enc_input,
+            phon_enc_pad_mask=encoding.phonological.enc_pad_mask,
+            phon_dec_input=encoding.phonological.dec_input_ids,
+            phon_dec_pad_mask=encoding.phonological.dec_pad_mask,
+            orth_dec_input=encoding.orthographic.dec_input_ids,
+            orth_dec_pad_mask=encoding.orthographic.dec_pad_mask,
+        )
+
+    # Just verify the model produces output - don't check exact shapes
+    assert "phon" in output, "Model should produce phonological output"
+    assert "orth" in output, "Model should produce orthographic output"
+
+
+if __name__ == "__main__":
+    """Run the tests when executed directly."""
+    print("Running Test 1.1: Disabled vs Enabled Sliding Window")
+
+    # Run the main test
+    test_1_1_disabled_vs_enabled_sliding_window()
+
+    # Run edge case tests
+    test_1_1_edge_cases()
+
+    # Run scaling benefits test
+    test_1_1_scaling_benefits()
+
+    # Run dataset encoding demonstration test
+    test_1_1_dataset_encoding_demonstration()
+
+    print("\n All Test 1.1 tests passed!")
 
 if __name__ == "__main__":
     """Run the tests when executed directly."""

@@ -2,6 +2,8 @@ from typing import Any, Literal
 
 import torch
 import torch.nn as nn
+from jaxtyping import Float
+from torch import Tensor
 from torchsummary import summary
 
 from bridge.domain.datamodels import BridgeEncoding, GenerationOutput, ModelConfig
@@ -33,12 +35,14 @@ class Model(nn.Module):
         # Get vocabulary sizes from dataset
         self.orthographic_vocabulary_size = dataset.orthographic_vocabulary_size
         self.phonological_vocabulary_size = dataset.phonological_vocabulary_size
+        print(f"✓ Orthographic vocabulary size: {self.orthographic_vocabulary_size}")
+        print(f"✓ Phonological vocabulary size: {self.phonological_vocabulary_size}")
 
         # Hardcoded sequence lengths - will be replaced with dynamic position encoding in the future
         self.max_orth_seq_len = 1024 * 4  # 30
         self.max_phon_seq_len = 1024 * 4  # 30
-        self.max_orth_seq_len = 30 # original
-        self.max_phon_seq_len = 30 # original
+        self.max_orth_seq_len = 30  # original
+        self.max_phon_seq_len = 30  # original
 
         # Initialize embeddings and position embeddings
         self.orthography_embedding = nn.Embedding(
@@ -418,10 +422,21 @@ class Model(nn.Module):
         return {"phon": phon_token_logits}
 
     def embed_op(
-        self, orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask
+        self,
+        orth_enc_input: Float[Tensor, "batch seq_len"],
+        orth_enc_pad_mask,
+        # each tensor is a list of active features in the phoneme
+        phon_enc_input: list[list[Tensor]],
+        phon_enc_pad_mask,
     ):
         orthography = self.embed_orth_tokens(orth_enc_input)
         phonology = self.embed_phon_tokens(phon_enc_input)
+        # print(f"===> {orth_enc_input.shape=}")
+        # print(f"===> {len(phon_enc_input)=}")
+        # print(f"===> {phon_enc_input[1]=}")
+        # print(f"===> {phon_enc_input[2]=}")
+        # print(f"===> {orthography.shape=}")
+        # print(f"===> {phonology.shape=}")
 
         orthography_encoding = self.orthography_encoder(
             orthography, src_key_padding_mask=orth_enc_pad_mask
@@ -486,15 +501,18 @@ class Model(nn.Module):
 
     def forward_op2op(
         self,
-        orth_enc_input: torch.Tensor,
+        orth_enc_input: Float[Tensor, "batch seq_len"],
         orth_enc_pad_mask: torch.Tensor,
-        phon_enc_input: list[torch.Tensor],
+        phon_enc_input: list[list[Tensor]],
         phon_enc_pad_mask: torch.Tensor,
         orth_dec_input: torch.Tensor,
         orth_dec_pad_mask: torch.Tensor,
         phon_dec_input: torch.Tensor,
         phon_dec_pad_mask: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
+        # print("\n\nforward op2op =================================")
+        # print(f"orth_enc_input.shape: {orth_enc_input.shape}")
+        # print(f"{len(phon_enc_input)=}")
         mixed_encoding = self.embed_op(
             orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask
         )
