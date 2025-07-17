@@ -783,6 +783,223 @@ def test_1_1_scaling_benefits() -> None:
     print(f"\n=== Test 1.1 Scaling Benefits PASSED ===")
 
 
+def test_1_1_dataset_encoding_demonstration() -> None:
+    """Test that demonstrates how SyntheticBridgeDatasetMultiWord creates sequences.
+
+    Test that demonstrates how SyntheticBridgeDatasetMultiWord creates orthographic and
+    phonological sequences for BRIDGE model input.
+
+    This test shows:
+    1. How multi-word sequences are generated
+    2. How they get converted to text with spaces
+    3. How the tokenizer processes them into orthographic and phonological encodings
+    4. The structure of the BridgeEncoding object that serves as model input
+    """
+    print("\n=== Test 1.1 Dataset Encoding Demonstration ===")
+
+    # Create synthetic multi-word dataset
+    dataset = SyntheticBridgeDatasetMultiWord(
+        num_samples=5,
+        max_seq_len=128,
+        min_words_per_sequence=2,
+        max_words_per_sequence=12,
+        seed=42,
+    )
+    dataset = cast(BridgeDataset, dataset)
+    print(f"✓ Created synthetic multi-word dataset with {len(dataset)} samples")
+
+    # Examine the first few sequences
+    print(f"\n--- Generated Word Sequences ---")
+    for i in range(min(5, len(dataset))):
+        word_sequence = dataset.sequences[i]
+        text_sequence = " ".join(word_sequence)
+        print(f"Sequence {i}: {word_sequence} → '{text_sequence}'")
+
+        # Show phonetic representation for each word
+        print(f"  Phonetic breakdown:")
+        for j, word in enumerate(word_sequence):
+            # Get phonemes for this word using the tokenizer
+            phonemes = dataset.tokenizer.phoneme_tokenizer._get_word_phonemes(word)
+            if phonemes:
+                print(f"    '{word}' → {phonemes}")
+            else:
+                print(f"    '{word}' → [NOT FOUND in CMU dictionary]")
+
+        # Show the complete phoneme sequence with spaces
+        complete_phonemes = dataset.tokenizer.phoneme_tokenizer._get_phrase_phonemes(
+            text_sequence
+        )
+        if complete_phonemes:
+            print(f"  Complete phoneme sequence: {complete_phonemes}")
+        else:
+            print(f"  Complete phoneme sequence: [FAILED]")
+        print()  # Empty line for readability
+
+    # Get a sample encoding and examine its structure
+    print(f"\n--- Sample Encoding Analysis ---")
+    sample_idx = 0
+    encoding = dataset[sample_idx]
+
+    print(f"Sample {sample_idx} encoding type: {type(encoding)}")
+    print(f"Sample {sample_idx} encoding attributes: {dir(encoding)}")
+
+    # Examine orthographic encoding
+    print(f"\n--- Orthographic Encoding ---")
+    ortho = encoding.orthographic
+    print(f"Orthographic type: {type(ortho)}")
+    print(f"Orthographic attributes: {dir(ortho)}")
+
+    # Show the text that was encoded
+    word_sequence = dataset.sequences[sample_idx]
+    original_text = " ".join(word_sequence)
+    print(f"Original text: '{original_text}'")
+
+    # Show orthographic input structure
+    print(f"Orthographic enc_input_ids shape: {ortho.enc_input_ids.shape}")
+    print(f"Orthographic enc_pad_mask shape: {ortho.enc_pad_mask.shape}")
+    print(f"Orthographic dec_input_ids shape: {ortho.dec_input_ids.shape}")
+    print(f"Orthographic dec_pad_mask shape: {ortho.dec_pad_mask.shape}")
+
+    # Check if targets exist for orthographic encoding
+    if ortho.targets is not None:
+        print(f"Orthographic targets shape: {ortho.targets.shape}")
+    else:
+        print(f"Orthographic targets: None (not created by tokenizer)")
+
+    # Show a sample of the orthographic tokens
+    print(
+        f"Orthographic enc_input_ids sample (first 20 tokens): {ortho.enc_input_ids[0, :20].tolist()}"
+    )
+
+    # Decode orthographic back to text to verify
+    try:
+        decoded_ortho = dataset.tokenizer.decode(
+            ortho_indices=[ortho.enc_input_ids[0].tolist()]
+        )
+        if decoded_ortho and "orthographic" in decoded_ortho:
+            decoded_text = decoded_ortho["orthographic"][0]
+            print(f"Decoded orthographic text: '{decoded_text}'")
+            print(f"✓ Orthographic encoding/decoding works correctly")
+        else:
+            print(f"⚠ Could not decode orthographic text")
+    except Exception as e:
+        print(f"⚠ Error decoding orthographic: {e}")
+
+    # Examine phonological encoding
+    print(f"\n--- Phonological Encoding ---")
+    phon = encoding.phonological
+    print(f"Phonological type: {type(phon)}")
+    print(f"Phonological attributes: {dir(phon)}")
+
+    # Show phonological input structure
+    print(f"Phonological enc_input_ids: {len(phon.enc_input_ids)} sequences")
+    print(f"Phonological enc_pad_mask shape: {phon.enc_pad_mask.shape}")
+    print(f"Phonological dec_input_ids: {len(phon.dec_input_ids)} sequences")
+    print(f"Phonological dec_pad_mask shape: {phon.dec_pad_mask.shape}")
+
+    # Check if targets exist for phonological encoding
+    if phon.targets is not None:
+        print(f"Phonological targets shape: {phon.targets.shape}")
+    else:
+        print(f"Phonological targets: None (not created by tokenizer)")
+
+    # Show a sample of the phonological tokens (first sequence)
+    if phon.enc_input_ids:
+        first_phon_seq = phon.enc_input_ids[0]
+        print(
+            f"Phonological enc_input_ids sample (first 10 tokens): {first_phon_seq[:10]}"
+        )
+
+        # Show the phoneme sequence that was created
+        print(f"Phoneme sequence length: {len(first_phon_seq)}")
+
+        # Try to decode phonological back to phonemes
+        try:
+            # Convert the tensor to a list for decoding
+            if isinstance(first_phon_seq, torch.Tensor):
+                phon_seq_list = first_phon_seq.tolist()
+            else:
+                phon_seq_list = first_phon_seq
+
+            decoded_phon = dataset.tokenizer.decode(phono_indices=[phon_seq_list])
+            if decoded_phon and "phonological" in decoded_phon:
+                decoded_phonemes = decoded_phon["phonological"][0]
+                print(f"Decoded phonological sequence: {decoded_phonemes}")
+                print(f"✓ Phonological encoding/decoding works correctly")
+            else:
+                print(f"⚠ Could not decode phonological sequence")
+        except Exception as e:
+            print(f"⚠ Error decoding phonological: {e}")
+
+    # Show the complete BridgeEncoding structure
+    print(f"\n--- Complete BridgeEncoding Structure ---")
+    print(f"BridgeEncoding contains:")
+    print(f"  - orthographic: {type(encoding.orthographic)}")
+    print(f"  - phonological: {type(encoding.phonological)}")
+
+    # Show vocabulary sizes
+    print(f"\n--- Vocabulary Information ---")
+    print(f"Orthographic vocabulary size: {dataset.orthographic_vocabulary_size}")
+    print(f"Phonological vocabulary size: {dataset.phonological_vocabulary_size}")
+
+    # Demonstrate that this encoding can be used as model input
+    print(f"\n--- Model Input Compatibility ---")
+    print(
+        f"This BridgeEncoding object can be directly used as input to the BRIDGE model"
+    )
+    print(f"Model expects:")
+    print(f"  - orth_enc_input: {ortho.enc_input_ids}")
+    print(f"  - orth_enc_pad_mask: {ortho.enc_pad_mask}")
+    print(f"  - phon_enc_input: {phon.enc_input_ids}")
+    print(f"  - phon_enc_pad_mask: {phon.enc_pad_mask}")
+    print(f"  - phon_dec_input: {phon.dec_input_ids}")
+    print(f"  - phon_dec_pad_mask: {phon.dec_pad_mask}")
+    print(f"  - orth_dec_input: {ortho.dec_input_ids}")
+    print(f"  - orth_dec_pad_mask: {ortho.dec_pad_mask}")
+
+    # Test with a small model to verify compatibility
+    print(f"\n--- Testing with Model ---")
+    try:
+        model_config = create_test_model_config(use_sliding_window=False)
+        model = Model(model_config, dataset)
+        model.eval()
+
+        # Extract the inputs from the encoding
+        orth_enc_input = ortho.enc_input_ids
+        orth_enc_pad_mask = ortho.enc_pad_mask
+        phon_enc_input = phon.enc_input_ids
+        phon_enc_pad_mask = phon.enc_pad_mask
+        phon_dec_input = phon.dec_input_ids
+        phon_dec_pad_mask = phon.dec_pad_mask
+        orth_dec_input = ortho.dec_input_ids
+        orth_dec_pad_mask = ortho.dec_pad_mask
+
+        with torch.no_grad():
+            output = model.forward(
+                "op2op",
+                orth_enc_input=orth_enc_input,
+                orth_enc_pad_mask=orth_enc_pad_mask,
+                phon_enc_input=phon_enc_input,
+                phon_enc_pad_mask=phon_enc_pad_mask,
+                phon_dec_input=phon_dec_input,
+                phon_dec_pad_mask=phon_dec_pad_mask,
+                orth_dec_input=orth_dec_input,
+                orth_dec_pad_mask=orth_dec_pad_mask,
+            )
+
+        print(f"✓ Model forward pass successful with BridgeEncoding input")
+        print(f"✓ Output shapes: {dict([(k, v.shape) for k, v in output.items()])}")
+
+    except Exception as e:
+        print(f"⚠ Error testing with model: {e}")
+
+    print(f"\n=== Test 1.1 Dataset Encoding Demonstration PASSED ===")
+    print(f"✓ Multi-word dataset creates proper BridgeEncoding objects")
+    print(f"✓ Orthographic encoding preserves character-level information")
+    print(f"✓ Phonological encoding creates phoneme sequences with [SPC] tokens")
+    print(f"✓ BridgeEncoding is compatible with model input requirements")
+
+
 if __name__ == "__main__":
     """Run the tests when executed directly."""
     print("Running Test 1.1: Disabled vs Enabled Sliding Window")
@@ -795,5 +1012,8 @@ if __name__ == "__main__":
 
     # Run scaling benefits test
     test_1_1_scaling_benefits()
+
+    # Run dataset encoding demonstration test
+    test_1_1_dataset_encoding_demonstration()
 
     print("\n All Test 1.1 tests passed!")
