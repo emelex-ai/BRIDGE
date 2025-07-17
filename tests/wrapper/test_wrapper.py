@@ -83,7 +83,7 @@ def create_test_model_config(use_sliding_window: bool = False) -> ModelConfig:
         use_sliding_window=use_sliding_window,
         window_size=61,  # Default window size
         is_causal=False,  # Non-causal for this test
-        max_seq_len=256,  # Reduced from 1024 to 256
+        max_seq_len=1024,  # Reduced from 1024 to 256
         ensure_contiguous=False,  # Memory efficient
     )
 
@@ -1028,6 +1028,7 @@ def test_two_word_phonological_format():
     # Get encoding
     encoding = dataset[two_word_idx]
     phon_enc_input = encoding.phonological.enc_input_ids
+    print(f"{phon_enc_input=}")
 
     # Verify structure: list[list[Tensor]]
     assert isinstance(phon_enc_input, list), "phon_enc_input should be a list"
@@ -1083,8 +1084,12 @@ def test_two_word_phonological_format():
         )
 
     # Verify model processed correct number of phonemes
-    assert output["phon"].shape[1] == len(
-        phon_sequence
+    print(f"{output['phon'].shape=}")  # torch.Size([1, 2, 14, 35])
+    # The decoder output is shifted by 1 so the sequence length is reduced by 1
+    # Note that during phoneme generation, the output length is determined
+    # by a special phoneme token.
+    assert (
+        output["phon"].shape[2] == len(phon_sequence) - 1
     ), "Model output should match input phoneme count"
 
 

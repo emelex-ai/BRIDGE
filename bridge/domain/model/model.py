@@ -431,10 +431,9 @@ class Model(nn.Module):
     ):
         orthography = self.embed_orth_tokens(orth_enc_input)
         phonology = self.embed_phon_tokens(phon_enc_input)
-        # print(f"===> {orth_enc_input.shape=}")
-        # print(f"===> {len(phon_enc_input)=}")
-        # print(f"===> {phon_enc_input[1]=}")
-        # print(f"===> {phon_enc_input[2]=}")
+        print(f"===> {orth_enc_input.shape=}")
+        print(f"===> {len(phon_enc_input)=}")
+        print(f"===> {phon_enc_input=}")
         # print(f"===> {orthography.shape=}")
         # print(f"===> {phonology.shape=}")
 
@@ -1548,6 +1547,7 @@ if __name__ == "__main__":
         with torch.no_grad():
             for i in range(1000):
                 print("i= ", i)
+
                 output = model.forward(
                     "op2op",
                     orth_enc_input=orth_enc_input,
