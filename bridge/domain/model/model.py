@@ -39,10 +39,10 @@ class Model(nn.Module):
         print(f"✓ Phonological vocabulary size: {self.phonological_vocabulary_size}")
 
         # Hardcoded sequence lengths - will be replaced with dynamic position encoding in the future
-        self.max_orth_seq_len = 1024 * 4  # 30
-        self.max_phon_seq_len = 1024 * 4  # 30
-        self.max_orth_seq_len = 30  # original
-        self.max_phon_seq_len = 30  # original
+        self.max_orth_seq_len = 1024  # 30
+        self.max_phon_seq_len = 1024  # 30
+        # self.max_orth_seq_len = 30  # original
+        # self.max_phon_seq_len = 30  # original
 
         # Initialize embeddings and position embeddings
         self.orthography_embedding = nn.Embedding(
@@ -262,6 +262,14 @@ class Model(nn.Module):
         )
 
     def generate_triangular_mask(self, size: int) -> torch.Tensor:
+        """Generate a lower-triangular boolean mask for causal attention.
+
+        Args:
+            size: The size of the mask (sequence length).
+
+        Returns:
+            Boolean mask where True means attend, False means mask out.
+        """
         return torch.triu(
             torch.ones((size, size), dtype=torch.bool, device=self.device), 1
         )
@@ -326,7 +334,7 @@ class Model(nn.Module):
         )  # Shape: (batch_size, phon_seq_len, d_model)
         phon_ar_mask = self.generate_triangular_mask(
             phon_dec_input.shape[1]
-        )  # Shape: (phon_seq_len, phon_seq_len)
+        )  # Boolean mask
 
         # Pass through the phonology decoder
         phon_output = self.phonology_decoder(
@@ -509,20 +517,94 @@ class Model(nn.Module):
         phon_dec_input: torch.Tensor,
         phon_dec_pad_mask: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
-        # print("\n\nforward op2op =================================")
-        # print(f"orth_enc_input.shape: {orth_enc_input.shape}")
-        # print(f"{len(phon_enc_input)=}")
         mixed_encoding = self.embed_op(
             orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask
         )
+
+        # Check for NaN in mixed encoding
+        if torch.isnan(mixed_encoding).any():
+            print("⚠ WARNING: NaN detected in mixed_encoding!")
+            nan_count = torch.isnan(mixed_encoding).sum().item()
+            print(
+                f"⚠ NaN count in mixed_encoding: {nan_count}/{mixed_encoding.numel()}"
+            )
+            return
+
         orth_dec_input = self.embed_orth_tokens(orth_dec_input)
+
+        # Check for NaN in decoder input embeddings
+        if torch.isnan(orth_dec_input).any():
+            print("⚠ WARNING: NaN detected in orth_dec_input embeddings!")
+            nan_count = torch.isnan(orth_dec_input).sum().item()
+            print(
+                f"⚠ NaN count in orth_dec_input: {nan_count}/{orth_dec_input.numel()}"
+            )
+            return
+
         orth_ar_mask = self.generate_triangular_mask(orth_dec_input.shape[1])
+
+        # Debug prints
+        print("orth_dec_input.shape:", orth_dec_input.shape)
+        print("orth_dec_pad_mask.shape:", orth_dec_pad_mask.shape)
+        print("orth_ar_mask.shape:", orth_ar_mask.shape)
+        print("orth_dec_pad_mask:", orth_dec_pad_mask)
+        print("orth_ar_mask[-1]:", orth_ar_mask[-1])
+        print("mixed_encoding.shape:", mixed_encoding.shape)
+        print(
+            "mixed_encoding stats:",
+            mixed_encoding.min().item(),
+            mixed_encoding.max().item(),
+            mixed_encoding.mean().item(),
+        )
+
+        # Check if sliding window is enabled
+        print("Sliding window enabled:", self.orthography_decoder.enabled)
+
+        # Check input statistics before decoder
+        print(
+            "orth_dec_input stats:",
+            orth_dec_input.min().item(),
+            orth_dec_input.max().item(),
+            orth_dec_input.mean().item(),
+        )
+        print(
+            "mixed_encoding stats:",
+            mixed_encoding.min().item(),
+            mixed_encoding.max().item(),
+            mixed_encoding.mean().item(),
+        )
+
         orth_output = self.orthography_decoder(
             tgt=orth_dec_input,
             tgt_mask=orth_ar_mask,
             tgt_key_padding_mask=orth_dec_pad_mask,
             memory=mixed_encoding,
         )
+
+        print("orth_output NaN:", torch.isnan(orth_output).any())
+        print("orth_output last position:", orth_output[..., -1])
+
+        # Check which positions have NaN
+        nan_positions = torch.isnan(orth_output).any(dim=-1)
+        print("NaN positions:", nan_positions)
+
+        # Check if NaN is only in the last position
+        last_position_nan = torch.isnan(orth_output[..., -1]).any()
+        other_positions_nan = torch.isnan(orth_output[..., :-1]).any()
+        print(
+            f"Last position NaN: {last_position_nan}, Other positions NaN: {other_positions_nan}"
+        )
+
+        # Check output statistics
+        if not torch.isnan(orth_output).all():
+            valid_output = orth_output[~torch.isnan(orth_output)]
+            print(
+                "Valid output stats:",
+                valid_output.min().item(),
+                valid_output.max().item(),
+                valid_output.mean().item(),
+            )
+
         phon_dec_input = self.embed_phon_tokens(phon_dec_input)
         phon_ar_mask = self.generate_triangular_mask(phon_dec_input.shape[1])
         phon_output = self.phonology_decoder(
@@ -531,11 +613,23 @@ class Model(nn.Module):
             tgt_key_padding_mask=phon_dec_pad_mask,
             memory=mixed_encoding,
         )
-        B, PC, E = phon_output.shape
+
+        # Get dimensions from the correct outputs
+        B_orth, PC_orth, E_orth = orth_output.shape
+        B_phon, PC_phon, E_phon = phon_output.shape
+
         orth_token_logits = self.linear_orthography_decoder(orth_output)
         phon_token_logits = self.linear_phonology_decoder(phon_output)
         orth_token_logits = orth_token_logits.transpose(1, 2)
-        phon_token_logits = phon_token_logits.view(B, PC, 2, -1).transpose(1, 2)
+
+        # Fix: Use the correct dimensions for phonological reshaping
+        # phon_token_logits shape: (B_phon, 2*(vocab_size-1), PC_phon)
+        # We want to reshape to: (B_phon, 2, vocab_size-1, PC_phon)
+        vocab_size_minus_1 = self.phonological_vocabulary_size - 1
+        phon_token_logits = phon_token_logits.view(
+            B_phon, 2, vocab_size_minus_1, PC_phon
+        ).transpose(2, 3)
+
         return {"orth": orth_token_logits, "phon": phon_token_logits}
 
     def ortho_sample(
