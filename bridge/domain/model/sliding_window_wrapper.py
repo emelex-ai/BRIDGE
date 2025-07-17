@@ -73,7 +73,7 @@ class SlidingWindowEncoderWrapper(nn.Module):
             device: Device to create mask on
 
         Returns:
-            Float mask where 0.0 means attend, -inf means mask out
+            Boolean mask where True means attend, False means mask out
         """
         # Add debugging for long sequences
         if seq_len > 512:
@@ -120,7 +120,7 @@ class SlidingWindowEncoderWrapper(nn.Module):
                 nan_count = torch.isnan(attention_mask).sum().item()
                 print(f"    [DEBUG] NaN count: {nan_count}/{attention_mask.numel()}")
 
-        return attention_mask.to(torch.float32)
+        return ~combined_mask  # Invert: True means masked out, False means attend
 
     def create_sliding_window_mask(
         self, seq_len: int, device: torch.device
@@ -134,7 +134,7 @@ class SlidingWindowEncoderWrapper(nn.Module):
             device: Device to create mask on
 
         Returns:
-            Float mask where 0.0 means attend, -inf means mask out
+            Boolean mask where True means attend, False means mask out
         """
         if seq_len <= self.max_seq_len:
             # Use cached mask and create a view (no memory copy)
@@ -145,7 +145,7 @@ class SlidingWindowEncoderWrapper(nn.Module):
             if self.ensure_contiguous and not mask_slice.is_contiguous():
                 mask_slice = mask_slice.contiguous()
 
-            return mask_slice
+            return ~mask_slice  # Invert: True means masked out, False means attend
         else:
             # For sequences larger than max_seq_len, create mask on-the-fly
             return self._create_full_mask(seq_len, device)
@@ -180,17 +180,11 @@ class SlidingWindowEncoderWrapper(nn.Module):
         start_time = time.time()
         seq_len = src.shape[1]
         sliding_mask = self.create_sliding_window_mask(seq_len, src.device)
+        print(sliding_mask)
 
-        # Combine with existing mask if provided
-        # Note: sliding_mask is already in float format (0.0/-inf)
+        # Combine with existing mask if provided (logical AND)
         if src_mask is not None:
-            # src_mask might be boolean, so convert it to float format
-            if src_mask.dtype == torch.bool:
-                src_mask_float = torch.where(src_mask, 0.0, float("-inf"))
-            else:
-                src_mask_float = src_mask
-            # Combine masks: both must be 0.0 for position to be attended
-            final_mask = torch.maximum(sliding_mask, src_mask_float)
+            final_mask = sliding_mask & src_mask
         else:
             final_mask = sliding_mask
 
@@ -271,7 +265,7 @@ class SlidingWindowDecoderWrapper(nn.Module):
             device: Device to create mask on
 
         Returns:
-            Float mask where 0.0 means attend, -inf means mask out
+            Boolean mask where True means attend, False means mask out
         """
         # Add debugging for long sequences
         if seq_len > 512:
@@ -310,7 +304,7 @@ class SlidingWindowDecoderWrapper(nn.Module):
                 nan_count = torch.isnan(attention_mask).sum().item()
                 print(f"    [DEBUG] NaN count: {nan_count}/{attention_mask.numel()}")
 
-        return attention_mask.to(torch.float32)
+        return ~combined_mask  # Invert: True means masked out, False means attend
 
     def create_sliding_window_causal_mask(
         self, seq_len: int, device: torch.device
@@ -324,7 +318,7 @@ class SlidingWindowDecoderWrapper(nn.Module):
             device: Device to create mask on
 
         Returns:
-            Float mask where 0.0 means attend, -inf means mask out
+            Boolean mask where True means attend, False means mask out
         """
         if seq_len <= self.max_seq_len:
             # Use cached mask and create a view (no memory copy)
@@ -335,7 +329,7 @@ class SlidingWindowDecoderWrapper(nn.Module):
             if self.ensure_contiguous and not mask_slice.is_contiguous():
                 mask_slice = mask_slice.contiguous()
 
-            return mask_slice
+            return ~mask_slice  # Invert: True means masked out, False means attend
         else:
             # For sequences larger than max_seq_len, create mask on-the-fly
             return self._create_full_causal_mask(seq_len, device)
@@ -386,16 +380,9 @@ class SlidingWindowDecoderWrapper(nn.Module):
             seq_len, tgt.device
         )
 
-        # Combine with existing target mask if provided
-        # Note: sliding_causal_mask is already in float format (0.0/-inf)
+        # Combine with existing target mask if provided (logical AND)
         if tgt_mask is not None:
-            # tgt_mask might be boolean, so convert it to float format
-            if tgt_mask.dtype == torch.bool:
-                tgt_mask_float = torch.where(tgt_mask, 0.0, float("-inf"))
-            else:
-                tgt_mask_float = tgt_mask
-            # Combine masks: both must be 0.0 for position to be attended
-            final_tgt_mask = torch.maximum(sliding_causal_mask, tgt_mask_float)
+            final_tgt_mask = sliding_causal_mask & tgt_mask
         else:
             final_tgt_mask = sliding_causal_mask
 
@@ -445,7 +432,7 @@ def create_sliding_window_mask(
             key_pos <= query_pos + half_window
         )
 
-    return window_mask
+    return ~window_mask  # Invert: True means masked out, False means attend
 
 
 if __name__ == "__main__":
@@ -453,7 +440,7 @@ if __name__ == "__main__":
 
     # Test data
     batch_size = 2
-    seq_len = 128
+    seq_len = 1024
     d_model = 512
     window_size = 61
 
@@ -516,14 +503,14 @@ if __name__ == "__main__":
     print(f"Encoder mask slice is contiguous: {mask_slice.is_contiguous()}")
 
     # Test different sequence lengths for encoder
-    test_lengths = [32, 64, 128, 256]
+    test_lengths = [32, 64, 128, 256, 1024]
     for test_len in test_lengths:
         test_mask = encoder_wrapper.create_sliding_window_mask(test_len, device)
         print(
             f"Encoder mask for seq_len={test_len}: shape={test_mask.shape}, dtype={test_mask.dtype}"
         )
         assert test_mask.shape == (test_len, test_len)
-        assert test_mask.dtype == torch.float32
+        assert test_mask.dtype == torch.bool
 
     print("✓ Encoder wrapper all tests passed")
 
@@ -583,7 +570,7 @@ if __name__ == "__main__":
             f"Decoder mask for seq_len={test_len}: shape={test_mask.shape}, dtype={test_mask.dtype}"
         )
         assert test_mask.shape == (test_len, test_len)
-        assert test_mask.dtype == torch.float32
+        assert test_mask.dtype == torch.bool
 
     print("✓ Decoder wrapper all tests passed")
 
@@ -597,20 +584,20 @@ if __name__ == "__main__":
     print(f"Decoder mask unique values: {torch.unique(decoder_mask)}")
 
     # Verify we have 0.0 and -inf values
-    assert torch.allclose(
-        torch.unique(encoder_mask), torch.tensor([float("-inf"), 0.0])
-    )
-    assert torch.allclose(
-        torch.unique(decoder_mask), torch.tensor([float("-inf"), 0.0])
-    )
+    # assert torch.allclose(
+    # torch.unique(encoder_mask), torch.tensor([float("-inf"), 0.0])
+    # )
+    # assert torch.allclose(
+    # torch.unique(decoder_mask), torch.tensor([float("-inf"), 0.0])
+    # )
 
     # Test that causal constraint is enforced in decoder mask
     # In a causal mask, position i should not attend to positions j > i
     for i in range(16):
         for j in range(16):
             if j > i:  # Future positions
-                assert decoder_mask[i, j] == float(
-                    "-inf"
+                assert (
+                    decoder_mask[i, j] == False
                 ), f"Position {i} can attend to future position {j}"
 
     print("✓ Mask properties test passed")
@@ -657,8 +644,8 @@ if __name__ == "__main__":
 
     assert large_encoder_mask.shape == (large_seq_len, large_seq_len)
     assert large_decoder_mask.shape == (large_seq_len, large_seq_len)
-    assert large_encoder_mask.dtype == torch.float32
-    assert large_decoder_mask.dtype == torch.float32
+    assert large_encoder_mask.dtype == torch.bool
+    assert large_decoder_mask.dtype == torch.bool
 
     print("✓ Large sequence fallback test passed")
 
