@@ -231,49 +231,6 @@ def word_sequence_to_phoneme_sequence(
     return phoneme_sequences, phoneme_features
 
 
-def create_concatenated_features(
-    seq_of_words: list[str],
-    seq_of_seq_of_features: list[list[Tensor]],
-    tokenizer: PhonemeTokenizer,
-) -> tuple[str, list[list[int]]]:
-    """Concatenate feature sequences for a list of words, inserting [SPC] between words.
-
-    Args:
-        seq_of_words: List of words in the sequence.
-        seq_of_seq_of_features: List of lists of feature tensors, one list per word.
-
-    Returns:
-        A tuple containing:
-            - The concatenated string of words, separated by spaces.
-            - A single list of feature tensors, with the [SPC] feature tensor inserted
-                between each word's feature list.
-
-    """
-    concatenated_word_str = " ".join(seq_of_words)
-    concatenated_feature_seq: list[list[int]] = []
-
-    if len(seq_of_seq_of_features) == 0:
-        return concatenated_word_str, concatenated_feature_seq
-
-    # Get the feature representation for [SPC] as a list of activated features
-    # List of activated features for [SPC]
-    spc_feature = phoneme_sequence_to_feature_indices(["[SPC]"], tokenizer)[0]
-    bos_feature = phoneme_sequence_to_feature_indices(["[BOS]"], tokenizer)[0]
-    eos_feature = phoneme_sequence_to_feature_indices(["[EOS]"], tokenizer)[0]
-    # bos_id = tokenizer.phon_bos_id  # 31
-    # eos_id = tokenizer.phon_eos_id  # 32
-    # print(f"===> {spc_feature=}")
-
-    concatenated_feature_seq.append(bos_feature)
-    for i, features in enumerate(seq_of_seq_of_features):
-        if i > 0:
-            concatenated_feature_seq.append(spc_feature)
-        concatenated_feature_seq.extend(features)
-    concatenated_feature_seq.append(eos_feature)
-
-    return concatenated_word_str, concatenated_feature_seq
-
-
 @pytest.fixture
 def sample_encoding(sample_dataset):
     """Get a sample encoding from the dataset."""
@@ -989,55 +946,10 @@ def test_two_word_phonological_format(
 
     nb_words: int = 2
     word_sequence = words[:nb_words]
-    # feature_sequence = phoneme_features[:nb_words]
     concatenated_words = " ".join(word_sequence)
 
-    # concatenated_words, concatenated_phon_features = create_concatenated_features(
-    #     word_sequence,
-    #     feature_sequence,
-    #     dataset.tokenizer.phoneme_tokenizer,
-    # )
-    # print(f"+++===> {concatenated_words=}")
-    # print(f"===> {concatenated_phon_features=}")
-
-    # concatenated_phon_features = cast(list[Tensor], concatenated_phon_features)
-
-    # phon_enc_input = [concatenated_phon_features]
     orth_enc_input = [concatenated_words]
     batch_size = 1
-
-    # Verify structure: list[list[Tensor]]
-    # assert isinstance(phon_enc_input, list), "phon_enc_input should be a list"
-    # assert isinstance(
-    #     phon_enc_input[0], list
-    # ), "phon_enc_input should be a list of lists"
-    # assert len(phon_enc_input) == 1, "Should have batch_size=1"
-
-    # # Verify the sequence contains both BOS and EOS tokens
-    # bos_id = dataset.tokenizer.phon_bos_id  # 31
-    # eos_id = dataset.tokenizer.phon_eos_id  # 32
-
-    # phon_sequence = phon_enc_input[0]
-    # assert isinstance(phon_sequence, list), "Inner item should be a list"
-    # assert all(  # ERROR
-    #     isinstance(p, torch.Tensor) for p in phon_sequence
-    # ), "All phonemes should be tensors"
-
-    # # The sequence should contain phonemes from both words
-    # assert len(phon_sequence) > 0, "Sequence should not be empty"
-
-    # # Check BOS token (first tensor should contain BOS ID)
-    # first_tensor = phon_sequence[0]
-    # assert bos_id in first_tensor, "First token should contain BOS ID"
-
-    # # Check EOS token (last tensor should contain EOS ID)
-    # last_tensor = phon_sequence[-1]
-    # assert eos_id in last_tensor, "Last token should contain EOS ID"
-
-    # # Verify there's at least one [SPC] token between words
-    # spc_id = dataset.tokenizer.phoneme_tokenizer.special_token_dims["[SPC]"]
-    # spc_found = any(spc_id in tensor for tensor in phon_sequence)
-    # assert spc_found, "Sequence should contain [SPC] token between words"
 
     # Test with model - just verify it doesn't crash
     model_config = ModelConfig(

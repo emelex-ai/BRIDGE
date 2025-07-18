@@ -1,10 +1,9 @@
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import torch
-import torch.nn as nn
 from beartype import beartype
 from jaxtyping import Bool, Float, Integer
-from torch import Tensor
+from torch import Tensor, nn
 from torchsummary import summary
 
 from bridge.domain.datamodels import BridgeEncoding, GenerationOutput, ModelConfig
@@ -221,8 +220,18 @@ class Model(nn.Module):
             + self.orth_position_embedding.weight[None, : tokens.shape[1]]
         )
 
-    def embed_phon_tokens(self, tokens: list[list[Tensor]]) -> torch.Tensor:
-        # tokens: list of list of tensors
+    def embed_phon_tokens(
+        self, tokens: list[list[Tensor]]
+    ) -> Float[Tensor, "batch seq_len d_model"]:
+        """Embed phonological tokens.
+
+        Args:
+            tokens: List of lists of tensors, where each tensor is a phonological vector.
+
+        Returns:
+            Tensor of shape (batch_size, seq_len, d_model)
+
+        """
         if not isinstance(tokens, list):
             raise TypeError(
                 f"For phonological vectors, tokens must be a list where each element is \
@@ -347,15 +356,14 @@ class Model(nn.Module):
         phon_dec_input: list[list[Tensor]],
         phon_dec_pad_mask: Bool[Tensor, "batch seq_len"],
     ) -> dict[str, torch.Tensor]:
-        print("1")
         # Process phonological decoder input
         final_encoding = self.embed_o(orth_enc_input, orth_enc_pad_mask)
         print("2")
-        phon_dec_input = self.embed_phon_tokens(
+        embedded_phon_dec_input = self.embed_phon_tokens(
             phon_dec_input,
         )  # Shape: (batch_size, phon_seq_len, d_model)
         phon_ar_mask = self.generate_triangular_mask(
-            phon_dec_input.shape[1]
+            embedded_phon_dec_input.shape[1],
         )  # Boolean mask
 
         # Pass through the phonology decoder
@@ -376,8 +384,17 @@ class Model(nn.Module):
         return {"phon": phon_token_logits}
 
     def embed_p(
-        self, phon_enc_input: list[torch.Tensor], phon_enc_pad_mask: torch.Tensor
+        self,
+        phon_enc_input: list[list[torch.Tensor]],
+        phon_enc_pad_mask: torch.Tensor,
     ):
+        # ) -> Float[Tensor, "batch seq_len d_model"] | None:
+        """Embed phonological tokens.
+
+        Args:
+            phon_enc_input: List of phonological tokens.
+            phon_enc_pad_mask: Boolean mask of the phonological tokens.
+        """
         phonology = self.embed_phon_tokens(phon_enc_input)
         phonology_encoding = self.phonology_encoder(
             phonology, src_key_padding_mask=phon_enc_pad_mask
@@ -407,7 +424,7 @@ class Model(nn.Module):
 
     def forward_p2o(
         self,
-        phon_enc_input: list[torch.Tensor],
+        phon_enc_input: list[list[torch.Tensor]],
         phon_enc_pad_mask: torch.Tensor,
         orth_dec_input: torch.Tensor,
         orth_dec_pad_mask: torch.Tensor,
@@ -426,18 +443,18 @@ class Model(nn.Module):
 
     def forward_p2p(
         self,
-        phon_enc_input: list[torch.Tensor],
+        phon_enc_input: list[list[torch.Tensor]],
         phon_enc_pad_mask: torch.Tensor,
-        phon_dec_input: list[torch.Tensor],
+        phon_dec_input: list[list[torch.Tensor]],
         phon_dec_pad_mask: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
         final_encoding = self.embed_p(phon_enc_input, phon_enc_pad_mask)
-        phon_dec_input = self.embed_phon_tokens(phon_dec_input)
+        embedded_phon_dec_input = self.embed_phon_tokens(phon_dec_input)
         phon_ar_mask = self.generate_triangular_mask(
-            phon_dec_input.shape[1]
+            embedded_phon_dec_input.shape[1]
         )  # Shape: (phon_seq_len, phon_seq_len)
         phon_output = self.phonology_decoder(
-            tgt=phon_dec_input,
+            tgt=embedded_phon_dec_input,
             tgt_mask=phon_ar_mask,
             tgt_key_padding_mask=phon_dec_pad_mask,
             memory=final_encoding,
@@ -454,10 +471,10 @@ class Model(nn.Module):
     def embed_op(
         self,
         orth_enc_input: Integer[Tensor, "batch seq_len"],
-        orth_enc_pad_mask,
+        orth_enc_pad_mask: Bool[Tensor, "batch seq_len"],
         # each tensor is a list of active features in the phoneme
         phon_enc_input: list[list[Tensor]],
-        phon_enc_pad_mask,
+        phon_enc_pad_mask: Bool[Tensor, "batch seq_len"],
     ):
         orthography = self.embed_orth_tokens(orth_enc_input)
         phonology = self.embed_phon_tokens(phon_enc_input)
@@ -628,10 +645,10 @@ class Model(nn.Module):
                 valid_output.mean().item(),
             )
 
-        phon_dec_input = self.embed_phon_tokens(phon_dec_input)
-        phon_ar_mask = self.generate_triangular_mask(phon_dec_input.shape[1])
+        embedded_phon_dec_input = self.embed_phon_tokens(phon_dec_input)
+        phon_ar_mask = self.generate_triangular_mask(embedded_phon_dec_input.shape[1])
         phon_output = self.phonology_decoder(
-            tgt=phon_dec_input,
+            tgt=embedded_phon_dec_input,
             tgt_mask=phon_ar_mask,
             tgt_key_padding_mask=phon_dec_pad_mask,
             memory=mixed_encoding,
@@ -971,14 +988,25 @@ class Model(nn.Module):
             }
 
             if pathway == "op2op":
+                orth_enc_input = cast(Tensor, orth_enc_input)
+                orth_enc_pad_mask = cast(Tensor, orth_enc_pad_mask)
+                phon_enc_input = cast(list[list[Tensor]], phon_enc_input)
+                phon_enc_pad_mask = cast(Tensor, phon_enc_pad_mask)
+
                 output["global_encoding"] = self.embed_op(
                     orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask
                 )
             elif pathway in ["o2p", "o2o"]:
+                orth_enc_input = cast(Tensor, orth_enc_input)
+                orth_enc_pad_mask = cast(Tensor, orth_enc_pad_mask)
+
                 output["global_encoding"] = self.embed_o(
                     orth_enc_input, orth_enc_pad_mask
                 )
             elif pathway in ["p2o", "p2p"]:
+                phon_enc_input = cast(list[list[Tensor]], phon_enc_input)
+                phon_enc_pad_mask = cast(Tensor, phon_enc_pad_mask)
+
                 output["global_encoding"] = self.embed_p(
                     phon_enc_input, phon_enc_pad_mask
                 )
@@ -1003,7 +1031,10 @@ class Model(nn.Module):
                 generated_phon_embeddings = self.embed_phon_tokens(
                     generated_phon_tokens
                 )
-                print(f"====> _geneate(), {mask.shape=}")
+                assert (
+                    output["global_encoding"] is not None
+                ), "global_encoding should be set by this point"
+
                 generated_phon_results = self.phonology_decoder_loop(
                     mask,
                     generated_phon_embeddings,
@@ -1030,6 +1061,10 @@ class Model(nn.Module):
                 generated_orth_embeddings = self.embed_orth_tokens(
                     generated_orth_tokens
                 )
+                assert (
+                    output["global_encoding"] is not None
+                ), "global_encoding should be set by this point"
+
                 generated_orth_results = self.orthography_decoder_loop(
                     mask,
                     generated_orth_embeddings,
@@ -1729,6 +1764,7 @@ if __name__ == "__main__":
                 )
                 """
         print("Model forward pass successful!")
+        assert output is not None, "output should be set by this point"
         print(f"Output keys: {output.keys()}")
         for key, value in output.items():
             print(f"{key} shape: {value.shape}")
