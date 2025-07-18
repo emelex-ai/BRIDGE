@@ -368,7 +368,7 @@ class Model(nn.Module):
 
         # Pass through the phonology decoder
         phon_output = self.phonology_decoder(
-            tgt=phon_dec_input,
+            tgt=embedded_phon_dec_input,
             tgt_mask=phon_ar_mask,
             tgt_key_padding_mask=phon_dec_pad_mask,
             memory=final_encoding,

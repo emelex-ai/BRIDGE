@@ -12,7 +12,7 @@ import torch
 from unittest.mock import Mock
 
 
-class MockBridgeDataset:
+class MockBridgeDataset(BridgeDataset):
     """Mock implementation of BridgeDataset for testing Model."""
 
     def __init__(self, **kwargs):
@@ -57,7 +57,7 @@ def model_config():
 
 
 @pytest.fixture
-def model(mock_dataset, model_config):
+def model(mock_dataset: BridgeDataset, model_config):
     """Fixture for initializing the Model."""
     return Model(model_config, mock_dataset)
 
