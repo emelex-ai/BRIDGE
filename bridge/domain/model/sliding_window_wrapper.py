@@ -166,16 +166,21 @@ class SlidingWindowEncoderWrapper(nn.Module):
         Returns:
             Encoder output tensor
         """
+        print(f"wrap 1, {src.shape=}, {src_key_padding_mask.shape=}")
         if not self.enabled:
+            print("wrap 1-1")
             # Pass through unchanged when sliding window is disabled
             start_time = time.time()
-            result = self.encoder(src, src_mask, src_key_padding_mask)
+            print(f"wrap, {self.encoder=}")
+            result = self.encoder(src, src_mask, src_key_padding_mask)  # <<< ERROR
+            print("wrap 1-2")
             end_time = time.time() - start_time
             print(
                 f"    [DEBUG] Encoder forward pass time: {end_time:.6f}s, {self.enabled=}"
             )
             return result
 
+        print("wrap 2")
         # Create sliding window mask
         start_time = time.time()
         seq_len = src.shape[1]
@@ -183,6 +188,7 @@ class SlidingWindowEncoderWrapper(nn.Module):
         print(sliding_mask)
 
         # Combine with existing mask if provided (logical AND)
+        print("wrap 3")
         if src_mask is not None:
             final_mask = sliding_mask & src_mask
         else:

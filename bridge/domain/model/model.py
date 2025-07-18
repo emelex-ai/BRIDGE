@@ -3,7 +3,7 @@ from typing import Any, Literal
 import torch
 import torch.nn as nn
 from beartype import beartype
-from jaxtyping import Float, Integer
+from jaxtyping import Bool, Float, Integer
 from torch import Tensor
 from torchsummary import summary
 
@@ -282,7 +282,7 @@ class Model(nn.Module):
             torch.ones((size, size), dtype=torch.bool, device=self.device), 1
         )
 
-    def forward(self, task: str, **kwargs) -> dict[str, torch.Tensor]:
+    def forward(self, task: str, **kwargs) -> dict[str, torch.Tensor] | None:
         if task == "o2p":
             return self.forward_o2p(**kwargs)
         elif task == "op2op":
@@ -296,12 +296,14 @@ class Model(nn.Module):
 
     def embed_o(self, orth_enc_input, orth_enc_pad_mask):
         # Embed the orthographic input tokens
+        print(f"1-1, {orth_enc_input.shape=}, {orth_enc_pad_mask.shape=}")
         orthography = self.embed_orth_tokens(
             orth_enc_input
         )  # Shape: (batch_size, seq_len, d_model)
         orthography_encoding = self.orthography_encoder(
             orthography, src_key_padding_mask=orth_enc_pad_mask
         )
+        print(f"1-2, {orthography_encoding.shape=}")  # 6, 17, 1024
         global_embedding = self.global_embedding.expand(
             orthography_encoding.shape[0], -1, -1
         )  # Shape: (batch_size, 1, d_model)
@@ -309,19 +311,29 @@ class Model(nn.Module):
         orthography_encoding = torch.cat(
             (global_embedding, orthography_encoding), dim=1
         )  # Shape: (batch_size, seq_len + 1, d_model)
+        print(f"1-3, {global_embedding.shape=}")  # 6, 4, 1024
+        print(f"1-3, {orthography_encoding.shape=}")  # 6, 21, 1024
         # Create the padding mask for the global embedding
         batch_size = orthography_encoding.shape[0]
+        # Extend the padding mask to  account for the global embedding dimension.
+        global_embedding_dim = global_embedding.shape[1]
+        # ERROR: the 1 should actually be 21 - 17 = 4 (this gets rid of the BUG)
         zeros_padding = torch.zeros(
-            (batch_size, 1), device=self.device, dtype=torch.bool
+            (batch_size, global_embedding_dim),
+            device=self.device,
+            dtype=torch.bool,
+            # (batch_size, 1), device=self.device, dtype=torch.bool
         )  # Shape: (batch_size, 1)
 
         # Concatenate the zeros padding to the existing padding mask
         orthography_encoding_padding_mask = torch.cat(
             (zeros_padding, orth_enc_pad_mask), dim=1
         )  # Shape: (batch_size, seq_len + 1)
+        print(f"1-4, {orthography_encoding_padding_mask.shape=}")  # 6, 18  (why not 21)
         mixed_encoding = self.transformer_mixer(
             orthography_encoding, src_key_padding_mask=orthography_encoding_padding_mask
         )
+        print("1-6")
         # Extract the global encoding
         final_encoding = (
             mixed_encoding[:, :1, :] + global_embedding
@@ -331,14 +343,16 @@ class Model(nn.Module):
     def forward_o2p(
         self,
         orth_enc_input: Integer[Tensor, "batch seq_len"],
-        orth_enc_pad_mask: Integer[Tensor, "batch seq_len"],
+        orth_enc_pad_mask: Bool[Tensor, "batch seq_len"],
         phon_dec_input: list[list[Tensor]],
-        phon_dec_pad_mask: Float[Tensor, "batch seq_len"],
+        phon_dec_pad_mask: Bool[Tensor, "batch seq_len"],
     ) -> dict[str, torch.Tensor]:
+        print("1")
         # Process phonological decoder input
         final_encoding = self.embed_o(orth_enc_input, orth_enc_pad_mask)
+        print("2")
         phon_dec_input = self.embed_phon_tokens(
-            phon_dec_input
+            phon_dec_input,
         )  # Shape: (batch_size, phon_seq_len, d_model)
         phon_ar_mask = self.generate_triangular_mask(
             phon_dec_input.shape[1]
@@ -517,14 +531,15 @@ class Model(nn.Module):
     def forward_op2op(
         self,
         orth_enc_input: Integer[Tensor, "batch seq_len"],
-        orth_enc_pad_mask: torch.Tensor,
+        orth_enc_pad_mask: Bool[Tensor, "batch seq_len"],
         phon_enc_input: list[list[Tensor]],
-        phon_enc_pad_mask: torch.Tensor,
+        phon_enc_pad_mask: Bool[Tensor, "batch seq_len"],
         orth_dec_input: Integer[Tensor, "batch seq_len"],
-        orth_dec_pad_mask: torch.Tensor,
+        orth_dec_pad_mask: Bool[Tensor, "batch seq_len"],
         phon_dec_input: list[list[Tensor]],
-        phon_dec_pad_mask: torch.Tensor,
-    ) -> dict[str, torch.Tensor]:
+        phon_dec_pad_mask: Bool[Tensor, "batch seq_len"],
+    ) -> dict[str, torch.Tensor] | None:
+        print(f"==> op2op, {phon_enc_input=}")
         mixed_encoding = self.embed_op(
             orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask
         )
@@ -1590,7 +1605,7 @@ if __name__ == "__main__":
         num_mixing_enc_layers=8,
         num_orth_dec_layers=16,
         num_phon_dec_layers=16,
-        d_embedding=4,
+        d_embedding=4,  # global embedding
         seed=42,
     )
 
@@ -1620,7 +1635,7 @@ if __name__ == "__main__":
 
     print("==============================")
     # Create sample input tensors for testing
-    batch_size, seq_len = 8, 512
+    batch_size, seq_len = 6, 17
 
     # Create dummy orthographic input
     orth_enc_input = torch.randint(
@@ -1653,25 +1668,54 @@ if __name__ == "__main__":
     )
     phon_enc_pad_mask = torch.zeros((batch_size, seq_len), dtype=torch.bool)
 
-    # Create dummy decoder inputs
-    phon_dec_input = [
-        [
-            torch.randint(0, model.phonological_vocabulary_size, (seq_len,))
-            for _ in range(batch_size)
-        ]
-    ]
+    phon_dec_input = []
+    for _ in range(batch_size):
+        phoneme_list = []
+        for _ in range(seq_len):
+            n_active = random.randint(1, 5)
+            features = random.sample(range(num_features), n_active)
+            phoneme_tensor = torch.tensor(features, dtype=torch.long)
+            phoneme_list.append(phoneme_tensor)
+        phon_dec_input.append(phoneme_list)
+
+    # # Create dummy decoder inputs
+    # phon_dec_input = [
+    #     [
+    #         torch.randint(0, model.phonological_vocabulary_size, (seq_len,))
+    #         for _ in range(batch_size)
+    #     ]
+    # ]
     orth_dec_input = torch.randint(
         0, model.orthographic_vocabulary_size, (batch_size, seq_len)
     )
     print("=================================")
+    print(f"{orth_enc_input=}")
+    print(f"{orth_dec_input=}")
+    print(f"{phon_enc_input=}")
     print(f"{phon_dec_input=}")
+    print(f"{orth_enc_pad_mask.shape=}")
+    print(f"{phon_enc_pad_mask.shape=}")
+    print("phon_dec_input lengths:", [len(x) for x in phon_dec_input])
+    print("phon_dec_pad_mask.shape:", phon_enc_pad_mask.shape)
+    phon_dec_pad_mask = torch.zeros((batch_size, seq_len), dtype=torch.bool)
 
     # Test the model with proper input format
     try:
         with torch.no_grad():
-            for i in range(1000):
+            for i in range(5):
                 print("i= ", i)
 
+                output = model.forward(
+                    "o2p",
+                    orth_enc_input=orth_enc_input,
+                    orth_enc_pad_mask=orth_enc_pad_mask,
+                    phon_dec_input=phon_dec_input,
+                    # phon_dec_pad_mask=phon_enc_pad_mask,
+                    phon_dec_pad_mask=phon_dec_pad_mask,
+                )
+                # quit()
+
+                """
                 output = model.forward(
                     "op2op",
                     orth_enc_input=orth_enc_input,
@@ -1683,6 +1727,7 @@ if __name__ == "__main__":
                     orth_dec_input=orth_dec_input,
                     orth_dec_pad_mask=orth_enc_pad_mask,
                 )
+                """
         print("Model forward pass successful!")
         print(f"Output keys: {output.keys()}")
         for key, value in output.items():

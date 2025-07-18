@@ -28,6 +28,10 @@ from bridge.domain.model.sliding_window_wrapper import (
 )
 from bridge.domain.model.synthetic_dataset import SyntheticBridgeDatasetMultiWord
 
+from tests.wrapper.utils import (
+    create_test_data
+)
+
 """
 # SyntheticBridgeDatasetMultiWord
 - Purpose: Creates multi-word sequences for model forward passes
@@ -88,6 +92,7 @@ def create_test_model_config(use_sliding_window: bool = False) -> ModelConfig:
     )
 
 
+'''
 def create_test_data(batch_size: int = 4, seq_len: int = 64) -> dict:
     """Create test input data for the model.
 
@@ -123,7 +128,11 @@ def create_test_data(batch_size: int = 4, seq_len: int = 64) -> dict:
 
     # Create phonological input (list of tensors)
     phon_enc_input = [
-        torch.randint(0, 30, (seq_len,), device=device) for _ in range(batch_size)
+        [
+            torch.randint(0, 30, (1,), dtype=torch.int32, device=device)
+            for _ in range(seq_len)
+        ]
+        for _ in range(batch_size)
     ]
     phon_enc_pad_mask = torch.zeros(
         (batch_size, seq_len), dtype=torch.bool, device=device
@@ -131,7 +140,11 @@ def create_test_data(batch_size: int = 4, seq_len: int = 64) -> dict:
 
     # Create decoder inputs
     phon_dec_input = [
-        torch.randint(0, 30, (seq_len,), device=device) for _ in range(batch_size)
+        [
+            torch.randint(0, 30, (1,), dtype=torch.int32, device=device)
+            for _ in range(seq_len)
+        ]
+        for _ in range(batch_size)
     ]
     orth_dec_input = torch.randint(0, 50, (batch_size, seq_len), device=device)
 
@@ -139,9 +152,9 @@ def create_test_data(batch_size: int = 4, seq_len: int = 64) -> dict:
     print(f"batch_size: {batch_size}")
     print(f"orth_enc_input shape: {orth_enc_input.shape}")
     print(f"orth_enc_pad_mask shape: {orth_enc_pad_mask.shape}")
-    print(f"phon_enc_input: {[t.shape for t in phon_enc_input]}")
+    # print(f"phon_enc_input shape: {phon_enc_input.shape}")
     print(f"phon_enc_pad_mask shape: {phon_enc_pad_mask.shape}")
-    print(f"phon_dec_input: {[t.shape for t in phon_dec_input]}")
+    # print(f"phon_dec_input shape: {phon_dec_input.shape}")
     print(f"orth_dec_input shape: {orth_dec_input.shape}")
 
     return {
@@ -154,6 +167,7 @@ def create_test_data(batch_size: int = 4, seq_len: int = 64) -> dict:
         "orth_dec_input": orth_dec_input,
         "orth_dec_pad_mask": orth_enc_pad_mask,  # Reuse for simplicity
     }
+'''
 
 
 def mock_model_sequence_lengths(model: Model, max_seq_len: int = 128) -> None:
@@ -238,6 +252,8 @@ def test_1_1_disabled_vs_enabled_sliding_window():
 
         # Time the forward pass
         start_time = time.time()
+
+        print(f"{test_data=}")
 
         with torch.no_grad():
             output = model.forward(
@@ -447,6 +463,8 @@ def test_1_1_edge_cases():
     mock_model_sequence_lengths(model, max_seq_len=64)  # Mock sequence lengths
 
     test_data = create_test_data(batch_size=2, seq_len=32)
+    print(f"==> {list(test_data.keys())=}")
+    print(f"==> {test_data=}")
 
     with torch.no_grad():
         output = model.forward(
@@ -473,7 +491,7 @@ def test_1_1_edge_cases():
     mock_model_sequence_lengths(model, max_seq_len=256)  # Mock sequence lengths
 
     with torch.no_grad():
-        output = model.forward(
+        model.forward(
             "op2op",
             orth_enc_input=test_data["orth_enc_input"],
             orth_enc_pad_mask=test_data["orth_enc_pad_mask"],

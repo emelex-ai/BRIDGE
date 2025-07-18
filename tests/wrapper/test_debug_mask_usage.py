@@ -20,6 +20,8 @@ from bridge.domain.datamodels import ModelConfig
 from bridge.domain.model import Model
 from bridge.domain.model.synthetic_dataset import SyntheticBridgeDatasetMultiWord
 
+from tests.wrapper.utils import create_test_data
+
 
 def create_test_model_config(
     use_sliding_window: bool = False, window_size: int = 61
@@ -55,6 +57,7 @@ def create_test_model_config(
     )
 
 
+'''
 def create_test_data(batch_size: int = 4, seq_len: int = 64) -> dict:
     """Create test input data for the model.
 
@@ -97,6 +100,7 @@ def create_test_data(batch_size: int = 4, seq_len: int = 64) -> dict:
         "orth_dec_input": orth_dec_input,
         "orth_dec_pad_mask": orth_enc_pad_mask,  # Reuse for simplicity
     }
+'''
 
 
 def mock_model_sequence_lengths(model: Model, max_seq_len: int = 128) -> None:

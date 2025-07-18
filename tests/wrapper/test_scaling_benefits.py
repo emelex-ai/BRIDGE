@@ -20,6 +20,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"
 from bridge.domain.datamodels import ModelConfig
 from bridge.domain.model import Model
 from bridge.domain.model.synthetic_dataset import SyntheticBridgeDatasetMultiWord
+from tests.wrapper.utils import create_test_data
 
 
 def get_memory_usage() -> float:
@@ -65,6 +66,7 @@ def create_test_model_config(
     )
 
 
+'''
 def create_test_data(batch_size: int = 4, seq_len: int = 64) -> dict:
     """Create test input data for the model.
 
@@ -107,6 +109,7 @@ def create_test_data(batch_size: int = 4, seq_len: int = 64) -> dict:
         "orth_dec_input": orth_dec_input,
         "orth_dec_pad_mask": orth_enc_pad_mask,  # Reuse for simplicity
     }
+'''
 
 
 def mock_model_sequence_lengths(model: Model, max_seq_len: int = 128) -> None:
@@ -227,26 +230,23 @@ def test_input_data_creation_seq_len_1024():
     assert (
         len(test_data["phon_enc_input"]) == batch_size
     ), f"Expected {batch_size} phonological sequences"
+    # Each item in test_data["phon_enc_input"] should be a list of tensors (phonemes).
+    # We check that each is a list, and that each tensor inside has the correct shape.
     assert all(
-        t.shape == (seq_len,) for t in test_data["phon_enc_input"]
-    ), "All phonological sequences should have correct shape"
-
-    print(f"✓ Orthographic input shape: {test_data['orth_enc_input'].shape}")
-    print(
-        f"✓ Phonological input shapes: {[t.shape for t in test_data['phon_enc_input']]}"
-    )
+        isinstance(seq, list)
+        and all(
+            isinstance(phoneme, torch.Tensor)
+            and phoneme.dtype in (torch.int32, torch.int64)
+            for phoneme in seq
+        )
+        for seq in test_data["phon_enc_input"]
+    ), "Each phonological sequence should be a list of scalar tensors (phonemes)"
 
     # Check for NaN in inputs
     if torch.isnan(test_data["orth_enc_input"]).any():
         print(f"⚠ WARNING: Orthographic input contains NaN")
     else:
         print(f"✓ Orthographic input is clean (no NaN)")
-
-    for i, phon_input in enumerate(test_data["phon_enc_input"]):
-        if torch.isnan(phon_input).any():
-            print(f"⚠ WARNING: Phonological input {i} contains NaN")
-        else:
-            print(f"✓ Phonological input {i} is clean (no NaN)")
 
     print("✓ Test 3 PASSED")
 
@@ -279,6 +279,9 @@ def test_disabled_model_forward_pass_seq_len_1024():
     # Measure memory and time
     memory_before = get_memory_usage()
     start_time = time.time()
+
+    print(f"+++++> {test_data['phon_enc_input']=}")
+    print(f"+++++> {test_data['phon_enc_pad_mask']=}")
 
     with torch.no_grad():
         disabled_output = disabled_model.forward(
