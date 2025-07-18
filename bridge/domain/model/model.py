@@ -2,7 +2,8 @@ from typing import Any, Literal
 
 import torch
 import torch.nn as nn
-from jaxtyping import Float
+from beartype import beartype
+from jaxtyping import Float, Integer
 from torch import Tensor
 from torchsummary import summary
 
@@ -18,6 +19,7 @@ from bridge.utils import device_manager
 from bridge.utils.helper_functions import set_seed
 
 
+@beartype
 class Model(nn.Module):
     def __init__(
         self,
@@ -39,6 +41,7 @@ class Model(nn.Module):
         print(f"✓ Phonological vocabulary size: {self.phonological_vocabulary_size}")
 
         # Hardcoded sequence lengths - will be replaced with dynamic position encoding in the future
+        # This value must be larger than the longest sequence in the dataset
         self.max_orth_seq_len = 1024  # 30
         self.max_phon_seq_len = 1024  # 30
         # self.max_orth_seq_len = 30  # original
@@ -218,20 +221,25 @@ class Model(nn.Module):
             + self.orth_position_embedding.weight[None, : tokens.shape[1]]
         )
 
-    def embed_phon_tokens(self, tokens):
+    def embed_phon_tokens(self, tokens: list[list[Tensor]]) -> torch.Tensor:
         # tokens: list of list of tensors
-        try:
-            isinstance(tokens, list)
-        except:
+        if not isinstance(tokens, list):
             raise TypeError(
                 f"For phonological vectors, tokens must be a list where each element is \
                     a pytorch tensor of integers (indices), but is type: {type(tokens)}"
             )
-        try:
-            all(isinstance(token, torch.Tensor) for token in tokens)
-        except:
+
+        if not all(isinstance(token, list) for token in tokens):
             raise TypeError(
                 "For phonological vectors, each element of the list must be \
+                    a list of pytorch tensors of integers (indices)"
+            )
+
+        if not all(
+            isinstance(toke, torch.Tensor) for batch in tokens for toke in batch
+        ):
+            raise TypeError(
+                "For phonological vectors, each tensor in the list must be \
                     a pytorch tensor of integers (indices)"
             )
 
@@ -322,10 +330,10 @@ class Model(nn.Module):
 
     def forward_o2p(
         self,
-        orth_enc_input: torch.Tensor,
-        orth_enc_pad_mask: torch.Tensor,
-        phon_dec_input: list[torch.Tensor],
-        phon_dec_pad_mask: torch.Tensor,
+        orth_enc_input: Integer[Tensor, "batch seq_len"],
+        orth_enc_pad_mask: Integer[Tensor, "batch seq_len"],
+        phon_dec_input: list[list[Tensor]],
+        phon_dec_pad_mask: Float[Tensor, "batch seq_len"],
     ) -> dict[str, torch.Tensor]:
         # Process phonological decoder input
         final_encoding = self.embed_o(orth_enc_input, orth_enc_pad_mask)
@@ -431,7 +439,7 @@ class Model(nn.Module):
 
     def embed_op(
         self,
-        orth_enc_input: Float[Tensor, "batch seq_len"],
+        orth_enc_input: Integer[Tensor, "batch seq_len"],
         orth_enc_pad_mask,
         # each tensor is a list of active features in the phoneme
         phon_enc_input: list[list[Tensor]],
@@ -508,13 +516,13 @@ class Model(nn.Module):
 
     def forward_op2op(
         self,
-        orth_enc_input: Float[Tensor, "batch seq_len"],
+        orth_enc_input: Integer[Tensor, "batch seq_len"],
         orth_enc_pad_mask: torch.Tensor,
         phon_enc_input: list[list[Tensor]],
         phon_enc_pad_mask: torch.Tensor,
-        orth_dec_input: torch.Tensor,
+        orth_dec_input: Integer[Tensor, "batch seq_len"],
         orth_dec_pad_mask: torch.Tensor,
-        phon_dec_input: torch.Tensor,
+        phon_dec_input: list[list[Tensor]],
         phon_dec_pad_mask: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
         mixed_encoding = self.embed_op(
@@ -1612,7 +1620,7 @@ if __name__ == "__main__":
 
     print("==============================")
     # Create sample input tensors for testing
-    batch_size, seq_len = 8, 1024 * 4
+    batch_size, seq_len = 8, 512
 
     # Create dummy orthographic input
     orth_enc_input = torch.randint(
@@ -1621,20 +1629,42 @@ if __name__ == "__main__":
     orth_enc_pad_mask = torch.zeros((batch_size, seq_len), dtype=torch.bool)
 
     # Create dummy phonological input (list of tensors)
-    phon_enc_input = [
-        torch.randint(0, model.phonological_vocabulary_size, (seq_len,))
-        for _ in range(batch_size)
-    ]
+    import random
+
+    # Each batch is a list of phonemes, each phoneme is a list of activated features (ints 0-30)
+    phon_enc_input = []
+    num_features = 31  # features are int between 0 and 30
+    for _ in range(batch_size):
+        phoneme_list = []
+        for _ in range(seq_len):
+            # Randomly choose number of activated features for this phoneme (e.g., 1-5)
+            n_active = random.randint(1, 5)
+            # Randomly select unique features for this phoneme
+            features = random.sample(range(num_features), n_active)
+            # Convert the list of features to a torch.Tensor
+            phoneme_tensor = torch.tensor(features, dtype=torch.long)
+            phoneme_list.append(phoneme_tensor)
+        phon_enc_input.append(phoneme_list)
+
+    print(f"{phon_enc_input=}")
+    print(
+        f"Shape: batch_size={len(phon_enc_input)}, seq_len={len(phon_enc_input[0])}, "
+        f"features_per_phoneme=[{[len(p) for p in phon_enc_input[0][:5]]} ...]"
+    )
     phon_enc_pad_mask = torch.zeros((batch_size, seq_len), dtype=torch.bool)
 
     # Create dummy decoder inputs
     phon_dec_input = [
-        torch.randint(0, model.phonological_vocabulary_size, (seq_len,))
-        for _ in range(batch_size)
+        [
+            torch.randint(0, model.phonological_vocabulary_size, (seq_len,))
+            for _ in range(batch_size)
+        ]
     ]
     orth_dec_input = torch.randint(
         0, model.orthographic_vocabulary_size, (batch_size, seq_len)
     )
+    print("=================================")
+    print(f"{phon_dec_input=}")
 
     # Test the model with proper input format
     try:

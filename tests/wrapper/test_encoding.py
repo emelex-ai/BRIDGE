@@ -163,7 +163,7 @@ def full_nan_debug(model, ortho, phon):
 
 
 @pytest.fixture
-def sample_dataset():
+def sample_dataset() -> SyntheticBridgeDatasetMultiWord:
     """Create a sample multi-word dataset for testing."""
     return SyntheticBridgeDatasetMultiWord(
         num_samples=5,
@@ -972,7 +972,7 @@ def test_sequence_length_analysis(sample_dataset, sample_encoding, configured_mo
 
 
 def test_two_word_phonological_format(
-    sample_dataset: BridgeDataset,
+    sample_dataset: SyntheticBridgeDatasetMultiWord,
     # word_to_phoneme_sequence: tuple[list[str], list[list[Tensor]]],
 ):
     """Test that two-word sequences create correct phonological input format.
@@ -1072,6 +1072,14 @@ def test_two_word_phonological_format(
     model.phon_position_embedding = torch.nn.Embedding(128, d_model, device=device)
 
     encoding = dataset.tokenizer.encode(orth_enc_input)
+    print(f"{encoding.orthographic.enc_input_ids=}")
+    print(f"{encoding.orthographic.dec_input_ids=}")
+    print(f"{encoding.phonological.enc_input_ids=}")
+    print(f"{encoding.phonological.dec_input_ids=}")
+    print(f"{encoding.orthographic.enc_pad_mask=}")
+    print(f"{encoding.orthographic.dec_pad_mask=}")
+    print(f"{encoding.phonological.enc_pad_mask=}")
+    print(f"{encoding.phonological.dec_pad_mask=}")
 
     with torch.no_grad():
         output = model.forward(

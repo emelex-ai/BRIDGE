@@ -6,11 +6,12 @@ import torch
 
 from bridge.domain.datamodels import DatasetConfig
 from bridge.domain.datamodels.encodings import BridgeEncoding
+from bridge.domain.dataset.bridge_dataset import BridgeDataset
 from bridge.domain.dataset.bridge_tokenizer import BridgeTokenizer
 from bridge.utils import device_manager
 
 
-class SyntheticBridgeDataset:
+class SyntheticBridgeDataset(BridgeDataset):
     def __init__(self, num_samples: int = 100):
         """
         Initialize the synthetic dataset with a specified number of samples.
@@ -94,7 +95,7 @@ class SyntheticBridgeDataset:
         return encoding
 
 
-class SyntheticBridgeDatasetMultiWord:
+class SyntheticBridgeDatasetMultiWord(BridgeDataset):
     """Synthetic dataset that creates multi-word sequences respecting max_seq_len.
 
     This class generates sequences of multiple words that are concatenated together,
