@@ -74,3 +74,10 @@ pythonpath = "."
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v -s"
+
+# Will prevent false positives when typehinting jaxtyping
+[tool.ruff.lint]
+typing-modules = ["beartype.typing"]
+
+[lint.per-file-ignores]
+"**/*.py" = ["F722"]  # Or specify paths like "src/*.py"

@@ -220,7 +220,10 @@ class Model(nn.Module):
         return self.orthography_encoder.enabled  # All wrappers have same status
 
     # Helper functions
-    def embed_orth_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
+    def embed_orth_tokens(
+        self,
+        tokens: Integer[Tensor, "batch seq_len"],
+    ) -> Float[Tensor, "batch seq_len d_model"]:
         return (
             self.orthography_embedding(tokens)
             + self.orth_position_embedding.weight[None, : tokens.shape[1]]
@@ -284,7 +287,7 @@ class Model(nn.Module):
             + self.phon_position_embedding.weight[None, : len(tokens[0])]
         )
 
-    def generate_triangular_mask(self, size: int) -> torch.Tensor:
+    def generate_triangular_mask(self, size: int) -> Bool[Tensor, "size size"]:
         """Generate a lower-triangular boolean mask for causal attention.
 
         Args:
@@ -309,8 +312,12 @@ class Model(nn.Module):
         else:
             raise ValueError("Invalid pathway selected.")
 
-    def embed_o(self, orth_enc_input, orth_enc_pad_mask):
-        # Embed the orthographic input tokens
+    def embed_o(
+        self,
+        orth_enc_input: Integer[Tensor, "batch seq_len"],
+        orth_enc_pad_mask: Bool[Tensor, "batch seq_len"],
+    ) -> Float[Tensor, "batch seq_len d_model"]:
+        """Embed the orthographic input tokens."""
         print(f"1-1, {orth_enc_input.shape=}, {orth_enc_pad_mask.shape=}")
         orthography = self.embed_orth_tokens(
             orth_enc_input
@@ -353,6 +360,7 @@ class Model(nn.Module):
         final_encoding = (
             mixed_encoding[:, :1, :] + global_embedding
         )  # Shape: (batch_size, 1, d_model)
+        # GE: Bug in comment? should be (batch_size, global_embedding_dim, d_model)?
         return final_encoding
 
     def forward_o2p(
@@ -391,9 +399,9 @@ class Model(nn.Module):
 
     def embed_p(
         self,
-        phon_enc_input: list[list[torch.Tensor]],
-        phon_enc_pad_mask: torch.Tensor,
-    ):
+        phon_enc_input: list[list[Tensor]],
+        phon_enc_pad_mask: Bool[Tensor, "batch seq_len"],
+    ) -> Float[Tensor, "batch seq_len d_model"]:
         # ) -> Float[Tensor, "batch seq_len d_model"] | None:
         """Embed phonological tokens.
 
@@ -431,9 +439,9 @@ class Model(nn.Module):
     def forward_p2o(
         self,
         phon_enc_input: list[list[torch.Tensor]],
-        phon_enc_pad_mask: torch.Tensor,
-        orth_dec_input: torch.Tensor,
-        orth_dec_pad_mask: torch.Tensor,
+        phon_enc_pad_mask: Bool[Tensor, "batch seq_len"],
+        orth_dec_input: Integer[Tensor, "batch seq_len"],
+        orth_dec_pad_mask: Bool[Tensor, "batch seq_len"],
     ) -> dict[str, torch.Tensor]:
         final_encoding = self.embed_p(phon_enc_input, phon_enc_pad_mask)
         orth_dec_input = self.embed_orth_tokens(orth_dec_input)
@@ -450,9 +458,9 @@ class Model(nn.Module):
     def forward_p2p(
         self,
         phon_enc_input: list[list[torch.Tensor]],
-        phon_enc_pad_mask: torch.Tensor,
-        phon_dec_input: list[list[torch.Tensor]],
-        phon_dec_pad_mask: torch.Tensor,
+        phon_enc_pad_mask: Bool[Tensor, "batch seq_len"],
+        phon_dec_input: list[list[Tensor]],
+        phon_dec_pad_mask: Bool[Tensor, "batch seq_len"],
     ) -> dict[str, torch.Tensor]:
         final_encoding = self.embed_p(phon_enc_input, phon_enc_pad_mask)
         embedded_phon_dec_input = self.embed_phon_tokens(phon_dec_input)
@@ -679,14 +687,16 @@ class Model(nn.Module):
         return {"orth": orth_token_logits, "phon": phon_token_logits}
 
     def ortho_sample(
-        self, last_token_probs: torch.Tensor, deterministic: bool
+        self,
+        last_token_probs: torch.Tensor,
+        deterministic: bool,
     ) -> torch.Tensor:
         """
         Samples a single orthographic token, either greedily (deterministic) or stochastically.
 
         Args:
             last_token_probs: Tensor of shape (batch_size, vocab_size) containing
-                              the probabilities for the next token.
+                            the probabilities for the next token.
             deterministic: Whether to sample greedily (True) or from the distribution (False).
 
         Returns:
@@ -697,7 +707,9 @@ class Model(nn.Module):
         return torch.multinomial(last_token_probs, num_samples=1)
 
     def phono_sample(
-        self, last_token_probs: torch.Tensor, deterministic: bool
+        self,
+        last_token_probs: Float[Tensor, "batch 2 phon_vocab_size"],
+        deterministic: bool,
     ) -> tuple[torch.Tensor, list[list[int]]]:
         """
         Samples phonological features from the model's output distribution.
@@ -754,10 +766,10 @@ class Model(nn.Module):
     @torch.no_grad()
     def orthography_decoder_loop(
         self,
-        mask: torch.Tensor,
-        generated_orth_embeddings: torch.Tensor,
-        generated_orth_tokens: torch.Tensor,
-        prompt_encoding: torch.Tensor,
+        mask: Bool[Tensor, "seq_len seq_len"],
+        generated_orth_embeddings: Float[Tensor, "batch seq_len d_model"],
+        generated_orth_tokens: Integer[Tensor, "batch seq_len"],
+        prompt_encoding: Float[Tensor, "batch d_embedding d_model"],
         deterministic: bool,
     ) -> dict[str, Any]:
         """
@@ -846,10 +858,10 @@ class Model(nn.Module):
     @torch.no_grad()
     def phonology_decoder_loop(
         self,
-        mask: torch.Tensor,
-        generated_phon_embeddings: torch.Tensor,
-        generated_phon_tokens: list[list[torch.Tensor]],
-        prompt_encoding: torch.Tensor,
+        mask: Bool[Tensor, "seq_len seq_len"],
+        generated_phon_embeddings: Float[Tensor, "batch seq_len d_model"],
+        generated_phon_tokens: list[list[Integer[Tensor, "seq_len"]]],
+        prompt_encoding: Float[Tensor, "batch 1 d_model"],
         deterministic: bool,
     ) -> dict[str, Any]:
         """Autoregressive generation of phonological features.
@@ -918,10 +930,10 @@ class Model(nn.Module):
     def _generate(
         self,
         pathway: Literal["o2p", "p2o", "op2op", "p2p", "o2o"],
-        orth_enc_input: torch.Tensor | None = None,
-        orth_enc_pad_mask: torch.Tensor | None = None,
-        phon_enc_input: list[list[torch.Tensor]] | None = None,
-        phon_enc_pad_mask: torch.Tensor | None = None,
+        orth_enc_input: Integer[Tensor, "batch seq_len"] | None = None,
+        orth_enc_pad_mask: Bool[Tensor, "batch seq_len"] | None = None,
+        phon_enc_input: list[list[Integer[Tensor, "seq_len"]]] | None = None,
+        phon_enc_pad_mask: Bool[Tensor, "batch seq_len"] | None = None,
         deterministic: bool = False,
     ) -> dict[str, Any]:
         """
@@ -1168,10 +1180,10 @@ class Model(nn.Module):
     def _validate_generate_input(
         self,
         pathway: str,
-        orth_enc_input: torch.Tensor | None,
-        orth_enc_pad_mask: torch.Tensor | None,
-        phon_enc_input: list[list[torch.Tensor]] | None,
-        phon_enc_pad_mask: torch.Tensor | None,
+        orth_enc_input: Integer[Tensor, "batch seq_len"] | None,
+        orth_enc_pad_mask: Bool[Tensor, "batch seq_len"] | None,
+        phon_enc_input: list[list[Integer[Tensor, "seq_len"]]] | None,
+        phon_enc_pad_mask: Bool[Tensor, "batch seq_len"] | None,
     ) -> None:
         """
         Validates inputs for the generate method based on the selected pathway.
@@ -1638,7 +1650,7 @@ def get_module_memory(model: torch.nn.Module) -> int:
 if __name__ == "__main__":
     nb_blocks = 4
     nhead = 4
-    device = "cuda"
+    device = "cpu"
     # Example configuration and dataset
     model_config = ModelConfig(
         d_model=256,
@@ -1742,7 +1754,7 @@ if __name__ == "__main__":
     orth_enc_input = orth_enc_input.to(device)
     orth_enc_pad_mask = orth_enc_pad_mask.to(device)
     phon_dec_input = [
-        [tensor.to("cuda") for tensor in phoneme_list]
+        [tensor.to(device) for tensor in phoneme_list]
         for phoneme_list in phon_dec_input
     ]
     phon_dec_pad_mask = phon_dec_pad_mask.to(device)
@@ -1755,6 +1767,7 @@ if __name__ == "__main__":
         phon_dec_input=phon_dec_input,
         phon_dec_pad_mask=phon_dec_pad_mask,
     )
+    quit()
     mem, tim = benchmark_memory_usage(bound_model, num_iterations=10, device="cuda")
     print(f"===> reteurn from benchmark_memory_usage, {mem=}, {tim=}")
     quit()
