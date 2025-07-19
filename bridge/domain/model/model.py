@@ -1,4 +1,5 @@
-from typing import Any, Literal, cast
+import random
+from typing import Any, Callable, Literal, cast
 
 import torch
 from beartype import beartype
@@ -10,10 +11,15 @@ from bridge.domain.datamodels import BridgeEncoding, GenerationOutput, ModelConf
 from bridge.domain.dataset import BridgeDataset
 from bridge.domain.model.decoder import Decoder
 from bridge.domain.model.encoder import Encoder
+from bridge.domain.model.memory_utils import (
+    benchmark_memory_usage,
+    create_bound_model,
+)
 from bridge.domain.model.sliding_window_wrapper import (
     SlidingWindowDecoderWrapper,
     SlidingWindowEncoderWrapper,
 )
+from bridge.domain.model.synthetic_dataset import SyntheticBridgeDataset
 from bridge.utils import device_manager
 from bridge.utils.helper_functions import set_seed
 
@@ -1628,23 +1634,22 @@ def get_module_memory(model: torch.nn.Module) -> int:
     return total
 
 
+# ----------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
-    import torch
-
+    nb_blocks = 4
+    nhead = 4
     # Example configuration and dataset
     model_config = ModelConfig(
-        d_model=1024,
-        nhead=16,
-        num_phon_enc_layers=16,
-        num_orth_enc_layers=16,
-        num_mixing_enc_layers=8,
-        num_orth_dec_layers=16,
-        num_phon_dec_layers=16,
-        d_embedding=4,  # global embedding
+        d_model=256,
+        nhead=nhead,
+        num_phon_enc_layers=nb_blocks,
+        num_orth_enc_layers=nb_blocks,
+        num_mixing_enc_layers=nb_blocks,
+        num_orth_dec_layers=nb_blocks,
+        num_phon_dec_layers=nb_blocks,
+        d_embedding=1,  # global embedding
         seed=42,
     )
-
-    from bridge.domain.model.synthetic_dataset import SyntheticBridgeDataset
 
     dataset = (
         SyntheticBridgeDataset()
@@ -1653,7 +1658,6 @@ if __name__ == "__main__":
 
     # Instantiate the model
     model = Model(model_config, dataset)
-    print(model)
 
     # for name, p in model.named_parameters():
     # print(name, p.shape)
@@ -1679,7 +1683,6 @@ if __name__ == "__main__":
     orth_enc_pad_mask = torch.zeros((batch_size, seq_len), dtype=torch.bool)
 
     # Create dummy phonological input (list of tensors)
-    import random
 
     # Each batch is a list of phonemes, each phoneme is a list of activated features (ints 0-30)
     phon_enc_input = []
@@ -1733,6 +1736,18 @@ if __name__ == "__main__":
     print("phon_dec_input lengths:", [len(x) for x in phon_dec_input])
     print("phon_dec_pad_mask.shape:", phon_enc_pad_mask.shape)
     phon_dec_pad_mask = torch.zeros((batch_size, seq_len), dtype=torch.bool)
+
+    bound_model = create_bound_model(
+        model,
+        "o2p",
+        orth_enc_input=orth_enc_input,
+        orth_enc_pad_mask=orth_enc_pad_mask,
+        phon_dec_input=phon_dec_input,
+        phon_dec_pad_mask=phon_dec_pad_mask,
+    )
+    mem, tim = benchmark_memory_usage(bound_model, num_iterations=10, device="cuda")
+    print(f"===> reteurn from benchmark_memory_usage, {mem=}, {tim=}")
+    quit()
 
     # Test the model with proper input format
     try:
