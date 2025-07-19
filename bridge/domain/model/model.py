@@ -1638,6 +1638,7 @@ def get_module_memory(model: torch.nn.Module) -> int:
 if __name__ == "__main__":
     nb_blocks = 4
     nhead = 4
+    device = "cuda"
     # Example configuration and dataset
     model_config = ModelConfig(
         d_model=256,
@@ -1736,6 +1737,15 @@ if __name__ == "__main__":
     print("phon_dec_input lengths:", [len(x) for x in phon_dec_input])
     print("phon_dec_pad_mask.shape:", phon_enc_pad_mask.shape)
     phon_dec_pad_mask = torch.zeros((batch_size, seq_len), dtype=torch.bool)
+
+    model = model.to(device)
+    orth_enc_input = orth_enc_input.to(device)
+    orth_enc_pad_mask = orth_enc_pad_mask.to(device)
+    phon_dec_input = [
+        [tensor.to("cuda") for tensor in phoneme_list]
+        for phoneme_list in phon_dec_input
+    ]
+    phon_dec_pad_mask = phon_dec_pad_mask.to(device)
 
     bound_model = create_bound_model(
         model,
