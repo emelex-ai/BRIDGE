@@ -1,15 +1,22 @@
+from typing import Any
 
-def load_configs():  # W: Missing function or method docstring
-    # Move imports here to avoid a circular import dependency.
+
+def load_configs() -> dict[str, Any]:
+    """Load the configurations for the application.
+
+    This function is used to load the configurations for the application.
+
+    Returns:
+        dict: A dictionary containing the configurations for the application.
+    """
     from bridge.application.handlers import (
         DatasetConfigHandler,
-        LoggingConfigHandler,
         MetricsConfigHandler,
         ModelConfigHandler,
         TrainingConfigHandler,
-        TrainModelHandler,
         WandbConfigHandler,
     )
+
     # Centralized config loading
     handlers = {
         "wandb_config": WandbConfigHandler,
