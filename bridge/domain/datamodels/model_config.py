@@ -5,6 +5,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validat
 
 
 class ModelConfig(BaseModel):
+    # Enable validation on assignment
+    model_config = ConfigDict(validate_assignment=True)
     num_phon_enc_layers: int = Field(default=2)
     num_orth_enc_layers: int = Field(default=2)
     num_mixing_enc_layers: int = Field(default=2)
