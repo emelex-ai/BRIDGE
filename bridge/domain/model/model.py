@@ -63,8 +63,8 @@ class Model(nn.Module):
         # max_orth_seq_len <= max_seq_len
         # max_phon_seq_len <= max_seq_len
 
-        self.max_seq_len = model_config.max_seq_len
-        print(f"{self.max_seq_len=}")
+        # self.max_seq_len = model_config.max_seq_len
+        # print(f"{self.max_seq_len=}")
 
         self.max_orth_seq_len = (
             model_config.max_orth_seq_len
@@ -121,7 +121,6 @@ class Model(nn.Module):
         window_size = getattr(self.model_config, "window_size", 61)  # Default ±30 chars
         sliding_window_enabled = getattr(self.model_config, "use_sliding_window", False)
         is_causal = getattr(self.model_config, "is_causal", False)  # New parameter
-        max_seq_len = getattr(self.model_config, "max_seq_len", 4096)  # New parameter
         ensure_contiguous = getattr(
             self.model_config, "ensure_contiguous", False
         )  # New parameter
@@ -130,18 +129,18 @@ class Model(nn.Module):
             base_orthography_encoder,
             window_size=window_size,
             enabled=sliding_window_enabled,
-            is_causal=is_causal,  # New parameter
-            max_seq_len=max_seq_len,  # New parameter
-            ensure_contiguous=ensure_contiguous,  # New parameter
+            is_causal=is_causal,
+            max_seq_len=self.max_orth_seq_len,  # Use orthographic sequence length
+            ensure_contiguous=ensure_contiguous,
         )
 
         self.phonology_encoder = SlidingWindowEncoderWrapper(
             base_phonology_encoder,
             window_size=window_size,
             enabled=sliding_window_enabled,
-            is_causal=is_causal,  # New parameter
-            max_seq_len=max_seq_len,  # New parameter
-            ensure_contiguous=ensure_contiguous,  # New parameter
+            is_causal=is_causal,
+            max_seq_len=self.max_phon_seq_len,  # Use phonological sequence length
+            ensure_contiguous=ensure_contiguous,
         )
 
         # Multihead attentions and layer norms
@@ -166,13 +165,15 @@ class Model(nn.Module):
             num_layers=self.model_config.num_mixing_enc_layers,
         )
 
+        # Use maximum of both sequence lengths for the mixer
+        max_mixer_seq_len = max(self.max_orth_seq_len, self.max_phon_seq_len)
         self.transformer_mixer = SlidingWindowEncoderWrapper(
             base_transformer_mixer,
             window_size=window_size,
             enabled=sliding_window_enabled,
-            is_causal=is_causal,  # New parameter
-            max_seq_len=max_seq_len,  # New parameter
-            ensure_contiguous=ensure_contiguous,  # New parameter
+            is_causal=is_causal,
+            max_seq_len=max_mixer_seq_len,  # Use maximum of both sequence lengths
+            ensure_contiguous=ensure_contiguous,
         )
 
         self.reduce = torch.nn.Linear(
@@ -198,16 +199,16 @@ class Model(nn.Module):
             base_orthography_decoder,
             window_size=window_size,
             enabled=sliding_window_enabled,
-            max_seq_len=max_seq_len,  # New parameter
-            ensure_contiguous=ensure_contiguous,  # New parameter
+            max_seq_len=self.max_orth_seq_len,  # Use orthographic sequence length
+            ensure_contiguous=ensure_contiguous,
         )
 
         self.phonology_decoder = SlidingWindowDecoderWrapper(
             base_phonology_decoder,
             window_size=window_size,
             enabled=sliding_window_enabled,
-            max_seq_len=max_seq_len,  # New parameter
-            ensure_contiguous=ensure_contiguous,  # New parameter
+            max_seq_len=self.max_phon_seq_len,  # Use phonological sequence length
+            ensure_contiguous=ensure_contiguous,
         )
 
         self.linear_orthography_decoder = nn.Linear(
