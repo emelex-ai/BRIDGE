@@ -1,13 +1,19 @@
-from pydantic import BaseModel, Field, model_validator
-from bridge.utils import get_project_root
-from pathlib import PosixPath
-from pydantic import BaseModel, Field, model_validator
-from bridge.utils import get_project_root
-from pathlib import PosixPath
 import os
+from pathlib import PosixPath
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from bridge.utils import get_project_root
 
 
 class DatasetConfig(BaseModel):
+    model_config = ConfigDict(validate_assignment=True)
+    max_orth_seq_len: int = Field(
+        default=30, description="Max length of orthographic sequence"
+    )
+    max_phon_seq_len: int = Field(
+        default=30, description="Max length of phonological sequence"
+    )
     dataset_filepath: str | PosixPath = Field(description="Path to dataset file")
     custom_cmudict_path: str | PosixPath = Field(
         default=None, description="Path to custom CMU dictionary file"
