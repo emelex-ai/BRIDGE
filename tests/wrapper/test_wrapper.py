@@ -571,9 +571,8 @@ def test_1_1_scaling_benefits() -> None:
         if seq_len >= 1024:
             print(f"    Testing with larger window size for long sequence...")
             large_window_config = create_test_model_config(use_sliding_window=True)
-            large_window_config.window_size = min(
-                seq_len // 4, 256
-            )  # Use larger window
+            tmp_size = min(seq_len // 4, 256) # Use larger window
+            large_window_config.window_size = tmp_size + 1 if tmp_size % 2 == 0 else tmp_size
 
             large_window_model = Model(large_window_config, dataset)
             mock_model_sequence_lengths(large_window_model, max_seq_len=seq_len * 2)

@@ -107,7 +107,7 @@ class SlidingWindowEncoderWrapper(nn.Module):
 
         # Convert to PyTorch attention mask format directly (0.0 = attend, -inf = mask out)
         # This avoids the conversion cost in F._canonical_mask
-        tatention_mask = torch.where(combined_mask, 0.0, float("-inf"))
+        attention_mask = torch.where(combined_mask, 0.0, float("-inf"))
 
         # Add debugging for mask properties
         if seq_len > 512:
