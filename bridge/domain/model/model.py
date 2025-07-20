@@ -7,7 +7,12 @@ from jaxtyping import Bool, Float, Integer
 from torch import Tensor, nn
 from torchsummary import summary
 
-from bridge.domain.datamodels import BridgeEncoding, GenerationOutput, ModelConfig
+from bridge.domain.datamodels import (
+    BridgeEncoding,
+    DatasetConfig,
+    GenerationOutput,
+    ModelConfig,
+)
 from bridge.domain.dataset import BridgeDataset
 from bridge.domain.model.decoder import Decoder
 from bridge.domain.model.encoder import Encoder
@@ -20,6 +25,7 @@ from bridge.domain.model.sliding_window_wrapper import (
     SlidingWindowEncoderWrapper,
 )
 from bridge.domain.model.synthetic_dataset import SyntheticBridgeDataset
+from bridge.domain.model.utils import load_configs
 from bridge.utils import device_manager
 from bridge.utils.helper_functions import set_seed
 
@@ -30,11 +36,14 @@ class Model(nn.Module):
         self,
         model_config: ModelConfig,
         dataset: BridgeDataset,
+        # Assign default value not to break existing code
+        dataset_config: DatasetConfig | None = None,
     ) -> None:
         super().__init__()
         self.model_config = model_config
         self.dataset = dataset
         self.device = device_manager.device
+        print(f"{self.model_config=}")
 
         if self.model_config.seed:
             set_seed(seed=self.model_config.seed)
@@ -47,10 +56,23 @@ class Model(nn.Module):
 
         # Hardcoded sequence lengths - will be replaced with dynamic position encoding in the future
         # This value must be larger than the longest sequence in the dataset
-        self.max_orth_seq_len = 1024  # 30
-        self.max_phon_seq_len = 1024  # 30
         # self.max_orth_seq_len = 30  # original
         # self.max_phon_seq_len = 30  # original
+
+        ### VALIDATIOIN
+        # max_orth_seq_len <= max_seq_len
+        # max_phon_seq_len <= max_seq_len
+
+        self.max_seq_len = model_config.max_seq_len
+        print(f"{self.max_seq_len=}")
+        quit()
+
+        if dataset_config is not None:
+            self.max_orth_seq_len = dataset_config.max_orth_seq_len
+            self.max_phon_seq_len = dataset_config.max_phon_seq_len
+
+        print(f"{self.max_orth_seq_len=}")
+        print(f"{self.max_phon_seq_len=}")
 
         # Initialize embeddings and position embeddings
         self.orthography_embedding = nn.Embedding(
@@ -492,9 +514,9 @@ class Model(nn.Module):
     ):
         orthography = self.embed_orth_tokens(orth_enc_input)
         phonology = self.embed_phon_tokens(phon_enc_input)
-        print(f"===> {orth_enc_input.shape=}")
-        print(f"===> {len(phon_enc_input)=}")
-        print(f"===> {phon_enc_input=}")
+        # print(f"===> {orth_enc_input.shape=}")
+        # print(f"===> {len(phon_enc_input)=}")
+        # print(f"===> {phon_enc_input=}")
         # print(f"===> {orthography.shape=}")
         # print(f"===> {phonology.shape=}")
 
@@ -570,7 +592,7 @@ class Model(nn.Module):
         phon_dec_input: list[list[Tensor]],
         phon_dec_pad_mask: Bool[Tensor, "batch seq_len"],
     ) -> dict[str, torch.Tensor] | None:
-        print(f"==> op2op, {phon_enc_input=}")
+        # print(f"==> op2op, {phon_enc_input=}")
         mixed_encoding = self.embed_op(
             orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask
         )
@@ -1648,21 +1670,43 @@ def get_module_memory(model: torch.nn.Module) -> int:
 
 # ----------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
+    configs = {**load_configs()}
+    print(f"{configs=}")
     nb_blocks = 4
     nhead = 4
     device = "cpu"
     # Example configuration and dataset
-    model_config = ModelConfig(
-        d_model=256,
-        nhead=nhead,
-        num_phon_enc_layers=nb_blocks,
-        num_orth_enc_layers=nb_blocks,
-        num_mixing_enc_layers=nb_blocks,
-        num_orth_dec_layers=nb_blocks,
-        num_phon_dec_layers=nb_blocks,
-        d_embedding=1,  # global embedding
-        seed=42,
-    )
+
+    configs = load_configs()
+    dataset_config = configs["dataset_config"]
+    print(f"{dataset_config=}")
+    model_config = configs["model_config"]
+
+    # model_config = ModelConfig(
+    #     d_model=256,
+    #     nhead=nhead,
+    #     num_phon_enc_layers=nb_blocks,
+    #     num_orth_enc_layers=nb_blocks,
+    #     num_mixing_enc_layers=nb_blocks,
+    #     num_orth_dec_layers=nb_blocks,
+    #     num_phon_dec_layers=nb_blocks,
+    #     d_embedding=1,  # global embedding
+    #     seed=42,
+    # )
+
+    model_config.d_model = 256
+    model_config.nhead = nhead
+    model_config.num_phon_enc_layers = nb_blocks
+    model_config.num_orth_enc_layers = nb_blocks
+    model_config.num_mixing_enc_layers = nb_blocks
+    model_config.num_orth_dec_layers = nb_blocks
+    model_config.num_phon_dec_layers = nb_blocks
+    dataset_config.max_orth_seq_len = 910
+    dataset_config.max_phon_seq_len = 930
+    model_config.d_embedding = 1
+    model_config.seed = 42
+
+    # quit()
 
     dataset = (
         SyntheticBridgeDataset()
@@ -1670,7 +1714,7 @@ if __name__ == "__main__":
     print(f"{dataset=}")
 
     # Instantiate the model
-    model = Model(model_config, dataset)
+    model = Model(model_config, dataset, dataset_config)
 
     # for name, p in model.named_parameters():
     # print(name, p.shape)
@@ -1712,11 +1756,11 @@ if __name__ == "__main__":
             phoneme_list.append(phoneme_tensor)
         phon_enc_input.append(phoneme_list)
 
-    print(f"{phon_enc_input=}")
-    print(
-        f"Shape: batch_size={len(phon_enc_input)}, seq_len={len(phon_enc_input[0])}, "
-        f"features_per_phoneme=[{[len(p) for p in phon_enc_input[0][:5]]} ...]"
-    )
+    # print(f"{phon_enc_input=}")
+    # print(
+    #    f"Shape: batch_size={len(phon_enc_input)}, seq_len={len(phon_enc_input[0])}, "
+    #    f"features_per_phoneme=[{[len(p) for p in phon_enc_input[0][:5]]} ...]"
+    # )
     phon_enc_pad_mask = torch.zeros((batch_size, seq_len), dtype=torch.bool)
 
     phon_dec_input = []
@@ -1739,15 +1783,15 @@ if __name__ == "__main__":
     orth_dec_input = torch.randint(
         0, model.orthographic_vocabulary_size, (batch_size, seq_len)
     )
-    print("=================================")
-    print(f"{orth_enc_input=}")
-    print(f"{orth_dec_input=}")
-    print(f"{phon_enc_input=}")
-    print(f"{phon_dec_input=}")
-    print(f"{orth_enc_pad_mask.shape=}")
-    print(f"{phon_enc_pad_mask.shape=}")
-    print("phon_dec_input lengths:", [len(x) for x in phon_dec_input])
-    print("phon_dec_pad_mask.shape:", phon_enc_pad_mask.shape)
+    # print("=================================")
+    # print(f"{orth_enc_input=}")
+    # print(f"{orth_dec_input=}")
+    # print(f"{phon_enc_input=}")
+    # print(f"{phon_dec_input=}")
+    # print(f"{orth_enc_pad_mask.shape=}")
+    # print(f"{phon_enc_pad_mask.shape=}")
+    # print("phon_dec_input lengths:", [len(x) for x in phon_dec_input])
+    # print("phon_dec_pad_mask.shape:", phon_enc_pad_mask.shape)
     phon_dec_pad_mask = torch.zeros((batch_size, seq_len), dtype=torch.bool)
 
     model = model.to(device)
