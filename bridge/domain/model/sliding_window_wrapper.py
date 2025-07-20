@@ -107,7 +107,7 @@ class SlidingWindowEncoderWrapper(nn.Module):
 
         # Convert to PyTorch attention mask format directly (0.0 = attend, -inf = mask out)
         # This avoids the conversion cost in F._canonical_mask
-        attention_mask = torch.where(combined_mask, 0.0, float("-inf"))
+        tatention_mask = torch.where(combined_mask, 0.0, float("-inf"))
 
         # Add debugging for mask properties
         if seq_len > 512:
@@ -168,27 +168,22 @@ class SlidingWindowEncoderWrapper(nn.Module):
         """
         print(f"wrap 1, {src.shape=}, {src_key_padding_mask.shape=}")
         if not self.enabled:
-            print("wrap 1-1")
-            # Pass through unchanged when sliding window is disabled
+             # Pass through unchanged when sliding window is disabled
             start_time = time.time()
-            print(f"wrap, {self.encoder=}")
             result = self.encoder(src, src_mask, src_key_padding_mask)  # <<< ERROR
-            print("wrap 1-2")
             end_time = time.time() - start_time
             print(
                 f"    [DEBUG] Encoder forward pass time: {end_time:.6f}s, {self.enabled=}"
             )
             return result
 
-        print("wrap 2")
-        # Create sliding window mask
+         # Create sliding window mask
         start_time = time.time()
         seq_len = src.shape[1]
         sliding_mask = self.create_sliding_window_mask(seq_len, src.device)
-        print(sliding_mask)
+        # print(sliding_mask)
 
         # Combine with existing mask if provided (logical AND)
-        print("wrap 3")
         if src_mask is not None:
             final_mask = sliding_mask & src_mask
         else:
