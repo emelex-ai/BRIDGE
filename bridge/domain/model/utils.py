@@ -56,7 +56,7 @@ class BridgeConfig(BaseModel):
     wandb_config: WandbConfig = Field(
         description="WandB experiment tracking configuration"
     )
-    model_config: ModelConfig = Field(description="Model architecture configuration")
+    model_settings: ModelConfig = Field(description="Model architecture configuration")
     dataset_config: DatasetConfig = Field(
         description="Dataset and data processing configuration"
     )
@@ -71,17 +71,17 @@ class BridgeConfig(BaseModel):
     def validate_cross_config_consistency(self):
         """Validate consistency across different configuration sections."""
         # Ensure sequence lengths are consistent between model and dataset configs
-        if self.model_config.max_orth_seq_len != self.dataset_config.max_orth_seq_len:
+        if self.model_settings.max_orth_seq_len != self.model_settings.max_orth_seq_len:
             raise ValueError(
                 f"Orthographic sequence length mismatch: "
-                f"model_config.max_orth_seq_len={self.model_config.max_orth_seq_len} "
+                f"model_settings.max_orth_seq_len={self.model_settings.max_orth_seq_len} "
                 f"vs dataset_config.max_orth_seq_len={self.dataset_config.max_orth_seq_len}"
             )
 
-        if self.model_config.max_phon_seq_len != self.dataset_config.max_phon_seq_len:
+        if self.model_settings.max_phon_seq_len != self.model_settings.max_phon_seq_len:
             raise ValueError(
                 f"Phonological sequence length mismatch: "
-                f"model_config.max_phon_seq_len={self.model_config.max_phon_seq_len} "
+                f"model_settings.max_phon_seq_len={self.model_settings.max_phon_seq_len} "
                 f"vs dataset_config.max_phon_seq_len={self.dataset_config.max_phon_seq_len}"
             )
 
@@ -94,7 +94,7 @@ class BridgeConfig(BaseModel):
             Dictionary containing model and dataset configurations for WandB.
         """
         return {
-            **self.model_config.model_dump(),
+            **self.model_settings.model_dump(),
             **self.dataset_config.model_dump(),
             **self.training_config.model_dump(),
         }
@@ -106,8 +106,8 @@ class BridgeConfig(BaseModel):
             updates: Dictionary containing configuration updates.
         """
         for key, value in updates.items():
-            if hasattr(self.model_config, key):
-                setattr(self.model_config, key, value)
+            if hasattr(self.model_settings, key):
+                setattr(self.model_settings, key, value)
             elif hasattr(self.training_config, key):
                 setattr(self.training_config, key, value)
             elif hasattr(self.dataset_config, key):
@@ -153,7 +153,7 @@ def load_configs() -> BridgeConfig:
     # Create combined configuration object
     return BridgeConfig(
         wandb_config=configs["wandb_config"],
-        model_config=configs["model_config"],
+        model_settings=configs["model_config"],
         dataset_config=configs["dataset_config"],
         training_config=configs["training_config"],
         metrics_config=configs["metrics_config"],
@@ -171,7 +171,7 @@ def load_configs_dict() -> dict[str, Any]:
     bridge_config = load_configs()
     return {
         "wandb_config": bridge_config.wandb_config,
-        "model_config": bridge_config.model_config,
+        "model_config": bridge_config.model_settings,
         "dataset_config": bridge_config.dataset_config,
         "training_config": bridge_config.training_config,
         "metrics_config": bridge_config.metrics_config,
@@ -186,7 +186,7 @@ if __name__ == "__main__":
         config = load_configs()
         print("✓ Configuration loaded successfully")
         print(
-            f"✓ Model config: d_model={config.model_config.d_model}, nhead={config.model_config.nhead}"
+            f"✓ Model config: d_model={config.model_settings.d_model}, nhead={config.model_settings.nhead}"
         )
         print(
             f"✓ Training config: epochs={config.training_config.num_epochs}, lr={config.training_config.learning_rate}"

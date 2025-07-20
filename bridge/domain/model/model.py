@@ -25,7 +25,7 @@ from bridge.domain.model.sliding_window_wrapper import (
     SlidingWindowEncoderWrapper,
 )
 from bridge.domain.model.synthetic_dataset import SyntheticBridgeDataset
-from bridge.domain.model.utils import load_configs
+from bridge.domain.model.utils import load_all_configs, load_configs, load_configs_dict
 from bridge.utils import device_manager
 from bridge.utils.helper_functions import set_seed
 
@@ -1675,30 +1675,15 @@ def get_module_memory(model: torch.nn.Module) -> int:
 
 # ----------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
-    configs = {**load_configs()}
-    print(f"{configs=}")
     nb_blocks = 4
     nhead = 4
     device = "cpu"
     # Example configuration and dataset
 
-    configs = load_configs()
-    dataset_config = configs["dataset_config"]
-    print(f"{dataset_config=}")
+    configs = load_all_configs()
     model_config = configs["model_config"]
 
-    # model_config = ModelConfig(
-    #     d_model=256,
-    #     nhead=nhead,
-    #     num_phon_enc_layers=nb_blocks,
-    #     num_orth_enc_layers=nb_blocks,
-    #     num_mixing_enc_layers=nb_blocks,
-    #     num_orth_dec_layers=nb_blocks,
-    #     num_phon_dec_layers=nb_blocks,
-    #     d_embedding=1,  # global embedding
-    #     seed=42,
-    # )
-
+    # configs is updated correctly
     model_config.d_model = 256
     model_config.nhead = nhead
     model_config.num_phon_enc_layers = nb_blocks
@@ -1706,20 +1691,19 @@ if __name__ == "__main__":
     model_config.num_mixing_enc_layers = nb_blocks
     model_config.num_orth_dec_layers = nb_blocks
     model_config.num_phon_dec_layers = nb_blocks
-    dataset_config.max_orth_seq_len = 910
-    dataset_config.max_phon_seq_len = 930
+    model_config.max_orth_seq_len = 910
+    model_config.max_phon_seq_len = 930
     model_config.d_embedding = 1
-    model_config.seed = 42
+    model_config.seed = 420
 
     # quit()
 
     dataset = (
         SyntheticBridgeDataset()
     )  # You need to replace this with actual dataset initialization
-    print(f"{dataset=}")
 
     # Instantiate the model
-    model = Model(model_config, dataset, dataset_config)
+    model = Model(model_config, dataset)
 
     # for name, p in model.named_parameters():
     # print(name, p.shape)
@@ -1816,7 +1800,6 @@ if __name__ == "__main__":
         phon_dec_input=phon_dec_input,
         phon_dec_pad_mask=phon_dec_pad_mask,
     )
-    quit()
     mem, tim = benchmark_memory_usage(bound_model, num_iterations=10, device="cuda")
     print(f"===> reteurn from benchmark_memory_usage, {mem=}, {tim=}")
     quit()
