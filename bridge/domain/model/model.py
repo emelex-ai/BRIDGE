@@ -1683,6 +1683,9 @@ if __name__ == "__main__":
 
     configs = load_all_configs()
     model_config = configs["model_config"]
+    training_config= configs["training_config"]
+    training_config.batch_size_train = 6
+    training_config.batch_size_val = 6
 
     # configs is updated correctly
     model_config.d_model = 256
@@ -1697,7 +1700,7 @@ if __name__ == "__main__":
     model_config.d_embedding = 1
     model_config.seed = 420
 
-    # quit()
+    print(f"{model_config=}")
 
     dataset = (
         SyntheticBridgeDataset()
@@ -1705,9 +1708,6 @@ if __name__ == "__main__":
 
     # Instantiate the model
     model = Model(model_config, dataset)
-
-    # for name, p in model.named_parameters():
-    # print(name, p.shape)
 
     # Calculate the number of parameters
     total_params = sum(p.numel() for p in model.parameters())
@@ -1721,7 +1721,8 @@ if __name__ == "__main__":
 
     print("==============================")
     # Create sample input tensors for testing
-    batch_size, seq_len = 6, 17
+    batch_size = model_config.batch_size_train
+    seq_len = 17
 
     # Create dummy orthographic input
     orth_enc_input = torch.randint(
@@ -1746,11 +1747,6 @@ if __name__ == "__main__":
             phoneme_list.append(phoneme_tensor)
         phon_enc_input.append(phoneme_list)
 
-    # print(f"{phon_enc_input=}")
-    # print(
-    #    f"Shape: batch_size={len(phon_enc_input)}, seq_len={len(phon_enc_input[0])}, "
-    #    f"features_per_phoneme=[{[len(p) for p in phon_enc_input[0][:5]]} ...]"
-    # )
     phon_enc_pad_mask = torch.zeros((batch_size, seq_len), dtype=torch.bool)
 
     phon_dec_input = []
@@ -1763,25 +1759,9 @@ if __name__ == "__main__":
             phoneme_list.append(phoneme_tensor)
         phon_dec_input.append(phoneme_list)
 
-    # # Create dummy decoder inputs
-    # phon_dec_input = [
-    #     [
-    #         torch.randint(0, model.phonological_vocabulary_size, (seq_len,))
-    #         for _ in range(batch_size)
-    #     ]
-    # ]
     orth_dec_input = torch.randint(
         0, model.orthographic_vocabulary_size, (batch_size, seq_len)
     )
-    # print("=================================")
-    # print(f"{orth_enc_input=}")
-    # print(f"{orth_dec_input=}")
-    # print(f"{phon_enc_input=}")
-    # print(f"{phon_dec_input=}")
-    # print(f"{orth_enc_pad_mask.shape=}")
-    # print(f"{phon_enc_pad_mask.shape=}")
-    # print("phon_dec_input lengths:", [len(x) for x in phon_dec_input])
-    # print("phon_dec_pad_mask.shape:", phon_enc_pad_mask.shape)
     phon_dec_pad_mask = torch.zeros((batch_size, seq_len), dtype=torch.bool)
 
     model = model.to(device)
@@ -1802,8 +1782,6 @@ if __name__ == "__main__":
         phon_dec_pad_mask=phon_dec_pad_mask,
     )
     mem, tim = benchmark_memory_usage(bound_model, num_iterations=10, device="cuda")
-    print(f"===> reteurn from benchmark_memory_usage, {mem=}, {tim=}")
-    quit()
 
     # Test the model with proper input format
     try:
