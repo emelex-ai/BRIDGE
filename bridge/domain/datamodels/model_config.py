@@ -41,21 +41,47 @@ class ModelConfig(BaseModel):
         default=4096, description="Maximum sequence length for pre-computed masks"
     )
 
+    max_orth_seq_len: int = Field(
+        default=983,
+        description="Maximum sequence length for orthography pre-computed masks",
+    )
+
+    max_phon_seq_len: int = Field(
+        default=883,
+        description="Maximum sequence length for phonology pre-computed masks",
+    )
+
     ensure_contiguous: bool = Field(
         default=False,
         description="Whether to ensure sliced masks are contiguous for GPU performance",
     )
 
     @field_validator("max_seq_len")
-    def validate_max_seq_len(cls, v):
+    def validate_max_seq_len(cls, v: int) -> int | None:
         if v <= 0:
             raise ValueError("max_seq_len must be positive")
         if v > 65536:  # Reasonable upper limit
             raise ValueError("max_seq_len should not exceed 65536")
         return v
 
+    @field_validator("max_orth_seq_len")
+    def validate_max_orth_seq_len(cls, v: int) -> int | None:
+        if v <= 0:
+            raise ValueError("max_orth_seq_len must be positive")
+        if v > 4096:  # Reasonable upper limit
+            raise ValueError("max_orth_seq_len should not exceed 4096")
+        return v
+
+    @field_validator("max_phon_seq_len")
+    def validate_max_phon_seq_len(cls, v: int) -> int | None:
+        if v <= 0:
+            raise ValueError("max_phon_seq_len must be positive")
+        if v > 4096:  # Reasonable upper limit
+            raise ValueError("max_phon_seq_len should not exceed 4096")
+        return v
+
     @field_validator("window_size")
-    def validate_window_size(cls, v):
+    def validate_window_size(cls, v: int) -> int | None:
         if v <= 0:
             raise ValueError("window_size must be positive")
         if v % 2 == 0:

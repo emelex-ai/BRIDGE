@@ -142,8 +142,8 @@ def test_model_initialization_with_dataset(mock_dataset, model_config):
         model.phonology_embedding.num_embeddings
         == mock_dataset.phonological_vocabulary_size
     )
-    assert model.orth_position_embedding.num_embeddings == 30
-    assert model.phon_position_embedding.num_embeddings == 30
+    assert model.orth_position_embedding.num_embeddings == model.max_orth_seq_len
+    assert model.phon_position_embedding.num_embeddings == model.max_phon_seq_len
 
 
 def test_embed_o(model: Model):

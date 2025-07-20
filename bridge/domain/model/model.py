@@ -37,7 +37,7 @@ class Model(nn.Module):
         model_config: ModelConfig,
         dataset: BridgeDataset,
         # Assign default value not to break existing code
-        dataset_config: DatasetConfig | None = None,
+        # dataset_config: DatasetConfig | None = None,
     ) -> None:
         super().__init__()
         self.model_config = model_config
@@ -65,12 +65,17 @@ class Model(nn.Module):
 
         self.max_seq_len = model_config.max_seq_len
         print(f"{self.max_seq_len=}")
-        quit()
 
-        if dataset_config is not None:
-            self.max_orth_seq_len = dataset_config.max_orth_seq_len
-            self.max_phon_seq_len = dataset_config.max_phon_seq_len
-
+        self.max_orth_seq_len = (
+            model_config.max_orth_seq_len
+            if hasattr(model_config, "max_orth_seq_len")
+            else 30
+        )
+        self.max_phon_seq_len = (
+            model_config.max_phon_seq_len
+            if hasattr(model_config, "max_phon_seq_len")
+            else 30
+        )
         print(f"{self.max_orth_seq_len=}")
         print(f"{self.max_phon_seq_len=}")
 
