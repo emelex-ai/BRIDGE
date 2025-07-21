@@ -36,6 +36,7 @@ dependencies = [
     "seaborn>=0.13.2",
     "jaxtyping>=0.3.2",
     "beartype>=0.21.0",
+    "scipy>=1.16.0",
 ]
 
 [project.optional-dependencies]
