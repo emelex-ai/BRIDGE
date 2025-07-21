@@ -3,6 +3,8 @@ from typing import Optional
 import torch
 from torch import nn
 
+from bridge.domain.model.utils_debug import check_nan
+
 
 class Encoder(nn.Module):
     def __init__(
@@ -34,9 +36,19 @@ class Encoder(nn.Module):
         #     print(f"encoder: {src_key_padding_mask.shape=}")
         ## encoder: src.shape=torch.Size([6, 21, 1024])
         ## encoder: src_key_padding_mask.shape=torch.Size([6, 18])
+        # print("\nINSIDE encoder")
+        # check_nan(src, "src")
+        # check_nan(src_mask, "src_mask")
+        # check_nan(src_key_padding_mask, "src_key_padding_mask")
+        # print(f"{src=}")
+        # print(f"{src_mask=}")
+        # print(f"{src_key_padding_mask=}")
+        # quit()
         output = self.transformer_encoder(  # <<< ERROR
             src,
             mask=src_mask,
             src_key_padding_mask=src_key_padding_mask,
         )
+        # check_nan(output, "Encoder.forward, output")  # <<<  ERROR
+        # Analyze content of masks
         return output

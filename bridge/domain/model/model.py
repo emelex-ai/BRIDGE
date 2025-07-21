@@ -26,6 +26,7 @@ from bridge.domain.model.sliding_window_wrapper import (
 )
 from bridge.domain.model.synthetic_dataset import SyntheticBridgeDataset
 from bridge.domain.model.utils import load_all_configs, load_configs, load_configs_dict
+from bridge.domain.model.utils_debug import check_nan
 from bridge.utils import device_manager
 from bridge.utils.helper_functions import set_seed
 
@@ -167,7 +168,7 @@ class Model(nn.Module):
 
         # Use maximum of both sequence lengths for the mixer
         max_mixer_seq_len = max(self.max_orth_seq_len, self.max_phon_seq_len)
-        print(f"++> {max_mixer_seq_len=}")
+        # print(f"++> {max_mixer_seq_len=}")
         self.transformer_mixer = SlidingWindowEncoderWrapper(
             base_transformer_mixer,
             window_size=window_size,
@@ -347,6 +348,7 @@ class Model(nn.Module):
         orth_enc_pad_mask: Bool[Tensor, "batch seq_len"],
     ) -> Float[Tensor, "batch seq_len d_model"]:
         """Embed the orthographic input tokens."""
+        print("embed_o")
         orthography = self.embed_orth_tokens(
             orth_enc_input
         )  # Shape: (batch_size, seq_len, d_model)
@@ -517,9 +519,13 @@ class Model(nn.Module):
         orthography_encoding = self.orthography_encoder(
             orthography, src_key_padding_mask=orth_enc_pad_mask
         )
+        # check_nan(phon_enc_pad_mask, "phon_enc_pad_mask")
+        # check_nan(phonology, "phonology")
         phonology_encoding = self.phonology_encoder(
             phonology, src_key_padding_mask=phon_enc_pad_mask
         )
+        # check_nan(orthography_encoding, "orthography_encoding")
+        # check_nan(phonology_encoding, "phonology_encoding")
         # Query = orthography_encoding, Key = phonology_encoding
         gp_encoding = (
             self.gp_multihead_attention(
@@ -531,7 +537,8 @@ class Model(nn.Module):
             + orthography_encoding
         )
         gp_encoding = self.gp_layer_norm(gp_encoding)
-        # Query = phonology_encoding, Key = orthography_encoding
+        # check_nan(gp_encoding, "gp_encoding")
+        # ery = phonology_encoding, Key = orthography_encoding
         pg_encoding = (
             self.pg_multihead_attention(
                 phonology_encoding,
@@ -544,10 +551,10 @@ class Model(nn.Module):
         pg_encoding = self.pg_layer_norm(pg_encoding)
 
         # Concatenate outputs of cross-attention modules and add residual connection
-        print(f"{gp_encoding.shape=}")
-        print(f"{pg_encoding.shape=}")
-        print(f"{orthography_encoding.shape=}")
-        print(f"{phonology_encoding.shape=}")
+        # print(f"{gp_encoding.shape=}")
+        # print(f"{pg_encoding.shape=}")
+        # print(f"{orthography_encoding.shape=}")
+        # print(f"{phonology_encoding.shape=}")
 
         # gp_encoding.shape=torch.Size([2, 8, 256]),
         # pg_encoding.shape=torch.Size([2, 8, 256]),
@@ -557,16 +564,16 @@ class Model(nn.Module):
         gp_pg = torch.cat((gp_encoding, pg_encoding), dim=1) + torch.cat(
             (orthography_encoding, phonology_encoding), dim=1
         )
-        print(f"{gp_pg.shape=}")  # 2, 16, 256
+        # print(f"{gp_pg.shape=}")  # 2, 16, 256
         # Concatenate padding masks
         gp_pg_padding_mask = torch.cat((orth_enc_pad_mask, phon_enc_pad_mask), dim=-1)
-        print(f"{gp_pg_padding_mask.shape=}")  # 2, 16
+        # print(f"{gp_pg_padding_mask.shape=}")  # 2, 16
 
         global_embedding = self.global_embedding.repeat(gp_pg.shape[0], 1, 1)
-        print(f"++> {global_embedding.shape=}")  # 2, 1, 256
+        # print(f"++> {global_embedding.shape=}")  # 2, 1, 256
         gp_pg = torch.cat((global_embedding, gp_pg), dim=1)
-        print(f"++> {gp_pg.shape=}")  # 2, 17, 256
-        print(f"++> {self.model_config.d_embedding=}")
+        # print(f"++> {gp_pg.shape=}")  # 2, 17, 256
+        # print(f"++> {self.model_config.d_embedding=}")
         gp_pg_padding_mask = torch.cat(
             (
                 torch.zeros(
@@ -578,9 +585,9 @@ class Model(nn.Module):
             ),
             dim=-1,
         )
-        print(f"==> {gp_pg_padding_mask.shape=}")  # 2, 17
+        # print(f"==> {gp_pg_padding_mask.shape=}")  # 2, 17
         # check if padding mask has a NaN
-        print(f"{gp_pg_padding_mask.isnan().any()=}")  # False
+        # print(f"==> {gp_pg_padding_mask.isnan().any()=}")  # False
 
         mixed_encoding = self.transformer_mixer(
             gp_pg, src_key_padding_mask=gp_pg_padding_mask
@@ -609,13 +616,10 @@ class Model(nn.Module):
         )
 
         # Check for NaN in mixed encoding
-        if torch.isnan(mixed_encoding).any():
-            print("⚠ WARNING: NaN detected in mixed_encoding!")
-            nan_count = torch.isnan(mixed_encoding).sum().item()
-            print(
-                f"⚠ NaN count in mixed_encoding: {nan_count}/{mixed_encoding.numel()}"
-            )
-            return
+        # check_nan(orth_enc_input, "orth_enc_input")
+        # check_nan(orth_enc_pad_mask, "orth_enc_pad_mask")
+        # check_nan(phon_enc_pad_mask, "phon_enc_pad_mask")
+        # check_nan(mixed_encoding, "mixed_encoding")
 
         orth_dec_input = self.embed_orth_tokens(orth_dec_input)
 
@@ -631,35 +635,35 @@ class Model(nn.Module):
         orth_ar_mask = self.generate_triangular_mask(orth_dec_input.shape[1])
 
         # Debug prints
-        print("orth_dec_input.shape:", orth_dec_input.shape)
-        print("orth_dec_pad_mask.shape:", orth_dec_pad_mask.shape)
-        print("orth_ar_mask.shape:", orth_ar_mask.shape)
-        print("orth_dec_pad_mask:", orth_dec_pad_mask)
-        print("orth_ar_mask[-1]:", orth_ar_mask[-1])
-        print("mixed_encoding.shape:", mixed_encoding.shape)
-        print(
-            "mixed_encoding stats:",
-            mixed_encoding.min().item(),
-            mixed_encoding.max().item(),
-            mixed_encoding.mean().item(),
-        )
+        # print("orth_dec_input.shape:", orth_dec_input.shape)
+        # print("orth_dec_pad_mask.shape:", orth_dec_pad_mask.shape)
+        # print("orth_ar_mask.shape:", orth_ar_mask.shape)
+        # print("orth_dec_pad_mask:", orth_dec_pad_mask)
+        # print("orth_ar_mask[-1]:", orth_ar_mask[-1])
+        # print("mixed_encoding.shape:", mixed_encoding.shape)
+        # print(
+        #     "mixed_encoding stats:",
+        #     mixed_encoding.min().item(),
+        #     mixed_encoding.max().item(),
+        #     mixed_encoding.mean().item(),
+        # )
 
         # Check if sliding window is enabled
         print("Sliding window enabled:", self.orthography_decoder.enabled)
 
         # Check input statistics before decoder
-        print(
-            "orth_dec_input stats:",
-            orth_dec_input.min().item(),
-            orth_dec_input.max().item(),
-            orth_dec_input.mean().item(),
-        )
-        print(
-            "mixed_encoding stats:",
-            mixed_encoding.min().item(),
-            mixed_encoding.max().item(),
-            mixed_encoding.mean().item(),
-        )
+        # print(
+        #     "orth_dec_input stats:",
+        #     orth_dec_input.min().item(),
+        #     orth_dec_input.max().item(),
+        #     orth_dec_input.mean().item(),
+        # )
+        # print(
+        #     "mixed_encoding stats:",
+        #     mixed_encoding.min().item(),
+        #     mixed_encoding.max().item(),
+        #     mixed_encoding.mean().item(),
+        # )
 
         orth_output = self.orthography_decoder(
             tgt=orth_dec_input,

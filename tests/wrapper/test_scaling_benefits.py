@@ -140,7 +140,7 @@ def mock_model_sequence_lengths(model: Model, max_seq_len: int = 128) -> None:
 
 def test_dataset_creation_seq_len_1024():
     """Test 1: Verify dataset creation works with seq_len=1024."""
-    print("\n=== Test 1: Dataset Creation with seq_len=1024 ===")
+    #print("\n=== Test 1: Dataset Creation with seq_len=1024 ===")
 
     seq_len = 1024
 
@@ -279,9 +279,6 @@ def test_disabled_model_forward_pass_seq_len_1024():
     # Measure memory and time
     memory_before = get_memory_usage()
     start_time = time.time()
-
-    print(f"+++++> {test_data['phon_enc_input']=}")
-    print(f"+++++> {test_data['phon_enc_pad_mask']=}")
 
     with torch.no_grad():
         disabled_output = disabled_model.forward(

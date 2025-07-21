@@ -2,9 +2,13 @@ import time
 from typing import Optional
 
 import torch
+from beartype import beartype
 from torch import nn
 
+from bridge.domain.model.utils_debug import check_nan
 
+
+@beartype
 class SlidingWindowEncoderWrapper(nn.Module):
     """Wrapper that adds sliding window attention to existing Encoder instances.
 
@@ -95,6 +99,8 @@ class SlidingWindowEncoderWrapper(nn.Module):
 
             # Combine both constraints
             combined_mask = causal_mask & window_mask
+            print(f"    [DEBUG] combined_mask: {combined_mask}")
+            # quit()
         else:
             # Bidirectional sliding window: attend to positions [i-window_size//2, i+window_size//2]
             # This creates a symmetric window around each position
@@ -103,6 +109,7 @@ class SlidingWindowEncoderWrapper(nn.Module):
                 key_pos <= query_pos + half_window
             )
 
+            # print(f"    [DEBUG] window_mask: {window_mask}")
             combined_mask = window_mask
 
         # Convert to PyTorch attention mask format directly (0.0 = attend, -inf = mask out)
@@ -120,6 +127,8 @@ class SlidingWindowEncoderWrapper(nn.Module):
         #         nan_count = torch.isnan(attention_mask).sum().item()
         #         print(f"    [DEBUG] NaN count: {nan_count}/{attention_mask.numel()}")
 
+        # Correct mask
+        # print(f"    [DEBUG] combined_mask: {~combined_mask}")
         return ~combined_mask  # Invert: True means masked out, False means attend
 
     def create_sliding_window_mask(
@@ -140,12 +149,14 @@ class SlidingWindowEncoderWrapper(nn.Module):
             # Use cached mask and create a view (no memory copy)
             cached_mask = self._get_or_create_cached_mask(device)
             mask_slice = cached_mask[:seq_len, :seq_len]
+            # print(f"SlidingWindowEncoderWrapper: {mask_slice=}")
 
             # Make contiguous if requested for GPU performance
             if self.ensure_contiguous and not mask_slice.is_contiguous():
                 mask_slice = mask_slice.contiguous()
 
-            return ~mask_slice  # Invert: True means masked out, False means attend
+            # return ~mask_slice  # Invert: True means masked out, False means attend
+            return mask_slice  # Invert: True means masked out, False means attend
         else:
             # For sequences larger than max_seq_len, create mask on-the-fly
             return self._create_full_mask(seq_len, device)
@@ -166,6 +177,11 @@ class SlidingWindowEncoderWrapper(nn.Module):
         Returns:
             Encoder output tensor
         """
+        # check_nan(src, "forward src")
+        # print(f"    [DEBUG] src_mask: {src_mask}")
+        # check_nan(src_mask, "forward src_mask")
+        # check_nan(src_key_padding_mask, "forward src_key_padding_mask")
+
         if not self.enabled:
             # Pass through unchanged when sliding window is disabled
             start_time = time.time()
@@ -188,14 +204,26 @@ class SlidingWindowEncoderWrapper(nn.Module):
         else:
             final_mask = sliding_mask
 
+        # check_nan(final_mask, "final_mask")
+        # check_nan(src_mask, "src_mask")
+        # check_nan(sliding_mask, "sliding_masks")
+        # check_nan(src_key_padding_mask, "src_key_padding_mask")
+        # check_nan(src, "src")
+        # print(f"SlidingWindowEncoderWrapper: {final_mask=}")
+        # print(f"SlidingWindowEncoderWrapper: {src_key_padding_mask=}")
+        # quit()
+
+        # ERROR in self.encoder: NaN generated
         result = self.encoder(src, final_mask, src_key_padding_mask)
         end_time = time.time() - start_time
         print(
             f"    [DEBUG] Encoder forward pass time: {end_time:.6f}s, {self.enabled=}"
         )
+        # check_nan(result, "forward, result")  # NaN detected
         return result
 
 
+@beartype
 class SlidingWindowDecoderWrapper(nn.Module):
     """Wrapper that adds sliding window attention to existing Decoder instances.
 
