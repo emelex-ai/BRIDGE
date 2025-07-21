@@ -167,6 +167,7 @@ class Model(nn.Module):
 
         # Use maximum of both sequence lengths for the mixer
         max_mixer_seq_len = max(self.max_orth_seq_len, self.max_phon_seq_len)
+        print(f"++> {max_mixer_seq_len=}")
         self.transformer_mixer = SlidingWindowEncoderWrapper(
             base_transformer_mixer,
             window_size=window_size,
@@ -346,14 +347,12 @@ class Model(nn.Module):
         orth_enc_pad_mask: Bool[Tensor, "batch seq_len"],
     ) -> Float[Tensor, "batch seq_len d_model"]:
         """Embed the orthographic input tokens."""
-        print(f"1-1, {orth_enc_input.shape=}, {orth_enc_pad_mask.shape=}")
         orthography = self.embed_orth_tokens(
             orth_enc_input
         )  # Shape: (batch_size, seq_len, d_model)
         orthography_encoding = self.orthography_encoder(
             orthography, src_key_padding_mask=orth_enc_pad_mask
         )
-        print(f"1-2, {orthography_encoding.shape=}")  # 6, 17, 1024
         global_embedding = self.global_embedding.expand(
             orthography_encoding.shape[0], -1, -1
         )  # Shape: (batch_size, 1, d_model)
@@ -361,8 +360,6 @@ class Model(nn.Module):
         orthography_encoding = torch.cat(
             (global_embedding, orthography_encoding), dim=1
         )  # Shape: (batch_size, seq_len + 1, d_model)
-        print(f"1-3, {global_embedding.shape=}")  # 6, 4, 1024
-        print(f"1-3, {orthography_encoding.shape=}")  # 6, 21, 1024
         # Create the padding mask for the global embedding
         batch_size = orthography_encoding.shape[0]
         # Extend the padding mask to  account for the global embedding dimension.
@@ -379,11 +376,9 @@ class Model(nn.Module):
         orthography_encoding_padding_mask = torch.cat(
             (zeros_padding, orth_enc_pad_mask), dim=1
         )  # Shape: (batch_size, seq_len + 1)
-        print(f"1-4, {orthography_encoding_padding_mask.shape=}")  # 6, 18  (why not 21)
         mixed_encoding = self.transformer_mixer(
             orthography_encoding, src_key_padding_mask=orthography_encoding_padding_mask
         )
-        print("1-6")
         # Extract the global encoding
         final_encoding = (
             mixed_encoding[:, :1, :] + global_embedding
@@ -400,7 +395,6 @@ class Model(nn.Module):
     ) -> dict[str, torch.Tensor]:
         # Process phonological decoder input
         final_encoding = self.embed_o(orth_enc_input, orth_enc_pad_mask)
-        print("2")
         embedded_phon_dec_input = self.embed_phon_tokens(
             phon_dec_input,
         )  # Shape: (batch_size, phon_seq_len, d_model)
@@ -430,7 +424,6 @@ class Model(nn.Module):
         phon_enc_input: list[list[Tensor]],
         phon_enc_pad_mask: Bool[Tensor, "batch seq_len"],
     ) -> Float[Tensor, "batch seq_len d_model"]:
-        # ) -> Float[Tensor, "batch seq_len d_model"] | None:
         """Embed phonological tokens.
 
         Args:
@@ -520,11 +513,6 @@ class Model(nn.Module):
     ):
         orthography = self.embed_orth_tokens(orth_enc_input)
         phonology = self.embed_phon_tokens(phon_enc_input)
-        # print(f"===> {orth_enc_input.shape=}")
-        # print(f"===> {len(phon_enc_input)=}")
-        # print(f"===> {phon_enc_input=}")
-        # print(f"===> {orthography.shape=}")
-        # print(f"===> {phonology.shape=}")
 
         orthography_encoding = self.orthography_encoder(
             orthography, src_key_padding_mask=orth_enc_pad_mask
@@ -556,14 +544,29 @@ class Model(nn.Module):
         pg_encoding = self.pg_layer_norm(pg_encoding)
 
         # Concatenate outputs of cross-attention modules and add residual connection
+        print(f"{gp_encoding.shape=}")
+        print(f"{pg_encoding.shape=}")
+        print(f"{orthography_encoding.shape=}")
+        print(f"{phonology_encoding.shape=}")
+
+        # gp_encoding.shape=torch.Size([2, 8, 256]),
+        # pg_encoding.shape=torch.Size([2, 8, 256]),
+        # orthography_encoding.shape=torch.Size([2, 8, 256]),
+        # phonology_encoding.shape=torch.Size([2, 8, 256])
+
         gp_pg = torch.cat((gp_encoding, pg_encoding), dim=1) + torch.cat(
             (orthography_encoding, phonology_encoding), dim=1
         )
+        print(f"{gp_pg.shape=}")  # 2, 16, 256
         # Concatenate padding masks
         gp_pg_padding_mask = torch.cat((orth_enc_pad_mask, phon_enc_pad_mask), dim=-1)
+        print(f"{gp_pg_padding_mask.shape=}")  # 2, 16
 
         global_embedding = self.global_embedding.repeat(gp_pg.shape[0], 1, 1)
+        print(f"++> {global_embedding.shape=}")  # 2, 1, 256
         gp_pg = torch.cat((global_embedding, gp_pg), dim=1)
+        print(f"++> {gp_pg.shape=}")  # 2, 17, 256
+        print(f"++> {self.model_config.d_embedding=}")
         gp_pg_padding_mask = torch.cat(
             (
                 torch.zeros(
@@ -575,6 +578,9 @@ class Model(nn.Module):
             ),
             dim=-1,
         )
+        print(f"==> {gp_pg_padding_mask.shape=}")  # 2, 17
+        # check if padding mask has a NaN
+        print(f"{gp_pg_padding_mask.isnan().any()=}")  # False
 
         mixed_encoding = self.transformer_mixer(
             gp_pg, src_key_padding_mask=gp_pg_padding_mask
@@ -598,7 +604,6 @@ class Model(nn.Module):
         phon_dec_input: list[list[Tensor]],
         phon_dec_pad_mask: Bool[Tensor, "batch seq_len"],
     ) -> dict[str, torch.Tensor] | None:
-        # print(f"==> op2op, {phon_enc_input=}")
         mixed_encoding = self.embed_op(
             orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask
         )
@@ -615,13 +620,13 @@ class Model(nn.Module):
         orth_dec_input = self.embed_orth_tokens(orth_dec_input)
 
         # Check for NaN in decoder input embeddings
-        if torch.isnan(orth_dec_input).any():
-            print("⚠ WARNING: NaN detected in orth_dec_input embeddings!")
-            nan_count = torch.isnan(orth_dec_input).sum().item()
-            print(
-                f"⚠ NaN count in orth_dec_input: {nan_count}/{orth_dec_input.numel()}"
-            )
-            return
+        # if torch.isnan(orth_dec_input).any():
+        #     print("⚠ WARNING: NaN detected in orth_dec_input embeddings!")
+        #     nan_count = torch.isnan(orth_dec_input).sum().item()
+        #     print(
+        #         f"⚠ NaN count in orth_dec_input: {nan_count}/{orth_dec_input.numel()}"
+        #     )
+        #     return
 
         orth_ar_mask = self.generate_triangular_mask(orth_dec_input.shape[1])
 
@@ -663,19 +668,19 @@ class Model(nn.Module):
             memory=mixed_encoding,
         )
 
-        print("orth_output NaN:", torch.isnan(orth_output).any())
-        print("orth_output last position:", orth_output[..., -1])
+        # print("orth_output NaN:", torch.isnan(orth_output).any())
+        # print("orth_output last position:", orth_output[..., -1])
 
-        # Check which positions have NaN
-        nan_positions = torch.isnan(orth_output).any(dim=-1)
-        print("NaN positions:", nan_positions)
+        # # Check which positions have NaN
+        # nan_positions = torch.isnan(orth_output).any(dim=-1)
+        # print("NaN positions:", nan_positions)
 
-        # Check if NaN is only in the last position
-        last_position_nan = torch.isnan(orth_output[..., -1]).any()
-        other_positions_nan = torch.isnan(orth_output[..., :-1]).any()
-        print(
-            f"Last position NaN: {last_position_nan}, Other positions NaN: {other_positions_nan}"
-        )
+        # # Check if NaN is only in the last position
+        # last_position_nan = torch.isnan(orth_output[..., -1]).any()
+        # other_positions_nan = torch.isnan(orth_output[..., :-1]).any()
+        # print(
+        #     f"Last position NaN: {last_position_nan}, Other positions NaN: {other_positions_nan}"
+        # )
 
         # Check output statistics
         if not torch.isnan(orth_output).all():
@@ -1683,7 +1688,7 @@ if __name__ == "__main__":
 
     configs = load_all_configs()
     model_config = configs["model_config"]
-    training_config= configs["training_config"]
+    training_config = configs["training_config"]
     training_config.batch_size_train = 6
     training_config.batch_size_val = 6
 
@@ -1695,8 +1700,8 @@ if __name__ == "__main__":
     model_config.num_mixing_enc_layers = nb_blocks
     model_config.num_orth_dec_layers = nb_blocks
     model_config.num_phon_dec_layers = nb_blocks
-    model_config.max_orth_seq_len = 910
-    model_config.max_phon_seq_len = 930
+    model_config.max_orth_seq_len = 900
+    model_config.max_phon_seq_len = 900
     model_config.d_embedding = 1
     model_config.seed = 420
 
@@ -1721,7 +1726,7 @@ if __name__ == "__main__":
 
     print("==============================")
     # Create sample input tensors for testing
-    batch_size = model_config.batch_size_train
+    batch_size = training_config.batch_size_train
     seq_len = 17
 
     # Create dummy orthographic input
@@ -1797,7 +1802,6 @@ if __name__ == "__main__":
                     # phon_dec_pad_mask=phon_enc_pad_mask,
                     phon_dec_pad_mask=phon_dec_pad_mask,
                 )
-                # quit()
 
                 """
                 output = model.forward(

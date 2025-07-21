@@ -1,7 +1,7 @@
 import os
 import sys
 
-from bridge.domain.model.utils import load_configs_dict
+# from bridge.domain.model.utils import load_configs_dict
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 

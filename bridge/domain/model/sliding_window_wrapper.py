@@ -107,18 +107,18 @@ class SlidingWindowEncoderWrapper(nn.Module):
 
         # Convert to PyTorch attention mask format directly (0.0 = attend, -inf = mask out)
         # This avoids the conversion cost in F._canonical_mask
-        attention_mask = torch.where(combined_mask, 0.0, float("-inf"))
+        # attention_mask = torch.where(combined_mask, 0.0, float("-inf"))
 
         # Add debugging for mask properties
-        if seq_len > 512:
-            print(
-                f"    [DEBUG] Mask stats: min={attention_mask.min().item():.6f}, max={attention_mask.max().item():.6f}"
-            )
-            print(f"    [DEBUG] Mask unique values: {torch.unique(attention_mask)}")
-            if torch.isnan(attention_mask).any():
-                print(f"    ⚠ [DEBUG] WARNING: NaN detected in mask creation!")
-                nan_count = torch.isnan(attention_mask).sum().item()
-                print(f"    [DEBUG] NaN count: {nan_count}/{attention_mask.numel()}")
+        # if seq_len > 512:
+        #     print(
+        #         f"    [DEBUG] Mask stats: min={attention_mask.min().item():.6f}, max={attention_mask.max().item():.6f}"
+        #     )
+        #     print(f"    [DEBUG] Mask unique values: {torch.unique(attention_mask)}")
+        #     if torch.isnan(attention_mask).any():
+        #         print(f"    ⚠ [DEBUG] WARNING: NaN detected in mask creation!")
+        #         nan_count = torch.isnan(attention_mask).sum().item()
+        #         print(f"    [DEBUG] NaN count: {nan_count}/{attention_mask.numel()}")
 
         return ~combined_mask  # Invert: True means masked out, False means attend
 
@@ -166,9 +166,8 @@ class SlidingWindowEncoderWrapper(nn.Module):
         Returns:
             Encoder output tensor
         """
-        print(f"wrap 1, {src.shape=}, {src_key_padding_mask.shape=}")
         if not self.enabled:
-             # Pass through unchanged when sliding window is disabled
+            # Pass through unchanged when sliding window is disabled
             start_time = time.time()
             result = self.encoder(src, src_mask, src_key_padding_mask)  # <<< ERROR
             end_time = time.time() - start_time
@@ -177,7 +176,7 @@ class SlidingWindowEncoderWrapper(nn.Module):
             )
             return result
 
-         # Create sliding window mask
+        # Create sliding window mask
         start_time = time.time()
         seq_len = src.shape[1]
         sliding_mask = self.create_sliding_window_mask(seq_len, src.device)
@@ -269,8 +268,8 @@ class SlidingWindowDecoderWrapper(nn.Module):
             Boolean mask where True means attend, False means mask out
         """
         # Add debugging for long sequences
-        if seq_len > 512:
-            print(f"    [DEBUG] Creating causal mask for long sequence: {seq_len}")
+        # if seq_len > 512:
+        #     print(f"    [DEBUG] Creating causal mask for long sequence: {seq_len}")
 
         positions = torch.arange(seq_len, device=device)
         query_pos = positions.unsqueeze(1)  # [seq_len, 1]
@@ -290,20 +289,20 @@ class SlidingWindowDecoderWrapper(nn.Module):
 
         # Convert to PyTorch attention mask format directly (0.0 = attend, -inf = mask out)
         # This avoids the conversion cost in F._canonical_mask
-        attention_mask = torch.where(combined_mask, 0.0, float("-inf"))
+        # attention_mask = torch.where(combined_mask, 0.0, float("-inf"))
 
         # Add debugging for mask properties
-        if seq_len > 512:
-            print(
-                f"    [DEBUG] Causal mask stats: min={attention_mask.min().item():.6f}, max={attention_mask.max().item():.6f}"
-            )
-            print(
-                f"    [DEBUG] Causal mask unique values: {torch.unique(attention_mask)}"
-            )
-            if torch.isnan(attention_mask).any():
-                print(f"    ⚠ [DEBUG] WARNING: NaN detected in causal mask creation!")
-                nan_count = torch.isnan(attention_mask).sum().item()
-                print(f"    [DEBUG] NaN count: {nan_count}/{attention_mask.numel()}")
+        # if seq_len > 512:
+        #     print(
+        #         f"    [DEBUG] Causal mask stats: min={attention_mask.min().item():.6f}, max={attention_mask.max().item():.6f}"
+        #     )
+        #     print(
+        #         f"    [DEBUG] Causal mask unique values: {torch.unique(attention_mask)}"
+        #     )
+        #     if torch.isnan(attention_mask).any():
+        #         print(f"    ⚠ [DEBUG] WARNING: NaN detected in causal mask creation!")
+        #         nan_count = torch.isnan(attention_mask).sum().item()
+        #         print(f"    [DEBUG] NaN count: {nan_count}/{attention_mask.numel()}")
 
         return ~combined_mask  # Invert: True means masked out, False means attend
 
