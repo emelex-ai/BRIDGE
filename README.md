@@ -49,8 +49,6 @@ The BRIDGE project uses multiple YAML configuration files located in `BRIDGE/app
 | `dimension_phon_repr`         | int     | Dimensionality of the phonological representation.                         |
 | `orthographic_vocabulary_size`| int     | Size of the orthographic vocabulary.                                       |
 | `phonological_vocabulary_size`| int     | Size of the phonological vocabulary.                                       |
-| `max_orth_seq_len`            | int     | Maximum sequence length for orthography.                                   |
-| `max_phon_seq_len`            | int     | Maximum sequence length for phonology.                                     |
 
 ---
 
@@ -67,6 +65,8 @@ The BRIDGE project uses multiple YAML configuration files located in `BRIDGE/app
 | `num_mixing_enc_layers`   | int    | Number of transformer layers in the mixing encoder.                         |
 | `num_phon_dec_layers`     | int    | Number of transformer layers in the phonology decoder.                      |
 | `num_orth_dec_layers`     | int    | Number of transformer layers in the orthography decoder.                    |
+| `max_orth_seq_len`        | int     | Maximum sequence length for orthography.                                   |
+| `max_phon_seq_len`        | int     | Maximum sequence length for phonology.                                     |
 
 ---
 
