@@ -1,17 +1,18 @@
-import sys
 import os
+import sys
 
+from bridge.domain.model.utils import load_configs_dict
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
 from bridge.application.handlers import (
-    ModelConfigHandler,
     DatasetConfigHandler,
-    TrainingConfigHandler,
-    WandbConfigHandler,
     LoggingConfigHandler,
-    TrainModelHandler,
     MetricsConfigHandler,
+    ModelConfigHandler,
+    TrainingConfigHandler,
+    TrainModelHandler,
+    WandbConfigHandler,
 )
 
 
@@ -34,6 +35,7 @@ def load_configs():
 
 def main():
     configs = load_configs()
+    # configs = load_configs_dict()
     TrainModelHandler(**configs).initiate_model_training()
 
 
