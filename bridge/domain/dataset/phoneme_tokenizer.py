@@ -1,16 +1,15 @@
-from typing import Union
 import importlib.resources
+import json
 import logging
 import os
+from typing import Union
 
-from nltk.corpus import cmudict
 import pandas as pd
 import torch
-import json
+from nltk.corpus import cmudict
 
 from bridge.domain.dataset import CUDADict
-from bridge.utils import get_project_root
-from bridge.utils import device_manager
+from bridge.utils import device_manager, get_project_root
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +150,12 @@ class PhonemeTokenizer:
             if phonemes is None:
                 return None
             word_phonemes.append(phonemes)
+
+        # If the number of words and phoneme chunks differ, trim to the shorter length
+        if len(word_phonemes) != len(words):
+            min_len = min(len(word_phonemes), len(words))
+            word_phonemes = word_phonemes[:min_len]
+            words = words[:min_len]
 
         batch_size = len(words)
         max_length = max(len(p) for p in word_phonemes)
