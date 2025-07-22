@@ -1,21 +1,21 @@
-from bridge.domain.datamodels import (
-    ModelConfig,
-    DatasetConfig,
-    TrainingConfig,
-    WandbConfig,
-)
-from bridge.utils.helper_functions import get_run_name, set_seed
-from bridge.application.training import TrainingPipeline
-from bridge.infra.clients.gcp.gcs_client import GCSClient
-from bridge.infra.metrics import metrics_logger_factory
-from bridge.infra.clients.wandb import WandbWrapper
-from bridge.domain.datamodels import MetricsConfig
-from bridge.domain.dataset import BridgeDataset
-
-from bridge.domain.model import Model
 import logging
 import os
 
+from bridge.application.training import TrainingPipeline
+from bridge.domain.datamodels import (
+    DatasetConfig,
+    MetricsConfig,
+    ModelConfig,
+    TrainingConfig,
+    WandbConfig,
+)
+from bridge.domain.dataset import BridgeDataset
+from bridge.domain.model import Model
+from bridge.domain.model.synthetic_dataset import SyntheticBridgeDatasetMultiWord
+from bridge.infra.clients.gcp.gcs_client import GCSClient
+from bridge.infra.clients.wandb import WandbWrapper
+from bridge.infra.metrics import metrics_logger_factory
+from bridge.utils.helper_functions import get_run_name, set_seed
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +64,15 @@ class TrainModelHandler:
         """
         Set up the training pipeline and dataset.
         """
-        bridge_dataset = BridgeDataset(
-            dataset_config=self.dataset_config, gcs_client=self.gcs_client
+        # bridge_dataset = BridgeDataset(
+        #     dataset_config=self.dataset_config, gcs_client=self.gcs_client
+        # )
+        bridge_dataset = SyntheticBridgeDatasetMultiWord(
+            num_samples=self.dataset_config.num_samples,
+            max_orth_seq_len=self.model_config.max_orth_seq_len,
+            max_phon_seq_len=self.model_config.max_phon_seq_len,
+            dataset_config=self.dataset_config,
+            gcs_client=self.gcs_client,
         )
         self.pipeline = TrainingPipeline(
             model=Model(
@@ -151,9 +158,9 @@ class TrainModelHandler:
             if hasattr(self.training_config, key):
                 setattr(self.training_config, key, value)
 
-        #self.training_config.model_artifacts_dir = "models/pretraining/1"
-        #self.dataset_config.dataset_filepath = "data/pretraining/input_data_1.pkl"
-        #os.makedirs(self.training_config.model_artifacts_dir, exist_ok=True)
+        # self.training_config.model_artifacts_dir = "models/pretraining/1"
+        # self.dataset_config.dataset_filepath = "data/pretraining/input_data_1.pkl"
+        # os.makedirs(self.training_config.model_artifacts_dir, exist_ok=True)
 
         self._setup_pipeline()
 
