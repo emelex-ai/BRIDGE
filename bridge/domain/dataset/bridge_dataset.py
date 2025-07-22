@@ -220,7 +220,7 @@ class BridgeDataset:
                 - int: Single word index
                 - slice: Range of word indices
                 - str: Specific word
-                - list[str]: List of words:w
+                - list[str]: List of words
 
         Returns:
             Dictionary containing orthographic and phonological encodings
