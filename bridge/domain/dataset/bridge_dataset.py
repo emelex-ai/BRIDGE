@@ -3,19 +3,21 @@ BridgeDataset: A dataset class for managing orthographic and phonological data u
 the unified BridgeEncoding dataclass and BridgeTokenizer for processing.
 """
 
+import logging
 import os
 import pickle
 import random
-import logging
-from typing import Union, Any
-from pathlib import Path
 from collections import OrderedDict
 from functools import lru_cache
+from pathlib import Path
+from typing import Any, Union
+
 import pandas as pd
-from bridge.domain.datamodels import DatasetConfig, BridgeEncoding
-from bridge.utils import device_manager
+
+from bridge.domain.datamodels import BridgeEncoding, DatasetConfig
 from bridge.domain.dataset import BridgeTokenizer
 from bridge.infra.clients.gcp.gcs_client import GCSClient
+from bridge.utils import device_manager
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +67,8 @@ class BridgeDataset:
         self.dataset_filepath = dataset_config.dataset_filepath
         # Load raw data into a DataFrame
         raw_df = self._load_raw_dataframe(self.dataset_filepath)
+        raw_df = raw_df[:1000]
+        print("len(df)= ", len(raw_df))
         # Process DataFrame into validated word list
         self.words = self._process_raw_dataframe(raw_df)
         logger.info(f"Loaded {len(self.words)} valid words.")

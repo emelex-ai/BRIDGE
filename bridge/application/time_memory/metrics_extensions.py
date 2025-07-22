@@ -11,6 +11,31 @@ try:
 except ImportError:
     psutil = None
 
+from bridge.domain.model.memory_utils import (
+    check_cuda_memory,
+    track_differential_memory,
+    track_gpu_memory,
+)
+
+
+def get_gpu_memory_metrics() -> dict:
+    """Get current and peak GPU memory usage in MB.
+
+    Returns:
+        A dictionary with current and peak GPU memory usage in MB.
+
+    """
+    import torch
+
+    if not torch.cuda.is_available():
+        return {}
+    current = torch.cuda.memory_allocated() / 1024**2
+    peak = torch.cuda.max_memory_allocated() / 1024**2
+    return {
+        "gpu_memory_current_mb": current,
+        "gpu_memory_peak_mb": peak,
+    }
+
 
 def measure_performance(memory_enabled: bool = True, timing_enabled: bool = False):
     """Decorator to measure time and (optionally) memory usage of a function.
@@ -29,31 +54,32 @@ def measure_performance(memory_enabled: bool = True, timing_enabled: bool = Fals
         @functools.wraps(func)
         def wrapper(self, *args, **kwargs):
             metrics = {}
+            gpu_available = torch.cuda.is_available()
             if memory_enabled or timing_enabled:
-                # GPU memory
-                gpu_available = torch.cuda.is_available()
-                if gpu_available:
-                    torch.cuda.reset_peak_memory_stats()
-                    torch.cuda.empty_cache()
-                    start_gpu_mem = torch.cuda.memory_allocated() / 1024**2
                 # CPU memory
                 if memory_enabled and psutil is not None:
                     process = psutil.Process(os.getpid())
                     start_cpu_mem = process.memory_info().rss / 1024**2
+                # GPU memory
+                if memory_enabled and gpu_available:
+                    torch.cuda.empty_cache()
+                    torch.cuda.reset_peak_memory_stats()
+                    start_gpu_mem = torch.cuda.memory_allocated() / 1024**2
                 start_time = time.time()
                 result = func(self, *args, **kwargs)
                 end_time = time.time()
-                # GPU memory
-                if gpu_available:
-                    end_gpu_mem = torch.cuda.memory_allocated() / 1024**2
-                    max_gpu_mem = torch.cuda.max_memory_allocated() / 1024**2
-                    metrics["memory_usage_mb"] = end_gpu_mem - start_gpu_mem
-                    metrics["max_memory_usage_mb"] = max_gpu_mem
                 # CPU memory
                 if memory_enabled and psutil is not None:
                     end_cpu_mem = process.memory_info().rss / 1024**2
                     metrics["cpu_memory_usage_mb"] = end_cpu_mem - start_cpu_mem
                     metrics["cpu_memory_rss_mb"] = end_cpu_mem
+                # GPU memory (use utility)
+                if memory_enabled and gpu_available:
+                    gpu_metrics = get_gpu_memory_metrics()
+                    metrics.update(gpu_metrics)
+                    metrics["gpu_memory_usage_mb"] = (
+                        gpu_metrics["gpu_memory_current_mb"] - start_gpu_mem
+                    )
                 if timing_enabled:
                     metrics["step_time_sec"] = end_time - start_time
             else:

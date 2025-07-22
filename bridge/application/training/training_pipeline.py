@@ -269,6 +269,7 @@ class TrainingPipeline:
 
         return sub_slices
 
+    @measure_performance(memory_enabled=True, timing_enabled=True)
     def train_single_epoch(self, epoch: int) -> dict:
         # Gordon: test checkpoint size
         self.save_model(epoch, "gordon_checkpoint")  # REMOVE WHEN DONE (GE)
@@ -324,6 +325,7 @@ class TrainingPipeline:
         )
         return {"train_" + str(key): val for key, val in total_metrics.items()}
 
+    @measure_performance(memory_enabled=True, timing_enabled=True)
     def validate_single_epoch(self, epoch: int) -> dict:
         self.model.eval()
         start = time.time()
@@ -367,6 +369,7 @@ class TrainingPipeline:
         )
         return {"valid_" + str(key): val for key, val in total_metrics.items()}
 
+    @measure_performance(memory_enabled=True, timing_enabled=True)
     def test_single_epoch(self, epoch: int) -> dict:
         self.model.eval()
         start = time.time()
@@ -426,14 +429,27 @@ class TrainingPipeline:
         )
         return {"test_" + str(key): val for key, val in total_metrics.items()}
 
+    @measure_performance(memory_enabled=True, timing_enabled=True)
     def run_train_val_loop(self, run_name: str):
         for epoch in range(self.start_epoch, self.training_config.num_epochs):
             training_metrics = self.train_single_epoch(epoch)
+            print(
+                "==> train_single_epoch.last_metrics",
+                self.train_single_epoch.last_metrics,
+            )
             if self.val_slices:
                 metrics = self.validate_single_epoch(epoch)
+                print(
+                    "==> validate_single_epoch.last_metrics",
+                    self.validate_single_epoch.last_metrics,
+                )
                 training_metrics.update(metrics)
             if self.test_dataset:
                 metrics = self.test_single_epoch(epoch)
+                print(
+                    "==> test_single_epoch.last_metrics",
+                    self.test_single_epoch.last_metrics,
+                )
                 training_metrics.update(metrics)
             self.metrics_logger.log_metrics(training_metrics, "EPOCH")
             self.save_model(epoch, run_name)
