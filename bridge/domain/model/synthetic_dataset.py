@@ -168,35 +168,8 @@ class SyntheticBridgeDatasetMultiWord(BridgeDataset):
         )
         return real_words
 
-    def _estimate_tokens_for_words(self, words: list[str]) -> int:
-        """Estimate the number of tokens that a sequence of words will produce.
-
-        This is an approximation since we don't want to tokenize every combination.
-        We assume each word adds roughly its length + 1 (for space) tokens.
-
-        Args:
-            words: List of words to estimate token count for.
-
-        Returns:
-            Estimated number of tokens.
-        """
-        # BOS token
-        total_tokens = 1
-
-        for i, word in enumerate(words):
-            # Word length + 1 for space (except last word)
-            word_tokens = len(word)
-            if i < len(words) - 1:  # Not the last word
-                word_tokens += 1  # Space
-            total_tokens += word_tokens
-
-        # EOS token
-        total_tokens += 1
-
-        return total_tokens
-
     def _generate_multi_word_sequences(self, num_samples: int) -> list[list[str]]:
-        """Generate multi-word sequences that respect max_seq_len.
+        """Generate multi-word sequences that respect max_seq_len (in characters).
 
         Args:
             num_samples: Number of sequences to generate.
@@ -210,46 +183,26 @@ class SyntheticBridgeDatasetMultiWord(BridgeDataset):
         sequences = []
 
         for _ in range(num_samples):
-            # Determine how many words to use in this sequence
-            if self.max_words_per_sequence is None:
-                # Dynamically determine max words based on average word length
-                avg_word_len = sum(self.word_length_range) / 2
-                estimated_max_words = max(
-                    self.min_words_per_sequence,
-                    (self.max_seq_len - 2)
-                    // (avg_word_len + 1),  # -2 for BOS/EOS, +1 for space
-                )
-                max_words = min(estimated_max_words, len(self.real_words))
-            else:
-                max_words = min(self.max_words_per_sequence, len(self.real_words))
-
-            # Randomly choose number of words for this sequence
-            num_words = random.randint(self.min_words_per_sequence, max_words)
-
-            # Build sequence word by word, checking token count
             sequence = []
-            current_tokens = 1  # BOS token
-
-            for _ in range(num_words):
-                # Try to add a word
+            current_length = 0
+            # Add words until adding another would exceed max_seq_len (including spaces)
+            while True:
                 word = random.choice(self.real_words)
-
-                # Estimate tokens if we add this word
-                test_sequence = sequence + [word]
-                estimated_tokens = self._estimate_tokens_for_words(test_sequence)
-
-                if estimated_tokens <= self.max_seq_len:
-                    sequence.append(word)
-                    current_tokens = estimated_tokens
-                else:
-                    # This word would make the sequence too long, stop here
+                # +1 for the space if not the first word
+                add_length = len(word) if not sequence else len(word) + 1
+                if current_length + add_length > self.max_seq_len:
                     break
-
-            # Ensure we have at least min_words_per_sequence
+                sequence.append(word)
+                current_length += add_length
+            # Ensure at least min_words_per_sequence
+            # print(f"==> {len(sequence)=}")
             if len(sequence) < self.min_words_per_sequence:
-                # Take first min_words_per_sequence words from vocabulary
-                sequence = self.real_words[: self.min_words_per_sequence]
-
+                # If not enough, forcibly add the first N words (may exceed max_seq_len)
+                raise RuntimeError(
+                    "Unable to generate a sequence with the required minimum number of words "
+                    f"({self.min_words_per_sequence}) without exceeding max_seq_len ({self.max_seq_len}). "
+                    "Consider increasing max_seq_len or reducing min_words_per_sequence."
+                )
             sequences.append(sequence)
 
         return sequences
@@ -258,30 +211,72 @@ class SyntheticBridgeDatasetMultiWord(BridgeDataset):
         """Return the number of sequences in the dataset."""
         return len(self.sequences)
 
-    def __getitem__(self, idx: int) -> BridgeEncoding:
-        """Retrieve encoded data for a specified index.
+    def __getitem__(
+        self, idx: int | slice | str | list[str]
+    ) -> BridgeEncoding | list[BridgeEncoding]:
+        """
+        Retrieve encoded data for specified index, slice, string, or list of strings.
 
         Args:
-            idx: Index of the sequence to retrieve.
+            idx: Can be:
+                - int: Single sequence index
+                - slice: Range of sequence indices
+                - str: A multi-word string (must be in self.words)
+                - list[str]: List of multi-word strings
 
         Returns:
-            BridgeEncoding object for the sequence.
+            BridgeEncoding object or list of BridgeEncoding objects.
         """
-        if idx < 0 or idx >= len(self.sequences):
-            raise IndexError(f"Index {idx} out of range [0, {len(self.sequences)})")
+        print(f"__getitem__, arg: {idx=}")
+        if isinstance(idx, int):
+            if idx < 0 or idx >= len(self.sequences):
+                raise IndexError(f"Index {idx} out of range [0, {len(self.words)})")
+            print(f"{self.sequences[idx]=}")
+            text_sequence = " ".join(self.sequences[idx])
+            encoding = self.tokenizer.encode(text_sequence)
+            if encoding is None:
+                raise RuntimeError(f"Failed to encode sequence: {text_sequence}")
+            return encoding
 
-        # Join words with spaces to create a text sequence
-        word_sequence = self.sequences[idx]
-        text_sequence = " ".join(word_sequence)
+        elif isinstance(idx, slice):
+            # Convert the slice to a list of indices
+            indices = range(*idx.indices(len(self.sequences)))
+            if (
+                not indices
+                or min(indices) < 0
+                or max(indices, default=-1) >= len(self.sequences)
+            ):
+                raise IndexError(
+                    f"Slice {idx} is out of range for dataset of length {len(self.sequences)}"
+                )
+            selected_sequences = [self.sequences[i] for i in indices]
+            if not selected_sequences:
+                raise IndexError(
+                    f"Slice {idx} results in an empty selection for dataset of length {len(self.sequences)}"
+                )
+            encoding = self.tokenizer.encode(selected_sequences)
+            if encoding is None:
+                raise RuntimeError(f"Failed to encode sequences: {selected_sequences}")
+            return encoding
 
-        # Encode the real word sequence - this should always work since words are from CMU dict
-        encoding = self.tokenizer.encode(text_sequence)
-        if encoding is None:
-            raise RuntimeError(
-                f"Failed to encode sequence from CMU dictionary: {text_sequence}"
-            )
+        # elif isinstance(idx, str):
+        #     if idx not in self.words:
+        #         raise KeyError(f"Sequence '{idx}' not found in dataset")
+        #     encoding = self.tokenizer.encode(idx)
+        #     if encoding is None:
+        #         raise RuntimeError(f"Failed to encode sequence: {idx}")
+        #     return encoding
 
-        return encoding
+        # elif isinstance(idx, list):
+        #     if not all(isinstance(i, str) for i in idx):
+        #         raise TypeError("List indices must be strings")
+        #     encoding = self.tokenizer.encode(idx)
+        #     if encoding is None:
+        #         raise RuntimeError(f"Failed to encode sequences: {', '.join(idx)}")
+        #     return encoding
+
+        else:
+            raise TypeError(f"Invalid index type: {type(idx)}")
 
     def get_sequence_info(self, idx: int) -> dict:
         """Get information about a specific sequence.
@@ -310,6 +305,7 @@ class SyntheticBridgeDatasetMultiWord(BridgeDataset):
 # Example usage
 if __name__ == "__main__":
     # Test single word dataset
+    """
     print("=== Single Word Dataset ===")
     synthetic_dataset = SyntheticBridgeDataset(num_samples=10)
     print(f"Number of samples: {len(synthetic_dataset)}")
@@ -332,9 +328,9 @@ if __name__ == "__main__":
         info = multi_word_dataset.get_sequence_info(i)
         sample = multi_word_dataset[i]
         # Print the list of words
-        print(f"Sample {i} words: {info['words']}")
+        # print(f"Sample {i} words: {info['words']}")
         # Print the full sequence as a string (words joined by space)
-        print(f"Sample {i} sequence: {' '.join(info['words'])}")
+        # print(f"Sample {i} sequence: {' '.join(info['words'])}")
         # Print the list of phonemes
         if hasattr(sample.phonological, "enc_input_phonemes"):
             phonemes = sample.phonological.enc_input_phonemes
@@ -342,3 +338,31 @@ if __name__ == "__main__":
         else:
             print(f"Sample {i} phonemes: (phoneme information not available)")
         print()
+    """
+    # Add seeds for reproducibility
+    random.seed(42)
+    torch.manual_seed(42)
+    # torch.cuda.manual_seed(42)
+    multi_word_dataset = SyntheticBridgeDatasetMultiWord(
+        num_samples=5, max_seq_len=20, seed=42
+    )
+    batch = multi_word_dataset.sequences[:]
+    for i, b in enumerate(batch):
+        print(f"==== seq {i} ====")
+        print(f"seq: {b}")
+        seq = " ".join(b)
+        print(f"{len(seq)=}")
+
+    print("multi_word_dataset[3]")
+    # print(multi_word_dataset[3])
+    for i in range(len(multi_word_dataset)):
+        print(f"===== {i=} =================================================")
+        print(multi_word_dataset[i].orthographic.enc_input_ids.shape)
+        print(multi_word_dataset[i].orthographic.dec_input_ids.shape)
+        print(f"{multi_word_dataset[i].orthographic.enc_input_ids=}")
+        print(f"{multi_word_dataset[i].orthographic.dec_input_ids=}")
+        print(f"{multi_word_dataset[i].orthographic.enc_pad_mask.shape=}")
+        print(f"{multi_word_dataset[i].orthographic.dec_pad_mask.shape=}")
+        if hasattr(multi_word_dataset[i].phonological, "enc_input_ids"):
+            print(f"{multi_word_dataset[i].phonological.enc_input_ids=}")
+ 
