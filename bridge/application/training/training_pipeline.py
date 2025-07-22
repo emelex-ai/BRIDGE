@@ -15,8 +15,11 @@ from bridge.application.time_memory.metrics_extensions import (
 from bridge.application.training.ortho_metrics import calculate_orth_metrics
 from bridge.application.training.phon_metrics import calculate_phon_metrics
 from bridge.domain.datamodels import EncodingComponent, TrainingConfig
-from bridge.domain.dataset import BridgeDataset
+
+# from bridge.domain.dataset import BridgeDataset
 from bridge.domain.model import Model
+from bridge.domain.model.synthetic_dataset import SyntheticBridgeDatasetMultiWord
+)
 from bridge.infra.metrics.metrics_logger import MetricsLogger
 from bridge.utils import device_manager
 
