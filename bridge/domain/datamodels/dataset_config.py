@@ -7,8 +7,11 @@ from bridge.utils import get_project_root
 
 
 class DatasetConfig(BaseModel):
+    # Enable validation on assignment
     model_config = ConfigDict(validate_assignment=True)
+
     dataset_filepath: str | PosixPath = Field(description="Path to dataset file")
+    num_samples: int = Field(description="Number of training+validation+testing samples")
     custom_cmudict_path: str | PosixPath = Field(
         default=None, description="Path to custom CMU dictionary file"
     )
@@ -50,3 +53,11 @@ class DatasetConfig(BaseModel):
                     f"Dataset file not found: {self.dataset_filepath}"
                 )
         return self
+
+    @field_validator("num_samples")
+    def validate_num_samples(cls, v: int) -> int | None:
+        # if v == -1:
+        #   Read the entire data file. But not implemented for the synthetic file. 
+        if v < -1:
+            raise ValueError("window_size must be positive")
+        return v

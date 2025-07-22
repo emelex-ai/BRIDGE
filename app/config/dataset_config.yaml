@@ -3,5 +3,7 @@ dataset_filepath: 'data.csv'
 # dataset_filepath: 'input_data.pkl'
 custom_cmudict_path: 'custom_cmudict.json'
 dimension_phon_repr: 31
+# Number training samples. Ignore if -1. 
+num_samples: 1000
 #orthographic_vocabulary_size: 
 #phonological_vocabulary_size: 
