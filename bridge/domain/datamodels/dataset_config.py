@@ -1,7 +1,7 @@
 import os
 from pathlib import PosixPath
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
 
 from bridge.utils import get_project_root
 
@@ -11,7 +11,7 @@ class DatasetConfig(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
     dataset_filepath: str | PosixPath = Field(description="Path to dataset file")
-    num_samples: int = Field(description="Number of training+validation+testing samples")
+    num_samples: int = Field(default=100, description="Number of training+validation+testing samples")
     custom_cmudict_path: str | PosixPath = Field(
         default=None, description="Path to custom CMU dictionary file"
     )
