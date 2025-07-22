@@ -649,7 +649,7 @@ class Model(nn.Module):
         # )
 
         # Check if sliding window is enabled
-        print("Sliding window enabled:", self.orthography_decoder.enabled)
+        # print("Sliding window enabled:", self.orthography_decoder.enabled)
 
         # Check input statistics before decoder
         # print(
@@ -685,16 +685,6 @@ class Model(nn.Module):
         # print(
         #     f"Last position NaN: {last_position_nan}, Other positions NaN: {other_positions_nan}"
         # )
-
-        # Check output statistics
-        if not torch.isnan(orth_output).all():
-            valid_output = orth_output[~torch.isnan(orth_output)]
-            print(
-                "Valid output stats:",
-                valid_output.min().item(),
-                valid_output.max().item(),
-                valid_output.mean().item(),
-            )
 
         embedded_phon_dec_input = self.embed_phon_tokens(phon_dec_input)
         phon_ar_mask = self.generate_triangular_mask(embedded_phon_dec_input.shape[1])

@@ -184,16 +184,16 @@ class SlidingWindowEncoderWrapper(nn.Module):
 
         if not self.enabled:
             # Pass through unchanged when sliding window is disabled
-            start_time = time.time()
+            #start_time = time.time()
             result = self.encoder(src, src_mask, src_key_padding_mask)  # <<< ERROR
-            end_time = time.time() - start_time
-            print(
-                f"    [DEBUG] Encoder forward pass time: {end_time:.6f}s, {self.enabled=}"
-            )
+            #end_time = time.time() - start_time
+            #print(
+            #    f"    [DEBUG] Encoder forward pass time: {end_time:.6f}s, {self.enabled=}"
+            #)
             return result
 
         # Create sliding window mask
-        start_time = time.time()
+        # start_time = time.time()
         seq_len = src.shape[1]
         sliding_mask = self.create_sliding_window_mask(seq_len, src.device)
         # print(sliding_mask)
@@ -204,21 +204,12 @@ class SlidingWindowEncoderWrapper(nn.Module):
         else:
             final_mask = sliding_mask
 
-        # check_nan(final_mask, "final_mask")
-        # check_nan(src_mask, "src_mask")
-        # check_nan(sliding_mask, "sliding_masks")
-        # check_nan(src_key_padding_mask, "src_key_padding_mask")
-        # check_nan(src, "src")
-        # print(f"SlidingWindowEncoderWrapper: {final_mask=}")
-        # print(f"SlidingWindowEncoderWrapper: {src_key_padding_mask=}")
-        # quit()
-
         # ERROR in self.encoder: NaN generated
         result = self.encoder(src, final_mask, src_key_padding_mask)
-        end_time = time.time() - start_time
-        print(
-            f"    [DEBUG] Encoder forward pass time: {end_time:.6f}s, {self.enabled=}"
-        )
+        #end_time = time.time() - start_time
+        #print(
+        #   f"    [DEBUG] Encoder forward pass time: {end_time:.6f}s, {self.enabled=}"
+        #)
         # check_nan(result, "forward, result")  # NaN detected
         return result
 
@@ -386,7 +377,7 @@ class SlidingWindowDecoderWrapper(nn.Module):
         """
         if not self.enabled:
             # Pass through unchanged when sliding window is disabled
-            start_time = time.time()
+            #start_time = time.time()
             result = self.decoder(
                 tgt,
                 memory,
@@ -395,14 +386,14 @@ class SlidingWindowDecoderWrapper(nn.Module):
                 tgt_key_padding_mask,
                 memory_key_padding_mask,
             )
-            end_time = time.time() - start_time
-            print(
-                f"    [DEBUG] Decoder forward pass time: {end_time:.6f}s, {self.enabled=}"
-            )
+            #end_time = time.time() - start_time
+            #print(
+            #    f"    [DEBUG] Decoder forward pass time: {end_time:.6f}s, {self.enabled=}"
+            #)
             return result
 
         # Create sliding window causal mask for target
-        start_time = time.time()
+        #start_time = time.time()
         seq_len = tgt.shape[1]
         sliding_causal_mask = self.create_sliding_window_causal_mask(
             seq_len, tgt.device
@@ -422,10 +413,10 @@ class SlidingWindowDecoderWrapper(nn.Module):
             tgt_key_padding_mask,
             memory_key_padding_mask,
         )
-        end_time = time.time() - start_time
-        print(
-            f"    [DEBUG] Decoder forward pass time: {end_time:.6f}s, {self.enabled=}"
-        )
+        #end_time = time.time() - start_time
+        #print(
+        #    f"    [DEBUG] Decoder forward pass time: {end_time:.6f}s, {self.enabled=}"
+        #)
         return result
 
 

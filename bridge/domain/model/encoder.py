@@ -30,25 +30,9 @@ class Encoder(nn.Module):
         src_mask: torch.Tensor | None = None,
         src_key_padding_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        # if src_mask is not None:
-        #     print(f"encoder: {src_mask.shape=}")
-        # if src_key_padding_mask is not None:
-        #     print(f"encoder: {src_key_padding_mask.shape=}")
-        ## encoder: src.shape=torch.Size([6, 21, 1024])
-        ## encoder: src_key_padding_mask.shape=torch.Size([6, 18])
-        # print("\nINSIDE encoder")
-        # check_nan(src, "src")
-        # check_nan(src_mask, "src_mask")
-        # check_nan(src_key_padding_mask, "src_key_padding_mask")
-        # print(f"{src=}")
-        # print(f"{src_mask=}")
-        # print(f"{src_key_padding_mask=}")
-        # quit()
-        output = self.transformer_encoder(  # <<< ERROR
+        output = self.transformer_encoder( 
             src,
             mask=src_mask,
             src_key_padding_mask=src_key_padding_mask,
         )
-        # check_nan(output, "Encoder.forward, output")  # <<<  ERROR
-        # Analyze content of masks
         return output

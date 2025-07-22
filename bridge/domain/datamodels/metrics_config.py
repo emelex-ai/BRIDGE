@@ -10,5 +10,7 @@ class MetricsConfig(BaseModel):
     batch_metrics: bool
     training_metrics: bool
     validation_metrics: bool
+    memory_metrics: bool
+    timing_metrics: bool
     modes: list[OutputMode]
     filename: str | None

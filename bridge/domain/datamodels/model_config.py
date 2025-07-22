@@ -37,9 +37,9 @@ class ModelConfig(BaseModel):
         default=False, description="Whether to apply causal masking (for encoders)"
     )
 
-    max_seq_len: int = Field(
-        default=4096, description="Maximum sequence length for pre-computed masks"
-    )
+    #max_seq_len: int = Field(
+        #default=4096, description="Maximum sequence length for pre-computed masks"
+    #)
 
     max_orth_seq_len: int = Field(
         default=983,
@@ -56,13 +56,13 @@ class ModelConfig(BaseModel):
         description="Whether to ensure sliced masks are contiguous for GPU performance",
     )
 
-    @field_validator("max_seq_len")
-    def validate_max_seq_len(cls, v: int) -> int | None:
-        if v <= 0:
-            raise ValueError("max_seq_len must be positive")
-        if v > 65536:  # Reasonable upper limit
-            raise ValueError("max_seq_len should not exceed 65536")
-        return v
+    #@field_validator("max_seq_len")
+    #def validate_max_seq_len(cls, v: int) -> int | None:
+        #if v <= 0:
+            #raise ValueError("max_seq_len must be positive")
+        #if v > 65536:  # Reasonable upper limit
+            #raise ValueError("max_seq_len should not exceed 65536")
+        #return v
 
     @field_validator("max_orth_seq_len")
     def validate_max_orth_seq_len(cls, v: int) -> int | None:

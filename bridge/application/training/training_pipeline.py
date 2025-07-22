@@ -1,26 +1,29 @@
-import json
-import os
 import gc
-from typing import Union
+import json
+import logging
+import os
 import time
+from typing import Union
 
 import torch
 from tqdm import tqdm
-import logging
 
+from bridge.application.time_memory.metrics_extensions import (
+    measure_performance,
+    save_metrics_to_csv,
+)
 from bridge.application.training.ortho_metrics import calculate_orth_metrics
 from bridge.application.training.phon_metrics import calculate_phon_metrics
-from bridge.domain.datamodels import TrainingConfig, EncodingComponent
+from bridge.domain.datamodels import EncodingComponent, TrainingConfig
 from bridge.domain.dataset import BridgeDataset
 from bridge.domain.model import Model
-from bridge.utils import device_manager
 from bridge.infra.metrics.metrics_logger import MetricsLogger
+from bridge.utils import device_manager
 
 min_interval = 1
 
 
 class TrainingPipeline:
-
     def __init__(
         self,
         model: Model,
@@ -67,6 +70,7 @@ class TrainingPipeline:
         ]
         return train_slices, val_slices
 
+    @measure_performance(memory_enabled=True, timing_enabled=True)
     def forward(
         self, orthography: EncodingComponent, phonology: EncodingComponent
     ) -> dict[str, torch.Tensor]:
@@ -107,6 +111,7 @@ class TrainingPipeline:
                 phon_dec_pad_mask=phonology.dec_pad_mask,
             )
 
+    @measure_performance(memory_enabled=True, timing_enabled=True)
     def compute_loss(
         self,
         logits: dict[str, torch.Tensor],
@@ -162,6 +167,7 @@ class TrainingPipeline:
 
         return metrics
 
+    @measure_performance(memory_enabled=True, timing_enabled=True)
     def single_step(
         self,
         dataset: BridgeDataset,
@@ -287,6 +293,7 @@ class TrainingPipeline:
                 batch_slice,
                 self.metrics_logger.metrics_config.training_metrics,
             )
+            print("single_step.last_metrics", self.single_step.last_metrics)
             # metrics = self.single_step(batch_slice, False)
             current_time = time.time()
             if current_time - last_update_time > min_interval:
@@ -434,7 +441,6 @@ class TrainingPipeline:
 
     def save_model(self, epoch: int, run_name: str) -> None:
         if (epoch + 1) % self.training_config.save_every == 0:
-
             model_path = (
                 f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}.pth"
             )
@@ -460,10 +466,10 @@ class TrainingPipeline:
     # New: GE, 2025-06-29
     def save_model_step(self, epoch: int, step: int, run_name: str) -> None:
         """Save model checkpoint at the step level."""
-        if step % self.training_config.save_every == 0:  # Or save every step by removing this condition
-            model_path = (
-                f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}_step_{step}.pth"
-            )
+        if (
+            step % self.training_config.save_every == 0
+        ):  # Or save every step by removing this condition
+            model_path = f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}_step_{step}.pth"
             torch.save(
                 {
                     "model_config": self.model.model_config,
@@ -475,7 +481,7 @@ class TrainingPipeline:
                 },
                 model_path,
             )
-            
+
             # Upload to GCS if available
             if self.dataset.gcs_client:
                 index = int(os.environ.get("CLOUD_RUN_TASK_INDEX", 0)) + 1
