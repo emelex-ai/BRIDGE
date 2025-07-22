@@ -106,10 +106,14 @@ class SyntheticBridgeDatasetMultiWord(BridgeDataset):
         self,
         num_samples: int = 100,
         max_seq_len: int = 128,
+        max_orth_seq_len: int = 128,
+        max_phon_seq_len: int = 128,
         min_words_per_sequence: int = 2,
         max_words_per_sequence: Optional[int] = None,
         word_length_range: tuple[int, int] = (3, 10),
         seed: Optional[int] = None,
+        *args,
+        **kwargs,
     ):
         """Initialize the multi-word synthetic dataset.
 
@@ -122,6 +126,7 @@ class SyntheticBridgeDatasetMultiWord(BridgeDataset):
             word_length_range: Range of word lengths (min, max) in characters.
             seed: Random seed for reproducibility.
         """
+        super().__init__(*args, **kwargs)
         if seed is not None:
             random.seed(seed)
 
@@ -344,7 +349,11 @@ if __name__ == "__main__":
     torch.manual_seed(42)
     # torch.cuda.manual_seed(42)
     multi_word_dataset = SyntheticBridgeDatasetMultiWord(
-        num_samples=5, max_seq_len=20, seed=42
+        num_samples=5,
+        max_seq_len=20,
+        seed=42,
+        max_orth_seq_len=25,
+        max_phon_seq_len=30,
     )
     batch = multi_word_dataset.sequences[:]
     for i, b in enumerate(batch):
@@ -365,4 +374,3 @@ if __name__ == "__main__":
         print(f"{multi_word_dataset[i].orthographic.dec_pad_mask.shape=}")
         if hasattr(multi_word_dataset[i].phonological, "enc_input_ids"):
             print(f"{multi_word_dataset[i].phonological.enc_input_ids=}")
- 
