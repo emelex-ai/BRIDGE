@@ -186,6 +186,15 @@ class TrainingPipeline:
             # Process the entire batch at once
             batch = dataset[batch_slice]
             orthography, phonology = batch.orthographic, batch.phonological
+            print(f"==> orthography.enc_input_ids: {orthography.enc_input_ids.shape}")
+            print(f"==> orthography.enc_pad_mask: {orthography.enc_pad_mask.shape}")
+            print(f"==> orthography.dec_input_ids: {orthography.dec_input_ids.shape}")
+            print(f"==> orthography.dec_pad_mask: {orthography.dec_pad_mask.shape}")
+            print(f"==> orthography.enc_input_ids: {orthography.enc_input_ids}")
+            print(f"==> orthography.enc_pad_mask: {orthography.enc_pad_mask}")
+            print(f"==> orthography.dec_input_ids: {orthography.dec_input_ids}")
+            print(f"==> orthography.dec_pad_mask: {orthography.dec_pad_mask}")
+            quit()
 
             # Forward pass
             logits = self.forward(orthography, phonology)
