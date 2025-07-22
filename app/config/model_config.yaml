@@ -2,11 +2,11 @@ d_model: 1024
 d_embedding: 1
 nhead: 8
 seed: 1337
-num_phon_enc_layers: 8
-num_orth_enc_layers: 8
-num_mixing_enc_layers: 8
-num_phon_dec_layers: 8
-num_orth_dec_layers: 8
+num_phon_enc_layers: 16
+num_orth_enc_layers: 16
+num_mixing_enc_layers: 16
+num_phon_dec_layers: 16
+num_orth_dec_layers: 16
 
 # Sliding window attention configuration
 window_size: 29         # ±30 characters + current position  (memory leak)

@@ -15,6 +15,7 @@ class TrainingConfig(BaseModel):
     save_every: int = Field(default=1)
     model_artifacts_dir: str = Field(default="model_artifacts")
     weight_decay: float = Field(default=0.0)
+    device: str = Field(default="cpu")
     checkpoint_path: Optional[str] = Field(default=None)
     test_data_path: Optional[str] = Field(default=None)
     num_chunks: Optional[int] = Field(

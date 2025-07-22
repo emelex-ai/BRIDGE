@@ -6,7 +6,7 @@ max_nb_steps:
 learning_rate: 0.0001
 training_pathway: op2op
 device: cpu #cpu #cuda
-save_every: 1
+save_every: 100
 model_artifacts_dir: 'model_artifacts'
 use_wandb: true
 weight_decay: 0.01
