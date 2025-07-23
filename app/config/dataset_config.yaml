@@ -4,6 +4,6 @@ dataset_filepath: 'data.csv'
 custom_cmudict_path: 'custom_cmudict.json'
 dimension_phon_repr: 31
 # Number training samples. Ignore if -1. 
-num_samples: 1000
+num_samples: 100
 #orthographic_vocabulary_size: 
 #phonological_vocabulary_size: 

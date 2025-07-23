@@ -105,10 +105,10 @@ class SyntheticBridgeDatasetMultiWord(BridgeDataset):
     def __init__(
         self,
         num_samples: int = 100,
-        max_seq_len: int = 128,
+        # max_seq_len: int = 138,
         max_orth_seq_len: int = 128,
         max_phon_seq_len: int = 128,
-        min_words_per_sequence: int = 2,
+        min_words_per_sequence: int = 1,
         max_words_per_sequence: Optional[int] = None,
         word_length_range: tuple[int, int] = (3, 10),
         seed: Optional[int] = None,
@@ -132,10 +132,12 @@ class SyntheticBridgeDatasetMultiWord(BridgeDataset):
 
         self.device = device_manager.device
         self.tokenizer = BridgeTokenizer()
-        self.max_seq_len = max_seq_len
+        # self.max_seq_len = max_seq_len
         self.min_words_per_sequence = min_words_per_sequence
         self.max_words_per_sequence = max_words_per_sequence
         self.word_length_range = word_length_range
+        self.max_orth_seq_len = max_orth_seq_len
+        self.max_phon_seq_len = max_phon_seq_len
 
         # Get real words from the CMU dictionary
         self.real_words = self._get_real_words_from_cmu_dict()
@@ -174,7 +176,8 @@ class SyntheticBridgeDatasetMultiWord(BridgeDataset):
         return real_words
 
     def _generate_multi_word_sequences(self, num_samples: int) -> list[list[str]]:
-        """Generate multi-word sequences that respect max_seq_len (in characters).
+        """Generate multi-word sequences that respect max_orth_seq_len (in characters)
+        and max_phon_seq_len (in phonemes).
 
         Args:
             num_samples: Number of sequences to generate.
@@ -190,23 +193,48 @@ class SyntheticBridgeDatasetMultiWord(BridgeDataset):
         for _ in range(num_samples):
             sequence = []
             current_length = 0
-            # Add words until adding another would exceed max_seq_len (including spaces)
             while True:
                 word = random.choice(self.real_words)
-                # +1 for the space if not the first word
                 add_length = len(word) if not sequence else len(word) + 1
-                if current_length + add_length > self.max_seq_len:
+                if current_length + add_length > self.max_orth_seq_len - 2:
                     break
                 sequence.append(word)
                 current_length += add_length
-            # Ensure at least min_words_per_sequence
-            # print(f"==> {len(sequence)=}")
+
+            # Now check phoneme length and trim if needed
+            while sequence:
+                text_sequence = " ".join(sequence)
+                # Get phoneme encoding for the sequence
+                phono_encoding = self.tokenizer.phoneme_tokenizer.encode(text_sequence)
+                if phono_encoding is None:
+                    # If encoding fails, remove the last word and try again
+                    sequence.pop()
+                    continue
+                # enc_input_ids is typically shape (batch, seq_len) or (seq_len,)
+                # We'll use the first batch if present
+                enc_input_ids = phono_encoding["enc_input_ids"]
+                if isinstance(enc_input_ids, list):
+                    # If it's a list of tensors, flatten and count
+                    if len(enc_input_ids) > 0 and hasattr(enc_input_ids[0], "shape"):
+                        phoneme_count = enc_input_ids[0].shape[-1]
+                    else:
+                        phoneme_count = len(enc_input_ids[0])
+                else:
+                    phoneme_count = (
+                        enc_input_ids.shape[-1]
+                        if len(enc_input_ids.shape) > 1
+                        else enc_input_ids.shape[0]
+                    )
+                if phoneme_count <= self.max_phon_seq_len - 2:
+                    break
+                # Remove the last word and try again
+                sequence.pop()
+
             if len(sequence) < self.min_words_per_sequence:
-                # If not enough, forcibly add the first N words (may exceed max_seq_len)
                 raise RuntimeError(
-                    "Unable to generate a sequence with the required minimum number of words "
-                    f"({self.min_words_per_sequence}) without exceeding max_seq_len ({self.max_seq_len}). "
-                    "Consider increasing max_seq_len or reducing min_words_per_sequence."
+                    f"Unable to generate a sequence with the required minimum number of words "
+                    f"({self.min_words_per_sequence}) without exceeding max_orth_seq_len ({self.max_orth_seq_len}) "
+                    f"and max_phon_seq_len ({self.max_phon_seq_len})."
                 )
             sequences.append(sequence)
 
@@ -232,11 +260,10 @@ class SyntheticBridgeDatasetMultiWord(BridgeDataset):
         Returns:
             BridgeEncoding object or list of BridgeEncoding objects.
         """
-        print(f"__getitem__, arg: {idx=}")
         if isinstance(idx, int):
             if idx < 0 or idx >= len(self.sequences):
                 raise IndexError(f"Index {idx} out of range [0, {len(self.words)})")
-            print(f"{self.sequences[idx]=}")
+            # print(f"{self.sequences[idx]=}")
             text_sequence = " ".join(self.sequences[idx])
             encoding = self.tokenizer.encode(text_sequence)
             if encoding is None:
@@ -254,7 +281,7 @@ class SyntheticBridgeDatasetMultiWord(BridgeDataset):
                 raise IndexError(
                     f"Slice {idx} is out of range for dataset of length {len(self.sequences)}"
                 )
-            selected_sequences = [self.sequences[i] for i in indices]
+            selected_sequences = [" ".join(self.sequences[i]) for i in indices]
             if not selected_sequences:
                 raise IndexError(
                     f"Slice {idx} results in an empty selection for dataset of length {len(self.sequences)}"

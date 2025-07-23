@@ -2,18 +2,18 @@ d_model: 1024
 d_embedding: 1
 nhead: 8
 seed: 1337
-num_phon_enc_layers: 16
-num_orth_enc_layers: 16
-num_mixing_enc_layers: 16
-num_phon_dec_layers: 16
-num_orth_dec_layers: 16
+num_phon_enc_layers: 8
+num_orth_enc_layers: 8
+num_mixing_enc_layers: 8
+num_phon_dec_layers: 8
+num_orth_dec_layers: 8
 
 # Sliding window attention configuration
 window_size: 29         # ±30 characters + current position  (memory leak)
 use_sliding_window: false  # or false to disable
 is_causal: false        # Whether to apply causal masking (for encoders)
-max_orth_seq_len: 4096   # Maximum sequence length for orthogonal sequences
-max_phon_seq_len: 4096   # Maximum sequence length for phonological sequences
+max_orth_seq_len: 256   # Maximum sequence length for orthogonal sequences
+max_phon_seq_len: 256   # Maximum sequence length for phonological sequences
 ensure_contiguous: true # Whether to ensure sliced masks are contiguous for GPU performance
 
 #d_model: 128

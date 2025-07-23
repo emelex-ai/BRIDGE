@@ -15,11 +15,9 @@ from bridge.application.time_memory.metrics_extensions import (
 from bridge.application.training.ortho_metrics import calculate_orth_metrics
 from bridge.application.training.phon_metrics import calculate_phon_metrics
 from bridge.domain.datamodels import EncodingComponent, TrainingConfig
-
-# from bridge.domain.dataset import BridgeDataset
+from bridge.domain.dataset import BridgeDataset
 from bridge.domain.model import Model
 from bridge.domain.model.synthetic_dataset import SyntheticBridgeDatasetMultiWord
-)
 from bridge.infra.metrics.metrics_logger import MetricsLogger
 from bridge.utils import device_manager
 
@@ -189,15 +187,14 @@ class TrainingPipeline:
             # Process the entire batch at once
             batch = dataset[batch_slice]
             orthography, phonology = batch.orthographic, batch.phonological
-            print(f"==> orthography.enc_input_ids: {orthography.enc_input_ids.shape}")
-            print(f"==> orthography.enc_pad_mask: {orthography.enc_pad_mask.shape}")
-            print(f"==> orthography.dec_input_ids: {orthography.dec_input_ids.shape}")
-            print(f"==> orthography.dec_pad_mask: {orthography.dec_pad_mask.shape}")
-            print(f"==> orthography.enc_input_ids: {orthography.enc_input_ids}")
-            print(f"==> orthography.enc_pad_mask: {orthography.enc_pad_mask}")
-            print(f"==> orthography.dec_input_ids: {orthography.dec_input_ids}")
-            print(f"==> orthography.dec_pad_mask: {orthography.dec_pad_mask}")
-            quit()
+            # print(f"==> orthography.enc_input_ids: {orthography.enc_input_ids.shape}")
+            # print(f"==> orthography.enc_pad_mask: {orthography.enc_pad_mask.shape}")
+            # print(f"==> orthography.dec_input_ids: {orthography.dec_input_ids.shape}")
+            # print(f"==> orthography.dec_pad_mask: {orthography.dec_pad_mask.shape}")
+            # print(f"==> orthography.enc_input_ids: {orthography.enc_input_ids}")
+            # print(f"==> orthography.enc_pad_mask: {orthography.enc_pad_mask}")
+            # print(f"==> orthography.dec_input_ids: {orthography.dec_input_ids}")
+            # print(f"==> orthography.dec_pad_mask: {orthography.dec_pad_mask}")
 
             # Forward pass
             logits = self.forward(orthography, phonology)

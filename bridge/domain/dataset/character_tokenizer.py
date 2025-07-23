@@ -1,9 +1,11 @@
-from bridge.utils import device_manager
-from bridge.domain.dataset import CUDADict
-from typing import Union
 import logging
-import torch
 import string
+from typing import Union
+
+import torch
+
+from bridge.domain.dataset import CUDADict
+from bridge.utils import device_manager
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +32,6 @@ class CharacterTokenizer:
         return self.vocabulary_size
 
     def encode(self, list_of_strings: Union[str, list[str]]) -> CUDADict:
-
         # Ensure the input is either a string or a list of strings
         if isinstance(list_of_strings, str):
             list_of_strings = [list_of_strings]

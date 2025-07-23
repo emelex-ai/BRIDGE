@@ -37,7 +37,6 @@ class TrainModelHandler:
         self.dataset_config = dataset_config
         self.training_config = training_config
         self.metrics_config = metrics_config
-        print(f"==> {dataset_config.dataset_filepath}")
         self.gcs_client = (
             GCSClient() if dataset_config.dataset_filepath.startswith("gs://") else None
         )
@@ -64,9 +63,11 @@ class TrainModelHandler:
         """
         Set up the training pipeline and dataset.
         """
-        # bridge_dataset = BridgeDataset(
+        # bridge_dataset1 = BridgeDataset(
         #     dataset_config=self.dataset_config, gcs_client=self.gcs_client
         # )
+        # bridge_dataset = bridge_dataset1
+
         bridge_dataset = SyntheticBridgeDatasetMultiWord(
             num_samples=self.dataset_config.num_samples,
             max_orth_seq_len=self.model_config.max_orth_seq_len,
@@ -74,6 +75,7 @@ class TrainModelHandler:
             dataset_config=self.dataset_config,
             gcs_client=self.gcs_client,
         )
+
         self.pipeline = TrainingPipeline(
             model=Model(
                 model_config=self.model_config,

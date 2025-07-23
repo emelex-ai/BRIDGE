@@ -67,7 +67,7 @@ class BridgeDataset:
         self.dataset_filepath = dataset_config.dataset_filepath
         # Load raw data into a DataFrame
         raw_df = self._load_raw_dataframe(self.dataset_filepath)
-        raw_df = raw_df[:1000]
+        raw_df = raw_df[:100]  # Only keep 100 rows
         print("len(df)= ", len(raw_df))
         # Process DataFrame into validated word list
         self.words = self._process_raw_dataframe(raw_df)
