@@ -1,12 +1,12 @@
-[tool.poetry]
+[project]
 name = "bridge"
 version = "0.1.0"
 description = "A computational model for naming printed words that bridges orthographic and phonological representations"
-authors = ["Nathan Crock <nathan@emelex.com>"]
+authors = [
+    {name = "Nathan Crock", email = "nathan@emelex.com"}
+]
 readme = "README.md"
-homepage = "https://github.com/emelex-ai/BRIDGE"
-repository = "https://github.com/emelex-ai/BRIDGE"
-documentation = "https://github.com/emelex-ai/BRIDGE"
+requires-python = ">=3.12,<3.13"
 keywords = ["nlp", "psycholinguistics", "phonology", "orthography", "deep-learning"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -15,38 +15,45 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.12",
 ]
-include = ["bridge/data/*.csv"]
 
+dependencies = [
+    "google-cloud-storage>=3.1.0,<4.0.0",
+    "nltk>=3.8.1,<4.0.0",
+    "numpy>=1.26.0,<2.0.0",
+    "pandas>=2.1.2,<3.0.0",
+    "protobuf>=5.28.2,<6.0.0",
+    "pydantic>=2.9.2,<3.0.0",
+    "pyyaml>=6.0.2,<7.0.0",
+    "torch>=2.4.1,<3.0.0",
+    "torchsummary>=1.5.1",
+    "tqdm>=4.66.5,<5.0.0",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.12,<3.13"
-nltk = "^3.8.1"
-numpy = "^1.26.0"
-pandas = "^2.1.2"
-protobuf = "^5.28.2"
-pydantic = "^2.9.2"
-pyyaml = "^6.0.2"
-torch = "^2.4.1"
-tqdm = "^4.66.5"
-google-cloud-storage = {version = "^3.1.0"}
-wandb = {version = "^0.18.3"}
+[dependency-groups]
+dev = [
+    "deptry>=0.23.0",
+    "pytest>=8.4.0",
+    "pytest-mock>=3.14.1",
+    "wandb>=0.18.3,<1.0.0",
+]
 
-[tool.poetry.extras]
-wandb = ["wandb"]
-gcp = ["google-cloud-storage"]
-all = ["wandb", "google-cloud-storage"]
+[project.urls]
+Homepage = "https://github.com/emelex-ai/BRIDGE"
+Repository = "https://github.com/emelex-ai/BRIDGE"
+Documentation = "https://github.com/emelex-ai/BRIDGE"
 
-[tool.poetry.group.dev.dependencies]
-deptry = "^0.23.0"
-pytest = "^8.3.5"
-pytest-mock = "^3.14.0"
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["bridge"]
+
+[tool.hatch.build.targets.wheel.sources]
+"bridge/data" = "bridge/data"
 
 [tool.pytest.ini_options]
 pythonpath = "."
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v -s"
-
-[build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"

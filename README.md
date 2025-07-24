@@ -7,7 +7,7 @@
 
 ## Table of Contents
 1. [Installation](#installation)
-   - [Install Poetry](#install-poetry)
+   - [Install uv](#install-uv)
    - [Create the Environment](#create-the-environment)
 2. [Running the Code](#running-the-code)
 3. [Configuration Files](#configuration-files)
@@ -19,48 +19,11 @@
 
 ## Installation
 
-### Install Poetry
+### Install uv
 
-**Poetry** is used to manage dependencies and the Python environment.
+**uv** is used to manage dependencies and the Python environment.
 
-#### Linux
-```bash
-curl -sSL https://install.python-poetry.org | python3 -
-```
-
-#### macOS
-```bash
-curl -sSL https://install.python-poetry.org | python3 -
-```
-Or via Homebrew:
-```bash
-brew install poetry
-```
-
-#### Windows
-> **Note**: Currently, this project is only tested on Unix-like systems (Linux/macOS). Windows support is untested.
-
-#### Validate Installation
-Ensure Poetry is installed:
-```bash
-poetry --version
-```
-If not, make sure `~/.local/bin` is in your `PATH`:
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-### Create the Environment
-
-1. Navigate to the project folder:
-   ```bash
-   cd BRIDGE
-   ```
-2. Create and activate a Poetry environment:
-   ```bash
-   poetry shell
-   poetry install
-   ```
+For more information, read [SETUP_uv_ENVIRONEMENT.md](SETUP_uv_ENVIRONEMENT.md)
 
 ---
 
