@@ -30,6 +30,8 @@ data/into_reading/
 results/*.csv
 
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
 
 ### Terraform specific ignores
 # Local .terraform directories
