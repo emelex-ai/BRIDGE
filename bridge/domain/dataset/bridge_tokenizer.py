@@ -52,9 +52,11 @@ class BridgeTokenizer:
         )
         self.phon_bos_id = self.phoneme_tokenizer.special_token_dims["[BOS]"]
         self.phon_pad_id = self.phoneme_tokenizer.special_token_dims["[PAD]"]
+        self.phon_spc_id = self.phoneme_tokenizer.special_token_dims["[SPC]"]
         self.phon_eos_id = self.phoneme_tokenizer.special_token_dims["[EOS]"]
         self.orth_bos_id = self.char_tokenizer.char_2_idx["[BOS]"]
         self.orth_pad_id = self.char_tokenizer.char_2_idx["[PAD]"]
+        self.orth_spc_id = self.char_tokenizer.char_2_idx[" "]
         self.orth_eos_id = self.char_tokenizer.char_2_idx["[EOS]"]
 
         logger.info(
@@ -67,6 +69,7 @@ class BridgeTokenizer:
         self,
         text: str | list[str],
         modality_filter: Literal["both", "orthography", "phonology"] = "both",
+        language_map: dict[str, str] | None = None,
     ) -> BridgeEncoding | None:
         """
         Encode text using tokenizers based on the specified modality filter.
@@ -77,6 +80,11 @@ class BridgeTokenizer:
                 - "both": Encode both orthography and phonology (default)
                 - "orthography": Encode only orthography, create placeholder phonology
                 - "phonology": Encode only phonology, create placeholder orthography
+            language_map: Optional ``{word: language_code}`` mapping for code-switching.
+                Passed to both child tokenizers. The character tokenizer accepts uppercase
+                codes (``"EN"``, ``"ES"``); the phoneme tokenizer accepts lowercase ones
+                (``"en"``, ``"es"``). Missing words default to ``"--"`` orthographically
+                and ``"en"`` phonologically.
 
         Returns:
             BridgeEncoding containing encodings according to the modality filter,
@@ -96,7 +104,7 @@ class BridgeTokenizer:
         if modality_filter in ["both", "orthography"]:
             try:
                 logger.debug("Attempting orthographic encoding...")
-                ortho_encoding = self.char_tokenizer.encode(text)
+                ortho_encoding = self.char_tokenizer.encode(text, language_map=language_map)
 
                 if ortho_encoding is None:
                     logger.error(
@@ -121,7 +129,7 @@ class BridgeTokenizer:
         if modality_filter in ["both", "phonology"]:
             try:
                 logger.debug("Attempting phonological encoding...")
-                phono_encoding = self.phoneme_tokenizer.encode(text)
+                phono_encoding = self.phoneme_tokenizer.encode(text, language_map=language_map)
 
                 if phono_encoding is None:
                     logger.warning(

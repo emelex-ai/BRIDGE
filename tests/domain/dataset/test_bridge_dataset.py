@@ -31,20 +31,14 @@ def mock_gcs_client():
 
 @pytest.fixture
 def mock_dataset_file(tmp_path):
-    """Create a temporary dataset file with known test data."""
+    """Create a temporary dataset file with known test data.
+
+    Uses the columnar pkl format expected by ``BridgeDataset._load_raw_dataframe``:
+    ``{"word_raw": [...], "language": [...]}``.
+    """
     test_data = {
-        "cat": {
-            "count": 1,
-            "phoneme": ([1, 2, 3], [4, 5, 6]),
-            "phoneme_shape": (3, 2),
-            "orthography": [0, 1, 2, 3],
-        },
-        "dog": {
-            "count": 1,
-            "phoneme": ([7, 8, 9], [10, 11, 12]),
-            "phoneme_shape": (3, 2),
-            "orthography": [4, 5, 6, 7],
-        },
+        "word_raw": ["cat", "dog"],
+        "language": ["EN", "EN"],
     }
 
     file_path = tmp_path / "test_dataset.pkl"
@@ -56,19 +50,21 @@ def mock_dataset_file(tmp_path):
 
 @pytest.fixture
 def mock_cmudict_file(tmp_path):
-    """Create a temporary CMUdict JSON file with known test data."""
+    """Create a temporary CMUdict JSON file with known test data.
+
+    Uses the nested-by-language format expected by ``PhonemeTokenizer``:
+    ``{word: {lang_code: [[phonemes], ...]}}``.
+    """
     test_data = {
-        "the": [["DH", "IY0"]],
-        "read": [["R", "IY1", "D"]],
-        "finance": [["F", "AY1", "N", "AE0", "N", "S"]],
+        "the": {"en": [["DH", "IY0"]]},
+        "read": {"en": [["R", "IY1", "D"]]},
+        "finance": {"en": [["F", "AY1", "N", "AE0", "N", "S"]]},
     }
 
     file_path = tmp_path / "test_cmudict_file.json"
-    # ← open in text‐mode, not binary
     with open(file_path, "w") as f:
         json.dump(test_data, f)
 
-    # return a string so your dataset_config gets a str path
     return str(file_path)
 
 
@@ -250,7 +246,8 @@ def test_get_item_by_index(bridge_dataset):
     # Verify tensor properties
     orth = item.orthographic
     assert torch.is_tensor(orth.enc_input_ids)
-    assert orth.enc_input_ids.shape == (1, 5)
+    # Shape is (batch=1, seq_len=6): [LANG, BOS, c, a, t, EOS]
+    assert orth.enc_input_ids.shape == (1, 6)
     assert orth.enc_input_ids.device == bridge_dataset.device
 
     phon = item.phonological
@@ -266,9 +263,11 @@ def test_get_item_by_word(bridge_dataset):
     assert hasattr(item, "phonological")
     assert isinstance(item.orthographic, EncodingComponent)
     assert isinstance(item.phonological, EncodingComponent)
+    # [LANG=7 ("EN"), BOS=0, c=21, a=19, t=38, EOS=1]. The fixture tags every word
+    # as "EN", and EN sits at index 7 in the vocab (after 6 special tokens + "--").
     assert torch.equal(
         item.orthographic.enc_input_ids,
-        torch.tensor([[0, 18, 16, 35, 1]], device=bridge_dataset.device),
+        torch.tensor([[7, 0, 21, 19, 38, 1]], device=bridge_dataset.device),
     )
 
 
@@ -357,6 +356,15 @@ def test_shuffle_functionality(bridge_dataset):
     assert len(bridge_dataset.words) == len(original_words)
     assert set(bridge_dataset.words) == set(original_words)
     assert bridge_dataset.words[1:] == original_words[1:]
+
+
+def test_shuffle_preserves_language_alignment(bridge_dataset):
+    """Each word's language tag must follow the word through a shuffle."""
+    original_pairs = list(zip(bridge_dataset.words, bridge_dataset.languages, strict=True))
+    bridge_dataset.shuffle(len(bridge_dataset.words))
+    shuffled_pairs = list(zip(bridge_dataset.words, bridge_dataset.languages, strict=True))
+    # The set of (word, language) pairs must be identical pre- and post-shuffle.
+    assert set(original_pairs) == set(shuffled_pairs)
 
 
 def test_data_validation(tmp_path, dataset_config, mock_gcs_client):

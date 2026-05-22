@@ -126,10 +126,10 @@ class TrainingPipeline:
         # Calculate orth_loss if applicable
         if self.training_config.training_pathway in ["p2o", "op2op"]:
             orth_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(
-                logits["orth"], orthography.enc_input_ids[:, 1:]
+                logits["orth"], orthography.enc_input_ids[:, 2:]
             )  # Ignore [PAD] token
             orth_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(
-                logits["orth"], orthography.enc_input_ids[:, 1:]
+                logits["orth"], orthography.enc_input_ids[:, 2:]
             )  # Ignore [PAD] token
 
         # Calculate the combined loss, summing only non-None losses

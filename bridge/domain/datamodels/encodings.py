@@ -19,6 +19,29 @@ class EncodingComponent:
     dec_pad_mask: torch.Tensor
     targets: torch.Tensor | None = None  # Only used for phonological data
 
+    @property
+    def phon_targets(self) -> torch.Tensor:
+        """Phonological targets tensor.
+
+        Raises:
+            AttributeError: if ``targets`` was not provided (i.e. for orthographic
+                components).
+        """
+        if self.targets is None:
+            raise AttributeError("Phonological targets are not available")
+        return self.targets
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return the component's fields as a plain dict, for code paths that
+        expect the legacy CUDADict-style interface."""
+        return {
+            "enc_input_ids": self.enc_input_ids,
+            "enc_pad_mask": self.enc_pad_mask,
+            "dec_input_ids": self.dec_input_ids,
+            "dec_pad_mask": self.dec_pad_mask,
+            "targets": self.targets,
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class BridgeEncoding:
