@@ -26,7 +26,9 @@ results/*.pkl
 *.ipynb
 data/into_reading/
 *.csv
+!bridge/core/phonreps.csv
 *.json
+!bridge/core/pronunciation_lexicons/*.json
 results/*.csv
 
 .pytest_cache/
