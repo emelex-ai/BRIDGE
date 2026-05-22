@@ -1,5 +1,5 @@
 import logging
-from pydantic import BaseModel
+
 import yaml
 
 logger = logging.getLogger(__name__)
@@ -17,9 +17,9 @@ class BaseConfigHandler:
         if self.config_filepath:
             logger.info(f"Loading configuration from {self.config_filepath}")
             try:
-                with open(self.config_filepath, "r") as file:
+                with open(self.config_filepath) as file:
                     config_data = yaml.safe_load(file)
-                    logger.info(f"Configuration file loaded successfully.")
+                    logger.info("Configuration file loaded successfully.")
             except FileNotFoundError:
                 logger.error(f"Configuration file {self.config_filepath} not found.")
                 raise
@@ -29,7 +29,7 @@ class BaseConfigHandler:
             try:
                 # Delegate to child classes for validation with specific models
                 config = self._validate_config(config_data)
-                logger.info(f"Configuration validated successfully.")
+                logger.info("Configuration validated successfully.")
                 return config
             except Exception as e:
                 logger.error(f"Error during configuration validation: {e}")

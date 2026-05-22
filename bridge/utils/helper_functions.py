@@ -1,10 +1,10 @@
-from datetime import datetime
 import getpass
 import os
-
-import torch
 import random
+from datetime import datetime
+
 import numpy as np
+import torch
 
 
 def get_project_root():
@@ -38,14 +38,11 @@ def get_run_name(model_artifacts_dir="model_artifacts"):
     existing_runs = [
         d
         for d in os.listdir(model_artifacts_dir)
-        if os.path.isdir(os.path.join(model_artifacts_dir, d))
-        and d.startswith(current_date)
+        if os.path.isdir(os.path.join(model_artifacts_dir, d)) and d.startswith(current_date)
     ]
 
     # Extract run numbers for the current date
-    run_numbers = [
-        int(d.split("_")[-1]) for d in existing_runs if d.split("_")[-1].isdigit()
-    ]
+    run_numbers = [int(d.split("_")[-1]) for d in existing_runs if d.split("_")[-1].isdigit()]
 
     # Determine the next run number
     next_run_number = max(run_numbers, default=0) + 1
@@ -72,16 +69,3 @@ def remove_right_pad(x, target="_"):
     while x and x[-1] == target:
         x.pop()
     return x
-
-
-def convert_numeric_prediction(prediction, phonreps, trim=True, num_target_features=31):
-    prediction_as_strings = [
-        key(phonreps, phoneme.tolist()[:num_target_features]) for phoneme in prediction
-    ]
-
-    prediction_as_strings = ["XX" if e is None else e for e in prediction_as_strings]
-
-    if trim:
-        return remove_right_pad(prediction_as_strings)
-    else:
-        return prediction_as_strings

@@ -1,7 +1,7 @@
-from bridge.application.shared import BaseConfigHandler
-from bridge.domain.datamodels import ModelConfig
 import logging
 
+from bridge.application.shared import BaseConfigHandler
+from bridge.domain.datamodels import ModelConfig
 
 logger = logging.getLogger(__name__)
 

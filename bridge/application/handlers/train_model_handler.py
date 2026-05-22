@@ -1,21 +1,20 @@
-from bridge.domain.datamodels import (
-    ModelConfig,
-    DatasetConfig,
-    TrainingConfig,
-    WandbConfig,
-)
-from bridge.utils.helper_functions import get_run_name, set_seed
-from bridge.application.training import TrainingPipeline
-from bridge.infra.clients.gcp.gcs_client import GCSClient
-from bridge.infra.metrics import metrics_logger_factory
-from bridge.infra.clients.wandb import WandbWrapper
-from bridge.domain.datamodels import MetricsConfig
-from bridge.domain.dataset import BridgeDataset
-
-from bridge.domain.model import Model
 import logging
 import os
 
+from bridge.application.training import TrainingPipeline
+from bridge.domain.datamodels import (
+    DatasetConfig,
+    MetricsConfig,
+    ModelConfig,
+    TrainingConfig,
+    WandbConfig,
+)
+from bridge.domain.dataset import BridgeDataset
+from bridge.domain.model import Model
+from bridge.infra.clients.gcp.gcs_client import GCSClient
+from bridge.infra.clients.wandb import WandbWrapper
+from bridge.infra.metrics import metrics_logger_factory
+from bridge.utils.helper_functions import get_run_name, set_seed
 
 logger = logging.getLogger(__name__)
 
@@ -106,20 +105,14 @@ class TrainModelHandler:
 
         logger.info("Starting pretraining...")
         for i in range(1, 50):
-            self.training_config.model_artifacts_dir = (
-                f"model_artifacts/pretraining/{i}"
-            )
-            self.dataset_config.dataset_filepath = (
-                f"data/pretraining/input_data_{i}.pkl"
-            )
+            self.training_config.model_artifacts_dir = f"model_artifacts/pretraining/{i}"
+            self.dataset_config.dataset_filepath = f"data/pretraining/input_data_{i}.pkl"
             os.makedirs(self.training_config.model_artifacts_dir, exist_ok=True)
 
             self._initialize_wandb()
             self._setup_pipeline()
 
-            run_name = f"pretraining_{i}_" + get_run_name(
-                self.training_config.model_artifacts_dir
-            )
+            run_name = f"pretraining_{i}_" + get_run_name(self.training_config.model_artifacts_dir)
             self.wandb_wrapper.start_run(run_name=run_name)
 
             logger.info(f"Pretraining on dataset {i}...")
@@ -150,9 +143,9 @@ class TrainModelHandler:
             if hasattr(self.training_config, key):
                 setattr(self.training_config, key, value)
 
-        #self.training_config.model_artifacts_dir = "models/pretraining/1"
-        #self.dataset_config.dataset_filepath = "data/pretraining/input_data_1.pkl"
-        #os.makedirs(self.training_config.model_artifacts_dir, exist_ok=True)
+        # self.training_config.model_artifacts_dir = "models/pretraining/1"
+        # self.dataset_config.dataset_filepath = "data/pretraining/input_data_1.pkl"
+        # os.makedirs(self.training_config.model_artifacts_dir, exist_ok=True)
 
         self._setup_pipeline()
 

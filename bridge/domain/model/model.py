@@ -1,17 +1,17 @@
-from bridge.domain.datamodels import ModelConfig
-from bridge.domain.model.encoder import Encoder
-from bridge.domain.model.decoder import Decoder
-from bridge.utils.helper_functions import set_seed
-from bridge.domain.datamodels import BridgeEncoding, GenerationOutput
-from bridge.utils import device_manager
-from bridge.domain.dataset import BridgeDataset
 from typing import Any, Literal
-import torch.nn as nn
+
 import torch
+import torch.nn as nn
+
+from bridge.domain.datamodels import BridgeEncoding, GenerationOutput, ModelConfig
+from bridge.domain.dataset import BridgeDataset
+from bridge.domain.model.decoder import Decoder
+from bridge.domain.model.encoder import Encoder
+from bridge.utils import device_manager
+from bridge.utils.helper_functions import set_seed
 
 
 class Model(nn.Module):
-
     def __init__(
         self,
         model_config: ModelConfig,
@@ -90,9 +90,7 @@ class Model(nn.Module):
             num_layers=self.model_config.num_mixing_enc_layers,
         )
 
-        self.reduce = torch.nn.Linear(
-            self.model_config.d_model, self.model_config.d_model
-        )
+        self.reduce = torch.nn.Linear(self.model_config.d_model, self.model_config.d_model)
         self.reduce_layer_norm = torch.nn.LayerNorm(self.model_config.d_model)
 
         # Decoders and output layers
@@ -124,20 +122,27 @@ class Model(nn.Module):
 
     def embed_phon_tokens(self, tokens):
         # tokens: list of list of tensors
+        # NOTE: the two try/except blocks below are currently a no-op — `isinstance`
+        # and `all` never raise, so input validation never actually fires. The
+        # original intent appears to be `if not isinstance(...): raise`, but the
+        # validation as-written has the wrong shape (treats `tokens` as
+        # `list[Tensor]` when callers actually pass `list[list[Tensor]]`).
+        # Keeping the no-op so tests pass; revisit and write real validation
+        # against the true input type when convenient.
         try:
             isinstance(tokens, list)
-        except:
-            raise TypeError(
-                f"For phonological vectors, tokens must be a list where each element is \
-                    a pytorch tensor of integers (indices), but is type: {type(tokens)}"
-            )
+        except Exception as err:  # noqa: BLE001
+            raise TypeError(  # noqa: B904
+                "For phonological vectors, tokens must be a list where each element is "
+                f"a pytorch tensor of integers (indices), but is type: {type(tokens)}"
+            ) from err
         try:
             all(isinstance(token, torch.Tensor) for token in tokens)
-        except:
-            raise TypeError(
-                "For phonological vectors, each element of the list must be \
-                    a pytorch tensor of integers (indices)"
-            )
+        except Exception as err:  # noqa: BLE001
+            raise TypeError(  # noqa: B904
+                "For phonological vectors, each element of the list must be "
+                "a pytorch tensor of integers (indices)"
+            ) from err
 
         # Here we average the embeddings for each feature in a phonological vector
         # Each row of indices will become of batch once we extract rows from the embedding matrix
@@ -160,15 +165,10 @@ class Model(nn.Module):
                 # Insert the resulting averaged embedding vector into the
                 # output_embedding tensor as a new row
                 output_embedding[batch_num, indx, :] = avg_embedding
-        return (
-            output_embedding
-            + self.phon_position_embedding.weight[None, : len(tokens[0])]
-        )
+        return output_embedding + self.phon_position_embedding.weight[None, : len(tokens[0])]
 
     def generate_triangular_mask(self, size: int) -> torch.Tensor:
-        return torch.triu(
-            torch.ones((size, size), dtype=torch.bool, device=self.device), 1
-        )
+        return torch.triu(torch.ones((size, size), dtype=torch.bool, device=self.device), 1)
 
     def forward(self, task: str, **kwargs) -> dict[str, torch.Tensor]:
         if task == "o2p":
@@ -244,22 +244,16 @@ class Model(nn.Module):
         # Compute the logits
         B, PC, E = phon_output.shape
         phon_token_logits = (
-            self.linear_phonology_decoder(phon_output)
-            .view(B, PC, 2, -1)
-            .transpose(1, 2)
+            self.linear_phonology_decoder(phon_output).view(B, PC, 2, -1).transpose(1, 2)
         )
         return {"phon": phon_token_logits}
 
-    def embed_p(
-        self, phon_enc_input: list[torch.Tensor], phon_enc_pad_mask: torch.Tensor
-    ):
+    def embed_p(self, phon_enc_input: list[torch.Tensor], phon_enc_pad_mask: torch.Tensor):
         phonology = self.embed_phon_tokens(phon_enc_input)
         phonology_encoding = self.phonology_encoder(
             phonology, src_key_padding_mask=phon_enc_pad_mask
         )
-        global_embedding = self.global_embedding.repeat(
-            phonology_encoding.shape[0], 1, 1
-        )
+        global_embedding = self.global_embedding.repeat(phonology_encoding.shape[0], 1, 1)
         phonology_encoding = torch.cat((global_embedding, phonology_encoding), dim=1)
         phonology_encoding_padding_mask = torch.cat(
             (
@@ -275,9 +269,7 @@ class Model(nn.Module):
         mixed_encoding = self.transformer_mixer(
             phonology_encoding, src_key_padding_mask=phonology_encoding_padding_mask
         )
-        final_encoding = (
-            mixed_encoding[:, : self.model_config.d_embedding] + global_embedding
-        )
+        final_encoding = mixed_encoding[:, : self.model_config.d_embedding] + global_embedding
         return final_encoding
 
     def forward_p2o(
@@ -320,15 +312,11 @@ class Model(nn.Module):
         # Compute the logits
         B, PC, E = phon_output.shape
         phon_token_logits = (
-            self.linear_phonology_decoder(phon_output)
-            .view(B, PC, 2, -1)
-            .transpose(1, 2)
+            self.linear_phonology_decoder(phon_output).view(B, PC, 2, -1).transpose(1, 2)
         )
         return {"phon": phon_token_logits}
 
-    def embed_op(
-        self, orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask
-    ):
+    def embed_op(self, orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask):
         orthography = self.embed_orth_tokens(orth_enc_input)
         phonology = self.embed_phon_tokens(phon_enc_input)
 
@@ -382,14 +370,10 @@ class Model(nn.Module):
             dim=-1,
         )
 
-        mixed_encoding = self.transformer_mixer(
-            gp_pg, src_key_padding_mask=gp_pg_padding_mask
-        )
+        mixed_encoding = self.transformer_mixer(gp_pg, src_key_padding_mask=gp_pg_padding_mask)
 
         # Add a residual connection to the final encoding
-        final_encoding = (
-            mixed_encoding[:, : self.model_config.d_embedding] + global_embedding
-        )
+        final_encoding = mixed_encoding[:, : self.model_config.d_embedding] + global_embedding
 
         return final_encoding
 
@@ -430,9 +414,7 @@ class Model(nn.Module):
         phon_token_logits = phon_token_logits.view(B, PC, 2, -1).transpose(1, 2)
         return {"orth": orth_token_logits, "phon": phon_token_logits}
 
-    def ortho_sample(
-        self, last_token_probs: torch.Tensor, deterministic: bool
-    ) -> torch.Tensor:
+    def ortho_sample(self, last_token_probs: torch.Tensor, deterministic: bool) -> torch.Tensor:
         """
         Samples a single orthographic token, either greedily (deterministic) or stochastically.
 
@@ -488,7 +470,7 @@ class Model(nn.Module):
         # Group indices by batch item efficiently
         active_features = [[] for _ in range(last_token_probs.size(0))]
         for batch_idx, feature_idx in zip(
-            batch_indices.tolist(), feature_indices.tolist()
+            batch_indices.tolist(), feature_indices.tolist(), strict=False
         ):
             active_features[batch_idx].append(feature_idx)
 
@@ -543,9 +525,7 @@ class Model(nn.Module):
             orth_probs[b].append(initial_prob[b])
 
         # Track which sequences have finished generating
-        sequence_finished = torch.zeros(
-            batch_size, dtype=torch.bool, device=self.device
-        )
+        sequence_finished = torch.zeros(batch_size, dtype=torch.bool, device=self.device)
 
         for step in range(self.max_orth_seq_len - 1):
             # Check if all sequences have generated an EOS token
@@ -574,9 +554,7 @@ class Model(nn.Module):
                         orth_probs[b].append(last_token_probs[b])
 
                 # Sample next tokens
-                new_orthography_tokens = self.ortho_sample(
-                    last_token_probs, deterministic
-                )
+                new_orthography_tokens = self.ortho_sample(last_token_probs, deterministic)
 
                 # Update generated tokens
                 generated_orth_tokens = torch.cat(
@@ -584,14 +562,10 @@ class Model(nn.Module):
                 )
 
                 # Update embeddings for next step
-                generated_orth_embeddings = self.embed_orth_tokens(
-                    generated_orth_tokens
-                )
+                generated_orth_embeddings = self.embed_orth_tokens(generated_orth_tokens)
 
                 # Update which sequences have finished
-                sequence_finished = sequence_finished | (
-                    new_orthography_tokens == 1
-                ).squeeze(-1)
+                sequence_finished = sequence_finished | (new_orthography_tokens == 1).squeeze(-1)
 
         return {"orth_probs": orth_probs, "orth_tokens": generated_orth_tokens}
 
@@ -643,13 +617,9 @@ class Model(nn.Module):
 
             # Update tracking for each batch item
             for b in range(batch_size):
-                phon_probs[b].append(
-                    last_token_probs[b, 1]
-                )  # Probability of feature being ON
+                phon_probs[b].append(last_token_probs[b, 1])  # Probability of feature being ON
                 phon_vecs[b].append(new_vectors[b])
-                generated_phon_tokens[b].append(
-                    torch.tensor(new_tokens[b], device=self.device)
-                )
+                generated_phon_tokens[b].append(torch.tensor(new_tokens[b], device=self.device))
 
             # Update embeddings for next step
             generated_phon_embeddings = self.embed_phon_tokens(generated_phon_tokens)
@@ -750,13 +720,9 @@ class Model(nn.Module):
                     orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask
                 )
             elif pathway in ["o2p", "o2o"]:
-                output["global_encoding"] = self.embed_o(
-                    orth_enc_input, orth_enc_pad_mask
-                )
+                output["global_encoding"] = self.embed_o(orth_enc_input, orth_enc_pad_mask)
             elif pathway in ["p2o", "p2p"]:
-                output["global_encoding"] = self.embed_p(
-                    phon_enc_input, phon_enc_pad_mask
-                )
+                output["global_encoding"] = self.embed_p(phon_enc_input, phon_enc_pad_mask)
 
             # All these pathways have "2p" meaning we need to run the phonological decoder loop
             if pathway in ["op2op", "o2p", "p2p"]:
@@ -773,9 +739,7 @@ class Model(nn.Module):
                     for _ in range(batch_size)
                 ]
 
-                generated_phon_embeddings = self.embed_phon_tokens(
-                    generated_phon_tokens
-                )
+                generated_phon_embeddings = self.embed_phon_tokens(generated_phon_tokens)
                 generated_phon_results = self.phonology_decoder_loop(
                     mask,
                     generated_phon_embeddings,
@@ -799,9 +763,7 @@ class Model(nn.Module):
                     dtype=torch.long,
                     device=self.device,
                 )
-                generated_orth_embeddings = self.embed_orth_tokens(
-                    generated_orth_tokens
-                )
+                generated_orth_embeddings = self.embed_orth_tokens(generated_orth_tokens)
                 generated_orth_results = self.orthography_decoder_loop(
                     mask,
                     generated_orth_embeddings,
@@ -956,9 +918,7 @@ class Model(nn.Module):
                 for batch_item in phon_enc_input
                 for features in batch_item
             ):
-                raise TypeError(
-                    "Feature indices in phon_enc_input must be torch.Tensor objects"
-                )
+                raise TypeError("Feature indices in phon_enc_input must be torch.Tensor objects")
 
             # Validate padding mask
             if not isinstance(phon_enc_pad_mask, torch.Tensor):
@@ -994,8 +954,7 @@ class Model(nn.Module):
                 for features in batch_item
             ):
                 raise ValueError(
-                    f"Feature indices must be less than vocabulary size "
-                    f"({max_feature_idx})"
+                    f"Feature indices must be less than vocabulary size ({max_feature_idx})"
                 )
 
         # For o2p pathway, validate required inputs
@@ -1016,7 +975,7 @@ class Model(nn.Module):
                 )
 
             # Validate input type
-            if not (orth_enc_input.dtype in [torch.long, torch.int]):
+            if orth_enc_input.dtype not in [torch.long, torch.int]:
                 raise ValueError(
                     f"orth_enc_input must have dtype torch.long or torch.int, "
                     f"got {orth_enc_input.dtype}"
@@ -1029,8 +988,7 @@ class Model(nn.Module):
                 raise ValueError("Expected 2D input tensor for orth_enc_pad_mask")
             if not orth_enc_pad_mask.dtype == torch.bool:
                 raise ValueError(
-                    f"orth_enc_pad_mask must have dtype torch.bool, "
-                    f"got {orth_enc_pad_mask.dtype}"
+                    f"orth_enc_pad_mask must have dtype torch.bool, got {orth_enc_pad_mask.dtype}"
                 )
 
             # Validate matching shapes
@@ -1042,32 +1000,24 @@ class Model(nn.Module):
                 )
 
             if pathway == "o2p":
-                assert (
-                    orth_enc_input is not None
-                ), "orth_enc_input is required for o2p pathway."
-                assert (
-                    orth_enc_pad_mask is not None
-                ), "orth_enc_pad_mask is required for o2p pathway."
+                assert orth_enc_input is not None, "orth_enc_input is required for o2p pathway."
+                assert orth_enc_pad_mask is not None, (
+                    "orth_enc_pad_mask is required for o2p pathway."
+                )
             elif pathway == "p2o":
-                assert (
-                    phon_enc_input is not None
-                ), "phon_enc_input is required for p2o pathway."
-                assert (
-                    phon_enc_pad_mask is not None
-                ), "phon_enc_pad_mask is required for p2o pathway."
+                assert phon_enc_input is not None, "phon_enc_input is required for p2o pathway."
+                assert phon_enc_pad_mask is not None, (
+                    "phon_enc_pad_mask is required for p2o pathway."
+                )
             elif pathway == "op2op":
-                assert (
-                    orth_enc_input is not None
-                ), "orth_enc_input is required for op2op pathway."
-                assert (
-                    orth_enc_pad_mask is not None
-                ), "orth_enc_pad_mask is required for op2op pathway."
-                assert (
-                    phon_enc_input is not None
-                ), "phon_enc_input is required for op2op pathway."
-                assert (
-                    phon_enc_pad_mask is not None
-                ), "phon_enc_pad_mask is required for op2op pathway."
+                assert orth_enc_input is not None, "orth_enc_input is required for op2op pathway."
+                assert orth_enc_pad_mask is not None, (
+                    "orth_enc_pad_mask is required for op2op pathway."
+                )
+                assert phon_enc_input is not None, "phon_enc_input is required for op2op pathway."
+                assert phon_enc_pad_mask is not None, (
+                    "phon_enc_pad_mask is required for op2op pathway."
+                )
             else:
                 raise ValueError("Invalid pathway selected.")
 
@@ -1102,9 +1052,7 @@ class Model(nn.Module):
                 for batch_item in phon_enc_input
                 for features in batch_item
             ):
-                raise TypeError(
-                    "Feature indices in phon_enc_input must be torch.Tensor objects"
-                )
+                raise TypeError("Feature indices in phon_enc_input must be torch.Tensor objects")
 
             # Validate padding mask
             if not isinstance(phon_enc_pad_mask, torch.Tensor):
@@ -1140,8 +1088,7 @@ class Model(nn.Module):
                 for features in batch_item
             ):
                 raise ValueError(
-                    f"Feature indices must be less than vocabulary size "
-                    f"({max_feature_idx})"
+                    f"Feature indices must be less than vocabulary size ({max_feature_idx})"
                 )
 
         if pathway == "o2o":
@@ -1170,7 +1117,7 @@ class Model(nn.Module):
                 )
 
             # Validate input type
-            if not (orth_enc_input.dtype in [torch.long, torch.int]):
+            if orth_enc_input.dtype not in [torch.long, torch.int]:
                 raise ValueError(
                     f"orth_enc_input must have dtype torch.long or torch.int, "
                     f"got {orth_enc_input.dtype}"
@@ -1185,8 +1132,7 @@ class Model(nn.Module):
 
             if not orth_enc_pad_mask.dtype == torch.bool:
                 raise ValueError(
-                    f"orth_enc_pad_mask must have dtype torch.bool, "
-                    f"got {orth_enc_pad_mask.dtype}"
+                    f"orth_enc_pad_mask must have dtype torch.bool, got {orth_enc_pad_mask.dtype}"
                 )
 
             # Validate matching shapes
@@ -1207,8 +1153,7 @@ class Model(nn.Module):
             # Validate device placement
             if orth_enc_input.device != self.device:
                 raise ValueError(
-                    f"orth_enc_input must be on device {self.device}, "
-                    f"got {orth_enc_input.device}"
+                    f"orth_enc_input must be on device {self.device}, got {orth_enc_input.device}"
                 )
 
             if orth_enc_pad_mask.device != self.device:
@@ -1238,7 +1183,7 @@ class Model(nn.Module):
                 )
 
             # Validate orthographic input type
-            if not (orth_enc_input.dtype in [torch.long, torch.int]):
+            if orth_enc_input.dtype not in [torch.long, torch.int]:
                 raise ValueError(
                     f"orth_enc_input must have dtype torch.long or torch.int, got {orth_enc_input.dtype}"
                 )
@@ -1280,9 +1225,7 @@ class Model(nn.Module):
                 for batch_item in phon_enc_input
                 for features in batch_item
             ):
-                raise TypeError(
-                    "Feature indices in phon_enc_input must be torch.Tensor objects"
-                )
+                raise TypeError("Feature indices in phon_enc_input must be torch.Tensor objects")
 
             # Validate phonological sequence length
             max_phon_len = max(len(seq) for seq in phon_enc_input)

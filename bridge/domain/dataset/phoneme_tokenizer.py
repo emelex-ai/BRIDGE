@@ -1,16 +1,13 @@
-from typing import Union
-import importlib.resources
+import json
 import logging
 import os
 
-from nltk.corpus import cmudict
 import pandas as pd
 import torch
-import json
+from nltk.corpus import cmudict
 
-from bridge.domain.dataset import CUDADict
-from bridge.utils import get_project_root
-from bridge.utils import device_manager
+from bridge.domain.dataset.cuda_dict import CUDADict
+from bridge.utils import device_manager, get_project_root
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +24,7 @@ class PhonemeTokenizer:
         self.device = device_manager.device
 
         # Load phonetic representations from config
-        self.phonreps = pd.read_csv(
-            os.path.join(get_project_root(), "bridge/core/phonreps.csv")
-        )
+        self.phonreps = pd.read_csv(os.path.join(get_project_root(), "bridge/core/phonreps.csv"))
         self.phonreps.set_index("phone", inplace=True)
         self.base_dim = len(self.phonreps.columns)
 
@@ -47,16 +42,14 @@ class PhonemeTokenizer:
         if custom_cmudict_path:
             if os.path.isfile(custom_cmudict_path):
                 try:
-                    with open(custom_cmudict_path, "r") as f:
+                    with open(custom_cmudict_path) as f:
                         data = json.load(f)
                     for word, prons in data.items():
                         if prons:
                             # take the first pronunciation variant
                             custom_pron[word] = prons[0]
                 except Exception as e:
-                    logger.warning(
-                        f"Failed to load custom CMU dict at {custom_cmudict_path}: {e}"
-                    )
+                    logger.warning(f"Failed to load custom CMU dict at {custom_cmudict_path}: {e}")
             else:
                 logger.warning(f"Custom CMU dict not found at {custom_cmudict_path}")
 
@@ -126,9 +119,9 @@ class PhonemeTokenizer:
         if phoneme in self.phonreps_index:
             idx = self.phonreps_index[phoneme]
             # Find indices where features are active (1)
-            active_indices = torch.nonzero(
-                self.phonreps_array[idx] == 1, as_tuple=True
-            )[0].to(dtype=torch.long)
+            active_indices = torch.nonzero(self.phonreps_array[idx] == 1, as_tuple=True)[0].to(
+                dtype=torch.long
+            )
 
             # Cache management
             if len(self.vector_cache) >= self.max_cache_size:
@@ -138,7 +131,7 @@ class PhonemeTokenizer:
             return active_indices
         return self.special_vecs["[UNK]"]
 
-    def encode(self, words: Union[str, list[str]]) -> CUDADict | None:
+    def encode(self, words: str | list[str]) -> CUDADict | None:
         """Encode words or phrases to phonetic feature indices."""
         if isinstance(words, str):
             words = [words]
@@ -173,11 +166,7 @@ class PhonemeTokenizer:
             phoneme_indices = [self._get_phoneme_indices(p) for p in phoneme_seq]
 
             # Build sequences with special tokens
-            enc_seq = (
-                [self.special_vecs["[BOS]"]]
-                + phoneme_indices
-                + [self.special_vecs["[EOS]"]]
-            )
+            enc_seq = [self.special_vecs["[BOS]"]] + phoneme_indices + [self.special_vecs["[EOS]"]]
             dec_seq = [self.special_vecs["[BOS]"]] + phoneme_indices
 
             # Pad sequences
@@ -197,9 +186,7 @@ class PhonemeTokenizer:
                 targets[i, j] = one_hot
 
         # Create padding masks efficiently
-        seq_lengths = torch.tensor(
-            [len(p) + 2 for p in word_phonemes], device=self.device
-        )
+        seq_lengths = torch.tensor([len(p) + 2 for p in word_phonemes], device=self.device)
         position_indices = torch.arange(enc_length, device=self.device).expand(
             batch_size, enc_length
         )
@@ -229,18 +216,12 @@ class PhonemeTokenizer:
         batch_size = len(indices_batch)
 
         # Convert all inputs to tensors
-        lengths = torch.tensor(
-            [len(indices) for indices in indices_batch], device=self.device
-        )
+        lengths = torch.tensor([len(indices) for indices in indices_batch], device=self.device)
         values = torch.ones(lengths.sum(), device=self.device)
 
         # Build sparse tensor indices
-        row_indices = torch.repeat_interleave(
-            torch.arange(batch_size, device=self.device), lengths
-        )
-        col_indices = torch.cat(
-            [torch.tensor(idx, device=self.device) for idx in indices_batch]
-        )
+        row_indices = torch.repeat_interleave(torch.arange(batch_size, device=self.device), lengths)
+        col_indices = torch.cat([torch.tensor(idx, device=self.device) for idx in indices_batch])
 
         indices = torch.stack([row_indices, col_indices])
         return torch.sparse_coo_tensor(
@@ -337,10 +318,7 @@ class PhonemeTokenizer:
             return closest_phonemes
 
         # Otherwise, return all requested matches with their distances for debugging
-        return [
-            (self.all_phoneme_names[idx.item()], distances[idx].item())
-            for idx in indices
-        ]
+        return [(self.all_phoneme_names[idx.item()], distances[idx].item()) for idx in indices]
 
     def phoneme_vectors_to_word(self, phoneme_vectors, distance_fn=None):
         """
@@ -370,9 +348,7 @@ class PhonemeTokenizer:
                         phonemes.append("[UNK]")
                 else:
                     # Regular phoneme vector - use the updated method
-                    matches = self.phoneme_vector_to_phoneme(
-                        vector, distance_fn, top_k=1
-                    )
+                    matches = self.phoneme_vector_to_phoneme(vector, distance_fn, top_k=1)
                     if matches:
                         phonemes.append(matches[0])
                     else:

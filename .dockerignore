@@ -1,6 +1,0 @@
-.git
-models/
-results/
-*.pth
-model_artifacts/
-data/pretraining/

@@ -1,6 +1,7 @@
+import logging
+
 from bridge.application.shared import BaseConfigHandler
 from bridge.domain.datamodels import TrainingConfig
-import logging
 
 logger = logging.getLogger(__name__)
 

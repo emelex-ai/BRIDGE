@@ -1,6 +1,8 @@
-import os
-import wandb
 import logging
+import os
+
+import wandb
+
 from bridge.application.shared import Singleton
 
 logger = logging.getLogger(__name__)
@@ -24,7 +26,9 @@ class WandbWrapper(Singleton):
         self.sweep_id = None
 
         if self.is_enabled:
-            logger.info("WandbWrapper initialized with project_name: %s, entity: %s", project_name, entity)
+            logger.info(
+                "WandbWrapper initialized with project_name: %s, entity: %s", project_name, entity
+            )
             wandb.login(key=os.environ["WANDB_API_KEY"])
         else:
             logger.info("WandbWrapper initialized in disabled mode.")

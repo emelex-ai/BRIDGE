@@ -1,7 +1,6 @@
-from typing import Union, List
 import logging
-import torch
 
+import torch
 
 logger = logging.getLogger(__name__)
 

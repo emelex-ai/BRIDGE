@@ -17,9 +17,11 @@ The BridgeTokenizer handles combining both encoding types into a unified format,
 special handling for nonwords (words not in CMUDict).
 """
 
-import torch
 import logging
-from typing import Literal, Optional, List, Union, Dict, Any
+from typing import Literal
+
+import torch
+
 from bridge.domain.datamodels.encodings import BridgeEncoding, EncodingComponent
 from bridge.domain.dataset.character_tokenizer import CharacterTokenizer
 from bridge.domain.dataset.phoneme_tokenizer import PhonemeTokenizer
@@ -39,7 +41,7 @@ class BridgeTokenizer:
     def __init__(
         self,
         phoneme_cache_size: int = 10000,
-        custom_cmudict_path: Optional[str] = None,
+        custom_cmudict_path: str | None = None,
     ):
         # Initialize device
         self.device = device_manager.device
@@ -165,9 +167,7 @@ class BridgeTokenizer:
                     )
                     return None
 
-                logger.debug(
-                    "Creating orthographic and phonological components for 'both' mode..."
-                )
+                logger.debug("Creating orthographic and phonological components for 'both' mode...")
 
                 # Create orthographic component
                 try:
@@ -257,12 +257,8 @@ class BridgeTokenizer:
                         f"Creating placeholder phonological component with batch_size: {batch_size}, seq_len: {seq_len}"
                     )
 
-                    phonological = self._create_placeholder_phonological(
-                        batch_size, seq_len
-                    )
-                    logger.debug(
-                        "Placeholder phonological component created successfully"
-                    )
+                    phonological = self._create_placeholder_phonological(batch_size, seq_len)
+                    logger.debug("Placeholder phonological component created successfully")
                 except Exception as e:
                     logger.error(
                         f"Failed to create placeholder phonological component: {type(e).__name__}: {str(e)}, "
@@ -307,12 +303,8 @@ class BridgeTokenizer:
                         f"Creating placeholder orthographic component with batch_size: {batch_size}, seq_len: {seq_len}"
                     )
 
-                    orthographic = self._create_placeholder_orthographic(
-                        batch_size, seq_len
-                    )
-                    logger.debug(
-                        "Placeholder orthographic component created successfully"
-                    )
+                    orthographic = self._create_placeholder_orthographic(batch_size, seq_len)
+                    logger.debug("Placeholder orthographic component created successfully")
                 except Exception as e:
                     logger.error(
                         f"Failed to create placeholder orthographic component: {type(e).__name__}: {str(e)}, "
@@ -370,9 +362,7 @@ class BridgeTokenizer:
         )
         return None
 
-    def _create_placeholder_phonological(
-        self, batch_size: int, seq_len: int
-    ) -> EncodingComponent:
+    def _create_placeholder_phonological(self, batch_size: int, seq_len: int) -> EncodingComponent:
         """Create a minimal phonological component for orthography-only encoding."""
         # Create placeholder phonological tensors
         placeholder_feature_indices = torch.tensor(
@@ -409,9 +399,7 @@ class BridgeTokenizer:
             targets=placeholder_targets,
         )
 
-    def _create_placeholder_orthographic(
-        self, batch_size: int, seq_len: int
-    ) -> EncodingComponent:
+    def _create_placeholder_orthographic(self, batch_size: int, seq_len: int) -> EncodingComponent:
         """Create a minimal orthographic component for phonology-only encoding."""
         # Create placeholder orthographic tensors
         placeholder_enc_input_ids = torch.zeros(
@@ -479,12 +467,8 @@ class BridgeTokenizer:
 
     def phoneme_vectors_to_word(self, phoneme_vectors, distance_fn=None):
         """Convert phoneme vectors to word."""
-        return self.phoneme_tokenizer.phoneme_vectors_to_word(
-            phoneme_vectors, distance_fn
-        )
+        return self.phoneme_tokenizer.phoneme_vectors_to_word(phoneme_vectors, distance_fn)
 
     def phoneme_vector_to_phoneme(self, phoneme_vector, distance_fn=None, top_k=1):
         """Convert a single phoneme vector to phoneme string(s)."""
-        return self.phoneme_tokenizer.phoneme_vector_to_phoneme(
-            phoneme_vector, distance_fn, top_k
-        )
+        return self.phoneme_tokenizer.phoneme_vector_to_phoneme(phoneme_vector, distance_fn, top_k)

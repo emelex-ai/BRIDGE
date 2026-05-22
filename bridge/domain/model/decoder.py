@@ -1,6 +1,5 @@
-from typing import Optional
-import torch.nn as nn
 import torch
+import torch.nn as nn
 
 
 class Decoder(nn.Module):
@@ -15,10 +14,10 @@ class Decoder(nn.Module):
         self,
         tgt: torch.Tensor,
         memory: torch.Tensor,
-        tgt_mask: Optional[torch.Tensor] = None,
-        memory_mask: Optional[torch.Tensor] = None,
-        tgt_key_padding_mask: Optional[torch.Tensor] = None,
-        memory_key_padding_mask: Optional[torch.Tensor] = None,
+        tgt_mask: torch.Tensor | None = None,
+        memory_mask: torch.Tensor | None = None,
+        tgt_key_padding_mask: torch.Tensor | None = None,
+        memory_key_padding_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         output = self.transformer_decoder(
             tgt,

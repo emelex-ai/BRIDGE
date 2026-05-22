@@ -1,5 +1,6 @@
-import logging.config
 import logging
+import logging.config
+
 import yaml
 
 
@@ -23,7 +24,7 @@ class LoggingConfigHandler:
 
     def load_config(self):
         """Load logging configuration from a YAML file."""
-        with open(self.config_path, "r") as file:
+        with open(self.config_path) as file:
             config = yaml.safe_load(file)
             logging.config.dictConfig(config)
 

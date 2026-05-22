@@ -1,19 +1,52 @@
 name: CI
 
-# Controls when the workflow will run
 on:
-  # Triggers on push or pull request events but only for the main branch
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
-
-  # Allows you to run this workflow manually from the Actions tab
+    branches: [main]
   workflow_dispatch:
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+# Cancel in-progress runs for the same PR/branch when a new commit is pushed
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  unittest:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Install dev dependencies
+        run: uv sync --frozen --no-install-project --group dev
+      - name: ruff check
+        run: uv run ruff check bridge tests
+      - name: ruff format --check
+        run: uv run ruff format --check bridge tests
+
+  typecheck:
+    runs-on: ubuntu-latest
+    # Advisory only: mypy currently surfaces ~83 pre-existing type issues. Failures
+    # do not block PRs. Remove `continue-on-error` once the baseline is clean.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Install project + dev dependencies
+        run: uv sync --frozen --group dev
+      - name: mypy
+        run: uv run mypy
+
+  test:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -24,8 +57,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install uv
         uses: astral-sh/setup-uv@v5
-      - name: Install the project
-        run: uv sync --frozen --no-install-project
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Install project + dev dependencies
+        run: uv sync --frozen --group dev
       - name: Download NLTK data
         run: uv run python -c "import nltk; nltk.download('cmudict')"
       - name: Run tests

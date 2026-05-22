@@ -1,6 +1,7 @@
-from typing import Annotated, Optional
-from pydantic import BaseModel, Field, model_validator
+from typing import Annotated
+
 import torch
+from pydantic import BaseModel, Field, model_validator
 
 
 def validate_global_encoding(v: torch.Tensor) -> torch.Tensor:
@@ -8,9 +9,7 @@ def validate_global_encoding(v: torch.Tensor) -> torch.Tensor:
     if not isinstance(v, torch.Tensor):
         raise ValueError("global_encoding must be a torch.Tensor")
     if v.dim() != 3:
-        raise ValueError(
-            "global_encoding must be 3-dimensional (batch × embedding × model)"
-        )
+        raise ValueError("global_encoding must be 3-dimensional (batch × embedding × model)")
     if v.size(1) <= 0:
         raise ValueError("embedding dimension must be positive")
     if v.size(2) <= 0:
@@ -29,15 +28,12 @@ def validate_probability_list(
         raise ValueError(f"{name} must be a list of lists of tensors")
 
     # Validate each probability tensor
-    batch_size = len(v)
     for batch_idx, sequence in enumerate(v):
         for step_idx, prob_tensor in enumerate(sequence):
             if not isinstance(prob_tensor, torch.Tensor):
                 raise ValueError(f"{name}[{batch_idx}][{step_idx}] must be a tensor")
             if prob_tensor.dim() != 1:
-                raise ValueError(
-                    f"{name}[{batch_idx}][{step_idx}] must be 1-dimensional"
-                )
+                raise ValueError(f"{name}[{batch_idx}][{step_idx}] must be 1-dimensional")
             if name == "orth_probs" and not torch.isclose(
                 prob_tensor.sum(), torch.tensor(1.0), atol=1e-5
             ):
@@ -80,15 +76,12 @@ def validate_phonological_vectors(
     if not isinstance(v, list) or not all(isinstance(x, list) for x in v):
         raise ValueError(f"{name} must be a list of lists of tensors")
 
-    batch_size = len(v)
     for batch_idx, sequence in enumerate(v):
         for step_idx, vector in enumerate(sequence):
             if not isinstance(vector, torch.Tensor):
                 raise ValueError(f"{name}[{batch_idx}][{step_idx}] must be a tensor")
             if vector.dim() != 1:
-                raise ValueError(
-                    f"{name}[{batch_idx}][{step_idx}] must be 1-dimensional"
-                )
+                raise ValueError(f"{name}[{batch_idx}][{step_idx}] must be 1-dimensional")
 
             # For phon_vecs specifically, validate binary values
             if name == "phon_vecs":
@@ -138,9 +131,7 @@ class GenerationOutput(BaseModel):
         self.orth_tokens = validate_orthographic_tokens(self.orth_tokens)
         self.phon_probs = validate_probability_list(self.phon_probs, "phon_probs")
         self.phon_vecs = validate_phonological_vectors(self.phon_vecs, "phon_vecs")
-        self.phon_tokens = validate_phonological_vectors(
-            self.phon_tokens, "phon_tokens"
-        )
+        self.phon_tokens = validate_phonological_vectors(self.phon_tokens, "phon_tokens")
 
         # Cross-component validation
         batch_size = self.global_encoding.size(0)
@@ -167,9 +158,7 @@ class GenerationOutput(BaseModel):
 
         # Validate phonological component consistency
         phon_fields = [self.phon_probs, self.phon_vecs, self.phon_tokens]
-        if any(f is not None for f in phon_fields) and not all(
-            f is not None for f in phon_fields
-        ):
+        if any(f is not None for f in phon_fields) and not all(f is not None for f in phon_fields):
             raise ValueError(
                 "All phonological components (probs, vecs, tokens) must be present if any are"
             )
@@ -178,9 +167,7 @@ class GenerationOutput(BaseModel):
         has_orth = self.orth_tokens is not None
         has_phon = self.phon_tokens is not None
         if not (has_orth or has_phon):
-            raise ValueError(
-                "At least one modality (orthographic or phonological) must be present"
-            )
+            raise ValueError("At least one modality (orthographic or phonological) must be present")
 
         # Validate device consistency
         devices = {self.global_encoding.device}

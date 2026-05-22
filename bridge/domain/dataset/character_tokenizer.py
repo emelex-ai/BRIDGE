@@ -1,9 +1,10 @@
-from bridge.utils import device_manager
-from bridge.domain.dataset import CUDADict
-from typing import Union
 import logging
-import torch
 import string
+
+import torch
+
+from bridge.domain.dataset.cuda_dict import CUDADict
+from bridge.utils import device_manager
 
 logger = logging.getLogger(__name__)
 
@@ -22,14 +23,12 @@ class CharacterTokenizer:
         self.idx_2_char = {i: ch for i, ch in enumerate(self.vocab)}
         self.vocabulary_size = len(self.vocab)
 
-        logger.info(
-            f"CharacterTokenizer initialized with vocabulary size: {self.vocabulary_size}"
-        )
+        logger.info(f"CharacterTokenizer initialized with vocabulary size: {self.vocabulary_size}")
 
     def get_vocabulary_size(self) -> int:
         return self.vocabulary_size
 
-    def encode(self, list_of_strings: Union[str, list[str]]) -> CUDADict:
+    def encode(self, list_of_strings: str | list[str]) -> CUDADict:
 
         # Ensure the input is either a string or a list of strings
         if isinstance(list_of_strings, str):
@@ -42,13 +41,11 @@ class CharacterTokenizer:
 
         max_length = max(len(s) for s in list_of_strings)
 
-        enc_pad = (
-            lambda s: ["[BOS]"]
-            + list(s)
-            + ["[EOS]"]
-            + ["[PAD]"] * (max_length - len(s))
-        )
-        dec_pad = lambda s: ["[BOS]"] + list(s) + ["[PAD]"] * (max_length - len(s))
+        def enc_pad(s):
+            return ["[BOS]"] + list(s) + ["[EOS]"] + ["[PAD]"] * (max_length - len(s))
+
+        def dec_pad(s):
+            return ["[BOS]"] + list(s) + ["[PAD]"] * (max_length - len(s))
 
         # Create encoder-padded and decoder-padded string lists
         enc_strings = [enc_pad(s) for s in list_of_strings]

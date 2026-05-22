@@ -1,8 +1,7 @@
-from bridge.application.shared import BaseConfigHandler
 import logging
 
+from bridge.application.shared import BaseConfigHandler
 from bridge.domain.datamodels import MetricsConfig
-
 
 logger = logging.getLogger(__name__)
 

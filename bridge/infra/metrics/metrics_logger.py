@@ -1,11 +1,13 @@
 import json
 import os
-from typing import Literal
-from bridge.domain.datamodels.metrics_config import MetricsConfig, OutputMode
 from abc import ABC, abstractmethod
+from typing import Literal
+
+import torch
+
+from bridge.domain.datamodels.metrics_config import MetricsConfig, OutputMode
 from bridge.domain.datamodels.training_config import TrainingConfig
 from bridge.infra.clients.gcp.gcs_client import GCSClient
-import torch
 
 
 class MetricsLogger(ABC):
@@ -36,9 +38,7 @@ class STDOutMetricsLogger(MetricsLogger):
 
 
 class MultipleMetricsLogger(MetricsLogger):
-    def __init__(
-        self, metrics_config: MetricsConfig, loggers: list[MetricsLogger]
-    ) -> None:
+    def __init__(self, metrics_config: MetricsConfig, loggers: list[MetricsLogger]) -> None:
         super().__init__(metrics_config)
         self.loggers = loggers
 
@@ -53,7 +53,6 @@ class MultipleMetricsLogger(MetricsLogger):
 
 
 class CSVMetricsLogger(MetricsLogger):
-
     def __init__(self, metrics_config: MetricsConfig):
         # Create results directory if it doesn't exist
         if not os.path.exists("results"):
@@ -89,7 +88,9 @@ class CSVMetricsLogger(MetricsLogger):
 
 
 class CSVGCPMetricsLogger(CSVMetricsLogger):
-    def __init__(self, metrics_config: MetricsConfig, gcs_client: GCSClient, gcs_path: str | None) -> None:
+    def __init__(
+        self, metrics_config: MetricsConfig, gcs_client: GCSClient, gcs_path: str | None
+    ) -> None:
         super().__init__(metrics_config)
         self.gcs_client = gcs_client
         self.gcs_path = gcs_path
@@ -98,10 +99,14 @@ class CSVGCPMetricsLogger(CSVMetricsLogger):
         for level in self.opened:
             if self.opened[level]:
                 file_name = f"results/{self.metrics_config.filename.split('.')[0]}_{level}.{self.metrics_config.filename.split('.')[1]}"
-                self.gcs_client.upload_file(os.environ["BUCKET_NAME"], file_name, f"{self.gcs_path}/results/{file_name}")
+                self.gcs_client.upload_file(
+                    os.environ["BUCKET_NAME"], file_name, f"{self.gcs_path}/results/{file_name}"
+                )
 
 
-def metrics_logger_factory(metrics_config: MetricsConfig, training_config: TrainingConfig) -> MetricsLogger:
+def metrics_logger_factory(
+    metrics_config: MetricsConfig, training_config: TrainingConfig
+) -> MetricsLogger:
     loggers = []
     if OutputMode.CSV in metrics_config.modes:
         if metrics_config.filename:

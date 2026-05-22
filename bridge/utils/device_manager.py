@@ -1,7 +1,8 @@
-import yaml
-import torch
-import platform
 import logging
+import platform
+
+import torch
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +27,7 @@ class DeviceManager:
                 if torch.cuda.is_available():
                     self._device = requested_device
                 else:
-                    logger.warning(
-                        "CUDA requested but not available. Falling back to CPU."
-                    )
+                    logger.warning("CUDA requested but not available. Falling back to CPU.")
                     self._device = torch.device("cpu")
             elif requested_device.type == "mps":
                 if (
@@ -38,9 +37,7 @@ class DeviceManager:
                 ):
                     self._device = requested_device
                 else:
-                    logger.warning(
-                        "MPS requested but not available. Falling back to CPU."
-                    )
+                    logger.warning("MPS requested but not available. Falling back to CPU.")
                     self._device = torch.device("cpu")
             else:
                 self._device = requested_device
@@ -82,7 +79,7 @@ def load_config(config_path):
     Returns:
         dict: Parsed configuration dictionary.
     """
-    with open(config_path, "r") as file:
+    with open(config_path) as file:
         return yaml.safe_load(file)
 
 

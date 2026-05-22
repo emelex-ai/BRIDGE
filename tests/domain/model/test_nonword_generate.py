@@ -1,9 +1,9 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
 import torch
-from unittest.mock import patch, MagicMock
 
-from bridge.domain.datamodels import BridgeEncoding, GenerationOutput
-from bridge.domain.datamodels.encodings import EncodingComponent
+from bridge.domain.datamodels import GenerationOutput
 from bridge.domain.dataset.bridge_tokenizer import BridgeTokenizer
 
 
@@ -36,9 +36,7 @@ class TestNonwordGenerate:
         output = mock_model.generate(encoding, pathway="o2p", deterministic=True)
 
         # Verify model.generate was called correctly
-        mock_model.generate.assert_called_once_with(
-            encoding, pathway="o2p", deterministic=True
-        )
+        mock_model.generate.assert_called_once_with(encoding, pathway="o2p", deterministic=True)
 
         # Verify the output has the expected format
         assert output.phon_tokens is not None
@@ -74,9 +72,7 @@ class TestNonwordGenerate:
         output = mock_model.generate(encoding, pathway="o2p", deterministic=True)
 
         # Verify model.generate was called correctly
-        mock_model.generate.assert_called_once_with(
-            encoding, pathway="o2p", deterministic=True
-        )
+        mock_model.generate.assert_called_once_with(encoding, pathway="o2p", deterministic=True)
 
         # Verify the output has the expected format
         assert output.phon_tokens is not None
@@ -112,9 +108,7 @@ class TestNonwordGenerate:
         output = mock_model.generate(encoding, pathway="o2p", deterministic=True)
 
         # Verify model.generate was called correctly
-        mock_model.generate.assert_called_once_with(
-            encoding, pathway="o2p", deterministic=True
-        )
+        mock_model.generate.assert_called_once_with(encoding, pathway="o2p", deterministic=True)
 
         # Verify the output has the expected format
         assert output.phon_tokens is not None

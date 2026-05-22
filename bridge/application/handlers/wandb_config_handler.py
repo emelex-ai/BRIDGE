@@ -1,7 +1,7 @@
-from bridge.application.shared import BaseConfigHandler
-from bridge.domain.datamodels import WandbConfig
 import logging
 
+from bridge.application.shared import BaseConfigHandler
+from bridge.domain.datamodels import WandbConfig
 
 logger = logging.getLogger(__name__)
 

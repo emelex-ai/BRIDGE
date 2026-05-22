@@ -1,4 +1,5 @@
 import torch
+
 from bridge.domain.datamodels import EncodingComponent
 
 
@@ -32,9 +33,7 @@ def calculate_orth_metrics(
     letter_wise_accuracy = calculate_letter_wise_accuracy(
         orth_valid_mask, masked_orth_true, masked_orth_pred
     )
-    orth_word_accuracy = calculate_orth_word_accuracy(
-        orth_pred, orth_true, orth_valid_mask
-    )
+    orth_word_accuracy = calculate_orth_word_accuracy(orth_pred, orth_true, orth_valid_mask)
     return {
         "letter_wise_accuracy": letter_wise_accuracy.item(),
         "word_wise_accuracy": orth_word_accuracy.item(),

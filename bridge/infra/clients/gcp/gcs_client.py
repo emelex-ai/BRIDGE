@@ -1,6 +1,7 @@
-from google.cloud import storage
-import pandas as pd
 from io import StringIO
+
+import pandas as pd
+from google.cloud import storage
 
 
 class GCSClient:
@@ -30,9 +31,7 @@ class GCSClient:
             # Authenticate via GOOGLE_APPLICATION_CREDENTIALS env var or default
             self.client = storage.Client(project=project)
 
-    def download_file(
-        self, bucket_name: str, blob_name: str, destination_file_name: str
-    ) -> None:
+    def download_file(self, bucket_name: str, blob_name: str, destination_file_name: str) -> None:
         """
         Download a blob from a bucket to a local file.
         """
@@ -50,9 +49,7 @@ class GCSClient:
         bucket = self.client.bucket(bucket_name)
         blob = bucket.blob(destination_blob_name)
         blob.upload_from_filename(source_file_name)
-        print(
-            f"Uploaded {source_file_name} to gs://{bucket_name}/{destination_blob_name}"
-        )
+        print(f"Uploaded {source_file_name} to gs://{bucket_name}/{destination_blob_name}")
 
     def read_file(self, bucket_name: str, blob_name: str, as_text: bool = False):
         """
@@ -70,9 +67,7 @@ class GCSClient:
         blob = bucket.blob(blob_name)
         return blob.download_as_text() if as_text else blob.download_as_bytes()
 
-    def read_csv(
-        self, bucket_name: str, blob_name: str, **read_csv_kwargs
-    ) -> pd.DataFrame:
+    def read_csv(self, bucket_name: str, blob_name: str, **read_csv_kwargs) -> pd.DataFrame:
         """
         Read a CSV file in GCS directly into a pandas DataFrame without saving locally.
 

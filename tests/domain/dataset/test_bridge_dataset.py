@@ -3,13 +3,12 @@ Test suite for the BridgeDataset class, focusing on proper integration
 with BridgeEncoding dataclass and comprehensive functionality testing.
 """
 
-import sys
-import os
+import json
+import pickle
+from unittest.mock import Mock, patch
+
 import pytest
 import torch
-import pickle
-import json
-from unittest.mock import Mock, patch
 
 from bridge.domain.datamodels import BridgeEncoding, EncodingComponent
 from bridge.domain.dataset import BridgeDataset, BridgeTokenizer
@@ -81,9 +80,7 @@ class MockDatasetConfig:
         self.dataset_filepath = kwargs.get("dataset_filepath", "data.csv")
         self.device = kwargs.get("device", "cpu")
         self.tokenizer_cache_size = kwargs.get("tokenizer_cache_size", 10000)
-        self.custom_cmudict_path = kwargs.get(
-            "custom_cmudict_path", "custom_cmudict.json"
-        )
+        self.custom_cmudict_path = kwargs.get("custom_cmudict_path", "custom_cmudict.json")
         # For backward compatibility
         self.phoneme_cache_size = self.tokenizer_cache_size
 
@@ -102,9 +99,7 @@ def create_test_encoding(word: str, device: torch.device) -> BridgeEncoding:
     if word == "cat":
         # Create orthographic encoding component
         orth_enc_ids = torch.tensor([[0, 18, 16, 35, 1]], device=device)
-        orth_enc_mask = torch.tensor(
-            [[False, False, False, False, False]], device=device
-        )
+        orth_enc_mask = torch.tensor([[False, False, False, False, False]], device=device)
         orth_dec_ids = torch.tensor([[0, 18, 16, 35]], device=device)
         orth_dec_mask = torch.tensor([[False, False, False, False]], device=device)
 
@@ -118,9 +113,7 @@ def create_test_encoding(word: str, device: torch.device) -> BridgeEncoding:
                 torch.tensor([PHON_EOS_ID], device=device),
             ]
         ]
-        phon_enc_mask = torch.tensor(
-            [[False, False, False, False, False]], device=device
-        )
+        phon_enc_mask = torch.tensor([[False, False, False, False, False]], device=device)
         phon_dec_ids = [
             [
                 torch.tensor([PHON_BOS_ID], device=device),
@@ -154,15 +147,11 @@ def create_test_encoding(word: str, device: torch.device) -> BridgeEncoding:
         )
 
         # Create BridgeEncoding with components
-        return BridgeEncoding(
-            orthographic=orthographic, phonological=phonological, device=device
-        )
+        return BridgeEncoding(orthographic=orthographic, phonological=phonological, device=device)
     elif word == "dog":
         # Create orthographic encoding component
         orth_enc_ids = torch.tensor([[0, 9, 15, 13, 1]], device=device)
-        orth_enc_mask = torch.tensor(
-            [[False, False, False, False, False]], device=device
-        )
+        orth_enc_mask = torch.tensor([[False, False, False, False, False]], device=device)
         orth_dec_ids = torch.tensor([[0, 9, 15, 13]], device=device)
         orth_dec_mask = torch.tensor([[False, False, False, False]], device=device)
 
@@ -176,9 +165,7 @@ def create_test_encoding(word: str, device: torch.device) -> BridgeEncoding:
                 torch.tensor([PHON_EOS_ID], device=device),
             ]
         ]
-        phon_enc_mask = torch.tensor(
-            [[False, False, False, False, False]], device=device
-        )
+        phon_enc_mask = torch.tensor([[False, False, False, False, False]], device=device)
         phon_dec_ids = [
             [
                 torch.tensor([PHON_BOS_ID], device=device),
@@ -212,9 +199,7 @@ def create_test_encoding(word: str, device: torch.device) -> BridgeEncoding:
         )
 
         # Create BridgeEncoding with components
-        return BridgeEncoding(
-            orthographic=orthographic, phonological=phonological, device=device
-        )
+        return BridgeEncoding(orthographic=orthographic, phonological=phonological, device=device)
     return None
 
 
@@ -233,9 +218,7 @@ def mock_bridge_tokenizer():
 @pytest.fixture
 def bridge_dataset(dataset_config, mock_bridge_tokenizer, mock_gcs_client):
     """Create a BridgeDataset instance with mocked components."""
-    with patch(
-        "bridge.domain.dataset.BridgeTokenizer", return_value=mock_bridge_tokenizer
-    ) as mock:
+    with patch("bridge.domain.dataset.BridgeTokenizer", return_value=mock_bridge_tokenizer):
         dataset = BridgeDataset(dataset_config, mock_gcs_client)
         dataset.mock_tokenizer = mock_bridge_tokenizer
         return dataset
@@ -248,7 +231,6 @@ def test_dataset_initialization(bridge_dataset, mock_dataset_file):
     assert "cat" in bridge_dataset.words
     assert "dog" in bridge_dataset.words
     assert bridge_dataset.device == torch.device("cpu")
-    assert len(bridge_dataset.encoding_cache) == 0
 
 
 def test_dataset_length(bridge_dataset):
@@ -345,7 +327,7 @@ def test_device_movement(dataset_config, mock_gcs_client):
     if not torch.cuda.is_available():
         pytest.skip("CUDA not available")
 
-    with patch("bridge.domain.dataset.BridgeTokenizer") as mock_tokenizer:
+    with patch("bridge.domain.dataset.BridgeTokenizer"):
         dataset = BridgeDataset(dataset_config, mock_gcs_client)
         assert dataset.device.type == "cpu"
 
@@ -364,9 +346,7 @@ def test_batch_consistency(bridge_dataset):
         single.orthographic.enc_input_ids,
         batch.orthographic.enc_input_ids,
     )
-    assert torch.equal(
-        single.phonological.enc_pad_mask, batch.phonological.enc_pad_mask
-    )
+    assert torch.equal(single.phonological.enc_pad_mask, batch.phonological.enc_pad_mask)
 
 
 def test_shuffle_functionality(bridge_dataset):
@@ -377,21 +357,6 @@ def test_shuffle_functionality(bridge_dataset):
     assert len(bridge_dataset.words) == len(original_words)
     assert set(bridge_dataset.words) == set(original_words)
     assert bridge_dataset.words[1:] == original_words[1:]
-    assert len(bridge_dataset.encoding_cache) == 0  # Cache should be cleared
-
-
-# TODO: fix this once cache logic is fixed
-# def test_memory_management(dataset_config, mock_bridge_tokenizer):
-#     """Test memory management with cache size limits."""
-#     with patch("bridge.domain.dataset.BridgeTokenizer", return_value=mock_bridge_tokenizer):
-#         dataset = BridgeDataset(dataset_config, cache_size=1)
-
-#         # Access items to fill cache
-#         _ = dataset[0]
-#         _ = dataset[1]
-
-#         # Only most recent should be cached
-#         assert len(dataset.encoding_cache) == 1
 
 
 def test_data_validation(tmp_path, dataset_config, mock_gcs_client):
@@ -407,16 +372,12 @@ def test_data_validation(tmp_path, dataset_config, mock_gcs_client):
         _ = BridgeDataset(dataset_config, mock_gcs_client)
 
 
-def test_error_handling_invalid_encodings(
-    dataset_config, mock_bridge_tokenizer, mock_gcs_client
-):
+def test_error_handling_invalid_encodings(dataset_config, mock_bridge_tokenizer, mock_gcs_client):
     """Test handling of invalid encodings from tokenizer."""
     # For this test, we need to patch both the BridgeTokenizer class constructor
     # and the _encode_single_word method in BridgeDataset to bypass the lru_cache
 
-    with patch(
-        "bridge.domain.dataset.BridgeTokenizer", return_value=mock_bridge_tokenizer
-    ):
+    with patch("bridge.domain.dataset.BridgeTokenizer", return_value=mock_bridge_tokenizer):
         # Create the dataset
         dataset = BridgeDataset(dataset_config, mock_gcs_client)
 
@@ -426,27 +387,6 @@ def test_error_handling_invalid_encodings(
             # Now accessing the item should raise RuntimeError
             with pytest.raises(RuntimeError, match="Failed to encode word"):
                 _ = dataset[0]
-
-
-def test_cache_path_handling(tmp_path, dataset_config, mock_gcs_client):
-    """Test cache directory handling."""
-    # Ensure BridgeDataset correctly handles existing cache paths
-    cache_path = tmp_path / "test_cache"
-    assert not os.path.exists(cache_path)
-    os.makedirs(cache_path)
-    assert os.path.exists(cache_path)
-    _ = BridgeDataset(dataset_config, mock_gcs_client, cache_path=str(cache_path))
-    os.removedirs(cache_path)
-    assert not os.path.exists(cache_path)
-    # Ensure BridgeDataset correctly creates new cache directories
-    invalid_cache_path = tmp_path / "invalid/path/that/doesnt/exist"
-    assert not os.path.exists(invalid_cache_path)
-    _ = BridgeDataset(
-        dataset_config, mock_gcs_client, cache_path=str(invalid_cache_path)
-    )
-    assert os.path.exists(invalid_cache_path)
-    os.removedirs(invalid_cache_path)
-    assert not os.path.exists(invalid_cache_path)
 
 
 def test_integration_with_training_pipeline(bridge_dataset):
@@ -475,9 +415,7 @@ def test_integration_with_training_pipeline(bridge_dataset):
     )
 
 
-def test_vocabulary_size_properties(
-    bridge_dataset, mock_bridge_tokenizer, mock_gcs_client
-):
+def test_vocabulary_size_properties(bridge_dataset, mock_bridge_tokenizer, mock_gcs_client):
     """Test the vocabulary size properties."""
     # Setup mock to return expected vocabulary sizes
     mock_bridge_tokenizer.get_vocabulary_sizes.return_value = {
@@ -486,9 +424,7 @@ def test_vocabulary_size_properties(
     }
 
     # Create new dataset with our controlled mock
-    with patch(
-        "bridge.domain.dataset.BridgeTokenizer", return_value=mock_bridge_tokenizer
-    ):
+    with patch("bridge.domain.dataset.BridgeTokenizer", return_value=mock_bridge_tokenizer):
         dataset_config = MockDatasetConfig(
             dataset_filepath=bridge_dataset.dataset_filepath, device="cpu"
         )

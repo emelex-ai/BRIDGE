@@ -1,26 +1,25 @@
-import json
-import os
 import gc
-from typing import Union
+import json
+import logging
+import os
+import sys
 import time
 
 import torch
 from tqdm import tqdm
-import logging
 
 from bridge.application.training.ortho_metrics import calculate_orth_metrics
 from bridge.application.training.phon_metrics import calculate_phon_metrics
-from bridge.domain.datamodels import TrainingConfig, EncodingComponent
+from bridge.domain.datamodels import EncodingComponent, TrainingConfig
 from bridge.domain.dataset import BridgeDataset
 from bridge.domain.model import Model
-from bridge.utils import device_manager
 from bridge.infra.metrics.metrics_logger import MetricsLogger
-import sys
+from bridge.utils import device_manager
+
 min_interval = 1
 
 
 class TrainingPipeline:
-
     def __init__(
         self,
         model: Model,
@@ -61,9 +60,7 @@ class TrainingPipeline:
         ]
         val_slices = [
             slice(i, min(i + self.training_config.batch_size_val, len(self.dataset)))
-            for i in range(
-                cutpoint, len(self.dataset), self.training_config.batch_size_val
-            )
+            for i in range(cutpoint, len(self.dataset), self.training_config.batch_size_val)
         ]
         return train_slices, val_slices
 
@@ -112,7 +109,7 @@ class TrainingPipeline:
         logits: dict[str, torch.Tensor],
         orthography: EncodingComponent,
         phonology: EncodingComponent,
-    ) -> dict[str, Union[torch.Tensor, None]]:
+    ) -> dict[str, torch.Tensor | None]:
         # Initialize losses to None
         orth_loss = None
         phon_loss = None
@@ -168,9 +165,7 @@ class TrainingPipeline:
         batch_slice: slice,
         calculate_metrics: bool = False,
     ) -> dict:
-        num_chunks = (
-            self.training_config.num_chunks if self.training_config.num_chunks else 1
-        )
+        num_chunks = self.training_config.num_chunks if self.training_config.num_chunks else 1
         # Fast path when not using accumulated gradients
         if num_chunks == 1:
             # Zero gradients
@@ -239,9 +234,7 @@ class TrainingPipeline:
             self.optimizer.zero_grad()
 
         if calculate_metrics:
-            accumulated_metrics.update(
-                self.compute_metrics(logits, orthography, phonology)
-            )
+            accumulated_metrics.update(self.compute_metrics(logits, orthography, phonology))
 
         if self.metrics_logger.metrics_config.batch_metrics:
             self.metrics_logger.log_metrics(accumulated_metrics, "BATCH")
@@ -267,11 +260,9 @@ class TrainingPipeline:
         self.model.train()
         start = time.time()
         last_update_time = time.time()
-        cutpoint = int(len(self.dataset) * self.training_config.train_test_split)
-        # self.dataset.shuffle(cutpoint)
         progress_bar = tqdm(
             self.train_slices,
-            desc=f"Training Epoch {epoch+1}",
+            desc=f"Training Epoch {epoch + 1}",
             mininterval=min_interval,
         )
         total_metrics = {}
@@ -298,9 +289,7 @@ class TrainingPipeline:
                 last_update_time = current_time
             if not total_metrics:
                 total_metrics = {
-                    key: value
-                    for key, value in metrics.items()
-                    if not isinstance(value, str)
+                    key: value for key, value in metrics.items() if not isinstance(value, str)
                 }
             else:
                 for key in total_metrics.keys():
@@ -321,13 +310,13 @@ class TrainingPipeline:
         last_update_time = time.time()
         progress_bar = tqdm(
             self.val_slices,
-            desc=f"Validating Epoch {epoch+1}",
+            desc=f"Validating Epoch {epoch + 1}",
             mininterval=min_interval,
         )
 
         with torch.no_grad():
             total_metrics = {}
-            for step, batch_slice in enumerate(progress_bar):
+            for _step, batch_slice in enumerate(progress_bar):
                 metrics = self.single_step(
                     self.dataset,
                     batch_slice,
@@ -371,17 +360,15 @@ class TrainingPipeline:
                 i,
                 min(i + self.training_config.batch_size_train, len(self.test_dataset)),
             )
-            for i in range(
-                0, len(self.test_dataset), self.training_config.batch_size_train
-            )
+            for i in range(0, len(self.test_dataset), self.training_config.batch_size_train)
         ]
         progress_bar = tqdm(
-            test_slices, desc=f"Testing Epoch {epoch+1}", mininterval=min_interval
+            test_slices, desc=f"Testing Epoch {epoch + 1}", mininterval=min_interval
         )
 
         with torch.no_grad():
             total_metrics = {}
-            for step, batch_slice in enumerate(progress_bar):
+            for _step, batch_slice in enumerate(progress_bar):
                 metrics = self.single_step(
                     self.test_dataset,
                     batch_slice,
@@ -400,9 +387,7 @@ class TrainingPipeline:
                     last_update_time = current_time
                 if not total_metrics:
                     total_metrics = {
-                        key: value
-                        for key, value in metrics.items()
-                        if not isinstance(value, str)
+                        key: value for key, value in metrics.items() if not isinstance(value, str)
                     }
                 else:
                     for key in total_metrics.keys():
@@ -432,10 +417,7 @@ class TrainingPipeline:
 
     def save_model(self, epoch: int, run_name: str) -> None:
         if (epoch + 1) % self.training_config.save_every == 0:
-
-            model_path = (
-                f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}.pth"
-            )
+            model_path = f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}.pth"
             torch.save(
                 {
                     "model_config": self.model.model_config,
@@ -456,14 +438,15 @@ class TrainingPipeline:
 
     def load_model(self, model_path: str):
         try:
-            import bridge.domain.datamodels.model_config as old_module_reference
-            import bridge.domain.datamodels as bridge_datamodels  
+            import bridge
             import bridge.domain as bridge_domain
-            import bridge  
-            sys.modules['src'] = bridge
-            sys.modules['src.domain'] = bridge_domain
-            sys.modules['src.domain.datamodels'] = bridge_datamodels
-            sys.modules['src.domain.datamodels.model_config'] = old_module_reference
+            import bridge.domain.datamodels as bridge_datamodels
+            import bridge.domain.datamodels.model_config as old_module_reference
+
+            sys.modules["src"] = bridge
+            sys.modules["src.domain"] = bridge_domain
+            sys.modules["src.domain.datamodels"] = bridge_datamodels
+            sys.modules["src.domain.datamodels.model_config"] = old_module_reference
 
             checkpoint = torch.load(model_path, weights_only=False)
             self.model.load_state_dict(checkpoint["model_state_dict"])
@@ -475,14 +458,10 @@ class TrainingPipeline:
                     "pretraining" not in self.training_config.checkpoint_path
                     or "finetuning" not in self.training_config.checkpoint_path
                 ):
-                    self.start_epoch = (
-                        checkpoint["epoch"] + 1
-                    )  # Start from the next epoch
+                    self.start_epoch = checkpoint["epoch"] + 1  # Start from the next epoch
                     self.logger.info(f"Resuming training from epoch {self.start_epoch}")
             else:
-                self.logger.warning(
-                    "Checkpoint doesn't contain epoch information, starting from 0"
-                )
+                self.logger.warning("Checkpoint doesn't contain epoch information, starting from 0")
                 self.start_epoch = 0
             self.start_epoch = 0
 
@@ -509,6 +488,6 @@ class TrainingPipeline:
 
         new_state = self.model.state_dict()
         for key, pretrained_weight in filtered_state.items():
-            assert torch.equal(
-                new_state[key], pretrained_weight
-            ), f"Weight transfer failed for {key}"
+            assert torch.equal(new_state[key], pretrained_weight), (
+                f"Weight transfer failed for {key}"
+            )

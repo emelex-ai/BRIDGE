@@ -1,7 +1,4 @@
-from pydantic import BaseModel, Field, field_validator, ValidationInfo
-from typing import Optional
-
-from pydantic import ConfigDict
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 
 class ModelConfig(BaseModel):
@@ -13,7 +10,7 @@ class ModelConfig(BaseModel):
     d_model: int = Field(default=64)
     nhead: int = Field(default=2)
     d_embedding: int = Field(default=1)
-    seed: Optional[int] = Field(default=None)
+    seed: int | None = Field(default=None)
 
     @field_validator("d_model")
     def validate_d_model(cls, v, info: ValidationInfo):

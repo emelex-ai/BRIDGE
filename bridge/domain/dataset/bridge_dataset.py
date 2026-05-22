@@ -3,19 +3,19 @@ BridgeDataset: A dataset class for managing orthographic and phonological data u
 the unified BridgeEncoding dataclass and BridgeTokenizer for processing.
 """
 
-import os
+import logging
 import pickle
 import random
-import logging
-from typing import Union, Any
-from pathlib import Path
-from collections import OrderedDict
 from functools import lru_cache
+from pathlib import Path
+from typing import Any
+
 import pandas as pd
-from bridge.domain.datamodels import DatasetConfig, BridgeEncoding
-from bridge.utils import device_manager
-from bridge.domain.dataset import BridgeTokenizer
+
+from bridge.domain.datamodels import BridgeEncoding, DatasetConfig
+from bridge.domain.dataset.bridge_tokenizer import BridgeTokenizer
 from bridge.infra.clients.gcp.gcs_client import GCSClient
+from bridge.utils import device_manager
 
 logger = logging.getLogger(__name__)
 
@@ -30,48 +30,31 @@ class BridgeDataset:
         self,
         dataset_config: DatasetConfig,
         gcs_client: GCSClient,
-        cache_path: str | None = "data/.cache",
-        cache_size: int = 1000,
     ):
         """
         Initialize the dataset with configuration and setup tokenization.
 
         Args:
             dataset_config: Configuration object containing dataset parameters
-            device: Optional device specification for tensor placement
-            cache_path: Optional path for caching tokenized data
-            cache_size: Maximum number of encodings to keep in memory
+            gcs_client: GCS client for reading datasets from Google Cloud Storage
         """
-        self.cache_path = cache_path
         self.dataset_config = dataset_config
         self.gcs_client = gcs_client
-        # Initialize device - prioritize config device over parameter
         self.device = device_manager.device
 
-        # Initialize tokenizer with matching device
         self.tokenizer = BridgeTokenizer(
             phoneme_cache_size=getattr(dataset_config, "tokenizer_cache_size", 10000),
             custom_cmudict_path=dataset_config.custom_cmudict_path,
         )
 
-        # Store vocabulary sizes for model initialization
         vocab_sizes = self.tokenizer.get_vocabulary_sizes()
         self.orthographic_vocabulary_size = vocab_sizes["orthographic"]
         self.phonological_vocabulary_size = vocab_sizes["phonological"]
 
-        # Setup LRU cache for encodings
-        self.encoding_cache = OrderedDict()
-        self.max_cache_size = cache_size
         self.dataset_filepath = dataset_config.dataset_filepath
-        # Load raw data into a DataFrame
         raw_df = self._load_raw_dataframe(self.dataset_filepath)
-        # Process DataFrame into validated word list
         self.words = self._process_raw_dataframe(raw_df)
         logger.info(f"Loaded {len(self.words)} valid words.")
-
-        # Create cache directory if needed
-        if cache_path and not os.path.exists(cache_path):
-            os.makedirs(cache_path, exist_ok=True)
 
     def _load_raw_dataframe(self, path: str) -> pd.DataFrame:
         """
@@ -85,10 +68,9 @@ class BridgeDataset:
             return self._read_gcs_csv(bucket, blob)
         ext = Path(path).suffix.lower()
         if ext == ".csv":
-            return pd.read_csv(path, 
-                               keep_default_na=False, 
-                               low_memory=False,
-                               dtype={"word_raw": str})
+            return pd.read_csv(
+                path, keep_default_na=False, low_memory=False, dtype={"word_raw": str}
+            )
         if ext == ".pkl":
             data = pickle.load(open(path, "rb"))
             if not isinstance(data, dict):
@@ -128,7 +110,7 @@ class BridgeDataset:
             valid.append(word)
         return valid
 
-    @lru_cache(maxsize=128)
+    @lru_cache(maxsize=128)  # noqa: B019 - dataset instance lifetime == one training run, bounded memory
     def _encode_single_word(self, word: str) -> BridgeEncoding | None:
         """
         Encode a single word using the tokenizer with caching.
@@ -176,22 +158,13 @@ class BridgeDataset:
 
         return batch_encoding
 
-    # TODO: Work on encoding cache logic
-    def _get_encoding(self, word: Union[str, list[str]]) -> BridgeEncoding | None:
+    def _get_encoding(self, word: str | list[str]) -> BridgeEncoding | None:
         """
-        Get encoding for a word, using cache when available.
+        Get encoding for a single word or a list of words.
 
-        Args:
-            word: Word to retrieve encoding for
-
-        Returns:
-            BridgeEncoding object or None if not available
+        Single-word encodings are memoized via the `lru_cache` on
+        `_encode_single_word`.
         """
-        # Check in-memory cache first
-        # if word in self.encoding_cache:
-        #     return self.encoding_cache[word]
-
-        # Encode word if not in cache
         if isinstance(word, str):
             return self._encode_single_word(word)
         elif isinstance(word, list):
@@ -199,19 +172,11 @@ class BridgeDataset:
         else:
             raise TypeError("Input must be a string or a list of strings")
 
-        # if encoding is not None:
-        #     # Update cache with LRU policy
-        #     if len(self.encoding_cache) >= self.max_cache_size:
-        #         self.encoding_cache.popitem(last=False)
-        #     self.encoding_cache[word] = encoding
-
     def __len__(self) -> int:
         """Return the number of valid words in the dataset."""
         return len(self.words)
 
-    def __getitem__(
-        self, idx: Union[int, slice, str, list[str]]
-    ) -> dict[str, dict[str, Any]]:
+    def __getitem__(self, idx: int | slice | str | list[str]) -> dict[str, dict[str, Any]]:
         """
         Retrieve encoded data for specified index or slice.
         Maintains compatibility with training pipeline expectations.
@@ -275,7 +240,6 @@ class BridgeDataset:
     def shuffle(self, cutoff: int) -> None:
         """
         Shuffle the dataset up to the specified cutoff point.
-        Maintains cache consistency during shuffling.
 
         Args:
             cutoff: Index to shuffle up to (exclusive)
@@ -283,17 +247,11 @@ class BridgeDataset:
         if cutoff > len(self.words):
             raise ValueError(f"Cutoff {cutoff} exceeds dataset size {len(self.words)}")
 
-        # Store original order for validation
         original_words = self.words.copy()
 
-        # Shuffle words up to cutoff
         shuffled_section = self.words[:cutoff]
         random.shuffle(shuffled_section)
         self.words = shuffled_section + self.words[cutoff:]
 
-        # Validate no words were lost
         assert len(self.words) == len(original_words)
         assert set(self.words) == set(original_words)
-
-        # Clear cache since order changed
-        self.encoding_cache.clear()

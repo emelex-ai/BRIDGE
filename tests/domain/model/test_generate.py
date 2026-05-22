@@ -1,12 +1,13 @@
 import pytest
 import torch
+
 from bridge.domain.datamodels import (
-    ModelConfig,
-    GenerationOutput,
     BridgeEncoding,
+    GenerationOutput,
+    ModelConfig,
 )
-from bridge.domain.dataset import BridgeDataset, BridgeTokenizer
 from bridge.domain.datamodels.encodings import EncodingComponent
+from bridge.domain.dataset import BridgeDataset, BridgeTokenizer
 
 tokenizer = BridgeTokenizer()
 PHON_BOS_ID = tokenizer.phon_bos_id
@@ -122,7 +123,7 @@ class MockDatasetConfig:
     """Mock DatasetConfig with the attributes needed for tests."""
 
     def __init__(self):
-        self.dataset_filepath = "data/data.csv"
+        self.dataset_filepath = "tests/domain/model/data/data.csv"
         self.device = "cpu"
         self.phoneme_cache_size = 10000
         self.dimension_phon_repr = 31
@@ -190,18 +191,12 @@ class MockModel:
         if pathway == "o2p":
             if orth_enc_input is None:
                 raise ValueError("Expected 2D input tensor for o2p pathway")
-            if (
-                not isinstance(orth_enc_input, torch.Tensor)
-                or orth_enc_input.dim() != 2
-            ):
+            if not isinstance(orth_enc_input, torch.Tensor) or orth_enc_input.dim() != 2:
                 raise ValueError("Expected 2D input tensor")
             # Change validation order to match test expectations
             if orth_enc_pad_mask is not None and orth_enc_pad_mask.dtype != torch.bool:
                 raise ValueError("orth_enc_pad_mask must have dtype torch.bool")
-            if (
-                orth_enc_pad_mask is None
-                or orth_enc_pad_mask.shape != orth_enc_input.shape
-            ):
+            if orth_enc_pad_mask is None or orth_enc_pad_mask.shape != orth_enc_input.shape:
                 raise ValueError("Input and mask shapes must match")
             batch_size = orth_enc_input.size(0)
 
@@ -231,12 +226,8 @@ class MockModel:
             # Check if feature indices are valid
             for batch in phon_enc_input:
                 for token in batch:
-                    if torch.any(
-                        token >= self.dataset_config.phonological_vocabulary_size
-                    ):
-                        raise ValueError(
-                            "Feature indices must be less than vocabulary size"
-                        )
+                    if torch.any(token >= self.dataset_config.phonological_vocabulary_size):
+                        raise ValueError("Feature indices must be less than vocabulary size")
             batch_size = len(phon_enc_input)
 
         elif pathway == "o2o":
@@ -269,16 +260,10 @@ class MockModel:
             # Check if feature indices are valid
             for batch in phon_enc_input:
                 for token in batch:
-                    if torch.any(
-                        token >= self.dataset_config.phonological_vocabulary_size
-                    ):
-                        raise ValueError(
-                            "Feature indices must be less than vocabulary size"
-                        )
+                    if torch.any(token >= self.dataset_config.phonological_vocabulary_size):
+                        raise ValueError("Feature indices must be less than vocabulary size")
             if torch.any(orth_enc_input >= self.dataset.orthographic_vocabulary_size):
-                raise ValueError(
-                    "Orthographic tokens must be less than vocabulary size"
-                )
+                raise ValueError("Orthographic tokens must be less than vocabulary size")
             batch_size = orth_enc_input.size(0)
 
         else:
@@ -317,29 +302,23 @@ class MockModel:
                 for step in range(5):  # 5 steps per sequence
                     # Create tensor and normalize
                     torch.manual_seed(step + 100)  # Consistent seed for each position
-                    step_probs = torch.rand(
-                        self.dataset_config.phonological_vocabulary_size
-                    )
+                    step_probs = torch.rand(self.dataset_config.phonological_vocabulary_size)
                     step_probs = step_probs / step_probs.sum()  # Normalize to sum to 1
                     base_probs.append(step_probs)
 
                 # Use the same probs for all batch items
                 phon_probs = []
-                for b in range(batch_size):
+                for _b in range(batch_size):
                     phon_probs.append(base_probs)
             else:
                 # In stochastic mode, use different probs for each batch item
                 phon_probs = []
-                for b in range(batch_size):
+                for _b in range(batch_size):
                     seq_probs = []
-                    for step in range(5):  # 5 steps per sequence
+                    for _step in range(5):  # 5 steps per sequence
                         # Create tensor and normalize
-                        step_probs = torch.rand(
-                            self.dataset_config.phonological_vocabulary_size
-                        )
-                        step_probs = (
-                            step_probs / step_probs.sum()
-                        )  # Normalize to sum to 1
+                        step_probs = torch.rand(self.dataset_config.phonological_vocabulary_size)
+                        step_probs = step_probs / step_probs.sum()  # Normalize to sum to 1
                         seq_probs.append(step_probs)
                     phon_probs.append(seq_probs)
 
@@ -358,18 +337,16 @@ class MockModel:
 
                 # Use the same vectors for all batch items
                 phon_vecs = []
-                for b in range(batch_size):
+                for _b in range(batch_size):
                     phon_vecs.append(base_vecs)
             else:
                 # In stochastic mode, use different vectors
                 phon_vecs = []
-                for b in range(batch_size):
+                for _b in range(batch_size):
                     seq_vecs = []
-                    for step in range(5):
+                    for _step in range(5):
                         # Create binary tensor (only 0s and 1s)
-                        random_bits = torch.rand(
-                            self.dataset_config.dimension_phon_repr
-                        )
+                        random_bits = torch.rand(self.dataset_config.dimension_phon_repr)
                         binary_vec = (random_bits > 0.5).to(torch.float)
                         seq_vecs.append(binary_vec)
                     phon_vecs.append(seq_vecs)
@@ -387,14 +364,14 @@ class MockModel:
                     torch.tensor([2, 7]),
                     torch.tensor([PHON_EOS_ID]),  # EOS
                 ]
-                for b in range(batch_size):
+                for _b in range(batch_size):
                     phon_tokens.append(base_tokens)
             else:
                 # In stochastic mode, sequences should be different
                 phon_tokens = []
-                for b in range(batch_size):
+                for _b in range(batch_size):
                     tokens = [torch.tensor([PHON_BOS_ID])]  # Start with BOS
-                    for i in range(3):  # Add 3 phoneme tokens
+                    for _i in range(3):  # Add 3 phoneme tokens
                         n_features = torch.randint(1, 4, (1,)).item()
                         features = torch.randint(0, 30, (n_features,))
                         tokens.append(features)
@@ -417,20 +394,16 @@ class MockModel:
 
                 # Use the same probs for all batch items
                 orth_probs = []
-                for b in range(batch_size):
+                for _b in range(batch_size):
                     orth_probs.append(base_probs)
             else:
                 # In stochastic mode, use different probs for each batch item
                 orth_probs = []
-                for b in range(batch_size):
+                for _b in range(batch_size):
                     seq_probs = []
-                    for step in range(5):
-                        step_probs = torch.rand(
-                            self.dataset.orthographic_vocabulary_size
-                        )
-                        step_probs = (
-                            step_probs / step_probs.sum()
-                        )  # Normalize to sum to 1
+                    for _step in range(5):
+                        step_probs = torch.rand(self.dataset.orthographic_vocabulary_size)
+                        step_probs = step_probs / step_probs.sum()  # Normalize to sum to 1
                         seq_probs.append(step_probs)
                     orth_probs.append(seq_probs)
 
@@ -445,9 +418,7 @@ class MockModel:
                 orth_tokens = torch.cat(
                     [
                         torch.zeros((batch_size, 1), dtype=torch.long),  # BOS
-                        torch.randint(
-                            2, 10, (batch_size, 3), dtype=torch.long
-                        ),  # Content
+                        torch.randint(2, 10, (batch_size, 3), dtype=torch.long),  # Content
                         torch.ones((batch_size, 1), dtype=torch.long),  # EOS
                     ],
                     dim=1,
@@ -477,9 +448,7 @@ class MockModel:
                 deterministic=deterministic,
             )
         elif pathway == "p2o":
-            phon_input = [
-                [torch.tensor([PHON_BOS_ID]), torch.tensor([PHON_EOS_ID])]
-            ] * batch_size
+            phon_input = [[torch.tensor([PHON_BOS_ID]), torch.tensor([PHON_EOS_ID])]] * batch_size
             result = self._generate(
                 pathway="p2o",
                 orth_enc_input=None,
@@ -498,9 +467,7 @@ class MockModel:
                 deterministic=deterministic,
             )
         elif pathway == "p2p":
-            phon_input = [
-                [torch.tensor([PHON_BOS_ID]), torch.tensor([PHON_EOS_ID])]
-            ] * batch_size
+            phon_input = [[torch.tensor([PHON_BOS_ID]), torch.tensor([PHON_EOS_ID])]] * batch_size
             result = self._generate(
                 pathway="p2p",
                 orth_enc_input=None,
@@ -510,9 +477,7 @@ class MockModel:
                 deterministic=deterministic,
             )
         elif pathway == "op2op":
-            phon_input = [
-                [torch.tensor([PHON_BOS_ID]), torch.tensor([PHON_EOS_ID])]
-            ] * batch_size
+            phon_input = [[torch.tensor([PHON_BOS_ID]), torch.tensor([PHON_EOS_ID])]] * batch_size
             result = self._generate(
                 pathway="op2op",
                 orth_enc_input=torch.tensor([[0, 1]] * batch_size),
@@ -594,9 +559,7 @@ def test_o2p_basic_generation(model, o2p_sample_input):
         # Verify EOS token appears
         phon_eos_id = model.dataset.tokenizer.phon_eos_id
         eos_positions = [
-            i
-            for i, tokens in enumerate(output["phon_tokens"][b])
-            if phon_eos_id in tokens
+            i for i, tokens in enumerate(output["phon_tokens"][b]) if phon_eos_id in tokens
         ]
         assert len(eos_positions) == 1, "Should have exactly one EOS token"
 
@@ -628,14 +591,12 @@ def test_o2p_deterministic_consistency(model, o2p_sample_input):
     )
 
     # Compare outputs
-    assert torch.allclose(
-        output1["global_encoding"], output2["global_encoding"], atol=1e-5
-    )
+    assert torch.allclose(output1["global_encoding"], output2["global_encoding"], atol=1e-5)
 
     batch_size = len(output1["phon_tokens"])
     for b in range(batch_size):
         assert len(output1["phon_tokens"][b]) == len(output2["phon_tokens"][b])
-        for t1, t2 in zip(output1["phon_tokens"][b], output2["phon_tokens"][b]):
+        for t1, t2 in zip(output1["phon_tokens"][b], output2["phon_tokens"][b], strict=False):
             assert torch.allclose(t1, t2, atol=1e-5)
 
 
@@ -663,7 +624,7 @@ def test_o2p_stochastic_sampling(model, o2p_sample_input):
     for i in range(num_samples - 1):
         for b in range(len(outputs[i]["phon_tokens"])):
             for t1, t2 in zip(
-                outputs[i]["phon_tokens"][b], outputs[i + 1]["phon_tokens"][b]
+                outputs[i]["phon_tokens"][b], outputs[i + 1]["phon_tokens"][b], strict=False
             ):
                 if not t1.shape == t2.shape:
                     different_sequences = True
@@ -706,17 +667,17 @@ def test_o2p_batch_consistency(model, dataset_config):
 
     # Verify all batch items produce identical output
     for b in range(1, 3):
-        assert len(batch_output["phon_tokens"][0]) == len(
-            batch_output["phon_tokens"][b]
-        )
+        assert len(batch_output["phon_tokens"][0]) == len(batch_output["phon_tokens"][b])
         for t1, t2 in zip(
-            batch_output["phon_tokens"][0], batch_output["phon_tokens"][b]
+            batch_output["phon_tokens"][0], batch_output["phon_tokens"][b], strict=False
         ):
             assert torch.allclose(t1, t2, atol=1e-5)
 
     # Verify batch processing matches single sample processing
     assert len(single_output["phon_tokens"][0]) == len(batch_output["phon_tokens"][0])
-    for t1, t2 in zip(single_output["phon_tokens"][0], batch_output["phon_tokens"][0]):
+    for t1, t2 in zip(
+        single_output["phon_tokens"][0], batch_output["phon_tokens"][0], strict=False
+    ):
         assert torch.allclose(t1, t2, atol=1e-5)
 
 
@@ -743,9 +704,7 @@ def test_o2p_input_validation(model):
         )
 
     # Test incorrect type for orth_enc_pad_mask
-    with pytest.raises(
-        ValueError, match="orth_enc_pad_mask must have dtype torch.bool"
-    ):
+    with pytest.raises(ValueError, match="orth_enc_pad_mask must have dtype torch.bool"):
         model._generate(
             pathway="o2p",
             orth_enc_input=torch.randint(0, 10, (2, 5)),
@@ -830,15 +789,13 @@ def test_p2o_deterministic_consistency(model, p2o_sample_input):
     )
 
     # Compare outputs
-    assert torch.allclose(
-        output1["global_encoding"], output2["global_encoding"], atol=1e-5
-    )
+    assert torch.allclose(output1["global_encoding"], output2["global_encoding"], atol=1e-5)
     assert torch.allclose(output1["orth_tokens"], output2["orth_tokens"], atol=1e-5)
 
     # Compare probability distributions
     for b in range(len(output1["orth_probs"])):
         assert len(output1["orth_probs"][b]) == len(output2["orth_probs"][b])
-        for p1, p2 in zip(output1["orth_probs"][b], output2["orth_probs"][b]):
+        for p1, p2 in zip(output1["orth_probs"][b], output2["orth_probs"][b], strict=False):
             assert torch.allclose(p1, p2, atol=1e-5)
 
 
@@ -869,9 +826,7 @@ def test_p2o_stochastic_sampling(model, p2o_sample_input):
         if not outputs[i]["orth_tokens"].shape == outputs[i + 1]["orth_tokens"].shape:
             different_sequences = True
             break
-        if not torch.allclose(
-            outputs[i]["orth_tokens"], outputs[i + 1]["orth_tokens"], atol=1e-5
-        ):
+        if not torch.allclose(outputs[i]["orth_tokens"], outputs[i + 1]["orth_tokens"], atol=1e-5):
             different_sequences = True
             break
     assert different_sequences, "Stochastic sampling should produce different sequences"
@@ -897,9 +852,7 @@ def test_p2o_input_validation(model, dataset_config):
     valid_mask = torch.zeros((2, 3), dtype=torch.bool)
 
     # Test with invalid orthographic input
-    with pytest.raises(
-        ValueError, match="p2o pathway expects orthographic inputs.*to be None"
-    ):
+    with pytest.raises(ValueError, match="p2o pathway expects orthographic inputs.*to be None"):
         model._generate(
             pathway="p2o",
             orth_enc_input=torch.randn(2, 5),  # Should be None
@@ -980,7 +933,9 @@ def test_p2o_batch_consistency(model, dataset_config):
             batch_output["orth_tokens"][0], batch_output["orth_tokens"][b], atol=1e-5
         )
         assert len(batch_output["orth_probs"][0]) == len(batch_output["orth_probs"][b])
-        for p1, p2 in zip(batch_output["orth_probs"][0], batch_output["orth_probs"][b]):
+        for p1, p2 in zip(
+            batch_output["orth_probs"][0], batch_output["orth_probs"][b], strict=False
+        ):
             assert torch.allclose(p1, p2, atol=1e-5)
 
     assert torch.allclose(
@@ -1071,19 +1026,17 @@ def test_p2p_deterministic_consistency(model, p2p_sample_input):
     )
 
     # Compare outputs
-    assert torch.allclose(
-        output1["global_encoding"], output2["global_encoding"], atol=1e-5
-    )
+    assert torch.allclose(output1["global_encoding"], output2["global_encoding"], atol=1e-5)
 
     batch_size = len(output1["phon_tokens"])
     for b in range(batch_size):
         assert len(output1["phon_tokens"][b]) == len(output2["phon_tokens"][b])
-        for t1, t2 in zip(output1["phon_tokens"][b], output2["phon_tokens"][b]):
+        for t1, t2 in zip(output1["phon_tokens"][b], output2["phon_tokens"][b], strict=False):
             assert torch.allclose(t1, t2, atol=1e-5)
 
         # Compare probability distributions
         assert len(output1["phon_probs"][b]) == len(output2["phon_probs"][b])
-        for p1, p2 in zip(output1["phon_probs"][b], output2["phon_probs"][b]):
+        for p1, p2 in zip(output1["phon_probs"][b], output2["phon_probs"][b], strict=False):
             assert torch.allclose(p1, p2, atol=1e-5)
 
 
@@ -1113,7 +1066,7 @@ def test_p2p_stochastic_sampling(model, p2p_sample_input):
     for i in range(num_samples - 1):
         for b in range(len(outputs[i]["phon_tokens"])):
             for t1, t2 in zip(
-                outputs[i]["phon_tokens"][b], outputs[i + 1]["phon_tokens"][b]
+                outputs[i]["phon_tokens"][b], outputs[i + 1]["phon_tokens"][b], strict=False
             ):
                 if not t1.shape == t2.shape:
                     different_sequences = True
@@ -1175,49 +1128,45 @@ def test_p2p_batch_consistency(model, dataset_config):
     # Verify all batch items produce identical outputs since they're the same input
     for b in range(1, 3):  # Compare each batch item to the first one
         # Check sequence lengths match
-        assert len(batch_output["phon_tokens"][0]) == len(
-            batch_output["phon_tokens"][b]
-        )
+        assert len(batch_output["phon_tokens"][0]) == len(batch_output["phon_tokens"][b])
 
         # Check each phoneme's features match
         for t1, t2 in zip(
-            batch_output["phon_tokens"][0], batch_output["phon_tokens"][b]
+            batch_output["phon_tokens"][0], batch_output["phon_tokens"][b], strict=False
         ):
-            assert torch.allclose(
-                t1, t2, atol=1e-5
-            ), f"Batch item {b} differs from first batch item"
+            assert torch.allclose(t1, t2, atol=1e-5), (
+                f"Batch item {b} differs from first batch item"
+            )
 
         # Check probability distributions match
         assert len(batch_output["phon_probs"][0]) == len(batch_output["phon_probs"][b])
-        for p1, p2 in zip(batch_output["phon_probs"][0], batch_output["phon_probs"][b]):
-            assert torch.allclose(
-                p1, p2, atol=1e-5
-            ), f"Probability distributions differ in batch item {b}"
+        for p1, p2 in zip(
+            batch_output["phon_probs"][0], batch_output["phon_probs"][b], strict=False
+        ):
+            assert torch.allclose(p1, p2, atol=1e-5), (
+                f"Probability distributions differ in batch item {b}"
+            )
 
         # Check feature vectors match
         assert len(batch_output["phon_vecs"][0]) == len(batch_output["phon_vecs"][b])
-        for v1, v2 in zip(batch_output["phon_vecs"][0], batch_output["phon_vecs"][b]):
-            assert torch.allclose(
-                v1, v2, atol=1e-5
-            ), f"Feature vectors differ in batch item {b}"
+        for v1, v2 in zip(batch_output["phon_vecs"][0], batch_output["phon_vecs"][b], strict=False):
+            assert torch.allclose(v1, v2, atol=1e-5), f"Feature vectors differ in batch item {b}"
 
     # Verify batch processing matches single sample processing
     # First element of batch should match single sample output
     assert len(single_output["phon_tokens"][0]) == len(batch_output["phon_tokens"][0])
-    for t1, t2 in zip(single_output["phon_tokens"][0], batch_output["phon_tokens"][0]):
-        assert torch.allclose(
-            t1, t2, atol=1e-5
-        ), "Single sample differs from batch processing"
+    for t1, t2 in zip(
+        single_output["phon_tokens"][0], batch_output["phon_tokens"][0], strict=False
+    ):
+        assert torch.allclose(t1, t2, atol=1e-5), "Single sample differs from batch processing"
 
-    for p1, p2 in zip(single_output["phon_probs"][0], batch_output["phon_probs"][0]):
-        assert torch.allclose(
-            p1, p2, atol=1e-5
-        ), "Probability distributions differ between single and batch"
+    for p1, p2 in zip(single_output["phon_probs"][0], batch_output["phon_probs"][0], strict=False):
+        assert torch.allclose(p1, p2, atol=1e-5), (
+            "Probability distributions differ between single and batch"
+        )
 
-    for v1, v2 in zip(single_output["phon_vecs"][0], batch_output["phon_vecs"][0]):
-        assert torch.allclose(
-            v1, v2, atol=1e-5
-        ), "Feature vectors differ between single and batch"
+    for v1, v2 in zip(single_output["phon_vecs"][0], batch_output["phon_vecs"][0], strict=False):
+        assert torch.allclose(v1, v2, atol=1e-5), "Feature vectors differ between single and batch"
 
 
 def test_p2p_input_validation(model, dataset_config):
@@ -1240,9 +1189,7 @@ def test_p2p_input_validation(model, dataset_config):
     valid_mask = torch.zeros((2, 3), dtype=torch.bool)
 
     # Test with invalid orthographic input
-    with pytest.raises(
-        ValueError, match="p2p pathway expects orthographic inputs.*to be None"
-    ):
+    with pytest.raises(ValueError, match="p2p pathway expects orthographic inputs.*to be None"):
         model._generate(
             pathway="p2p",
             orth_enc_input=torch.randn(2, 5),  # Should be None
@@ -1268,9 +1215,7 @@ def test_p2p_input_validation(model, dataset_config):
             torch.tensor([model.dataset_config.phonological_vocabulary_size + 1]),
         ],
     ]
-    with pytest.raises(
-        ValueError, match="Feature indices must be less than vocabulary size"
-    ):
+    with pytest.raises(ValueError, match="Feature indices must be less than vocabulary size"):
         model._generate(
             pathway="p2p",
             orth_enc_input=None,
@@ -1336,12 +1281,8 @@ def test_o2o_basic_generation(model, dataset_config):
     assert isinstance(output["orth_tokens"], torch.Tensor)
 
     # Check sequences start with BOS and contain EOS
-    assert torch.all(
-        output["orth_tokens"][:, 0] == 0
-    ), "All sequences should start with BOS"
-    assert torch.any(
-        output["orth_tokens"] == 1, dim=1
-    ).all(), "All sequences should contain EOS"
+    assert torch.all(output["orth_tokens"][:, 0] == 0), "All sequences should start with BOS"
+    assert torch.any(output["orth_tokens"] == 1, dim=1).all(), "All sequences should contain EOS"
 
     # Verify phonological outputs are None
     assert output["phon_probs"] is None
@@ -1385,15 +1326,13 @@ def test_o2o_deterministic_consistency(model, dataset_config):
     )
 
     # Compare outputs
-    assert torch.allclose(
-        output1["global_encoding"], output2["global_encoding"], atol=1e-5
-    )
+    assert torch.allclose(output1["global_encoding"], output2["global_encoding"], atol=1e-5)
     assert torch.allclose(output1["orth_tokens"], output2["orth_tokens"], atol=1e-5)
 
     # Compare probability distributions
     for b in range(len(output1["orth_probs"])):
         assert len(output1["orth_probs"][b]) == len(output2["orth_probs"][b])
-        for p1, p2 in zip(output1["orth_probs"][b], output2["orth_probs"][b]):
+        for p1, p2 in zip(output1["orth_probs"][b], output2["orth_probs"][b], strict=False):
             assert torch.allclose(p1, p2, atol=1e-5)
 
 
@@ -1412,9 +1351,7 @@ def test_o2o_input_validation(model):
         )
 
     # Test with unexpected phonological input
-    with pytest.raises(
-        ValueError, match="o2o pathway expects phonological inputs.*to be None"
-    ):
+    with pytest.raises(ValueError, match="o2o pathway expects phonological inputs.*to be None"):
         model._generate(
             pathway="o2o",
             orth_enc_input=torch.randint(0, 10, (2, 5)),
@@ -1425,9 +1362,7 @@ def test_o2o_input_validation(model):
 
     # Test with invalid token indices
     invalid_input = torch.full((2, 5), model.dataset.orthographic_vocabulary_size)
-    with pytest.raises(
-        ValueError, match="Input tokens must be less than vocabulary size"
-    ):
+    with pytest.raises(ValueError, match="Input tokens must be less than vocabulary size"):
         model._generate(
             pathway="o2o",
             orth_enc_input=invalid_input,
@@ -1450,9 +1385,7 @@ def test_o2o_batch_consistency(model, dataset_config):
     4. Confirming batch processing matches single sample processing
     """
     # Create a single sample with a clear, simple structure
-    single_input = torch.tensor(
-        [[0, 5, 8, 12, 1]], device=model.device
-    )  # [BOS, tokens..., EOS]
+    single_input = torch.tensor([[0, 5, 8, 12, 1]], device=model.device)  # [BOS, tokens..., EOS]
     single_mask = torch.zeros_like(single_input, dtype=torch.bool)
 
     # Generate with single sample first
@@ -1487,10 +1420,12 @@ def test_o2o_batch_consistency(model, dataset_config):
 
         # Check probability distributions match
         assert len(batch_output["orth_probs"][0]) == len(batch_output["orth_probs"][b])
-        for p1, p2 in zip(batch_output["orth_probs"][0], batch_output["orth_probs"][b]):
-            assert torch.allclose(
-                p1, p2, atol=1e-5
-            ), f"Probability distributions differ in batch item {b}"
+        for p1, p2 in zip(
+            batch_output["orth_probs"][0], batch_output["orth_probs"][b], strict=False
+        ):
+            assert torch.allclose(p1, p2, atol=1e-5), (
+                f"Probability distributions differ in batch item {b}"
+            )
 
     # Verify batch processing matches single sample processing
     assert torch.allclose(
@@ -1499,10 +1434,10 @@ def test_o2o_batch_consistency(model, dataset_config):
 
     # Compare probability distributions between single and batch
     assert len(single_output["orth_probs"][0]) == len(batch_output["orth_probs"][0])
-    for p1, p2 in zip(single_output["orth_probs"][0], batch_output["orth_probs"][0]):
-        assert torch.allclose(
-            p1, p2, atol=1e-4
-        ), "Probability distributions differ between single and batch"
+    for p1, p2 in zip(single_output["orth_probs"][0], batch_output["orth_probs"][0], strict=False):
+        assert torch.allclose(p1, p2, atol=1e-4), (
+            "Probability distributions differ between single and batch"
+        )
 
 
 def test_o2o_stochastic_sampling(model, dataset_config):
@@ -1545,21 +1480,15 @@ def test_o2o_stochastic_sampling(model, dataset_config):
         if not outputs[i]["orth_tokens"].shape == outputs[i + 1]["orth_tokens"].shape:
             different_sequences_found = True
             break
-        if not torch.allclose(
-            outputs[i]["orth_tokens"], outputs[i + 1]["orth_tokens"], atol=1e-5
-        ):
+        if not torch.allclose(outputs[i]["orth_tokens"], outputs[i + 1]["orth_tokens"], atol=1e-5):
             different_sequences_found = True
             break
-    assert (
-        different_sequences_found
-    ), "Stochastic sampling should produce different sequences"
+    assert different_sequences_found, "Stochastic sampling should produce different sequences"
 
     # Verify all sequences maintain required properties
     for output in outputs:
         # Check BOS tokens
-        assert torch.all(
-            output["orth_tokens"][:, 0] == 0
-        ), "All sequences must start with BOS"
+        assert torch.all(output["orth_tokens"][:, 0] == 0), "All sequences must start with BOS"
 
         # Check for EOS tokens
         # Add this back when the model fixture is updated to load a converged model
@@ -1570,21 +1499,21 @@ def test_o2o_stochastic_sampling(model, dataset_config):
 
         # Check sequence lengths are reasonable
         max_len = model.dataset_config.max_orth_seq_len
-        assert (
-            output["orth_tokens"].size(1) <= max_len
-        ), f"Sequences exceed maximum length {max_len}"
+        assert output["orth_tokens"].size(1) <= max_len, (
+            f"Sequences exceed maximum length {max_len}"
+        )
 
         # Verify tokens are within vocabulary bounds
-        assert torch.all(
-            output["orth_tokens"] < model.dataset.orthographic_vocabulary_size
-        ), "Generated tokens must be within vocabulary bounds"
+        assert torch.all(output["orth_tokens"] < model.dataset.orthographic_vocabulary_size), (
+            "Generated tokens must be within vocabulary bounds"
+        )
 
         # Verify probability distributions sum to 1 (within numerical precision)
         for batch_idx in range(len(output["orth_probs"])):
             for prob_dist in output["orth_probs"][batch_idx]:
-                assert (
-                    torch.abs(prob_dist.sum() - 1.0) < 1e-6
-                ), "Probability distributions must sum to 1"
+                assert torch.abs(prob_dist.sum() - 1.0) < 1e-6, (
+                    "Probability distributions must sum to 1"
+                )
 
 
 def test_op2op_input_validation(model, dataset_config):
@@ -1613,9 +1542,7 @@ def test_op2op_input_validation(model, dataset_config):
         ]
         for _ in range(batch_size)
     ]
-    valid_phon_mask = torch.zeros(
-        (batch_size, phon_seq_len), dtype=torch.bool, device=model.device
-    )
+    valid_phon_mask = torch.zeros((batch_size, phon_seq_len), dtype=torch.bool, device=model.device)
 
     # Test missing orthographic input
     with pytest.raises(ValueError, match="op2op pathway requires orthographic inputs"):
@@ -1648,15 +1575,11 @@ def test_op2op_input_validation(model, dataset_config):
         )
 
     # Test invalid orthographic mask type
-    with pytest.raises(
-        ValueError, match="orth_enc_pad_mask must have dtype torch.bool"
-    ):
+    with pytest.raises(ValueError, match="orth_enc_pad_mask must have dtype torch.bool"):
         model._generate(
             pathway="op2op",
             orth_enc_input=valid_orth_input,
-            orth_enc_pad_mask=torch.zeros_like(
-                valid_orth_input, dtype=torch.float
-            ),  # Wrong dtype
+            orth_enc_pad_mask=torch.zeros_like(valid_orth_input, dtype=torch.float),  # Wrong dtype
             phon_enc_input=valid_phon_input,
             phon_enc_pad_mask=valid_phon_mask,
         )
@@ -1671,9 +1594,7 @@ def test_op2op_input_validation(model, dataset_config):
     )
     long_orth_mask = torch.zeros_like(long_orth_input, dtype=torch.bool)
 
-    with pytest.raises(
-        ValueError, match="Orthographic input sequence length .* exceeds maximum"
-    ):
+    with pytest.raises(ValueError, match="Orthographic input sequence length .* exceeds maximum"):
         model._generate(
             pathway="op2op",
             orth_enc_input=long_orth_input,
@@ -1713,9 +1634,7 @@ def test_op2op_input_validation(model, dataset_config):
         for _ in range(batch_size)
     ]
 
-    with pytest.raises(
-        ValueError, match="Feature indices must be less than vocabulary size"
-    ):
+    with pytest.raises(ValueError, match="Feature indices must be less than vocabulary size"):
         model._generate(
             pathway="op2op",
             orth_enc_input=valid_orth_input,
@@ -1732,9 +1651,7 @@ def test_op2op_input_validation(model, dataset_config):
         device=model.device,
     )
 
-    with pytest.raises(
-        ValueError, match="Orthographic tokens must be less than vocabulary size"
-    ):
+    with pytest.raises(ValueError, match="Orthographic tokens must be less than vocabulary size"):
         model._generate(
             pathway="op2op",
             orth_enc_input=invalid_orth_input,
@@ -1812,9 +1729,7 @@ def test_op2op_basic_generation(model, dataset_config):
     assert isinstance(output["orth_tokens"], torch.Tensor)
     assert output["orth_tokens"].size(0) == batch_size
     assert torch.all(output["orth_tokens"][:, 0] == 0)  # Check BOS tokens
-    assert torch.any(
-        output["orth_tokens"] == 1, dim=1
-    ).all()  # Check EOS tokens present
+    assert torch.any(output["orth_tokens"] == 1, dim=1).all()  # Check EOS tokens present
 
     # Verify phonological output structure
     assert len(output["phon_tokens"]) == batch_size
@@ -1878,15 +1793,13 @@ def test_op2op_deterministic_consistency(model, dataset_config):
     )
 
     # Compare outputs
-    assert torch.allclose(
-        output1["global_encoding"], output2["global_encoding"], atol=1e-5
-    )
+    assert torch.allclose(output1["global_encoding"], output2["global_encoding"], atol=1e-5)
     assert torch.allclose(output1["orth_tokens"], output2["orth_tokens"], atol=1e-5)
 
     # Compare phonological outputs
     for b in range(batch_size):
         assert len(output1["phon_tokens"][b]) == len(output2["phon_tokens"][b])
-        for t1, t2 in zip(output1["phon_tokens"][b], output2["phon_tokens"][b]):
+        for t1, t2 in zip(output1["phon_tokens"][b], output2["phon_tokens"][b], strict=False):
             assert torch.allclose(t1, t2, atol=1e-5)
 
 
@@ -1949,19 +1862,15 @@ def test_op2op_stochastic_sampling(model, dataset_config):
         # Check phonological differences
         for b in range(batch_size):
             for t1, t2 in zip(
-                outputs[i]["phon_tokens"][b], outputs[i + 1]["phon_tokens"][b]
+                outputs[i]["phon_tokens"][b], outputs[i + 1]["phon_tokens"][b], strict=False
             ):
                 if not t1.shape == t2.shape:
                     different_phon = True
                 elif not torch.allclose(t1, t2, atol=1e-5):
                     different_phon = True
 
-    assert (
-        different_orth
-    ), "Stochastic sampling should produce different orthographic sequences"
-    assert (
-        different_phon
-    ), "Stochastic sampling should produce different phonological sequences"
+    assert different_orth, "Stochastic sampling should produce different orthographic sequences"
+    assert different_phon, "Stochastic sampling should produce different phonological sequences"
 
 
 def test_op2op_batch_consistency(model, dataset_config):
@@ -1971,9 +1880,7 @@ def test_op2op_batch_consistency(model, dataset_config):
     unexpected behaviors or inconsistencies.
     """
     # Create a single sample
-    single_orth_input = torch.tensor(
-        [[0, 5, 8, 1]], device=model.device
-    )  # [BOS, tokens..., EOS]
+    single_orth_input = torch.tensor([[0, 5, 8, 1]], device=model.device)  # [BOS, tokens..., EOS]
     single_orth_mask = torch.zeros_like(single_orth_input, dtype=torch.bool)
 
     single_phon_input = [
@@ -2019,15 +1926,13 @@ def test_op2op_batch_consistency(model, dataset_config):
         ), f"Orthographic batch item {b} differs from first batch item"
 
         # Check phonological outputs
-        assert len(batch_output["phon_tokens"][0]) == len(
-            batch_output["phon_tokens"][b]
-        )
+        assert len(batch_output["phon_tokens"][0]) == len(batch_output["phon_tokens"][b])
         for t1, t2 in zip(
-            batch_output["phon_tokens"][0], batch_output["phon_tokens"][b]
+            batch_output["phon_tokens"][0], batch_output["phon_tokens"][b], strict=False
         ):
-            assert torch.allclose(
-                t1, t2, atol=1e-5
-            ), f"Phonological batch item {b} differs from first batch item"
+            assert torch.allclose(t1, t2, atol=1e-5), (
+                f"Phonological batch item {b} differs from first batch item"
+            )
 
     # Verify batch processing matches single sample processing
     assert torch.allclose(
@@ -2035,10 +1940,12 @@ def test_op2op_batch_consistency(model, dataset_config):
     ), "Single sample orthographic output differs from batch processing"
 
     assert len(single_output["phon_tokens"][0]) == len(batch_output["phon_tokens"][0])
-    for t1, t2 in zip(single_output["phon_tokens"][0], batch_output["phon_tokens"][0]):
-        assert torch.allclose(
-            t1, t2, atol=1e-5
-        ), "Single sample phonological output differs from batch processing"
+    for t1, t2 in zip(
+        single_output["phon_tokens"][0], batch_output["phon_tokens"][0], strict=False
+    ):
+        assert torch.allclose(t1, t2, atol=1e-5), (
+            "Single sample phonological output differs from batch processing"
+        )
 
 
 def test_generate_wrapper_basic_functionality(model, dataset_config):
@@ -2139,12 +2046,12 @@ def test_generate_wrapper_pathway_routing(model, dataset_config):
         has_phon = output.phon_tokens is not None
         has_orth = output.orth_tokens is not None
 
-        assert (
-            has_phon == expects["phon"]
-        ), f"Pathway {pathway}: Expected phon_tokens {'present' if expects['phon'] else 'absent'}"
-        assert (
-            has_orth == expects["orth"]
-        ), f"Pathway {pathway}: Expected orth_tokens {'present' if expects['orth'] else 'absent'}"
+        assert has_phon == expects["phon"], (
+            f"Pathway {pathway}: Expected phon_tokens {'present' if expects['phon'] else 'absent'}"
+        )
+        assert has_orth == expects["orth"], (
+            f"Pathway {pathway}: Expected orth_tokens {'present' if expects['orth'] else 'absent'}"
+        )
 
 
 def test_generate_wrapper_deterministic_consistency(model, dataset_config):
@@ -2195,7 +2102,7 @@ def test_generate_wrapper_deterministic_consistency(model, dataset_config):
 
     if output1.phon_tokens is not None:
         for b in range(len(output1.phon_tokens)):
-            for t1, t2 in zip(output1.phon_tokens[b], output2.phon_tokens[b]):
+            for t1, t2 in zip(output1.phon_tokens[b], output2.phon_tokens[b], strict=False):
                 assert torch.allclose(t1, t2, atol=1e-5)
 
 
@@ -2234,9 +2141,7 @@ def test_generate_wrapper_error_handling(model, dataset_config):
 
     # Test with mismatched batch sizes
     bad_orth_enc = EncodingComponent(
-        enc_input_ids=torch.tensor(
-            [[0, 1], [0, 1]], device=model.device
-        ),  # Batch size 2
+        enc_input_ids=torch.tensor([[0, 1], [0, 1]], device=model.device),  # Batch size 2
         enc_pad_mask=torch.zeros((2, 2), dtype=torch.bool, device=model.device),
         dec_input_ids=torch.tensor([[0], [0]], device=model.device),
         dec_pad_mask=torch.zeros((2, 1), dtype=torch.bool, device=model.device),
