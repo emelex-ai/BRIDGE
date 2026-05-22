@@ -1,0 +1,4 @@
+# .gcloudignore
+!data/phonreps.csv
+# Ignore everyting in the infra directory
+infra/**
