@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
-    from bridge.domain.dataset.bridge_tokenizer import BridgeTokenizer
+    from bridge.domain.tokenizer.bridge_tokenizer import BridgeTokenizer
 
 
 class VocabSpec(BaseModel):

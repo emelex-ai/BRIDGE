@@ -3,7 +3,7 @@ import string
 
 import torch
 
-from bridge.domain.dataset.cuda_dict import CUDADict
+from bridge.domain.tokenizer.cuda_dict import CUDADict
 from bridge.utils import device_manager
 
 logger = logging.getLogger(__name__)

@@ -5,7 +5,7 @@ import os
 import torch
 
 from bridge.core.phonreps import load_phonreps
-from bridge.domain.dataset.cuda_dict import CUDADict
+from bridge.domain.tokenizer.cuda_dict import CUDADict
 from bridge.utils import device_manager, get_project_root
 
 logger = logging.getLogger(__name__)

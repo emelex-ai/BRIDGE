@@ -11,8 +11,8 @@ from tqdm import tqdm
 from bridge.application.training.ortho_metrics import calculate_orth_metrics
 from bridge.application.training.phon_metrics import calculate_phon_metrics
 from bridge.core.phonreps import load_phonreps_array
+from bridge.domain.data import BridgeDataset
 from bridge.domain.datamodels import EncodingComponent, TrainingConfig
-from bridge.domain.dataset import BridgeDataset
 from bridge.domain.model import Model
 from bridge.infra.metrics.metrics_logger import MetricsLogger
 from bridge.utils import device_manager

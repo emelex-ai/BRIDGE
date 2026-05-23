@@ -4,7 +4,7 @@ import pytest
 import torch
 
 from bridge.domain.datamodels import GenerationOutput
-from bridge.domain.dataset.bridge_tokenizer import BridgeTokenizer
+from bridge.domain.tokenizer.bridge_tokenizer import BridgeTokenizer
 
 
 @pytest.fixture

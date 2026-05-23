@@ -12,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 
 from bridge.domain.datamodels import BridgeEncoding, DatasetConfig
-from bridge.domain.dataset.bridge_tokenizer import BridgeTokenizer
+from bridge.domain.tokenizer.bridge_tokenizer import BridgeTokenizer
 from bridge.infra.clients.gcp.gcs_client import GCSClient
 from bridge.utils import device_manager
 

@@ -1,13 +1,14 @@
 import pytest
 import torch
 
+from bridge.domain.data import BridgeDataset
 from bridge.domain.datamodels import (
     BridgeEncoding,
     GenerationOutput,
     ModelConfig,
 )
 from bridge.domain.datamodels.encodings import EncodingComponent
-from bridge.domain.dataset import BridgeDataset, BridgeTokenizer
+from bridge.domain.tokenizer import BridgeTokenizer
 
 tokenizer = BridgeTokenizer()
 PHON_BOS_ID = tokenizer.phon_bos_id

@@ -1,7 +1,7 @@
 import pytest
 
 from bridge.domain.datamodels import BridgeEncoding
-from bridge.domain.dataset.bridge_tokenizer import BridgeTokenizer
+from bridge.domain.tokenizer.bridge_tokenizer import BridgeTokenizer
 
 
 @pytest.fixture

@@ -6,15 +6,19 @@ orthographic and phonological representations of words.
 """
 
 from bridge.application.training import TrainingPipeline
+from bridge.domain.data import BridgeDataset
 from bridge.domain.datamodels import (
     BridgeEncoding,
     DatasetConfig,
+    EncodingComponent,
     GenerationOutput,
+    MetricsConfig,
     ModelConfig,
     TrainingConfig,
+    VocabSpec,
 )
-from bridge.domain.dataset import BridgeDataset, BridgeTokenizer
 from bridge.domain.model import Model
+from bridge.domain.tokenizer import BridgeTokenizer
 
 __version__ = "0.1.0"
 
@@ -23,9 +27,12 @@ __all__ = [
     "BridgeEncoding",
     "BridgeTokenizer",
     "DatasetConfig",
+    "EncodingComponent",
     "GenerationOutput",
+    "MetricsConfig",
     "Model",
     "ModelConfig",
     "TrainingConfig",
     "TrainingPipeline",
+    "VocabSpec",
 ]
