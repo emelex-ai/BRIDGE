@@ -10,6 +10,7 @@ from tqdm import tqdm
 
 from bridge.application.training.ortho_metrics import calculate_orth_metrics
 from bridge.application.training.phon_metrics import calculate_phon_metrics
+from bridge.core.phonreps import load_phonreps_array
 from bridge.domain.datamodels import EncodingComponent, TrainingConfig
 from bridge.domain.dataset import BridgeDataset
 from bridge.domain.model import Model
@@ -46,7 +47,7 @@ class TrainingPipeline:
             weight_decay=training_config.weight_decay,
         )
         self.train_slices, self.val_slices = self.create_data_slices()
-        self.phon_reps = self.dataset.tokenizer.phoneme_tokenizer.phonreps_array
+        self.phon_reps = load_phonreps_array(device=self.device)
 
         self.start_epoch = 0
         if training_config.checkpoint_path:
@@ -114,23 +115,19 @@ class TrainingPipeline:
         orth_loss = None
         phon_loss = None
 
+        vocab = self.model.model_config.vocab
+
         # Calculate phon_loss if applicable
         if self.training_config.training_pathway in ["o2p", "op2op", "p2p"]:
-            phon_loss = torch.nn.CrossEntropyLoss(ignore_index=35)(
+            phon_loss = torch.nn.CrossEntropyLoss(ignore_index=vocab.phon_pad_id)(
                 logits["phon"], phonology.targets
-            )  # Ignore [PAD] token
-            phon_loss = torch.nn.CrossEntropyLoss(ignore_index=35)(
-                logits["phon"], phonology.targets
-            )  # Ignore [PAD] token
+            )
 
         # Calculate orth_loss if applicable
         if self.training_config.training_pathway in ["p2o", "op2op"]:
-            orth_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(
+            orth_loss = torch.nn.CrossEntropyLoss(ignore_index=vocab.orth_pad_id)(
                 logits["orth"], orthography.enc_input_ids[:, 2:]
-            )  # Ignore [PAD] token
-            orth_loss = torch.nn.CrossEntropyLoss(ignore_index=2)(
-                logits["orth"], orthography.enc_input_ids[:, 2:]
-            )  # Ignore [PAD] token
+            )
 
         # Calculate the combined loss, summing only non-None losses
         total_loss = sum(loss for loss in [orth_loss, phon_loss] if loss is not None)
@@ -155,7 +152,11 @@ class TrainingPipeline:
             metrics.update(calculate_phon_metrics(logits, phonology, self.phon_reps))
 
         if self.training_config.training_pathway in ["op2op", "p2o"]:
-            metrics.update(calculate_orth_metrics(logits, orthography))
+            metrics.update(
+                calculate_orth_metrics(
+                    logits, orthography, orth_pad_id=self.model.model_config.vocab.orth_pad_id
+                )
+            )
 
         return metrics
 

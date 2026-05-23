@@ -39,7 +39,7 @@ bridge/
 │   └── training/                 # TrainingPipeline, ortho_metrics, phon_metrics
 ├── infra/                        # Optional integrations: GCS, W&B, metrics logger
 └── utils/                        # device_manager, helpers
-tests/                            # 84 tests covering tokenizers, dataset, model, metrics
+tests/                            # 87 tests covering tokenizers, dataset, model, metrics
 ```
 
 ---
@@ -54,8 +54,12 @@ from bridge import (
     TrainingPipeline, TrainingConfig,
     BridgeEncoding, EncodingComponent, GenerationOutput,
     MetricsConfig,
+    VocabSpec,
 )
 ```
+
+> [!NOTE]
+> `Model` and `BridgeTokenizer` are **sibling objects** — neither holds a reference to the other. The model needs vocab sizes and special-token IDs (to size embeddings and to know when to stop generating); these flow through `ModelConfig.vocab` (a `VocabSpec`). Use `VocabSpec.from_tokenizer(tokenizer)` to derive one in a single line.
 
 Optional integrations (not re-exported at top level — import only if you use them):
 
@@ -114,12 +118,21 @@ The character tokenizer prepends a language token (`"--"`, `"EN"`, or `"ES"`) be
 import torch
 from bridge import (
     BridgeDataset, DatasetConfig,
+    BridgeTokenizer,
     Model, ModelConfig,
     TrainingPipeline, TrainingConfig,
+    VocabSpec,
 )
 
+# Tokenizer and dataset come first
+tokenizer = BridgeTokenizer()
 dataset = BridgeDataset(DatasetConfig(dataset_filepath="my_words.pkl"))
-model = Model(ModelConfig(...), dataset=dataset)
+
+# Model is constructed from config alone — vocab info flows through ModelConfig.vocab
+model_config = ModelConfig(..., vocab=VocabSpec.from_tokenizer(tokenizer))
+model = Model(model_config)
+
+# TrainingPipeline wires them together
 pipeline = TrainingPipeline(model, dataset, TrainingConfig(...), wandb_wrapper=None)
 pipeline.run_train_val_loop()
 ```
