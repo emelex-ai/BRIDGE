@@ -10,8 +10,9 @@ from unittest.mock import Mock, patch
 import pytest
 import torch
 
+from bridge.domain.data import BridgeDataset
 from bridge.domain.datamodels import BridgeEncoding, EncodingComponent
-from bridge.domain.dataset import BridgeDataset, BridgeTokenizer
+from bridge.domain.tokenizer import BridgeTokenizer
 from bridge.infra.clients.gcp.gcs_client import GCSClient
 
 tokenizer = BridgeTokenizer()
@@ -214,7 +215,7 @@ def mock_bridge_tokenizer():
 @pytest.fixture
 def bridge_dataset(dataset_config, mock_bridge_tokenizer, mock_gcs_client):
     """Create a BridgeDataset instance with mocked components."""
-    with patch("bridge.domain.dataset.BridgeTokenizer", return_value=mock_bridge_tokenizer):
+    with patch("bridge.domain.tokenizer.BridgeTokenizer", return_value=mock_bridge_tokenizer):
         dataset = BridgeDataset(dataset_config, mock_gcs_client)
         dataset.mock_tokenizer = mock_bridge_tokenizer
         return dataset
@@ -305,7 +306,7 @@ def test_encoding_cache(dataset_config, mock_bridge_tokenizer, mock_gcs_client):
     mock_tokenizer.encode.side_effect = mock_encode
 
     # Create dataset with our controlled mock
-    with patch("bridge.domain.dataset.BridgeTokenizer", return_value=mock_tokenizer):
+    with patch("bridge.domain.tokenizer.BridgeTokenizer", return_value=mock_tokenizer):
         dataset = BridgeDataset(dataset_config, mock_gcs_client)
 
         # Access same item twice
@@ -326,7 +327,7 @@ def test_device_movement(dataset_config, mock_gcs_client):
     if not torch.cuda.is_available():
         pytest.skip("CUDA not available")
 
-    with patch("bridge.domain.dataset.BridgeTokenizer"):
+    with patch("bridge.domain.tokenizer.BridgeTokenizer"):
         dataset = BridgeDataset(dataset_config, mock_gcs_client)
         assert dataset.device.type == "cpu"
 
@@ -385,7 +386,7 @@ def test_error_handling_invalid_encodings(dataset_config, mock_bridge_tokenizer,
     # For this test, we need to patch both the BridgeTokenizer class constructor
     # and the _encode_single_word method in BridgeDataset to bypass the lru_cache
 
-    with patch("bridge.domain.dataset.BridgeTokenizer", return_value=mock_bridge_tokenizer):
+    with patch("bridge.domain.tokenizer.BridgeTokenizer", return_value=mock_bridge_tokenizer):
         # Create the dataset
         dataset = BridgeDataset(dataset_config, mock_gcs_client)
 
@@ -432,7 +433,7 @@ def test_vocabulary_size_properties(bridge_dataset, mock_bridge_tokenizer, mock_
     }
 
     # Create new dataset with our controlled mock
-    with patch("bridge.domain.dataset.BridgeTokenizer", return_value=mock_bridge_tokenizer):
+    with patch("bridge.domain.tokenizer.BridgeTokenizer", return_value=mock_bridge_tokenizer):
         dataset_config = MockDatasetConfig(
             dataset_filepath=bridge_dataset.dataset_filepath, device="cpu"
         )

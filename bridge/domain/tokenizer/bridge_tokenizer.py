@@ -23,8 +23,8 @@ from typing import Literal
 import torch
 
 from bridge.domain.datamodels.encodings import BridgeEncoding, EncodingComponent
-from bridge.domain.dataset.character_tokenizer import CharacterTokenizer
-from bridge.domain.dataset.phoneme_tokenizer import PhonemeTokenizer
+from bridge.domain.tokenizer.character_tokenizer import CharacterTokenizer
+from bridge.domain.tokenizer.phoneme_tokenizer import PhonemeTokenizer
 from bridge.utils import device_manager
 
 logger = logging.getLogger(__name__)

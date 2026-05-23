@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
+from bridge.domain.datamodels.vocab_spec import VocabSpec
+
 
 class ModelConfig(BaseModel):
     num_phon_enc_layers: int = Field(default=2)
@@ -11,6 +13,10 @@ class ModelConfig(BaseModel):
     nhead: int = Field(default=2)
     d_embedding: int = Field(default=1)
     seed: int | None = Field(default=None)
+    # Vocabulary contract — temporarily Optional during the decoupling
+    # migration. Becomes required in Step 5 once `Model` reads from here
+    # exclusively. Build via `VocabSpec.from_tokenizer(bridge_tokenizer)`.
+    vocab: VocabSpec | None = Field(default=None)
 
     @field_validator("d_model")
     def validate_d_model(cls, v, info: ValidationInfo):

@@ -2,10 +2,10 @@ import json
 import logging
 import os
 
-import pandas as pd
 import torch
 
-from bridge.domain.dataset.cuda_dict import CUDADict
+from bridge.core.phonreps import load_phonreps
+from bridge.domain.tokenizer.cuda_dict import CUDADict
 from bridge.utils import device_manager, get_project_root
 
 logger = logging.getLogger(__name__)
@@ -29,14 +29,11 @@ class PhonemeTokenizer:
     ):
         self.device = device_manager.device
 
-        self.phonreps = pd.read_csv(os.path.join(get_project_root(), "bridge/core/phonreps.csv"))
-        self.phonreps.set_index("phone", inplace=True)
-        self.base_dim = len(self.phonreps.columns)
-
-        self.phonreps_array = torch.tensor(
-            self.phonreps.values, dtype=torch.float, device=self.device
-        )
-        self.phonreps_index = {p: i for i, p in enumerate(self.phonreps.index)}
+        phonreps = load_phonreps(device=self.device)
+        self.phonreps = phonreps.dataframe
+        self.base_dim = phonreps.base_dim
+        self.phonreps_array = phonreps.array
+        self.phonreps_index = phonreps.index
 
         self._create_inverse_phoneme_mapping()
 

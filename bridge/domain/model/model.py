@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 
 from bridge.domain.datamodels import BridgeEncoding, GenerationOutput, ModelConfig
-from bridge.domain.dataset import BridgeDataset
 from bridge.domain.model.decoder import Decoder
 from bridge.domain.model.encoder import Encoder
 from bridge.utils import device_manager
@@ -15,19 +14,23 @@ class Model(nn.Module):
     def __init__(
         self,
         model_config: ModelConfig,
-        dataset: BridgeDataset,
     ) -> None:
         super().__init__()
+        if model_config.vocab is None:
+            raise ValueError(
+                "ModelConfig.vocab is required. "
+                "Build it via VocabSpec.from_tokenizer(bridge_tokenizer) or construct one "
+                "manually with the appropriate vocab sizes and special-token IDs."
+            )
         self.model_config = model_config
-        self.dataset = dataset
         self.device = device_manager.device
 
         if self.model_config.seed:
             set_seed(seed=self.model_config.seed)
 
-        # Get vocabulary sizes from dataset
-        self.orthographic_vocabulary_size = dataset.orthographic_vocabulary_size
-        self.phonological_vocabulary_size = dataset.phonological_vocabulary_size
+        vocab = self.model_config.vocab
+        self.orthographic_vocabulary_size = vocab.orth_vocab_size
+        self.phonological_vocabulary_size = vocab.phon_vocab_size
 
         # Hardcoded sequence lengths - will be replaced with dynamic position encoding in the future
         self.max_orth_seq_len = 30
@@ -481,7 +484,7 @@ class Model(nn.Module):
         )
         for i in range(len(active_features)):
             if empty_masks[i]:
-                active_features[i] = [self.dataset.tokenizer.phon_pad_id]  # PAD token
+                active_features[i] = [self.model_config.vocab.phon_pad_id]  # PAD token
 
         return feature_presence, active_features
 
@@ -625,9 +628,9 @@ class Model(nn.Module):
             generated_phon_embeddings = self.embed_phon_tokens(generated_phon_tokens)
 
             # Check for early stopping (if all sequences have hit EOS)
+            phon_eos_id = self.model_config.vocab.phon_eos_id
             if all(
-                any(self.dataset.tokenizer.phon_eos_id in token for token in tokens)
-                for tokens in generated_phon_tokens
+                any(phon_eos_id in token for token in tokens) for tokens in generated_phon_tokens
             ):
                 break
 
@@ -731,7 +734,7 @@ class Model(nn.Module):
                 generated_phon_tokens = [
                     [
                         torch.tensor(
-                            [self.dataset.tokenizer.phon_bos_id],
+                            [self.model_config.vocab.phon_bos_id],
                             dtype=torch.long,
                             device=self.device,
                         )

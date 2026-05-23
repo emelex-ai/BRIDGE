@@ -9,7 +9,7 @@ from unittest.mock import Mock
 import pytest
 import torch
 
-from bridge.domain.datamodels import ModelConfig
+from bridge.domain.datamodels import ModelConfig, VocabSpec
 from bridge.domain.model import Model
 
 
@@ -29,6 +29,26 @@ class MockBridgeDataset:
         }
 
 
+def _vocab_spec_for(mock_dataset: MockBridgeDataset) -> VocabSpec:
+    """Build a VocabSpec matching a MockBridgeDataset's vocab sizes.
+
+    The mock doesn't expose special-token IDs; sentinel values are used since
+    these tests don't exercise generation paths that depend on the IDs.
+    """
+    return VocabSpec(
+        orth_vocab_size=mock_dataset.orthographic_vocabulary_size,
+        phon_vocab_size=mock_dataset.phonological_vocabulary_size,
+        orth_pad_id=2,
+        orth_bos_id=0,
+        orth_eos_id=1,
+        orth_spc_id=92,
+        phon_pad_id=35,
+        phon_bos_id=31,
+        phon_eos_id=32,
+        phon_spc_id=34,
+    )
+
+
 @pytest.fixture
 def mock_dataset():
     """Fixture for mock BridgeDataset."""
@@ -36,8 +56,8 @@ def mock_dataset():
 
 
 @pytest.fixture
-def model_config():
-    """Fixture for mock ModelConfig."""
+def model_config(mock_dataset):
+    """Fixture for ModelConfig with vocab spec populated from the mock dataset."""
     return ModelConfig(
         num_phon_enc_layers=1,
         num_orth_enc_layers=1,
@@ -48,13 +68,14 @@ def model_config():
         nhead=2,
         d_embedding=1,
         seed=42,
+        vocab=_vocab_spec_for(mock_dataset),
     )
 
 
 @pytest.fixture
-def model(mock_dataset, model_config):
+def model(model_config):
     """Fixture for initializing the Model."""
-    return Model(model_config, mock_dataset)
+    return Model(model_config)
 
 
 def test_embed_orth_tokens(model: Model):
@@ -107,11 +128,10 @@ def test_generate_triangular_mask(model: Model):
 
 
 def test_model_initialization_with_dataset(mock_dataset, model_config):
-    """Test the model initialization with BridgeDataset."""
-    # Create a model with our mock BridgeDataset
-    model = Model(model_config, mock_dataset)
+    """Test the model picks up vocab sizes from ModelConfig.vocab."""
+    model = Model(model_config)
 
-    # Verify the model correctly obtained vocabulary sizes
+    # Vocab sizes flow from config.vocab (which was built from mock_dataset's sizes)
     assert model.orthographic_vocabulary_size == mock_dataset.orthographic_vocabulary_size
     assert model.phonological_vocabulary_size == mock_dataset.phonological_vocabulary_size
 
