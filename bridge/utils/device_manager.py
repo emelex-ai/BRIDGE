@@ -66,7 +66,8 @@ class DeviceManager:
 
     def create_tensor(self, *args, **kwargs):
         """Creates a tensor on the current device."""
-        return torch.tensor(*args, **kwargs, device=self._device)
+        kwargs["device"] = self._device
+        return torch.tensor(*args, **kwargs)
 
 
 def load_config(config_path):

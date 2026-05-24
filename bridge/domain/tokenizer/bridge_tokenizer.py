@@ -452,7 +452,7 @@ class BridgeTokenizer:
             return None
 
         # Decode orthographic representation
-        encodings = dict()
+        encodings: dict[str, list[str] | torch.Tensor] = {}
         ortho_decoded = None
         if ortho_indices is not None:
             ortho_decoded = self.char_tokenizer.decode(ortho_indices)

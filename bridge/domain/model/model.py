@@ -1,9 +1,21 @@
-from typing import Any, Literal
+from typing import Literal, TypedDict
 
 import torch
 import torch.nn as nn
 
 from bridge.domain.datamodels import BridgeEncoding, GenerationOutput, ModelConfig
+
+
+class GenerationDict(TypedDict):
+    """Internal return shape for `Model._generate`. Fields that don't apply to
+    the chosen pathway stay ``None``; ``global_encoding`` is always populated."""
+
+    global_encoding: torch.Tensor
+    orth_probs: list[list[torch.Tensor]] | None
+    orth_tokens: torch.Tensor | None
+    phon_probs: list[list[torch.Tensor]] | None
+    phon_vecs: list[list[torch.Tensor]] | None
+    phon_tokens: list[list[torch.Tensor]] | None
 from bridge.domain.model.decoder import Decoder
 from bridge.domain.model.encoder import Encoder
 from bridge.utils import device_manager
@@ -16,12 +28,6 @@ class Model(nn.Module):
         model_config: ModelConfig,
     ) -> None:
         super().__init__()
-        if model_config.vocab is None:
-            raise ValueError(
-                "ModelConfig.vocab is required. "
-                "Build it via VocabSpec.from_tokenizer(bridge_tokenizer) or construct one "
-                "manually with the appropriate vocab sizes and special-token IDs."
-            )
         self.model_config = model_config
         self.device = device_manager.device
 
@@ -123,7 +129,7 @@ class Model(nn.Module):
             + self.orth_position_embedding.weight[None, : tokens.shape[1]]
         )
 
-    def embed_phon_tokens(self, tokens):
+    def embed_phon_tokens(self, tokens) -> torch.Tensor:
         # tokens: list of list of tensors
         # NOTE: the two try/except blocks below are currently a no-op — `isinstance`
         # and `all` never raise, so input validation never actually fires. The
@@ -229,16 +235,16 @@ class Model(nn.Module):
 
         # Process phonological decoder input
         final_encoding = self.embed_o(orth_enc_input, orth_enc_pad_mask)
-        phon_dec_input = self.embed_phon_tokens(
+        phon_dec_embeds = self.embed_phon_tokens(
             phon_dec_input
         )  # Shape: (batch_size, phon_seq_len, d_model)
         phon_ar_mask = self.generate_triangular_mask(
-            phon_dec_input.shape[1]
+            phon_dec_embeds.shape[1]
         )  # Shape: (phon_seq_len, phon_seq_len)
 
         # Pass through the phonology decoder
         phon_output = self.phonology_decoder(
-            tgt=phon_dec_input,
+            tgt=phon_dec_embeds,
             tgt_mask=phon_ar_mask,
             tgt_key_padding_mask=phon_dec_pad_mask,
             memory=final_encoding,
@@ -251,7 +257,7 @@ class Model(nn.Module):
         )
         return {"phon": phon_token_logits}
 
-    def embed_p(self, phon_enc_input: list[torch.Tensor], phon_enc_pad_mask: torch.Tensor):
+    def embed_p(self, phon_enc_input: list[list[torch.Tensor]], phon_enc_pad_mask: torch.Tensor):
         phonology = self.embed_phon_tokens(phon_enc_input)
         phonology_encoding = self.phonology_encoder(
             phonology, src_key_padding_mask=phon_enc_pad_mask
@@ -277,7 +283,7 @@ class Model(nn.Module):
 
     def forward_p2o(
         self,
-        phon_enc_input: list[torch.Tensor],
+        phon_enc_input: list[list[torch.Tensor]],
         phon_enc_pad_mask: torch.Tensor,
         orth_dec_input: torch.Tensor,
         orth_dec_pad_mask: torch.Tensor,
@@ -296,18 +302,18 @@ class Model(nn.Module):
 
     def forward_p2p(
         self,
-        phon_enc_input: list[torch.Tensor],
+        phon_enc_input: list[list[torch.Tensor]],
         phon_enc_pad_mask: torch.Tensor,
-        phon_dec_input: list[torch.Tensor],
+        phon_dec_input: list[list[torch.Tensor]],
         phon_dec_pad_mask: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
         final_encoding = self.embed_p(phon_enc_input, phon_enc_pad_mask)
-        phon_dec_input = self.embed_phon_tokens(phon_dec_input)
+        phon_dec_embeds = self.embed_phon_tokens(phon_dec_input)
         phon_ar_mask = self.generate_triangular_mask(
-            phon_dec_input.shape[1]
+            phon_dec_embeds.shape[1]
         )  # Shape: (phon_seq_len, phon_seq_len)
         phon_output = self.phonology_decoder(
-            tgt=phon_dec_input,
+            tgt=phon_dec_embeds,
             tgt_mask=phon_ar_mask,
             tgt_key_padding_mask=phon_dec_pad_mask,
             memory=final_encoding,
@@ -471,7 +477,7 @@ class Model(nn.Module):
         batch_indices, feature_indices = torch.where(feature_presence)
 
         # Group indices by batch item efficiently
-        active_features = [[] for _ in range(last_token_probs.size(0))]
+        active_features: list[list[int]] = [[] for _ in range(last_token_probs.size(0))]
         for batch_idx, feature_idx in zip(
             batch_indices.tolist(), feature_indices.tolist(), strict=False
         ):
@@ -496,7 +502,7 @@ class Model(nn.Module):
         generated_orth_tokens: torch.Tensor,
         prompt_encoding: torch.Tensor,
         deterministic: bool,
-    ) -> dict[str, Any]:
+    ) -> tuple[list[list[torch.Tensor]], torch.Tensor]:
         """
         Iteratively generates orthographic tokens for all sequences in the batch.
 
@@ -516,7 +522,7 @@ class Model(nn.Module):
         batch_size = prompt_encoding.size(0)
 
         # Initialize probability tracking for each sequence in batch
-        orth_probs = [[] for _ in range(batch_size)]
+        orth_probs: list[list[torch.Tensor]] = [[] for _ in range(batch_size)]
 
         # Add initial probability placeholders for the BOS token
         initial_prob = torch.zeros(
@@ -570,7 +576,7 @@ class Model(nn.Module):
                 # Update which sequences have finished
                 sequence_finished = sequence_finished | (new_orthography_tokens == 1).squeeze(-1)
 
-        return {"orth_probs": orth_probs, "orth_tokens": generated_orth_tokens}
+        return orth_probs, generated_orth_tokens
 
     @torch.no_grad()
     def phonology_decoder_loop(
@@ -580,7 +586,7 @@ class Model(nn.Module):
         generated_phon_tokens: list[list[torch.Tensor]],
         prompt_encoding: torch.Tensor,
         deterministic: bool,
-    ) -> dict[str, Any]:
+    ) -> tuple[list[list[torch.Tensor]], list[list[torch.Tensor]], list[list[torch.Tensor]]]:
         """Autoregressive generation of phonological features.
 
         Args:
@@ -594,8 +600,8 @@ class Model(nn.Module):
 
         # Preallocate output tensors for efficiency
         max_len = self.max_phon_seq_len
-        phon_probs = [[] for _ in range(batch_size)]
-        phon_vecs = [[] for _ in range(batch_size)]
+        phon_probs: list[list[torch.Tensor]] = [[] for _ in range(batch_size)]
+        phon_vecs: list[list[torch.Tensor]] = [[] for _ in range(batch_size)]
 
         for step in range(max_len - 1):
             # Get decoder output for current step
@@ -634,11 +640,7 @@ class Model(nn.Module):
             ):
                 break
 
-        return {
-            "phon_probs": phon_probs,
-            "phon_vecs": phon_vecs,
-            "phon_tokens": generated_phon_tokens,
-        }
+        return phon_probs, phon_vecs, generated_phon_tokens
 
     def _generate(
         self,
@@ -648,7 +650,7 @@ class Model(nn.Module):
         phon_enc_input: list[list[torch.Tensor]] | None = None,
         phon_enc_pad_mask: torch.Tensor | None = None,
         deterministic: bool = False,
-    ) -> dict[str, Any]:
+    ) -> GenerationDict:
         """
         Generates either orthographic tokens or phonological features (or both),
         depending on the chosen pathway.
@@ -708,24 +710,30 @@ class Model(nn.Module):
             )
 
         with torch.no_grad():
-            # Initialize all outputs to None
-            output = {
-                "global_encoding": None,
+            # `_validate_generate_input` has already enforced which inputs are
+            # non-None for each pathway; the asserts below re-state those
+            # invariants so the type checker can narrow.
+            if pathway == "op2op":
+                assert orth_enc_input is not None and orth_enc_pad_mask is not None
+                assert phon_enc_input is not None and phon_enc_pad_mask is not None
+                global_encoding = self.embed_op(
+                    orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask
+                )
+            elif pathway in ["o2p", "o2o"]:
+                assert orth_enc_input is not None and orth_enc_pad_mask is not None
+                global_encoding = self.embed_o(orth_enc_input, orth_enc_pad_mask)
+            else:  # "p2o", "p2p"
+                assert phon_enc_input is not None and phon_enc_pad_mask is not None
+                global_encoding = self.embed_p(phon_enc_input, phon_enc_pad_mask)
+
+            output: GenerationDict = {
+                "global_encoding": global_encoding,
                 "orth_probs": None,
                 "orth_tokens": None,
                 "phon_probs": None,
                 "phon_vecs": None,
                 "phon_tokens": None,
             }
-
-            if pathway == "op2op":
-                output["global_encoding"] = self.embed_op(
-                    orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask
-                )
-            elif pathway in ["o2p", "o2o"]:
-                output["global_encoding"] = self.embed_o(orth_enc_input, orth_enc_pad_mask)
-            elif pathway in ["p2o", "p2p"]:
-                output["global_encoding"] = self.embed_p(phon_enc_input, phon_enc_pad_mask)
 
             # All these pathways have "2p" meaning we need to run the phonological decoder loop
             if pathway in ["op2op", "o2p", "p2p"]:
@@ -743,20 +751,16 @@ class Model(nn.Module):
                 ]
 
                 generated_phon_embeddings = self.embed_phon_tokens(generated_phon_tokens)
-                generated_phon_results = self.phonology_decoder_loop(
+                phon_probs, phon_vecs, phon_tokens = self.phonology_decoder_loop(
                     mask,
                     generated_phon_embeddings,
                     generated_phon_tokens,
-                    output["global_encoding"],
+                    global_encoding,
                     deterministic,
                 )
-                output.update(
-                    {
-                        "phon_probs": generated_phon_results["phon_probs"],
-                        "phon_vecs": generated_phon_results["phon_vecs"],
-                        "phon_tokens": generated_phon_results["phon_tokens"],
-                    }
-                )
+                output["phon_probs"] = phon_probs
+                output["phon_vecs"] = phon_vecs
+                output["phon_tokens"] = phon_tokens
 
             # All these pathways have "2o" meaning we need to run the orthography decoder loop
             if pathway in ["op2op", "p2o", "o2o"]:
@@ -767,19 +771,15 @@ class Model(nn.Module):
                     device=self.device,
                 )
                 generated_orth_embeddings = self.embed_orth_tokens(generated_orth_tokens)
-                generated_orth_results = self.orthography_decoder_loop(
+                orth_probs, orth_tokens = self.orthography_decoder_loop(
                     mask,
                     generated_orth_embeddings,
                     generated_orth_tokens,
-                    output["global_encoding"],
+                    global_encoding,
                     deterministic,
                 )
-                output.update(
-                    {
-                        "orth_probs": generated_orth_results["orth_probs"],
-                        "orth_tokens": generated_orth_results["orth_tokens"],
-                    }
-                )
+                output["orth_probs"] = orth_probs
+                output["orth_tokens"] = orth_tokens
 
             return output
 
@@ -854,11 +854,11 @@ class Model(nn.Module):
         # The model's validators will ensure everything is consistent
         return GenerationOutput(
             global_encoding=generation_results["global_encoding"],
-            orth_probs=generation_results.get("orth_probs"),
-            orth_tokens=generation_results.get("orth_tokens"),
-            phon_probs=generation_results.get("phon_probs"),
-            phon_vecs=generation_results.get("phon_vecs"),
-            phon_tokens=generation_results.get("phon_tokens"),
+            orth_probs=generation_results["orth_probs"],
+            orth_tokens=generation_results["orth_tokens"],
+            phon_probs=generation_results["phon_probs"],
+            phon_vecs=generation_results["phon_vecs"],
+            phon_tokens=generation_results["phon_tokens"],
         )
 
     def _validate_generate_input(

@@ -17,6 +17,12 @@ from bridge.domain.model import Model
 from bridge.infra.metrics.metrics_logger import MetricsLogger
 from bridge.utils import device_manager
 
+# Per-step results: loss tensors + scalar metrics + the JSON-encoded `word`.
+type MetricsDict = dict[str, torch.Tensor | float | str]
+# Per-epoch results: tensors and floats only — `word` is dropped during
+# accumulation, and timing values are added as floats.
+type NumericMetrics = dict[str, torch.Tensor | float]
+
 min_interval = 1
 
 
@@ -104,23 +110,26 @@ class TrainingPipeline:
                 phon_dec_input=phonology.dec_input_ids,
                 phon_dec_pad_mask=phonology.dec_pad_mask,
             )
+        else:
+            raise ValueError(
+                f"Unknown training_pathway: {self.training_config.training_pathway!r}"
+            )
 
     def compute_loss(
         self,
         logits: dict[str, torch.Tensor],
         orthography: EncodingComponent,
         phonology: EncodingComponent,
-    ) -> dict[str, torch.Tensor | None]:
-        # Initialize losses to None
-        orth_loss = None
-        phon_loss = None
+    ) -> dict[str, torch.Tensor]:
+        orth_loss: torch.Tensor | None = None
+        phon_loss: torch.Tensor | None = None
 
         vocab = self.model.model_config.vocab
 
         # Calculate phon_loss if applicable
         if self.training_config.training_pathway in ["o2p", "op2op", "p2p"]:
             phon_loss = torch.nn.CrossEntropyLoss(ignore_index=vocab.phon_pad_id)(
-                logits["phon"], phonology.targets
+                logits["phon"], phonology.phon_targets
             )
 
         # Calculate orth_loss if applicable
@@ -129,11 +138,18 @@ class TrainingPipeline:
                 logits["orth"], orthography.enc_input_ids[:, 2:]
             )
 
-        # Calculate the combined loss, summing only non-None losses
-        total_loss = sum(loss for loss in [orth_loss, phon_loss] if loss is not None)
+        if orth_loss is not None and phon_loss is not None:
+            total_loss = orth_loss + phon_loss
+        elif orth_loss is not None:
+            total_loss = orth_loss
+        elif phon_loss is not None:
+            total_loss = phon_loss
+        else:
+            raise ValueError(
+                f"No loss configured for training_pathway={self.training_config.training_pathway!r}"
+            )
 
-        # Return only calculated losses, omitting None values
-        loss_dict = {"loss": total_loss}
+        loss_dict: dict[str, torch.Tensor] = {"loss": total_loss}
         if orth_loss is not None:
             loss_dict["orth_loss"] = orth_loss
         if phon_loss is not None:
@@ -146,8 +162,8 @@ class TrainingPipeline:
         logits: dict[str, torch.Tensor],
         orthography: EncodingComponent,
         phonology: EncodingComponent,
-    ) -> dict:
-        metrics = {}
+    ) -> dict[str, float]:
+        metrics: dict[str, float] = {}
         if self.training_config.training_pathway in ["o2p", "op2op", "p2p"]:
             metrics.update(calculate_phon_metrics(logits, phonology, self.phon_reps))
 
@@ -165,7 +181,7 @@ class TrainingPipeline:
         dataset: BridgeDataset,
         batch_slice: slice,
         calculate_metrics: bool = False,
-    ) -> dict:
+    ) -> MetricsDict:
         num_chunks = self.training_config.num_chunks if self.training_config.num_chunks else 1
         # Fast path when not using accumulated gradients
         if num_chunks == 1:
@@ -180,14 +196,17 @@ class TrainingPipeline:
             # Forward pass
             logits = self.forward(orthography, phonology)
 
-            # Compute loss (no scaling needed)
-            metrics = self.compute_loss(logits, orthography, phonology)
+            # Compute loss (no scaling needed). Kept as `dict[str, Tensor]` so
+            # `.backward()` is well-typed; widened to MetricsDict only after.
+            loss_metrics = self.compute_loss(logits, orthography, phonology)
 
             # Backward pass
             if self.model.training:
-                metrics["loss"].backward()
+                loss_metrics["loss"].backward()
                 self.optimizer.step()
                 self.optimizer.zero_grad()  # Reset gradients after update
+
+            metrics: MetricsDict = dict(loss_metrics)
 
             # Calculate additional metrics if needed
             if calculate_metrics:
@@ -196,11 +215,11 @@ class TrainingPipeline:
             if self.metrics_logger.metrics_config.batch_metrics:
                 self.metrics_logger.log_metrics(metrics, "BATCH")
 
-            metrics.update({"word": json.dumps(dataset.words[batch_slice])})
+            metrics["word"] = json.dumps(dataset.words[batch_slice])
             return metrics
 
         # Original accumulated gradients path for num_chunks > 1
-        accumulated_metrics = {}
+        accumulated_losses: dict[str, torch.Tensor] = {}
         sub_slices = self._create_sub_slices(batch_slice, num_chunks=num_chunks)
 
         # Zero gradients once at the beginning
@@ -214,33 +233,33 @@ class TrainingPipeline:
             logits = self.forward(orthography, phonology)
 
             # Compute loss with scaled factor
-            metrics = self.compute_loss(logits, orthography, phonology)
-            loss = metrics.get("loss") / num_chunks  # Scale loss by number of chunks
+            sub_metrics = self.compute_loss(logits, orthography, phonology)
+            loss = sub_metrics["loss"] / num_chunks  # Scale loss by number of chunks
 
             # Backward pass (accumulate gradients)
             if self.model.training:
                 loss.backward()
 
             # Update metrics
-            if not accumulated_metrics:
-                accumulated_metrics = {k: v for k, v in metrics.items()}
+            if not accumulated_losses:
+                accumulated_losses = dict(sub_metrics)
             else:
-                for k, v in metrics.items():
-                    if isinstance(v, torch.Tensor) and k != "word":
-                        accumulated_metrics[k] += v
+                for k, v in sub_metrics.items():
+                    accumulated_losses[k] = accumulated_losses[k] + v
 
         # Only step optimizer after processing all sub-batches
         if self.model.training:
             self.optimizer.step()
             self.optimizer.zero_grad()
 
+        accumulated_metrics: MetricsDict = dict(accumulated_losses)
         if calculate_metrics:
             accumulated_metrics.update(self.compute_metrics(logits, orthography, phonology))
 
         if self.metrics_logger.metrics_config.batch_metrics:
             self.metrics_logger.log_metrics(accumulated_metrics, "BATCH")
 
-        accumulated_metrics.update({"word": json.dumps(dataset.words[batch_slice])})
+        accumulated_metrics["word"] = json.dumps(dataset.words[batch_slice])
         return accumulated_metrics
 
     def _create_sub_slices(self, batch_slice: slice, num_chunks: int) -> list[slice]:
@@ -257,7 +276,7 @@ class TrainingPipeline:
 
         return sub_slices
 
-    def train_single_epoch(self, epoch: int) -> dict:
+    def train_single_epoch(self, epoch: int) -> NumericMetrics:
         self.model.train()
         start = time.time()
         last_update_time = time.time()
@@ -266,7 +285,7 @@ class TrainingPipeline:
             desc=f"Training Epoch {epoch + 1}",
             mininterval=min_interval,
         )
-        total_metrics = {}
+        total_metrics: NumericMetrics = {}
         for step, batch_slice in enumerate(progress_bar):
             # Run garbage collection to free up memory
             if step % 10 == 0:
@@ -277,35 +296,27 @@ class TrainingPipeline:
                 batch_slice,
                 self.metrics_logger.metrics_config.training_metrics,
             )
-            # metrics = self.single_step(batch_slice, False)
+            step_numeric: NumericMetrics = {
+                key: value for key, value in metrics.items() if not isinstance(value, str)
+            }
             current_time = time.time()
             if current_time - last_update_time > min_interval:
                 progress_bar.set_postfix(
-                    {
-                        key: f"{value:.4f}"
-                        for key, value in metrics.items()
-                        if not isinstance(value, str)
-                    }
+                    {key: f"{value:.4f}" for key, value in step_numeric.items()}
                 )
                 last_update_time = current_time
             if not total_metrics:
-                total_metrics = {
-                    key: value for key, value in metrics.items() if not isinstance(value, str)
-                }
+                total_metrics = step_numeric
             else:
-                for key in total_metrics.keys():
-                    total_metrics[key] += metrics[key]
-        for key in total_metrics.keys():
-            total_metrics[key] /= len(self.train_slices)
-        total_metrics.update(
-            {
-                "time_per_step": (time.time() - start) / len(self.train_slices),
-                "time_per_epoch": (time.time() - start) * len(self.train_slices),
-            }
-        )
+                for key, value in step_numeric.items():
+                    total_metrics[key] = total_metrics[key] + value
+        for key in total_metrics:
+            total_metrics[key] = total_metrics[key] / len(self.train_slices)
+        total_metrics["time_per_step"] = (time.time() - start) / len(self.train_slices)
+        total_metrics["time_per_epoch"] = (time.time() - start) * len(self.train_slices)
         return {"train_" + str(key): val for key, val in total_metrics.items()}
 
-    def validate_single_epoch(self, epoch: int) -> dict:
+    def validate_single_epoch(self, epoch: int) -> NumericMetrics:
         self.model.eval()
         start = time.time()
         last_update_time = time.time()
@@ -316,39 +327,34 @@ class TrainingPipeline:
         )
 
         with torch.no_grad():
-            total_metrics = {}
+            total_metrics: NumericMetrics = {}
             for _step, batch_slice in enumerate(progress_bar):
                 metrics = self.single_step(
                     self.dataset,
                     batch_slice,
                     self.metrics_logger.metrics_config.validation_metrics,
                 )
+                step_numeric: NumericMetrics = {
+                    key: value for key, value in metrics.items() if not isinstance(value, str)
+                }
                 current_time = time.time()
                 if current_time - last_update_time > min_interval:
                     progress_bar.set_postfix(
-                        {
-                            key: f"{value:.4f}"
-                            for key, value in metrics.items()
-                            if not isinstance(value, str)
-                        }
+                        {key: f"{value:.4f}" for key, value in step_numeric.items()}
                     )
                     last_update_time = current_time
                 if not total_metrics:
-                    total_metrics = metrics
+                    total_metrics = step_numeric
                 else:
-                    for key in total_metrics.keys():
-                        total_metrics[key] += metrics[key]
-            for key in total_metrics.keys():
-                total_metrics[key] /= len(self.val_slices)
-        total_metrics.update(
-            {
-                "time_per_step": (time.time() - start) / len(self.val_slices),
-                "time_per_epoch": (time.time() - start) * len(self.val_slices),
-            }
-        )
+                    for key, value in step_numeric.items():
+                        total_metrics[key] = total_metrics[key] + value
+            for key in total_metrics:
+                total_metrics[key] = total_metrics[key] / len(self.val_slices)
+        total_metrics["time_per_step"] = (time.time() - start) / len(self.val_slices)
+        total_metrics["time_per_epoch"] = (time.time() - start) * len(self.val_slices)
         return {"valid_" + str(key): val for key, val in total_metrics.items()}
 
-    def test_single_epoch(self, epoch: int) -> dict:
+    def test_single_epoch(self, epoch: int) -> NumericMetrics:
         self.model.eval()
         start = time.time()
         last_update_time = time.time()
@@ -368,39 +374,31 @@ class TrainingPipeline:
         )
 
         with torch.no_grad():
-            total_metrics = {}
+            total_metrics: NumericMetrics = {}
             for _step, batch_slice in enumerate(progress_bar):
                 metrics = self.single_step(
                     self.test_dataset,
                     batch_slice,
                     self.metrics_logger.metrics_config.validation_metrics,
                 )
-
+                step_numeric: NumericMetrics = {
+                    key: value for key, value in metrics.items() if not isinstance(value, str)
+                }
                 current_time = time.time()
                 if current_time - last_update_time > min_interval:
                     progress_bar.set_postfix(
-                        {
-                            key: f"{value:.4f}"
-                            for key, value in metrics.items()
-                            if not isinstance(value, str)
-                        }
+                        {key: f"{value:.4f}" for key, value in step_numeric.items()}
                     )
                     last_update_time = current_time
                 if not total_metrics:
-                    total_metrics = {
-                        key: value for key, value in metrics.items() if not isinstance(value, str)
-                    }
+                    total_metrics = step_numeric
                 else:
-                    for key in total_metrics.keys():
-                        total_metrics[key] += metrics[key]
-            for key in total_metrics.keys():
-                total_metrics[key] /= len(test_slices)
-        total_metrics.update(
-            {
-                "time_per_step": (time.time() - start) / len(test_slices),
-                "time_per_epoch": (time.time() - start) * len(test_slices),
-            }
-        )
+                    for key, value in step_numeric.items():
+                        total_metrics[key] = total_metrics[key] + value
+            for key in total_metrics:
+                total_metrics[key] = total_metrics[key] / len(test_slices)
+        total_metrics["time_per_step"] = (time.time() - start) / len(test_slices)
+        total_metrics["time_per_epoch"] = (time.time() - start) * len(test_slices)
         return {"test_" + str(key): val for key, val in total_metrics.items()}
 
     def run_train_val_loop(self, run_name: str):

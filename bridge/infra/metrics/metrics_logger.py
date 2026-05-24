@@ -96,9 +96,12 @@ class CSVGCPMetricsLogger(CSVMetricsLogger):
         self.gcs_path = gcs_path
 
     def save(self) -> None:
+        if not self.metrics_config.filename:
+            raise ValueError("Filename is required for CSV output mode")
+        stem, ext = self.metrics_config.filename.split(".")
         for level in self.opened:
             if self.opened[level]:
-                file_name = f"results/{self.metrics_config.filename.split('.')[0]}_{level}.{self.metrics_config.filename.split('.')[1]}"
+                file_name = f"results/{stem}_{level}.{ext}"
                 self.gcs_client.upload_file(
                     os.environ["BUCKET_NAME"], file_name, f"{self.gcs_path}/results/{file_name}"
                 )
@@ -107,7 +110,7 @@ class CSVGCPMetricsLogger(CSVMetricsLogger):
 def metrics_logger_factory(
     metrics_config: MetricsConfig, training_config: TrainingConfig
 ) -> MetricsLogger:
-    loggers = []
+    loggers: list[MetricsLogger] = []
     if OutputMode.CSV in metrics_config.modes:
         if metrics_config.filename:
             loggers.append(CSVMetricsLogger(metrics_config))

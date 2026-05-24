@@ -1,7 +1,7 @@
 from typing import Annotated
 
 import torch
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 def validate_global_encoding(v: torch.Tensor) -> torch.Tensor:
@@ -116,6 +116,8 @@ class GenerationOutput(BaseModel):
             each generated phoneme. None for non-phonological pathways.
     """
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     global_encoding: Annotated[torch.Tensor, Field(validate_default=True)]
     orth_probs: list[list[torch.Tensor]] | None = None
     orth_tokens: torch.Tensor | None = None
@@ -182,6 +184,3 @@ class GenerationOutput(BaseModel):
             raise ValueError("All tensors must be on the same device")
 
         return self
-
-    class Config:
-        arbitrary_types_allowed = True

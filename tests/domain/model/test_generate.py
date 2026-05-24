@@ -6,6 +6,7 @@ from bridge.domain.datamodels import (
     BridgeEncoding,
     GenerationOutput,
     ModelConfig,
+    VocabSpec,
 )
 from bridge.domain.datamodels.encodings import EncodingComponent
 from bridge.domain.tokenizer import BridgeTokenizer
@@ -160,6 +161,7 @@ def model_config():
         nhead=2,
         d_embedding=1,
         seed=42,  # Fixed seed for reproducibility
+        vocab=VocabSpec.from_tokenizer(tokenizer),
     )
 
 

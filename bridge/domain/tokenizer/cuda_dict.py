@@ -10,7 +10,7 @@ class CUDADict(dict):
         super().__init__(*args, **kwargs)
 
     def to(self, device: torch.device):
-        output = {}
+        output: dict[str, list[list[torch.Tensor]] | torch.Tensor] = {}
         for key in self.keys():
             batches = self[key]
             if isinstance(batches, list):
