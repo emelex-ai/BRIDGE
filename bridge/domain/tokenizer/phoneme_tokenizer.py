@@ -5,7 +5,7 @@ import os
 import torch
 
 from bridge.core.phonreps import load_phonreps
-from bridge.domain.tokenizer.cuda_dict import CUDADict
+from bridge.domain.datamodels.encodings import EncodingComponent
 from bridge.utils import device_manager, get_project_root
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,6 @@ class PhonemeTokenizer:
         self.device = device_manager.device
 
         phonreps = load_phonreps(device=self.device)
-        self.phonreps = phonreps.dataframe
         self.base_dim = phonreps.base_dim
         self.phonreps_array = phonreps.array
         self.phonreps_index = phonreps.index
@@ -66,12 +65,19 @@ class PhonemeTokenizer:
             "[SPC]": self.base_dim + 3,
             "[PAD]": self.base_dim + 4,
         }
+        # Keyed by float so a scalar `tensor.item()` from either an int or float tensor
+        # can be looked up directly; non-integral values simply miss.
+        self._special_token_by_dim: dict[float, str] = {
+            float(dim): token for token, dim in self.special_token_dims.items()
+        }
         self.vocabulary_size = self.base_dim + len(self.special_token_dims)
 
         self.special_vecs = {
             token: torch.tensor([dim], dtype=torch.long, device=self.device)
             for token, dim in self.special_token_dims.items()
         }
+        # Loop-invariant index vector used to one-hot encode targets in `encode`.
+        self._feature_range = torch.arange(self.vocabulary_size - 1, device=self.device)
 
         self.vector_cache: dict[str, torch.Tensor] = {}
         self.max_cache_size = max_cache_size
@@ -151,7 +157,7 @@ class PhonemeTokenizer:
             return []
 
         if language_map is None:
-            language_map = {word: "en" for word in words}
+            language_map = {}
 
         result: list = []
         for i, word in enumerate(words):
@@ -189,11 +195,12 @@ class PhonemeTokenizer:
         self,
         words: str | list[str],
         language_map: dict[str, str] | None = None,
-    ) -> CUDADict | None:
+    ) -> EncodingComponent | None:
         """Encode words or phrases to phonetic feature indices.
 
         ``language_map`` is an optional ``{word: language_code}`` mapping. Defaults to
-        treating every word as English.
+        treating every word as English. Returns ``None`` if any word is missing from the
+        pronunciation lexicon.
         """
         if isinstance(words, str):
             words = [words]
@@ -210,6 +217,10 @@ class PhonemeTokenizer:
         enc_length = max_length + 2  # BOS, EOS
         dec_length = max_length + 1  # BOS
 
+        pad_vec = self.special_vecs["[PAD]"]
+        bos_vec = self.special_vecs["[BOS]"]
+        eos_vec = self.special_vecs["[EOS]"]
+
         enc_indices = []
         dec_indices = []
 
@@ -223,45 +234,27 @@ class PhonemeTokenizer:
         for i, phoneme_seq in enumerate(word_phonemes):
             phoneme_indices = [self._get_phoneme_indices(p) for p in phoneme_seq]
 
-            enc_seq = [self.special_vecs["[BOS]"]] + phoneme_indices + [self.special_vecs["[EOS]"]]
-            dec_seq = [self.special_vecs["[BOS]"]] + phoneme_indices
-
-            while len(enc_seq) < enc_length:
-                enc_seq.append(self.special_vecs["[PAD]"])
-            while len(dec_seq) < dec_length:
-                dec_seq.append(self.special_vecs["[PAD]"])
+            enc_seq = [bos_vec, *phoneme_indices, eos_vec]
+            dec_seq = [bos_vec, *phoneme_indices]
+            enc_seq += [pad_vec] * (enc_length - len(enc_seq))
+            dec_seq += [pad_vec] * (dec_length - len(dec_seq))
 
             enc_indices.append(enc_seq)
             dec_indices.append(dec_seq)
 
-            for j, indices in enumerate(phoneme_indices + [self.special_vecs["[EOS]"]]):
-                one_hot = torch.isin(
-                    torch.arange(self.vocabulary_size - 1, device=self.device), indices
-                ).long()
-                targets[i, j] = one_hot
+            for j, indices in enumerate([*phoneme_indices, eos_vec]):
+                targets[i, j] = torch.isin(self._feature_range, indices).long()
 
         seq_lengths = torch.tensor([len(p) + 2 for p in word_phonemes], device=self.device)
-        position_indices = torch.arange(enc_length, device=self.device).expand(
-            batch_size, enc_length
-        )
+        enc_positions = torch.arange(enc_length, device=self.device).expand(batch_size, enc_length)
+        dec_positions = torch.arange(dec_length, device=self.device).expand(batch_size, dec_length)
 
-        enc_pad_mask = position_indices >= seq_lengths.unsqueeze(1)
-
-        dec_seq_lengths = seq_lengths - 1
-        dec_position_indices = torch.arange(dec_length, device=self.device).expand(
-            batch_size, dec_length
-        )
-
-        dec_pad_mask = dec_position_indices >= dec_seq_lengths.unsqueeze(1)
-
-        return CUDADict(
-            {
-                "enc_input_ids": enc_indices,
-                "enc_pad_mask": enc_pad_mask,
-                "dec_input_ids": dec_indices,
-                "dec_pad_mask": dec_pad_mask,
-                "targets": targets,
-            }
+        return EncodingComponent(
+            enc_input_ids=enc_indices,
+            enc_pad_mask=enc_positions >= seq_lengths.unsqueeze(1),
+            dec_input_ids=dec_indices,
+            dec_pad_mask=dec_positions >= (seq_lengths - 1).unsqueeze(1),
+            targets=targets,
         )
 
     def decode(self, indices_batch: list[list[int]]) -> torch.Tensor:
@@ -287,14 +280,9 @@ class PhonemeTokenizer:
         self.phoneme_vectors_to_strings: dict[tuple, list[str]] = {}
 
         for phoneme, idx in self.phonreps_index.items():
-            vector = self.phonreps_array[idx]
-            vector_tuple = tuple(vector.cpu().numpy().astype(int))
+            vector_tuple = tuple(self.phonreps_array[idx].cpu().numpy().astype(int))
+            self.phoneme_vectors_to_strings.setdefault(vector_tuple, []).append(phoneme)
 
-            if vector_tuple not in self.phoneme_vectors_to_strings:
-                self.phoneme_vectors_to_strings[vector_tuple] = []
-            self.phoneme_vectors_to_strings[vector_tuple].append(phoneme)
-
-        self.all_phoneme_vectors = self.phonreps_array
         self.all_phoneme_names = list(self.phonreps_index.keys())
 
     def phoneme_vector_to_phoneme(self, phoneme_vector, distance_fn=None, top_k=1):
@@ -316,10 +304,7 @@ class PhonemeTokenizer:
         if phoneme_vector.dim() == 1 and len(phoneme_vector) > self.base_dim:
             active_dims = torch.nonzero(phoneme_vector, as_tuple=True)[0]
             if len(active_dims) == 1 and active_dims[0] >= self.base_dim:
-                for token, dim in self.special_token_dims.items():
-                    if active_dims[0].item() == dim:
-                        return [token]
-                return ["[UNK]"]
+                return [self._special_token_by_dim.get(float(active_dims[0].item()), "[UNK]")]
 
             phoneme_vector = phoneme_vector[: self.base_dim]
 
@@ -329,25 +314,18 @@ class PhonemeTokenizer:
 
         if distance_fn is None:
 
-            def hamming_distance(v1, v2):
+            def distance_fn(v1, v2):  # Hamming distance
                 return (v1 != v2).float().sum()
 
-            distance_fn = hamming_distance
-
         distances = torch.tensor(
-            [
-                distance_fn(phoneme_vector, self.all_phoneme_vectors[i])
-                for i in range(len(self.all_phoneme_vectors))
-            ],
+            [distance_fn(phoneme_vector, rep) for rep in self.phonreps_array],
             device=self.device,
         )
 
         _, indices = torch.topk(distances, k=min(top_k, len(distances)), largest=False)
 
-        closest_phonemes = [self.all_phoneme_names[idx.item()] for idx in indices]
-
         if top_k == 1:
-            return closest_phonemes
+            return [self.all_phoneme_names[idx.item()] for idx in indices]
 
         return [(self.all_phoneme_names[idx.item()], distances[idx].item()) for idx in indices]
 
@@ -356,49 +334,10 @@ class PhonemeTokenizer:
         phonemes = []
 
         for vector in phoneme_vectors:
-            if isinstance(vector, torch.Tensor):
-                if vector.dim() == 0:
-                    for token, dim in self.special_token_dims.items():
-                        if vector.item() == dim:
-                            phonemes.append(token)
-                            break
-                    else:
-                        phonemes.append("[UNK]")
-                else:
-                    matches = self.phoneme_vector_to_phoneme(vector, distance_fn, top_k=1)
-                    if matches:
-                        phonemes.append(matches[0])
-                    else:
-                        phonemes.append("[UNK]")
+            if isinstance(vector, torch.Tensor) and vector.dim() == 0:
+                phonemes.append(self._special_token_by_dim.get(float(vector.item()), "[UNK]"))
             else:
                 matches = self.phoneme_vector_to_phoneme(vector, distance_fn, top_k=1)
-                if matches:
-                    phonemes.append(matches[0])
-                else:
-                    phonemes.append("[UNK]")
+                phonemes.append(matches[0] if matches else "[UNK]")
 
         return phonemes
-
-    def indices_to_phoneme(self, indices):
-        """Convert active feature indices back to a phoneme.
-
-        Args:
-            indices: Tensor of active feature indices
-
-        Returns:
-            Phoneme string or [UNK] if not found
-        """
-        vector = torch.zeros(self.base_dim, device=self.device)
-
-        if len(indices) == 1 and indices[0] >= self.base_dim:
-            for token, dim in self.special_token_dims.items():
-                if indices[0].item() == dim:
-                    return token
-            return "[UNK]"
-
-        valid_indices = indices[indices < self.base_dim]
-        if len(valid_indices) > 0:
-            vector[valid_indices] = 1
-
-        matches = self.phoneme_vector_to_phoneme(vector, top_k=1)
-        return matches[0] if matches else "[UNK]"

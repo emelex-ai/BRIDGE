@@ -3,7 +3,7 @@ import string
 
 import torch
 
-from bridge.domain.tokenizer.cuda_dict import CUDADict
+from bridge.domain.datamodels.encodings import EncodingComponent
 from bridge.utils import device_manager
 
 logger = logging.getLogger(__name__)
@@ -23,6 +23,8 @@ class CharacterTokenizer:
         self.char_2_idx = {ch: i for i, ch in enumerate(self.vocab)}
         self.idx_2_char = {i: ch for i, ch in enumerate(self.vocab)}
         self.vocabulary_size = len(self.vocab)
+        # Non-content tokens stripped during decoding.
+        self._non_content_tokens = set(self.special_tokens) | set(self.language_tokens)
 
         logger.info(f"CharacterTokenizer initialized with vocabulary size: {self.vocabulary_size}")
 
@@ -33,7 +35,7 @@ class CharacterTokenizer:
         self,
         list_of_strings: str | list[str],
         language_map: dict[str, str] | None = None,
-    ) -> CUDADict:
+    ) -> EncodingComponent:
         """Encode strings to orthographic feature indices, prepending a language token.
 
         Each sequence is laid out as ``[LANG, BOS, ...chars, EOS, PAD, ...]`` for encoder
@@ -48,8 +50,7 @@ class CharacterTokenizer:
                 default to ``"--"``.
 
         Returns:
-            CUDADict with ``enc_input_ids``, ``dec_input_ids``, ``enc_pad_mask``,
-            ``dec_pad_mask``.
+            An orthographic :class:`EncodingComponent`.
         """
         if language_map is None:
             language_map = {}
@@ -72,73 +73,45 @@ class CharacterTokenizer:
             raise TypeError("Input must be a string or a list of strings")
 
         max_length = max(len(s) for s in list_of_strings)
+        unk = self.char_2_idx["[UNK]"]
 
-        def enc_pad(s: str) -> list[str]:
-            return (
-                [language_map.get(s.lower(), "--")]
-                + ["[BOS]"]
-                + list(s)
-                + ["[EOS]"]
-                + ["[PAD]"] * (max_length - len(s))
-            )
+        def to_ids(tokens: list[str]) -> list[int]:
+            return [self.char_2_idx.get(t, unk) for t in tokens]
 
-        def dec_pad(s: str) -> list[str]:
-            return (
-                [language_map.get(s.lower(), "--")]
-                + ["[BOS]"]
-                + list(s)
-                + ["[PAD]"] * (max_length - len(s))
-            )
+        def prefix(s: str) -> list[str]:
+            return [language_map.get(s.lower(), "--"), "[BOS]", *s]
 
-        enc_strings = [enc_pad(s) for s in list_of_strings]
-        dec_strings = [dec_pad(s) for s in list_of_strings]
+        # Rows are uniform length by construction: 3 + max_length for the encoder
+        # ([LANG], [BOS], [EOS]) and 2 + max_length for the decoder ([LANG], [BOS]).
+        enc_rows = [
+            to_ids([*prefix(s), "[EOS]", *["[PAD]"] * (max_length - len(s))])
+            for s in list_of_strings
+        ]
+        dec_rows = [
+            to_ids([*prefix(s), *["[PAD]"] * (max_length - len(s))]) for s in list_of_strings
+        ]
 
-        # +3 for [LANG], [BOS], [EOS]
-        enc_input_ids = torch.zeros(
-            (len(enc_strings), 3 + max_length), dtype=torch.long, device=self.device
-        )
-        for i, enc_str in enumerate(enc_strings):
-            for j, ch in enumerate(enc_str):
-                enc_input_ids[i, j] = self.char_2_idx.get(ch, self.char_2_idx["[UNK]"])
+        enc_input_ids = torch.tensor(enc_rows, dtype=torch.long, device=self.device)
+        dec_input_ids = torch.tensor(dec_rows, dtype=torch.long, device=self.device)
 
-        # +2 for [LANG], [BOS]
-        dec_input_ids = torch.zeros(
-            (len(dec_strings), 2 + max_length), dtype=torch.long, device=self.device
-        )
-        for i, dec_str in enumerate(dec_strings):
-            for j, ch in enumerate(dec_str):
-                dec_input_ids[i, j] = self.char_2_idx.get(ch, self.char_2_idx["[UNK]"])
-
-        PAD_TOKEN = self.char_2_idx["[PAD]"]
-        enc_pad_mask = enc_input_ids == PAD_TOKEN
-        dec_pad_mask = dec_input_ids == PAD_TOKEN
-
-        return CUDADict(
-            {
-                "enc_input_ids": enc_input_ids,
-                "dec_input_ids": dec_input_ids,
-                "enc_pad_mask": enc_pad_mask.bool(),
-                "dec_pad_mask": dec_pad_mask.bool(),
-            }
+        pad_token = self.char_2_idx["[PAD]"]
+        return EncodingComponent(
+            enc_input_ids=enc_input_ids,
+            enc_pad_mask=enc_input_ids == pad_token,
+            dec_input_ids=dec_input_ids,
+            dec_pad_mask=dec_input_ids == pad_token,
         )
 
     def decode(self, list_of_ints: list[list[int]]) -> list[str]:
         try:
-            decoded_strings = [
+            return [
                 "".join(
-                    [
-                        self.idx_2_char[i]
-                        for i in ints
-                        if (
-                            self.idx_2_char[i] not in self.special_tokens
-                            and self.idx_2_char[i] not in self.language_tokens
-                        )
-                    ]
+                    ch
+                    for ch in (self.idx_2_char[i] for i in ints)
+                    if ch not in self._non_content_tokens
                 )
                 for ints in list_of_ints
             ]
         except KeyError as e:
             logger.error(f"Invalid index encountered during decoding: {e}")
             raise KeyError from e
-
-        return decoded_strings

@@ -29,6 +29,8 @@ from bridge.utils import device_manager
 
 logger = logging.getLogger(__name__)
 
+ModalityFilter = Literal["both", "orthography", "phonology"]
+
 
 class BridgeTokenizer:
     """
@@ -68,7 +70,7 @@ class BridgeTokenizer:
     def encode(
         self,
         text: str | list[str],
-        modality_filter: Literal["both", "orthography", "phonology"] = "both",
+        modality_filter: ModalityFilter = "both",
         language_map: dict[str, str] | None = None,
     ) -> BridgeEncoding | None:
         """
@@ -90,346 +92,80 @@ class BridgeTokenizer:
             BridgeEncoding containing encodings according to the modality filter,
             or None if encoding fails based on the filter rules
         """
-
-        # Validate modality filter
-        if modality_filter not in ["both", "orthography", "phonology"]:
+        if modality_filter not in ("both", "orthography", "phonology"):
             logger.error(f"Invalid modality_filter: {modality_filter}")
             raise ValueError(
                 f"Invalid modality_filter: {modality_filter}. "
                 f"Must be one of ['both', 'orthography', 'phonology']"
             )
 
-        # Get orthographic encoding if needed
-        ortho_encoding = None
-        if modality_filter in ["both", "orthography"]:
-            try:
-                logger.debug("Attempting orthographic encoding...")
-                ortho_encoding = self.char_tokenizer.encode(text, language_map=language_map)
+        batch_size = len(text) if isinstance(text, list) else 1
 
-                if ortho_encoding is None:
-                    logger.error(
-                        f"Orthographic encoding returned None for text: {text}, "
-                        f"modality_filter: {modality_filter}"
-                    )
-                else:
-                    logger.debug(
-                        f"Orthographic encoding successful. Keys: {list(ortho_encoding.keys()) if ortho_encoding else 'None'}"
-                    )
-
-            except Exception as e:
-                logger.error(
-                    f"Orthographic encoding failed with exception: {type(e).__name__}: {str(e)}, "
-                    f"text: {text}, modality_filter: {modality_filter}",
-                    exc_info=True,
-                )
-                ortho_encoding = None
-
-        # Get phonological encoding if needed
-        phono_encoding = None
-        if modality_filter in ["both", "phonology"]:
-            try:
-                logger.debug("Attempting phonological encoding...")
-                phono_encoding = self.phoneme_tokenizer.encode(text, language_map=language_map)
-
-                if phono_encoding is None:
-                    logger.warning(
-                        f"Phonological encoding returned None - word not found in CMU dictionary. "
-                        f"Text: {text}, modality_filter: {modality_filter}"
-                    )
-                    # If phonological encoding fails and it's required, return None
-                    if modality_filter in ["both", "phonology"]:
-                        logger.error(
-                            f"Phonological encoding required but failed for modality_filter: {modality_filter}"
-                        )
-                        return None
-                else:
-                    logger.debug(
-                        f"Phonological encoding successful. Keys: {list(phono_encoding.keys()) if phono_encoding else 'None'}"
-                    )
-
-            except Exception as e:
-                logger.error(
-                    f"Phonological encoding failed with exception: {type(e).__name__}: {str(e)}, "
-                    f"text: {text}, modality_filter: {modality_filter}",
-                    exc_info=True,
-                )
-                phono_encoding = None
-
-                # If phonological encoding fails and it's required, return None
-                if modality_filter in ["both", "phonology"]:
-                    logger.error(
-                        f"Phonological encoding required but failed due to exception for modality_filter: {modality_filter}"
-                    )
-                    return None
-
-        # Build the BridgeEncoding based on the modality filter
         try:
-            if modality_filter == "both":
-                # Classic behavior - need both encodings to succeed
-                if ortho_encoding is None or phono_encoding is None:
+            # Each modality is either encoded for real or stubbed with a placeholder;
+            # `BridgeEncoding` always carries both components.
+            if modality_filter in ("both", "orthography"):
+                orthographic = self.char_tokenizer.encode(text, language_map=language_map)
+                if orthographic is None:
+                    logger.error(f"Orthographic encoding failed for text: {text}")
+                    return None
+            else:
+                orthographic = self._create_placeholder_orthographic(batch_size)
+
+            if modality_filter in ("both", "phonology"):
+                phonological = self.phoneme_tokenizer.encode(text, language_map=language_map)
+                if phonological is None:
                     logger.error(
-                        f"Both encodings required but one failed. "
-                        f"ortho_encoding is None: {ortho_encoding is None}, "
-                        f"phono_encoding is None: {phono_encoding is None}, "
-                        f"text: {text}"
+                        f"Phonological encoding failed — word not found in the pronunciation "
+                        f"lexicon. Text: {text}, modality_filter: {modality_filter}"
                     )
                     return None
+            else:
+                phonological = self._create_placeholder_phonological(batch_size)
 
-                logger.debug("Creating orthographic and phonological components for 'both' mode...")
-
-                # Create orthographic component
-                try:
-                    orthographic = EncodingComponent(
-                        enc_input_ids=ortho_encoding["enc_input_ids"],
-                        enc_pad_mask=ortho_encoding["enc_pad_mask"],
-                        dec_input_ids=ortho_encoding["dec_input_ids"],
-                        dec_pad_mask=ortho_encoding["dec_pad_mask"],
-                    )
-                    logger.debug("Orthographic component created successfully")
-                except Exception as e:
-                    logger.error(
-                        f"Failed to create orthographic component: {type(e).__name__}: {str(e)}, "
-                        f"ortho_encoding keys: {list(ortho_encoding.keys()) if ortho_encoding else 'None'}",
-                        exc_info=True,
-                    )
-                    return None
-
-                # Create phonological component
-                try:
-                    phonological = EncodingComponent(
-                        enc_input_ids=phono_encoding["enc_input_ids"],
-                        enc_pad_mask=phono_encoding["enc_pad_mask"],
-                        dec_input_ids=phono_encoding["dec_input_ids"],
-                        dec_pad_mask=phono_encoding["dec_pad_mask"],
-                        targets=phono_encoding["targets"],
-                    )
-                    logger.debug("Phonological component created successfully")
-                except Exception as e:
-                    logger.error(
-                        f"Failed to create phonological component: {type(e).__name__}: {str(e)}, "
-                        f"phono_encoding keys: {list(phono_encoding.keys()) if phono_encoding else 'None'}",
-                        exc_info=True,
-                    )
-                    return None
-
-                # Create final BridgeEncoding
-                try:
-                    bridge_encoding = BridgeEncoding(
-                        orthographic=orthographic,
-                        phonological=phonological,
-                        device=self.device,
-                    )
-                    logger.debug(
-                        f"BridgeEncoding created successfully for 'both' mode, device: {self.device}"
-                    )
-                    return bridge_encoding
-                except Exception as e:
-                    logger.error(
-                        f"Failed to create BridgeEncoding: {type(e).__name__}: {str(e)}, "
-                        f"device: {self.device}",
-                        exc_info=True,
-                    )
-                    return None
-
-            elif modality_filter == "orthography":
-                # Orthography-only mode for o2p pathway with nonwords
-                if ortho_encoding is None:
-                    logger.error(
-                        f"Orthographic encoding required but failed for 'orthography' mode, text: {text}"
-                    )
-                    return None
-
-                logger.debug("Creating components for 'orthography' mode...")
-
-                # Create orthographic component
-                try:
-                    orthographic = EncodingComponent(
-                        enc_input_ids=ortho_encoding["enc_input_ids"],
-                        enc_pad_mask=ortho_encoding["enc_pad_mask"],
-                        dec_input_ids=ortho_encoding["dec_input_ids"],
-                        dec_pad_mask=ortho_encoding["dec_pad_mask"],
-                    )
-                    logger.debug("Orthographic component created successfully")
-                except Exception as e:
-                    logger.error(
-                        f"Failed to create orthographic component in 'orthography' mode: {type(e).__name__}: {str(e)}",
-                        exc_info=True,
-                    )
-                    return None
-
-                # Create placeholder phonological component
-                try:
-                    batch_size = len(text) if isinstance(text, list) else 1
-                    seq_len = 1  # Minimal length
-                    logger.debug(
-                        f"Creating placeholder phonological component with batch_size: {batch_size}, seq_len: {seq_len}"
-                    )
-
-                    phonological = self._create_placeholder_phonological(batch_size, seq_len)
-                    logger.debug("Placeholder phonological component created successfully")
-                except Exception as e:
-                    logger.error(
-                        f"Failed to create placeholder phonological component: {type(e).__name__}: {str(e)}, "
-                        f"batch_size: {len(text) if isinstance(text, list) else 1}",
-                        exc_info=True,
-                    )
-                    return None
-
-                # Create final BridgeEncoding
-                try:
-                    bridge_encoding = BridgeEncoding(
-                        orthographic=orthographic,
-                        phonological=phonological,
-                        device=self.device,
-                    )
-                    logger.debug(
-                        f"BridgeEncoding created successfully for 'orthography' mode, device: {self.device}"
-                    )
-                    return bridge_encoding
-                except Exception as e:
-                    logger.error(
-                        f"Failed to create BridgeEncoding in 'orthography' mode: {type(e).__name__}: {str(e)}",
-                        exc_info=True,
-                    )
-                    return None
-
-            elif modality_filter == "phonology":
-                # Phonology-only mode (p2o pathway)
-                if phono_encoding is None:
-                    logger.error(
-                        f"Phonological encoding required but failed for 'phonology' mode, text: {text}"
-                    )
-                    return None
-
-                logger.debug("Creating components for 'phonology' mode...")
-
-                # Create placeholder orthographic component
-                try:
-                    batch_size = len(text) if isinstance(text, list) else 1
-                    seq_len = 1  # Minimal length
-                    logger.debug(
-                        f"Creating placeholder orthographic component with batch_size: {batch_size}, seq_len: {seq_len}"
-                    )
-
-                    orthographic = self._create_placeholder_orthographic(batch_size, seq_len)
-                    logger.debug("Placeholder orthographic component created successfully")
-                except Exception as e:
-                    logger.error(
-                        f"Failed to create placeholder orthographic component: {type(e).__name__}: {str(e)}, "
-                        f"batch_size: {len(text) if isinstance(text, list) else 1}",
-                        exc_info=True,
-                    )
-                    return None
-
-                # Create phonological component
-                try:
-                    phonological = EncodingComponent(
-                        enc_input_ids=phono_encoding["enc_input_ids"],
-                        enc_pad_mask=phono_encoding["enc_pad_mask"],
-                        dec_input_ids=phono_encoding["dec_input_ids"],
-                        dec_pad_mask=phono_encoding["dec_pad_mask"],
-                        targets=phono_encoding["targets"],
-                    )
-                    logger.debug("Phonological component created successfully")
-                except Exception as e:
-                    logger.error(
-                        f"Failed to create phonological component in 'phonology' mode: {type(e).__name__}: {str(e)}",
-                        exc_info=True,
-                    )
-                    return None
-
-                # Create final BridgeEncoding
-                try:
-                    bridge_encoding = BridgeEncoding(
-                        orthographic=orthographic,
-                        phonological=phonological,
-                        device=self.device,
-                    )
-                    logger.debug(
-                        f"BridgeEncoding created successfully for 'phonology' mode, device: {self.device}"
-                    )
-                    return bridge_encoding
-                except Exception as e:
-                    logger.error(
-                        f"Failed to create BridgeEncoding in 'phonology' mode: {type(e).__name__}: {str(e)}",
-                        exc_info=True,
-                    )
-                    return None
-
-        except Exception as e:
-            logger.error(
-                f"Unexpected error in encode method: {type(e).__name__}: {str(e)}, "
-                f"text: {text}, modality_filter: {modality_filter}",
-                exc_info=True,
+            return BridgeEncoding(
+                orthographic=orthographic,
+                phonological=phonological,
+                device=self.device,
+            )
+        except Exception:
+            logger.exception(
+                f"Encoding failed for text: {text}, modality_filter: {modality_filter}"
             )
             return None
 
-        # This should never be reached, but adding as a safety net
-        logger.error(
-            f"Encode method reached unexpected end without returning, modality_filter: {modality_filter}"
-        )
-        return None
+    def _placeholder_pad_masks(self, batch_size: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """Encoder/decoder pad masks for a single all-padding placeholder position."""
+        mask = torch.ones((batch_size, 1), dtype=torch.bool, device=self.device)
+        return mask, mask.clone()
 
-    def _create_placeholder_phonological(self, batch_size: int, seq_len: int) -> EncodingComponent:
+    def _create_placeholder_phonological(self, batch_size: int) -> EncodingComponent:
         """Create a minimal phonological component for orthography-only encoding."""
-        # Create placeholder phonological tensors
-        placeholder_feature_indices = torch.tensor(
-            [self.phon_pad_id], dtype=torch.long, device=self.device
-        )
-
-        # Each item in each batch gets a pad token feature index
-        placeholder_enc_input_ids = [
-            [placeholder_feature_indices.clone()] for _ in range(batch_size)
-        ]
-        placeholder_dec_input_ids = [
-            [placeholder_feature_indices.clone()] for _ in range(batch_size)
-        ]
-
-        # Create padding masks
-        placeholder_enc_pad_mask = torch.ones(
-            (batch_size, seq_len), dtype=torch.bool, device=self.device
-        )
-        placeholder_dec_pad_mask = torch.ones(
-            (batch_size, seq_len), dtype=torch.bool, device=self.device
-        )
-
-        # Create target tensor
-        phon_vocab_size = self.phoneme_tokenizer.get_vocabulary_size()
-        placeholder_targets = torch.zeros(
-            (batch_size, seq_len, phon_vocab_size), dtype=torch.long, device=self.device
-        )
+        pad_index = torch.tensor([self.phon_pad_id], dtype=torch.long, device=self.device)
+        enc_pad_mask, dec_pad_mask = self._placeholder_pad_masks(batch_size)
 
         return EncodingComponent(
-            enc_input_ids=placeholder_enc_input_ids,
-            enc_pad_mask=placeholder_enc_pad_mask,
-            dec_input_ids=placeholder_dec_input_ids,
-            dec_pad_mask=placeholder_dec_pad_mask,
-            targets=placeholder_targets,
+            enc_input_ids=[[pad_index.clone()] for _ in range(batch_size)],
+            enc_pad_mask=enc_pad_mask,
+            dec_input_ids=[[pad_index.clone()] for _ in range(batch_size)],
+            dec_pad_mask=dec_pad_mask,
+            targets=torch.zeros(
+                (batch_size, 1, self.phoneme_tokenizer.get_vocabulary_size()),
+                dtype=torch.long,
+                device=self.device,
+            ),
         )
 
-    def _create_placeholder_orthographic(self, batch_size: int, seq_len: int) -> EncodingComponent:
+    def _create_placeholder_orthographic(self, batch_size: int) -> EncodingComponent:
         """Create a minimal orthographic component for phonology-only encoding."""
-        # Create placeholder orthographic tensors
-        placeholder_enc_input_ids = torch.zeros(
-            (batch_size, seq_len), dtype=torch.long, device=self.device
-        )
-        placeholder_dec_input_ids = torch.zeros(
-            (batch_size, seq_len), dtype=torch.long, device=self.device
-        )
-
-        # Create padding masks
-        placeholder_enc_pad_mask = torch.ones(
-            (batch_size, seq_len), dtype=torch.bool, device=self.device
-        )
-        placeholder_dec_pad_mask = torch.ones(
-            (batch_size, seq_len), dtype=torch.bool, device=self.device
-        )
+        zeros = torch.zeros((batch_size, 1), dtype=torch.long, device=self.device)
+        enc_pad_mask, dec_pad_mask = self._placeholder_pad_masks(batch_size)
 
         return EncodingComponent(
-            enc_input_ids=placeholder_enc_input_ids,
-            enc_pad_mask=placeholder_enc_pad_mask,
-            dec_input_ids=placeholder_dec_input_ids,
-            dec_pad_mask=placeholder_dec_pad_mask,
+            enc_input_ids=zeros,
+            enc_pad_mask=enc_pad_mask,
+            dec_input_ids=zeros.clone(),
+            dec_pad_mask=dec_pad_mask,
         )
 
     def decode(
@@ -447,22 +183,14 @@ class BridgeTokenizer:
         Returns:
             Dictionary containing decoded strings and tensors or None if no input
         """
-        # If nothing passed in return nothing
         if ortho_indices is None and phono_indices is None:
             return None
 
-        # Decode orthographic representation
         encodings: dict[str, list[str] | torch.Tensor] = {}
-        ortho_decoded = None
         if ortho_indices is not None:
-            ortho_decoded = self.char_tokenizer.decode(ortho_indices)
-            encodings["orthographic"] = ortho_decoded
-
-        # Decode phonological representation if provided
-        phono_decoded = None
+            encodings["orthographic"] = self.char_tokenizer.decode(ortho_indices)
         if phono_indices is not None:
-            phono_decoded = self.phoneme_tokenizer.decode(phono_indices)
-            encodings["phonological"] = phono_decoded
+            encodings["phonological"] = self.phoneme_tokenizer.decode(phono_indices)
 
         return encodings
 

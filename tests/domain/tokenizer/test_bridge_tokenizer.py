@@ -17,33 +17,33 @@ class TestBridgeTokenizer:
         encoding = bridge_tokenizer.encode("cat")
         assert encoding is not None
         assert isinstance(encoding, BridgeEncoding)
-        assert hasattr(encoding, "orth_enc_ids")
-        assert hasattr(encoding, "phon_enc_ids")
+        assert encoding.orthographic.enc_input_ids is not None
+        assert encoding.phonological.enc_input_ids is not None
 
     def test_encode_with_modality_filter_both(self, bridge_tokenizer):
         """Test encoding a word with modality_filter='both'."""
         encoding = bridge_tokenizer.encode("cat", modality_filter="both")
         assert encoding is not None
         assert isinstance(encoding, BridgeEncoding)
-        assert hasattr(encoding, "orth_enc_ids")
-        assert hasattr(encoding, "phon_enc_ids")
+        assert encoding.orthographic.enc_input_ids is not None
+        assert encoding.phonological.enc_input_ids is not None
 
     def test_encode_nan(self, bridge_tokenizer):
         """Test encoding a word that is NaN."""
         encoding = bridge_tokenizer.encode("nan", modality_filter="both")
         assert encoding is not None
         assert isinstance(encoding, BridgeEncoding)
-        assert hasattr(encoding, "orth_enc_ids")
-        assert hasattr(encoding, "phon_enc_ids")
+        assert encoding.orthographic.enc_input_ids is not None
+        assert encoding.phonological.enc_input_ids is not None
 
     def test_encode_with_modality_filter_orthography(self, bridge_tokenizer):
         """Test encoding a word with modality_filter='orthography'."""
         encoding = bridge_tokenizer.encode("cat", modality_filter="orthography")
         assert encoding is not None
         assert isinstance(encoding, BridgeEncoding)
-        assert hasattr(encoding, "orth_enc_ids")
+        assert encoding.orthographic.enc_input_ids is not None
         # Phonological fields should have placeholders but not be None
-        assert hasattr(encoding, "phon_enc_ids")
+        assert encoding.phonological.enc_input_ids is not None
 
     def test_encode_with_modality_filter_phonology(self, bridge_tokenizer):
         """Test encoding a word with modality_filter='phonology'."""
@@ -51,8 +51,8 @@ class TestBridgeTokenizer:
         assert encoding is not None
         assert isinstance(encoding, BridgeEncoding)
         # Orthographic fields should have placeholders but not be None
-        assert hasattr(encoding, "orth_enc_ids")
-        assert hasattr(encoding, "phon_enc_ids")
+        assert encoding.orthographic.enc_input_ids is not None
+        assert encoding.phonological.enc_input_ids is not None
 
     def test_encode_unknown_word_both_modalities(self, bridge_tokenizer):
         """Test encoding a nonword with modality_filter='both'."""
@@ -68,9 +68,9 @@ class TestBridgeTokenizer:
         # Should return an encoding with only orthographic data
         assert encoding is not None
         assert isinstance(encoding, BridgeEncoding)
-        assert hasattr(encoding, "orth_enc_ids")
+        assert encoding.orthographic.enc_input_ids is not None
         # Ensure placeholder phonological data is present
-        assert hasattr(encoding, "phon_enc_ids")
+        assert encoding.phonological.enc_input_ids is not None
 
     def test_encode_unknown_word_phonology_modality(self, bridge_tokenizer):
         """Test encoding a nonword with modality_filter='phonology'."""
@@ -90,7 +90,7 @@ class TestBridgeTokenizer:
         encoding = bridge_tokenizer.encode(words, modality_filter="orthography")
         assert encoding is not None
         assert isinstance(encoding, BridgeEncoding)
-        assert encoding.orth_enc_ids.shape[0] == 3  # Batch size
+        assert encoding.orthographic.enc_input_ids.shape[0] == 3  # Batch size
 
     def test_generate_compatible_encoding(self, bridge_tokenizer):
         """Test creating encodings compatible with the generate method for nonwords."""
@@ -102,11 +102,11 @@ class TestBridgeTokenizer:
         assert isinstance(encoding, BridgeEncoding)
 
         # This encoding should be usable for o2p generation
-        assert encoding.orth_enc_ids is not None
-        assert encoding.orth_enc_mask is not None
+        assert encoding.orthographic.enc_input_ids is not None
+        assert encoding.orthographic.enc_pad_mask is not None
 
         # These placeholder values should not interfere with o2p generation
-        assert encoding.phon_enc_ids is not None
+        assert encoding.phonological.enc_input_ids is not None
 
     def test_invalid_modality_filter(self, bridge_tokenizer):
         """Test that an invalid modality_filter raises an error."""
