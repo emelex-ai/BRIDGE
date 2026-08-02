@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Annotated
 
 import torch
@@ -17,36 +18,53 @@ def validate_global_encoding(v: torch.Tensor) -> torch.Tensor:
     return v
 
 
-def validate_probability_list(
-    v: list[list[torch.Tensor]] | None, name: str
+def validate_nested_tensors(
+    v: list[list[torch.Tensor]] | None,
+    name: str,
+    element_check: Callable[[torch.Tensor, str], None] | None = None,
 ) -> list[list[torch.Tensor]] | None:
-    """Validates nested probability tensor lists have correct structure and properties."""
+    """Validate a ``list[list[Tensor]]`` of per-step, per-batch 1-D tensors.
+
+    ``element_check`` runs an extra per-tensor assertion; it receives the tensor and
+    a pre-formatted ``"name[batch][step]"`` label for its error messages.
+    """
     if v is None:
         return None
 
     if not isinstance(v, list) or not all(isinstance(x, list) for x in v):
         raise ValueError(f"{name} must be a list of lists of tensors")
 
-    # Validate each probability tensor
     for batch_idx, sequence in enumerate(v):
-        for step_idx, prob_tensor in enumerate(sequence):
-            if not isinstance(prob_tensor, torch.Tensor):
-                raise ValueError(f"{name}[{batch_idx}][{step_idx}] must be a tensor")
-            if prob_tensor.dim() != 1:
-                raise ValueError(f"{name}[{batch_idx}][{step_idx}] must be 1-dimensional")
-            if name == "orth_probs" and not torch.isclose(
-                prob_tensor.sum(), torch.tensor(1.0), atol=1e-5
-            ):
-                raise ValueError(
-                    f"{name}[{batch_idx}][{step_idx}] probabilities must sum to 1, got {prob_tensor.sum()}"
-                )
-            # Probabilities should be between 0 and 1
-            if torch.any(prob_tensor < 0) or torch.any(prob_tensor > 1):
-                raise ValueError(
-                    f"{name}[{batch_idx}][{step_idx}] probabilities must be between 0 and 1"
-                )
+        for step_idx, tensor in enumerate(sequence):
+            label = f"{name}[{batch_idx}][{step_idx}]"
+            if not isinstance(tensor, torch.Tensor):
+                raise ValueError(f"{label} must be a tensor")
+            if tensor.dim() != 1:
+                raise ValueError(f"{label} must be 1-dimensional")
+            if element_check is not None:
+                element_check(tensor, label)
 
     return v
+
+
+def check_is_distribution(tensor: torch.Tensor, label: str) -> None:
+    """A normalized probability distribution: sums to 1, all entries in [0, 1]."""
+    if not torch.isclose(tensor.sum(), torch.tensor(1.0), atol=1e-5):
+        raise ValueError(f"{label} probabilities must sum to 1, got {tensor.sum()}")
+    if torch.any(tensor < 0) or torch.any(tensor > 1):
+        raise ValueError(f"{label} probabilities must be between 0 and 1")
+
+
+def check_in_unit_range(tensor: torch.Tensor, label: str) -> None:
+    """Independent per-feature probabilities: entries in [0, 1], no sum constraint."""
+    if torch.any(tensor < 0) or torch.any(tensor > 1):
+        raise ValueError(f"{label} probabilities must be between 0 and 1")
+
+
+def check_is_binary(tensor: torch.Tensor, label: str) -> None:
+    """A binary feature vector: every entry is exactly 0 or 1."""
+    if not torch.all((tensor == 0) | (tensor == 1)):
+        raise ValueError(f"{label} must contain only binary values")
 
 
 def validate_orthographic_tokens(v: torch.Tensor | None) -> torch.Tensor | None:
@@ -62,33 +80,6 @@ def validate_orthographic_tokens(v: torch.Tensor | None) -> torch.Tensor | None:
         raise ValueError("orth_tokens must have dtype torch.long or torch.int")
     if torch.any(v < 0):
         raise ValueError("orth_tokens cannot contain negative indices")
-
-    return v
-
-
-def validate_phonological_vectors(
-    v: list[list[torch.Tensor]] | None, name: str
-) -> list[list[torch.Tensor]] | None:
-    """Validates phonological vector lists have correct structure and properties."""
-    if v is None:
-        return None
-
-    if not isinstance(v, list) or not all(isinstance(x, list) for x in v):
-        raise ValueError(f"{name} must be a list of lists of tensors")
-
-    for batch_idx, sequence in enumerate(v):
-        for step_idx, vector in enumerate(sequence):
-            if not isinstance(vector, torch.Tensor):
-                raise ValueError(f"{name}[{batch_idx}][{step_idx}] must be a tensor")
-            if vector.dim() != 1:
-                raise ValueError(f"{name}[{batch_idx}][{step_idx}] must be 1-dimensional")
-
-            # For phon_vecs specifically, validate binary values
-            if name == "phon_vecs":
-                if not torch.all((vector == 0) | (vector == 1)):
-                    raise ValueError(
-                        f"phon_vecs[{batch_idx}][{step_idx}] must contain only binary values"
-                    )
 
     return v
 
@@ -127,30 +118,33 @@ class GenerationOutput(BaseModel):
 
     @model_validator(mode="after")
     def validate_structure(self) -> "GenerationOutput":
-        # Validate individual components
-        self.global_encoding = validate_global_encoding(self.global_encoding)
-        self.orth_probs = validate_probability_list(self.orth_probs, "orth_probs")
-        self.orth_tokens = validate_orthographic_tokens(self.orth_tokens)
-        self.phon_probs = validate_probability_list(self.phon_probs, "phon_probs")
-        self.phon_vecs = validate_phonological_vectors(self.phon_vecs, "phon_vecs")
-        self.phon_tokens = validate_phonological_vectors(self.phon_tokens, "phon_tokens")
+        # Validate individual components. Each validator returns its input unchanged.
+        validate_global_encoding(self.global_encoding)
+        validate_orthographic_tokens(self.orth_tokens)
+        # Orthographic steps are a softmax over the vocabulary; phonological steps are
+        # independent per-feature probabilities, so only the former must sum to 1.
+        validate_nested_tensors(self.orth_probs, "orth_probs", check_is_distribution)
+        validate_nested_tensors(self.phon_probs, "phon_probs", check_in_unit_range)
+        validate_nested_tensors(self.phon_vecs, "phon_vecs", check_is_binary)
+        validate_nested_tensors(self.phon_tokens, "phon_tokens")
 
         # Cross-component validation
         batch_size = self.global_encoding.size(0)
 
         # Validate batch size consistency for orthographic components
-        if self.orth_probs is not None:
-            if len(self.orth_probs) != batch_size:
-                raise ValueError("orth_probs batch size mismatch")
-        if self.orth_tokens is not None:
-            if self.orth_tokens.size(0) != batch_size:
-                raise ValueError("orth_tokens batch size mismatch")
+        if self.orth_probs is not None and len(self.orth_probs) != batch_size:
+            raise ValueError("orth_probs batch size mismatch")
+        if self.orth_tokens is not None and self.orth_tokens.size(0) != batch_size:
+            raise ValueError("orth_tokens batch size mismatch")
 
         # Validate batch size consistency for phonological components
-        for field in [self.phon_probs, self.phon_vecs, self.phon_tokens]:
-            if field is not None:
-                if len(field) != batch_size:
-                    raise ValueError(f"{field} batch size mismatch")
+        for name, field in [
+            ("phon_probs", self.phon_probs),
+            ("phon_vecs", self.phon_vecs),
+            ("phon_tokens", self.phon_tokens),
+        ]:
+            if field is not None and len(field) != batch_size:
+                raise ValueError(f"{name} batch size mismatch")
 
         # Validate orthographic component consistency
         if (self.orth_probs is None) != (self.orth_tokens is None):

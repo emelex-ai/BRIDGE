@@ -111,9 +111,7 @@ class TrainingPipeline:
                 phon_dec_pad_mask=phonology.dec_pad_mask,
             )
         else:
-            raise ValueError(
-                f"Unknown training_pathway: {self.training_config.training_pathway!r}"
-            )
+            raise ValueError(f"Unknown training_pathway: {self.training_config.training_pathway!r}")
 
     def compute_loss(
         self,
@@ -225,15 +223,23 @@ class TrainingPipeline:
         # Zero gradients once at the beginning
         self.optimizer.zero_grad()
 
+        # Losses accumulate across every sub-batch, but metrics are computed once, from
+        # the final sub-batch — so the loop carries that one forward. Distinct names from
+        # the `num_chunks == 1` path above, which binds `logits`/`orthography`/`phonology`
+        # in this same function scope.
+        last_logits: dict[str, torch.Tensor] | None = None
+        last_orthography: EncodingComponent | None = None
+        last_phonology: EncodingComponent | None = None
+
         for sub_slice in sub_slices:
             batch = dataset[sub_slice]
-            orthography, phonology = batch.orthographic, batch.phonological
+            last_orthography, last_phonology = batch.orthographic, batch.phonological
 
             # Forward pass
-            logits = self.forward(orthography, phonology)
+            last_logits = self.forward(last_orthography, last_phonology)
 
             # Compute loss with scaled factor
-            sub_metrics = self.compute_loss(logits, orthography, phonology)
+            sub_metrics = self.compute_loss(last_logits, last_orthography, last_phonology)
             loss = sub_metrics["loss"] / num_chunks  # Scale loss by number of chunks
 
             # Backward pass (accumulate gradients)
@@ -252,9 +258,20 @@ class TrainingPipeline:
             self.optimizer.step()
             self.optimizer.zero_grad()
 
+        # `_create_sub_slices` yields nothing for an empty batch slice, leaving the
+        # loop-carried values unset. Raise rather than assert: `assert` is stripped under
+        # `python -O`, which would let None reach `compute_metrics` as an AttributeError.
+        if last_logits is None or last_orthography is None or last_phonology is None:
+            raise ValueError(
+                f"No sub-batches produced for batch_slice {batch_slice} with "
+                f"num_chunks={num_chunks}; the slice is empty."
+            )
+
         accumulated_metrics: MetricsDict = dict(accumulated_losses)
         if calculate_metrics:
-            accumulated_metrics.update(self.compute_metrics(logits, orthography, phonology))
+            accumulated_metrics.update(
+                self.compute_metrics(last_logits, last_orthography, last_phonology)
+            )
 
         if self.metrics_logger.metrics_config.batch_metrics:
             self.metrics_logger.log_metrics(accumulated_metrics, "BATCH")

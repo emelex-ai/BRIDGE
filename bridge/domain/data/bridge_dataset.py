@@ -6,7 +6,6 @@ the unified BridgeEncoding dataclass and BridgeTokenizer for processing.
 import logging
 import pickle
 import random
-from functools import lru_cache
 from pathlib import Path
 
 import pandas as pd
@@ -48,6 +47,8 @@ class BridgeDataset:
         self.device = device_manager.device
 
         self.tokenizer = BridgeTokenizer(
+            # getattr, not attribute access: callers may pass any object exposing the
+            # DatasetConfig surface, and this field post-dates the original interface.
             phoneme_cache_size=getattr(dataset_config, "tokenizer_cache_size", 10000),
             custom_cmudict_path=dataset_config.custom_cmudict_path,
         )
@@ -56,9 +57,20 @@ class BridgeDataset:
         self.orthographic_vocabulary_size = vocab_sizes["orthographic"]
         self.phonological_vocabulary_size = vocab_sizes["phonological"]
 
+        # Memoized single-word encodings, keyed by (word, language). Instance-scoped so
+        # the cache — and the tokenizer's lexicon behind it — dies with the dataset.
+        self._encoding_cache: dict[tuple[str, str | None], BridgeEncoding | None] = {}
+
         self.dataset_filepath = dataset_config.dataset_filepath
         raw_df = self._load_raw_dataframe(self.dataset_filepath)
         self.words, self.languages = self._process_raw_dataframe(raw_df)
+
+        # word -> languages it appears under. Invariant under shuffle(), which permutes
+        # `words` and `languages` in lockstep, so it is built once.
+        self._word_languages: dict[str, set[str]] = {}
+        for word, lang in zip(self.words, self.languages, strict=False):
+            self._word_languages.setdefault(word, set()).add(lang)
+
         logger.info(f"Loaded {len(self.words)} valid words.")
 
     def _load_raw_dataframe(self, path: str) -> pd.DataFrame:
@@ -132,52 +144,31 @@ class BridgeDataset:
             valid_languages.append(lang)
         return valid_words, valid_languages
 
-    @lru_cache(maxsize=128)  # noqa: B019 - dataset instance lifetime == one training run, bounded memory
+    _ENCODING_CACHE_SIZE = 128
+
     def _encode_single_word(self, word: str, language: str | None = None) -> BridgeEncoding | None:
         """
-        Encode a single word using the tokenizer with caching.
+        Encode a single word using the tokenizer, memoized on ``(word, language)``.
 
-        ``language`` is passed as a hashable scalar (not a dict) so this method
-        can use ``@lru_cache``. It's expanded into a single-entry language_map
-        before being handed to the tokenizer.
+        ``language`` is a scalar rather than a dict so it can be a cache key; it is
+        expanded into a single-entry language_map before being handed to the tokenizer.
         """
-        language_map = {word.lower(): language.upper()} if language else None
+        key = (word, language)
+        if key in self._encoding_cache:
+            return self._encoding_cache[key]
 
+        language_map = {word.lower(): language.upper()} if language else None
         try:
             encoding = self.tokenizer.encode(word, language_map=language_map)
-            if encoding is None:
-                return None
-            return encoding.to(self.device)
+            encoding = encoding.to(self.device) if encoding is not None else None
         except Exception as e:
             logger.error(f"Error encoding word '{word}': {e}")
-            return None
+            encoding = None
 
-    def _get_encoding_batch(
-        self, words: list[str], language_map: dict[str, str] | None = None
-    ) -> BridgeEncoding:
-        """Get batched encodings for a list of words."""
-        batch_encoding = self.tokenizer.encode(words, language_map=language_map)
-        if batch_encoding is None:
-            raise RuntimeError("Batch encoding failed for words: " + ", ".join(words))
-        return batch_encoding
-
-    def _get_encoding(
-        self,
-        word: str | list[str],
-        language_map: dict[str, str] | None = None,
-    ) -> BridgeEncoding | None:
-        """
-        Get encoding for a single word or a list of words.
-
-        Single-word encodings are memoized via the ``lru_cache`` on
-        ``_encode_single_word``.
-        """
-        if isinstance(word, str):
-            lang = (language_map or {}).get(word.lower())
-            return self._encode_single_word(word, language=lang)
-        if isinstance(word, list):
-            return self._get_encoding_batch(word, language_map=language_map)
-        raise TypeError("Input must be a string or a list of strings")
+        if len(self._encoding_cache) >= self._ENCODING_CACHE_SIZE:
+            self._encoding_cache.pop(next(iter(self._encoding_cache)))
+        self._encoding_cache[key] = encoding
+        return encoding
 
     def _resolve_language_map(
         self,
@@ -204,10 +195,9 @@ class BridgeDataset:
 
         language_map: dict[str, str] = {}
         for word in words:
-            word_indices = [i for i, w in enumerate(self.words) if w == word]
-            if not word_indices:
+            unique_languages = self._word_languages.get(word)
+            if not unique_languages:
                 raise KeyError(f"Word '{word}' not found in dataset")
-            unique_languages = {self.languages[i] for i in word_indices}
             if len(unique_languages) > 1 and strict_conflicts:
                 raise ValueError(
                     f"Word '{word}' found in multiple languages: "
@@ -227,39 +217,31 @@ class BridgeDataset:
         Unified path for ``__getitem__`` and ``get_encoding`` — turns any indexer
         into a (words, language_map) pair, then encodes.
         """
-        if isinstance(idx, int):
-            if idx < 0 or idx >= len(self.words):
-                raise IndexError(f"Index {idx} out of range [0, {len(self.words)})")
-            words = [self.words[idx]]
-            if language_map is None and self.languages:
-                resolved_language_map = {words[0].lower(): self.languages[idx].upper()}
-            else:
-                resolved_language_map = language_map or {}
-
-        elif isinstance(idx, slice):
+        # Positional indexers carry their own language per position; lexical indexers
+        # have to look the language up (and may hit a cross-language homograph).
+        if isinstance(idx, int | slice):
+            if isinstance(idx, int):
+                if idx < 0 or idx >= len(self.words):
+                    raise IndexError(f"Index {idx} out of range [0, {len(self.words)})")
+                idx = slice(idx, idx + 1)
             words = self.words[idx]
             if language_map is None and self.languages:
-                selected_langs = self.languages[idx]
                 resolved_language_map = {
-                    w.lower(): lang.upper() for w, lang in zip(words, selected_langs, strict=False)
+                    w.lower(): lang.upper()
+                    for w, lang in zip(words, self.languages[idx], strict=False)
                 }
             else:
                 resolved_language_map = language_map or {}
 
-        elif isinstance(idx, str):
-            if idx not in self.words:
-                raise KeyError(f"Word '{idx}' not found in dataset")
-            words = [idx]
-            resolved_language_map = self._resolve_language_map(
-                words,
-                provided_language_map=language_map,
-                strict_conflicts=strict_conflicts,
-            )
-
-        elif isinstance(idx, list):
-            if not all(isinstance(i, str) for i in idx):
-                raise TypeError("List indices must be strings")
-            words = idx
+        elif isinstance(idx, str | list):
+            if isinstance(idx, str):
+                if idx not in self.words:
+                    raise KeyError(f"Word '{idx}' not found in dataset")
+                words = [idx]
+            else:
+                if not all(isinstance(i, str) for i in idx):
+                    raise TypeError("List indices must be strings")
+                words = idx
             resolved_language_map = self._resolve_language_map(
                 words,
                 provided_language_map=language_map,
@@ -268,10 +250,13 @@ class BridgeDataset:
         else:
             raise TypeError(f"Invalid index type: {type(idx)}")
 
+        # Single words go through the memoizing path; batches straight to the tokenizer.
         if len(words) == 1:
-            encoding = self._get_encoding(words[0], resolved_language_map)
+            encoding = self._encode_single_word(
+                words[0], language=resolved_language_map.get(words[0].lower())
+            )
         else:
-            encoding = self._get_encoding(words, resolved_language_map)
+            encoding = self.tokenizer.encode(words, language_map=resolved_language_map)
 
         if encoding is None:
             raise RuntimeError(f"Failed to encode word(s): {', '.join(words)}")
@@ -312,13 +297,8 @@ class BridgeDataset:
         if cutoff > len(self.words):
             raise ValueError(f"Cutoff {cutoff} exceeds dataset size {len(self.words)}")
 
-        original_words = self.words.copy()
-
         indices = list(range(cutoff))
         random.shuffle(indices)
 
         self.words = [self.words[i] for i in indices] + self.words[cutoff:]
         self.languages = [self.languages[i] for i in indices] + self.languages[cutoff:]
-
-        assert len(self.words) == len(original_words)
-        assert set(self.words) == set(original_words)

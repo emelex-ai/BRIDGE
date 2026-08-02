@@ -3,7 +3,7 @@ BridgeEncoding: A high-performance data structure for managing orthographic and 
 Uses slots and frozen dataclasses for optimal memory usage and access speed.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import torch
@@ -31,16 +31,25 @@ class EncodingComponent:
             raise AttributeError("Phonological targets are not available")
         return self.targets
 
-    def to_dict(self) -> dict[str, Any]:
-        """Return the component's fields as a plain dict, for code paths that
-        expect the legacy CUDADict-style interface."""
-        return {
-            "enc_input_ids": self.enc_input_ids,
-            "enc_pad_mask": self.enc_pad_mask,
-            "dec_input_ids": self.dec_input_ids,
-            "dec_pad_mask": self.dec_pad_mask,
-            "targets": self.targets,
-        }
+    def to(self, device: torch.device) -> "EncodingComponent":
+        """Move every tensor in this component to ``device``.
+
+        Handles both component shapes: orthographic ``input_ids`` are tensors,
+        phonological ``input_ids`` are ``list[list[Tensor]]`` of feature indices.
+        """
+
+        def move(ids: Any) -> Any:
+            if isinstance(ids, torch.Tensor):
+                return ids.to(device)
+            return [[t.to(device) for t in batch] for batch in ids]
+
+        return EncodingComponent(
+            enc_input_ids=move(self.enc_input_ids),
+            enc_pad_mask=self.enc_pad_mask.to(device),
+            dec_input_ids=move(self.dec_input_ids),
+            dec_pad_mask=self.dec_pad_mask.to(device),
+            targets=self.targets.to(device) if self.targets is not None else None,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,99 +64,46 @@ class BridgeEncoding:
     tensors for the modality that wasn't actually provided (see
     ``BridgeTokenizer._create_placeholder_*``). Targets on the phonological
     component may still be ``None`` for inference-only encodings; route through
-    ``phon_targets`` for a non-Optional accessor.
+    ``phonological.phon_targets`` for a non-Optional accessor.
 
     Attributes:
         orthographic: EncodingComponent containing orthographic encodings
         phonological: EncodingComponent containing phonological encodings
-        device: torch.device - Device all tensors reside on
+        device: torch.device - Device all tensors reside on. Derived from the
+            orthographic tensors; the constructor argument is advisory only.
     """
 
     orthographic: EncodingComponent
     phonological: EncodingComponent
     device: torch.device = field(default=torch.device("cpu"))
 
-    # Legacy property accessors for backwards compatibility
-    @property
-    def orth_enc_ids(self) -> torch.Tensor:
-        return self.orthographic.enc_input_ids
-
-    @property
-    def orth_enc_mask(self) -> torch.Tensor:
-        return self.orthographic.enc_pad_mask
-
-    @property
-    def orth_dec_ids(self) -> torch.Tensor:
-        return self.orthographic.dec_input_ids
-
-    @property
-    def orth_dec_mask(self) -> torch.Tensor:
-        return self.orthographic.dec_pad_mask
-
-    @property
-    def phon_enc_ids(self) -> list[list[torch.Tensor]]:
-        return self.phonological.enc_input_ids
-
-    @property
-    def phon_enc_mask(self) -> torch.Tensor:
-        return self.phonological.enc_pad_mask
-
-    @property
-    def phon_dec_ids(self) -> list[list[torch.Tensor]]:
-        return self.phonological.dec_input_ids
-
-    @property
-    def phon_dec_mask(self) -> torch.Tensor:
-        return self.phonological.dec_pad_mask
-
-    @property
-    def phon_targets(self) -> torch.Tensor:
-        if self.phonological.targets is None:
-            raise AttributeError("Phonological targets are not available")
-        return self.phonological.targets
-
     def __post_init__(self):
-        """Validate components and set device."""
-        # Use object.__setattr__ since the class is frozen
-        if hasattr(self.orthographic.enc_input_ids, "device"):
-            device = self.orthographic.enc_input_ids.device
-            object.__setattr__(self, "device", device)
-
-        self._validate_full_encoding()
-
-    def _validate_full_encoding(self):
-        """Validate both encoding components and ensure consistency."""
-        # Validate individual components
+        """Validate components, then derive the canonical device from the tensors."""
         self._validate_orthographic_component(self.orthographic)
         self._validate_phonological_component(self.phonological)
 
-        # Validate batch sizes match
+        # Use object.__setattr__ since the class is frozen.
+        device = self.orthographic.enc_input_ids.device
+        object.__setattr__(self, "device", device)
+
         orth_batch_size = self.orthographic.enc_input_ids.size(0)
         phon_batch_size = len(self.phonological.enc_input_ids)
-
         if orth_batch_size != phon_batch_size:
             raise ValueError(
                 f"Batch size mismatch: orthographic component has {orth_batch_size} samples, "
                 f"phonological component has {phon_batch_size} samples"
             )
 
-        # Validate devices match
-        if self.orthographic.enc_input_ids.device != self.device:
-            raise ValueError(
-                f"Device mismatch: orthographic component on {self.orthographic.enc_input_ids.device}, "
-                f"expected {self.device}"
-            )
-
-        # Check phonological device consistency
         for batch in self.phonological.enc_input_ids:
             for tensor in batch:
-                if tensor.device != self.device:
+                if tensor.device != device:
                     raise ValueError(
                         f"Device mismatch: phonological tensor on {tensor.device}, "
-                        f"expected {self.device}"
+                        f"expected {device}"
                     )
 
-    def _validate_orthographic_component(self, component: EncodingComponent):
+    @staticmethod
+    def _validate_orthographic_component(component: EncodingComponent):
         """Validate orthographic component tensors."""
         # Validate orthographic tensors
         for name, tensor in [
@@ -177,20 +133,19 @@ class BridgeEncoding:
 
         # Validate batch consistency
         batch_size = component.enc_input_ids.size(0)
-        tensors_to_check = [
+        for name, tensor in [
             ("enc_pad_mask", component.enc_pad_mask),
             ("dec_input_ids", component.dec_input_ids),
             ("dec_pad_mask", component.dec_pad_mask),
-        ]
-
-        for name, tensor in tensors_to_check:
+        ]:
             if tensor.size(0) != batch_size:
                 raise ValueError(
                     f"Batch size mismatch: orthographic {name} has size {tensor.size(0)}, "
                     f"expected {batch_size}"
                 )
 
-    def _validate_phonological_component(self, component: EncodingComponent):
+    @staticmethod
+    def _validate_phonological_component(component: EncodingComponent):
         """Validate phonological component tensors."""
         # Validate phonological feature tensors
         for name, tensor_list in [
@@ -227,12 +182,10 @@ class BridgeEncoding:
 
         # Validate batch consistency
         batch_size = len(component.enc_input_ids)
-        tensors_to_check = [
+        for name, tensor in [
             ("enc_pad_mask", component.enc_pad_mask),
             ("dec_pad_mask", component.dec_pad_mask),
-        ]
-
-        for name, tensor in tensors_to_check:
+        ]:
             if tensor.size(0) != batch_size:
                 raise ValueError(
                     f"Batch size mismatch: phonological {name} has size {tensor.size(0)}, "
@@ -251,185 +204,24 @@ class BridgeEncoding:
                 f"expected {batch_size}"
             )
 
-    @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], device: torch.device | None = None
-    ) -> "BridgeEncoding":
-        """
-        Create a BridgeEncoding instance from a dictionary representation.
-
-        Args:
-            data: Dictionary containing orthographic and/or phonological components
-            device: Optional device to place tensors on
-
-        Returns:
-            BridgeEncoding instance
-        """
-        if device is None:
-            device = torch.device("cpu")
-
-        if "orthographic" not in data or "phonological" not in data:
-            raise ValueError(
-                "BridgeEncoding.from_dict requires both 'orthographic' and "
-                "'phonological' keys in `data`."
-            )
-
-        orth_data = data["orthographic"]
-        orthographic = EncodingComponent(
-            enc_input_ids=orth_data["enc_input_ids"].to(device),
-            enc_pad_mask=orth_data["enc_pad_mask"].to(device),
-            dec_input_ids=orth_data["dec_input_ids"].to(device),
-            dec_pad_mask=orth_data["dec_pad_mask"].to(device),
-        )
-
-        phon_data = data["phonological"]
-        phon_targets = phon_data.get("targets")
-        phonological = EncodingComponent(
-            enc_input_ids=[
-                [t.to(device) for t in batch] for batch in phon_data["enc_input_ids"]
-            ],
-            enc_pad_mask=phon_data["enc_pad_mask"].to(device),
-            dec_input_ids=[
-                [t.to(device) for t in batch] for batch in phon_data["dec_input_ids"]
-            ],
-            dec_pad_mask=phon_data["dec_pad_mask"].to(device),
-            targets=phon_targets.to(device) if phon_targets is not None else None,
-        )
-
-        return cls(
-            orthographic=orthographic,
-            phonological=phonological,
-            device=device,
-        )
-
-    def to_dict(self) -> dict[str, Any]:
-        """
-        Convert to dictionary format for compatibility with existing code.
-
-        Returns:
-            Dictionary containing orthographic and/or phonological components
-        """
-        result = {}
-
-        if self.orthographic is not None:
-            result["orthographic"] = {
-                "enc_input_ids": self.orthographic.enc_input_ids,
-                "enc_pad_mask": self.orthographic.enc_pad_mask,
-                "dec_input_ids": self.orthographic.dec_input_ids,
-                "dec_pad_mask": self.orthographic.dec_pad_mask,
-            }
-
-        if self.phonological is not None:
-            result["phonological"] = {
-                "enc_input_ids": self.phonological.enc_input_ids,
-                "enc_pad_mask": self.phonological.enc_pad_mask,
-                "dec_input_ids": self.phonological.dec_input_ids,
-                "dec_pad_mask": self.phonological.dec_pad_mask,
-            }
-
-            if self.phonological.targets is not None:
-                result["phonological"]["targets"] = self.phonological.targets
-
-        return result
-
     def to(self, device: torch.device) -> "BridgeEncoding":
+        """Return a BridgeEncoding with all tensors on ``device``.
+
+        Returns ``self`` unchanged when the encoding is already on ``device`` — safe
+        because the class is frozen and nothing in the codebase mutates the component
+        tensors or their containing lists. (Even before this short-circuit existed,
+        ``Tensor.to(same_device)`` returned the identical tensor, so a same-device
+        ``to()`` never produced an isolated copy.)
         """
-        Move all tensors to the specified device.
-
-        Args:
-            device: Target device
-
-        Returns:
-            New BridgeEncoding instance with all tensors on target device
-        """
-        orthographic = EncodingComponent(
-            enc_input_ids=self.orthographic.enc_input_ids.to(device),
-            enc_pad_mask=self.orthographic.enc_pad_mask.to(device),
-            dec_input_ids=self.orthographic.dec_input_ids.to(device),
-            dec_pad_mask=self.orthographic.dec_pad_mask.to(device),
-        )
-
-        phonological = EncodingComponent(
-            enc_input_ids=[
-                [t.to(device) for t in batch] for batch in self.phonological.enc_input_ids
-            ],
-            enc_pad_mask=self.phonological.enc_pad_mask.to(device),
-            dec_input_ids=[
-                [t.to(device) for t in batch] for batch in self.phonological.dec_input_ids
-            ],
-            dec_pad_mask=self.phonological.dec_pad_mask.to(device),
-            targets=(
-                self.phonological.targets.to(device)
-                if self.phonological.targets is not None
-                else None
-            ),
-        )
-
-        return BridgeEncoding(
-            orthographic=orthographic,
-            phonological=phonological,
+        if device == self.device:
+            return self
+        return replace(
+            self,
+            orthographic=self.orthographic.to(device),
+            phonological=self.phonological.to(device),
             device=device,
         )
-
-    def __getitem__(self, idx: int | slice) -> dict[str, Any]:
-        """
-        Get a batch slice of the encoding.
-
-        Args:
-            idx: Integer index or slice
-
-        Returns:
-            Dictionary containing orthographic and/or phonological components for the slice
-        """
-        result = {}
-
-        if self.orthographic is not None:
-            if isinstance(idx, int):
-                result["orthographic"] = {
-                    "enc_input_ids": self.orthographic.enc_input_ids[idx : idx + 1],
-                    "enc_pad_mask": self.orthographic.enc_pad_mask[idx : idx + 1],
-                    "dec_input_ids": self.orthographic.dec_input_ids[idx : idx + 1],
-                    "dec_pad_mask": self.orthographic.dec_pad_mask[idx : idx + 1],
-                }
-            elif isinstance(idx, slice):
-                result["orthographic"] = {
-                    "enc_input_ids": self.orthographic.enc_input_ids[idx],
-                    "enc_pad_mask": self.orthographic.enc_pad_mask[idx],
-                    "dec_input_ids": self.orthographic.dec_input_ids[idx],
-                    "dec_pad_mask": self.orthographic.dec_pad_mask[idx],
-                }
-            else:
-                raise TypeError("Index must be int or slice")
-
-        if self.phonological is not None:
-            if isinstance(idx, int):
-                result["phonological"] = {
-                    "enc_input_ids": self.phonological.enc_input_ids[idx : idx + 1],
-                    "enc_pad_mask": self.phonological.enc_pad_mask[idx : idx + 1],
-                    "dec_input_ids": self.phonological.dec_input_ids[idx : idx + 1],
-                    "dec_pad_mask": self.phonological.dec_pad_mask[idx : idx + 1],
-                }
-                if self.phonological.targets is not None:
-                    result["phonological"]["targets"] = self.phonological.targets[idx : idx + 1]
-            elif isinstance(idx, slice):
-                result["phonological"] = {
-                    "enc_input_ids": self.phonological.enc_input_ids[idx],
-                    "enc_pad_mask": self.phonological.enc_pad_mask[idx],
-                    "dec_input_ids": self.phonological.dec_input_ids[idx],
-                    "dec_pad_mask": self.phonological.dec_pad_mask[idx],
-                }
-                if self.phonological.targets is not None:
-                    result["phonological"]["targets"] = self.phonological.targets[idx]
-            else:
-                raise TypeError("Index must be int or slice")
-
-        return result
 
     def __len__(self) -> int:
         """Return the batch size."""
-        if self.orthographic is not None:
-            return self.orthographic.enc_input_ids.size(0)
-        elif self.phonological is not None:
-            return len(self.phonological.enc_input_ids)
-        else:
-            return 0
+        return self.orthographic.enc_input_ids.size(0)

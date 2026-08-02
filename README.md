@@ -32,7 +32,7 @@ bridge/
 ├── core/                         # phonreps.csv + pronunciation_lexicons/{en,es}.json
 ├── domain/
 │   ├── datamodels/               # pydantic schemas: ModelConfig, DatasetConfig, TrainingConfig, …
-│   ├── tokenizer/                # BridgeTokenizer, PhonemeTokenizer, CharacterTokenizer, CUDADict
+│   ├── tokenizer/                # BridgeTokenizer, PhonemeTokenizer, CharacterTokenizer
 │   ├── data/                     # BridgeDataset
 │   └── model/                    # Encoder, Decoder, Model
 ├── application/
