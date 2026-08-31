@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from bridge.application.training.ortho_metrics import calculate_orth_metrics
 from bridge.application.training.phon_metrics import calculate_phon_metrics
-from bridge.core.phonreps import load_phonreps_array
+from bridge.core.phonreps import load_phoneme_table
 from bridge.domain.data import BridgeDataset
 from bridge.domain.datamodels import EncodingComponent, TrainingConfig
 from bridge.domain.model import Model
@@ -19,7 +19,7 @@ from bridge.utils import device_manager
 
 # Per-step results: loss tensors + scalar metrics + the JSON-encoded `word`.
 type MetricsDict = dict[str, torch.Tensor | float | str]
-# Per-epoch results: tensors and floats only — `word` is dropped during
+# Per-epoch results: tensors and floats only. `word` is dropped during
 # accumulation, and timing values are added as floats.
 type NumericMetrics = dict[str, torch.Tensor | float]
 
@@ -43,7 +43,12 @@ class TrainingPipeline:
             test_dataset_config = self.dataset.dataset_config.model_copy()
             test_dataset_config.dataset_filepath = self.training_config.test_data_path
             self.test_dataset = BridgeDataset(
-                dataset_config=test_dataset_config, gcs_client=self.dataset.gcs_client
+                dataset_config=test_dataset_config,
+                gcs_client=self.dataset.gcs_client,
+                # Reuse the train tokenizer: building a second one re-parses the
+                # pronunciation lexicons (~1 s, ~81 MB), and the duplicate also inflated
+                # the periodic gc.collect() below from ~109 ms to ~188 ms.
+                tokenizer=self.dataset.tokenizer,
             )
         self.device = device_manager.device
         self.model = model.to(self.device)
@@ -53,7 +58,7 @@ class TrainingPipeline:
             weight_decay=training_config.weight_decay,
         )
         self.train_slices, self.val_slices = self.create_data_slices()
-        self.phon_reps = load_phonreps_array(device=self.device)
+        self.phon_reps = load_phoneme_table(device=self.device).phonetic_features
 
         self.start_epoch = 0
         if training_config.checkpoint_path:
@@ -224,7 +229,7 @@ class TrainingPipeline:
         self.optimizer.zero_grad()
 
         # Losses accumulate across every sub-batch, but metrics are computed once, from
-        # the final sub-batch — so the loop carries that one forward. Distinct names from
+        # the final sub-batch, so the loop carries that one forward. Distinct names from
         # the `num_chunks == 1` path above, which binds `logits`/`orthography`/`phonology`
         # in this same function scope.
         last_logits: dict[str, torch.Tensor] | None = None
@@ -465,6 +470,7 @@ class TrainingPipeline:
             sys.modules["src.domain.datamodels.model_config"] = old_module_reference
 
             checkpoint = torch.load(model_path, weights_only=False)
+            self._warn_on_phoneme_table_drift(checkpoint, model_path)
             self.model.load_state_dict(checkpoint["model_state_dict"])
             self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
@@ -487,10 +493,38 @@ class TrainingPipeline:
             self.start_epoch = 0
             return False
 
+    def _warn_on_phoneme_table_drift(self, checkpoint: dict, model_path: str) -> None:
+        """Warn if the checkpoint was trained against a different phoneme feature table.
+
+        Phoneme row ids and feature indices are positions in ``phonreps.csv``. Editing that
+        file relabels them, and nothing else notices: no parameter shape changes, and the
+        derived feature matrix is a non-persistent buffer, so ``load_state_dict`` succeeds
+        with ``strict=True``. Warn rather than raise: the weights still run, they just may
+        no longer mean what they did, and that is the caller's judgement to make.
+        """
+        saved = getattr(checkpoint.get("model_config"), "vocab", None)
+        # Specs written before the field carry no fingerprint; pickle restores __dict__
+        # verbatim, so the attribute can be absent rather than None.
+        recorded = getattr(saved, "phon_table_fingerprint", None)
+        current = self.model.phon_table_fingerprint
+        if recorded is not None and recorded != current:
+            self.logger.warning(
+                "Phoneme feature table mismatch: %s was trained against table %s but "
+                "phonreps.csv now hashes to %s. Phoneme ids may no longer mean what they "
+                "did when these weights were trained.",
+                model_path,
+                recorded,
+                current,
+            )
+
     def transfer_partial_model_parameters(
         self, pretrained_model_path: str, module_prefixes: list[str]
     ):
         checkpoint = torch.load(pretrained_model_path, weights_only=False)
+        # Transferring a phonological module across a relabelled feature table is the
+        # silent-corruption case the fingerprint exists for: shapes still match, so
+        # load_state_dict succeeds and nothing else would notice.
+        self._warn_on_phoneme_table_drift(checkpoint, pretrained_model_path)
         pretrained_state = checkpoint["model_state_dict"]
         filtered_state = {
             k: v

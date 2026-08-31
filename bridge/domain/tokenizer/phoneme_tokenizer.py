@@ -1,20 +1,35 @@
+import functools
 import json
 import logging
 import os
 
 import torch
 
-from bridge.core.phonreps import load_phonreps
+from bridge.core.phonreps import SPECIAL_TOKENS, load_phoneme_table
 from bridge.domain.datamodels.encodings import EncodingComponent
 from bridge.utils import device_manager, get_project_root
 
 logger = logging.getLogger(__name__)
 
 
+@functools.cache
+def _load_lexicon(directory: str, lang_codes: tuple[str, ...]) -> dict[str, dict[str, list]]:
+    """Parse the pronunciation lexicons once per process.
+
+    Reading them costs ~1 s and ~80 MB, and every ``PhonemeTokenizer`` wants the same
+    result. The returned dict is shared, so callers must treat it as read-only.
+    """
+    return PhonemeTokenizer._read_multilingual_vocab(directory, lang_codes)
+
+
 class PhonemeTokenizer:
-    """PhonemeTokenizer converts words to phonetic feature vectors using per-language
+    """PhonemeTokenizer converts words to phoneme *row* ids using per-language
     pronunciation lexicons (shipped under ``bridge/core/pronunciation_lexicons/``) and
     the phonetic feature table at ``bridge/core/phonreps.csv``.
+
+    :meth:`encode` emits ``(batch, sequence)`` row ids, the same shape the character
+    tokenizer emits for orthography. Feature vectors appear in only two places: the loss
+    ``targets`` that ``encode`` also returns, and the output of :meth:`decode`.
 
     The tokenizer is multilingual by default: supply ``lang_codes`` to control which
     language lexicons are loaded, and pass a per-word ``language_map`` to
@@ -23,20 +38,22 @@ class PhonemeTokenizer:
 
     def __init__(
         self,
-        max_cache_size: int = 10000,
         lang_codes: list[str] | None = None,
         custom_cmudict_path: str | None = None,
     ):
         self.device = device_manager.device
+        # Recorded so a caller sharing this tokenizer can check it matches their config.
+        self.custom_cmudict_path = custom_cmudict_path
 
-        phonreps = load_phonreps(device=self.device)
-        self.base_dim = phonreps.base_dim
-        self.phonreps_array = phonreps.array
-        self.phonreps_index = phonreps.index
+        # Phoneme -> feature multi-hot. Row ids from this table are the phonological
+        # model input; see PhonemeTable for the row-space / feature-space distinction.
+        self.phoneme_table = load_phoneme_table(device=self.device)
+        self.base_dim = self.phoneme_table.base_dim
 
         self._create_inverse_phoneme_mapping()
 
-        # Load multilingual pronunciation lexicon. Shape: {word: {lang_code: [[phonemes], ...]}}
+        # Shape: {word: {lang_code: [[phonemes], ...]}}. Shared across instances, so the
+        # custom-dictionary overrides below copy rather than mutate it.
         self.pronunciation_dict = self._load_multilingual_vocab(lang_codes=lang_codes)
 
         # Optional custom CMU dict: same nested-by-language shape as the lexicons, used
@@ -52,40 +69,52 @@ class PhonemeTokenizer:
             else:
                 logger.warning(f"Custom CMU dict not found at {custom_cmudict_path}")
 
-        for word, langs in custom_prons.items():
-            self.pronunciation_dict.setdefault(word.lower(), {})
-            for lang, pronunciation in langs.items():
-                self.pronunciation_dict[word.lower()][lang.lower()] = pronunciation
+        if custom_prons:
+            self.pronunciation_dict = dict(self.pronunciation_dict)
+            for word, langs in custom_prons.items():
+                merged = dict(self.pronunciation_dict.get(word.lower(), {}))
+                merged.update({lang.lower(): pron for lang, pron in langs.items()})
+                self.pronunciation_dict[word.lower()] = merged
 
-        # Special tokens at end of vector space.
+        # Special tokens at end of vector space. Derived from the table so the two cannot
+        # drift apart. The table's column layout is the definition.
         self.special_token_dims = {
-            "[BOS]": self.base_dim,
-            "[EOS]": self.base_dim + 1,
-            "[UNK]": self.base_dim + 2,
-            "[SPC]": self.base_dim + 3,
-            "[PAD]": self.base_dim + 4,
+            token: self.phoneme_table.feature_of(token) for token in SPECIAL_TOKENS
         }
         # Keyed by float so a scalar `tensor.item()` from either an int or float tensor
         # can be looked up directly; non-integral values simply miss.
         self._special_token_by_dim: dict[float, str] = {
             float(dim): token for token, dim in self.special_token_dims.items()
         }
-        self.vocabulary_size = self.base_dim + len(self.special_token_dims)
+        self.vocabulary_size = self.phoneme_table.vocab_size
 
-        self.special_vecs = {
-            token: torch.tensor([dim], dtype=torch.long, device=self.device)
-            for token, dim in self.special_token_dims.items()
-        }
-        # Loop-invariant index vector used to one-hot encode targets in `encode`.
-        self._feature_range = torch.arange(self.vocabulary_size - 1, device=self.device)
-
-        self.vector_cache: dict[str, torch.Tensor] = {}
-        self.max_cache_size = max_cache_size
+        # Per-phoneme loss targets, gathered by row id in `encode`.
+        #
+        # Two things make this table differ from `phoneme_table.multihot`:
+        #   * the [PAD] feature column is dropped (targets are one class per feature,
+        #     excluding [PAD] itself), and
+        #   * the [PAD] *row* is then filled with `phon_pad_id`, which is the
+        #     CrossEntropyLoss `ignore_index`, so a padded position contributes no loss.
+        # Slicing alone would leave the [PAD] row all-zeros, i.e. "every feature is off",
+        # which would be scored rather than ignored.
+        target_table = self.phoneme_table.multihot[:, :-1].long().clone()
+        target_table[self.phoneme_table.row_index["[PAD]"]] = self.special_token_dims["[PAD]"]
+        self._target_table = target_table
 
     def _load_multilingual_vocab(
         self,
         directory: str | None = None,
         lang_codes: list[str] | None = None,
+    ) -> dict[str, dict[str, list]]:
+        """Cached wrapper. See :func:`_load_lexicon`."""
+        if directory is None:
+            directory = os.path.join(get_project_root(), "bridge/core/pronunciation_lexicons")
+        return _load_lexicon(directory, tuple(lang_codes) if lang_codes else ("en", "es"))
+
+    @staticmethod
+    def _read_multilingual_vocab(
+        directory: str,
+        lang_codes: tuple[str, ...],
     ) -> dict[str, dict[str, list]]:
         """Load language-specific JSON lexicons into a unified ``{word: {lang: [variants]}}`` dict.
 
@@ -93,11 +122,6 @@ class PhonemeTokenizer:
         ``{word: [[phoneme, ...], ...]}`` (a list of variant pronunciations). Only files whose
         language code appears in ``lang_codes`` are loaded; the default is ``["en", "es"]``.
         """
-        if directory is None:
-            directory = os.path.join(get_project_root(), "bridge/core/pronunciation_lexicons")
-        if lang_codes is None:
-            lang_codes = ["en", "es"]
-
         vocab: dict[str, dict[str, list]] = {}
         if not os.path.isdir(directory):
             logger.error(f"Pronunciation lexicon directory not found: {directory}")
@@ -170,33 +194,17 @@ class PhonemeTokenizer:
                 result.append("[SPC]")
         return result
 
-    def _get_phoneme_indices(self, phoneme: str) -> torch.Tensor:
-        """Get active feature indices for a phoneme."""
-        if phoneme in self.vector_cache:
-            return self.vector_cache[phoneme]
-
-        if phoneme in self.special_vecs:
-            return self.special_vecs[phoneme]
-
-        if phoneme in self.phonreps_index:
-            idx = self.phonreps_index[phoneme]
-            active_indices = torch.nonzero(self.phonreps_array[idx] == 1, as_tuple=True)[0].to(
-                dtype=torch.long
-            )
-
-            if len(self.vector_cache) >= self.max_cache_size:
-                self.vector_cache.pop(next(iter(self.vector_cache)))
-            self.vector_cache[phoneme] = active_indices
-
-            return active_indices
-        return self.special_vecs["[UNK]"]
-
     def encode(
         self,
         words: str | list[str],
         language_map: dict[str, str] | None = None,
     ) -> EncodingComponent | None:
-        """Encode words or phrases to phonetic feature indices.
+        """Encode words or phrases to phoneme row ids.
+
+        Returns ``(B, L)`` tensors of *row-space* ids: indices into
+        :class:`~bridge.core.phonreps.PhonemeTable`, i.e. "which phoneme", not "which
+        feature". The model recovers the features by gathering from the same table; see
+        the ``PhonemeTable`` docstring for the two id spaces.
 
         ``language_map`` is an optional ``{word: language_code}`` mapping. Defaults to
         treating every word as English. Returns ``None`` if any word is missing from the
@@ -212,53 +220,61 @@ class PhonemeTokenizer:
                 return None
             word_phonemes.append(phonemes)
 
-        batch_size = len(words)
         max_length = max(len(p) for p in word_phonemes)
         enc_length = max_length + 2  # BOS, EOS
         dec_length = max_length + 1  # BOS
 
-        pad_vec = self.special_vecs["[PAD]"]
-        bos_vec = self.special_vecs["[BOS]"]
-        eos_vec = self.special_vecs["[EOS]"]
+        table = self.phoneme_table
+        bos = table.row_index["[BOS]"]
+        eos = table.row_index["[EOS]"]
+        pad = table.row_index["[PAD]"]
 
-        enc_indices = []
-        dec_indices = []
+        # Plain ints, so the whole batch becomes one tensor build rather than a
+        # per-position device write.
+        enc_rows: list[list[int]] = []
+        dec_rows: list[list[int]] = []
+        tgt_rows: list[list[int]] = []
+        for phoneme_seq in word_phonemes:
+            rows = [table.row_of(p) for p in phoneme_seq]
+            n = len(rows)
+            enc_rows.append([bos, *rows, eos, *[pad] * (enc_length - n - 2)])
+            dec_rows.append([bos, *rows, *[pad] * (dec_length - n - 1)])
+            # Targets are the decoder inputs shifted left by one: predict each phoneme,
+            # then EOS. Padded positions carry the [PAD] row, whose target row is the
+            # loss ignore_index.
+            tgt_rows.append([*rows, eos, *[pad] * (dec_length - n - 1)])
 
-        targets = torch.full(
-            (batch_size, dec_length, self.vocabulary_size - 1),
-            self.special_token_dims["[PAD]"],
-            dtype=torch.long,
-            device=self.device,
-        )
-
-        for i, phoneme_seq in enumerate(word_phonemes):
-            phoneme_indices = [self._get_phoneme_indices(p) for p in phoneme_seq]
-
-            enc_seq = [bos_vec, *phoneme_indices, eos_vec]
-            dec_seq = [bos_vec, *phoneme_indices]
-            enc_seq += [pad_vec] * (enc_length - len(enc_seq))
-            dec_seq += [pad_vec] * (dec_length - len(dec_seq))
-
-            enc_indices.append(enc_seq)
-            dec_indices.append(dec_seq)
-
-            for j, indices in enumerate([*phoneme_indices, eos_vec]):
-                targets[i, j] = torch.isin(self._feature_range, indices).long()
-
-        seq_lengths = torch.tensor([len(p) + 2 for p in word_phonemes], device=self.device)
-        enc_positions = torch.arange(enc_length, device=self.device).expand(batch_size, enc_length)
-        dec_positions = torch.arange(dec_length, device=self.device).expand(batch_size, dec_length)
+        enc_input_ids = torch.tensor(enc_rows, dtype=torch.long, device=self.device)
+        dec_input_ids = torch.tensor(dec_rows, dtype=torch.long, device=self.device)
+        target_ids = torch.tensor(tgt_rows, dtype=torch.long, device=self.device)
 
         return EncodingComponent(
-            enc_input_ids=enc_indices,
-            enc_pad_mask=enc_positions >= seq_lengths.unsqueeze(1),
-            dec_input_ids=dec_indices,
-            dec_pad_mask=dec_positions >= (seq_lengths - 1).unsqueeze(1),
-            targets=targets,
+            enc_input_ids=enc_input_ids,
+            enc_pad_mask=enc_input_ids == pad,
+            dec_input_ids=dec_input_ids,
+            dec_pad_mask=dec_input_ids == pad,
+            targets=self._target_table[target_ids],
         )
 
+    def padded_targets(self, batch_size: int, seq_len: int) -> torch.Tensor:
+        """Loss targets for positions that are entirely padding.
+
+        Every position carries the ``[PAD]`` row's target, which is the CrossEntropyLoss
+        ``ignore_index``, so these positions contribute no loss, and the width matches
+        what :meth:`encode` produces.
+        """
+        pad_row = self.phoneme_table.row_index["[PAD]"]
+        # repeat, not expand: an expanded view has zero strides into `_target_table`, so a
+        # caller writing to the result would rewrite the [PAD] row for every later encode.
+        return self._target_table[pad_row].repeat(batch_size, seq_len, 1)
+
     def decode(self, indices_batch: list[list[int]]) -> torch.Tensor:
-        """Convert feature indices to sparse one-hot vectors."""
+        """Convert *feature* indices to dense multi-hot vectors, one row per position.
+
+        The input space is feature space: what ``GenerationOutput.phon_tokens`` holds.
+        It is deliberately not the inverse of :meth:`encode`, which emits phoneme *row*
+        ids; use ``phoneme_table.features_of`` to go from a row id to its features.
+        """
         batch_size = len(indices_batch)
 
         lengths = torch.tensor([len(indices) for indices in indices_batch], device=self.device)
@@ -266,6 +282,18 @@ class PhonemeTokenizer:
 
         row_indices = torch.repeat_interleave(torch.arange(batch_size, device=self.device), lengths)
         col_indices = torch.cat([torch.tensor(idx, device=self.device) for idx in indices_batch])
+
+        # Unchecked, an out-of-range column silently corrupts the sparse tensor rather
+        # than raising. That is the failure mode when row ids are passed here by mistake.
+        if len(col_indices) and bool(
+            ((col_indices < 0) | (col_indices >= self.vocabulary_size)).any()
+        ):
+            raise ValueError(
+                f"Feature indices must lie in [0, {self.vocabulary_size}); got "
+                f"[{int(col_indices.min())}, {int(col_indices.max())}]. Phoneme row ids "
+                f"index the phoneme table, not the feature vocabulary; convert them with "
+                f"PhonemeTable.features_of first."
+            )
 
         indices = torch.stack([row_indices, col_indices])
         return torch.sparse_coo_tensor(
@@ -279,11 +307,12 @@ class PhonemeTokenizer:
         """Create an inverse mapping from phoneme vectors to phoneme strings."""
         self.phoneme_vectors_to_strings: dict[tuple, list[str]] = {}
 
-        for phoneme, idx in self.phonreps_index.items():
-            vector_tuple = tuple(self.phonreps_array[idx].cpu().numpy().astype(int))
+        self.all_phoneme_names = self.phoneme_table.phonemes
+        for row, phoneme in enumerate(self.all_phoneme_names):
+            vector_tuple = tuple(
+                self.phoneme_table.phonetic_features[row].cpu().numpy().astype(int)
+            )
             self.phoneme_vectors_to_strings.setdefault(vector_tuple, []).append(phoneme)
-
-        self.all_phoneme_names = list(self.phonreps_index.keys())
 
     def phoneme_vector_to_phoneme(self, phoneme_vector, distance_fn=None, top_k=1):
         """Map a phoneme vector back to phoneme string(s).
@@ -318,7 +347,7 @@ class PhonemeTokenizer:
                 return (v1 != v2).float().sum()
 
         distances = torch.tensor(
-            [distance_fn(phoneme_vector, rep) for rep in self.phonreps_array],
+            [distance_fn(phoneme_vector, rep) for rep in self.phoneme_table.phonetic_features],
             device=self.device,
         )
 

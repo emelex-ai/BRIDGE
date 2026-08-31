@@ -4,10 +4,10 @@
 ``try/except ... return None``. It is now one path. Two properties that the branch
 structure enforced implicitly, and which nothing else asserts, are pinned here:
 
-* **short-circuit** — a filter that excludes a modality must not invoke that
+* **short-circuit**: a filter that excludes a modality must not invoke that
   tokenizer at all. This is what lets ``"orthography"`` encode a nonword that has no
   entry in the pronunciation lexicon.
-* **placeholder shape** — the excluded modality is filled with a stub so
+* **placeholder shape**: the excluded modality is filled with a stub so
   ``BridgeEncoding`` (which requires both components) still validates. The stub
   builder's signature changed from ``(batch_size, seq_len)`` to ``(batch_size)``.
 """
@@ -101,26 +101,32 @@ def test_placeholder_phonological_shape_and_values(tok):
     enc = tok.encode([WORD, NONWORD], modality_filter="orthography")
     phon = enc.phonological
 
-    assert len(phon.enc_input_ids) == 2
-    assert all(len(step) == 1 for step in phon.enc_input_ids)
-    assert all(
-        torch.equal(t, torch.tensor([tok.phon_pad_id])) for step in phon.enc_input_ids for t in step
-    )
+    # Phoneme *row* ids: one all-[PAD] position per batch item.
+    pad_row = tok.phoneme_tokenizer.phoneme_table.row_index["[PAD]"]
+    assert phon.enc_input_ids.shape == (2, 1)
+    assert torch.equal(phon.enc_input_ids, torch.full((2, 1), pad_row))
+    assert torch.equal(phon.dec_input_ids, torch.full((2, 1), pad_row))
     assert phon.enc_pad_mask.shape == (2, 1)
     assert phon.dec_pad_mask.shape == (2, 1)
     assert phon.enc_pad_mask.dtype == torch.bool
     assert bool(phon.enc_pad_mask.all()), "placeholder positions are entirely padding"
 
 
-def test_placeholder_phonological_targets_span_the_full_vocabulary(tok):
-    """Note the last dimension is ``get_vocabulary_size()``, not ``size - 1`` as the
-    model's phonological logits use. Changing it would break BridgeEncoding validation."""
-    enc = tok.encode([WORD, NONWORD], modality_filter="orthography")
-    targets = enc.phonological.targets
+def test_placeholder_phonological_targets_match_the_real_ones(tok):
+    """A placeholder must be usable anywhere a real phonological component is.
+
+    That means the same width as ``encode`` produces, one narrower than the feature
+    vocabulary since [PAD] is not a predicted class, and filled with the loss
+    ignore_index so the position contributes nothing rather than being scored as
+    "every feature off".
+    """
+    targets = tok.encode([WORD, NONWORD], modality_filter="orthography").phonological.targets
+    real = tok.encode([WORD, "dog"]).phonological.targets
     assert targets is not None
-    assert targets.shape == (2, 1, tok.phoneme_tokenizer.get_vocabulary_size())
+    assert targets.shape == (2, 1, tok.phoneme_tokenizer.get_vocabulary_size() - 1)
+    assert targets.shape[-1] == real.shape[-1]
     assert targets.dtype == torch.long
-    assert bool((targets == 0).all())
+    assert bool((targets == tok.phon_pad_id).all())
 
 
 def test_placeholder_orthographic_shape_and_values(tok):
@@ -139,7 +145,8 @@ def test_placeholder_orthographic_shape_and_values(tok):
 def test_placeholder_batch_size_follows_the_input(tok):
     enc = tok.encode([WORD, "dog", "hat"], modality_filter="phonology")
     assert enc.orthographic.enc_input_ids.shape == (3, 1)
-    assert len(enc.phonological.enc_input_ids) == 3
+    # Real phonology here, so only the batch dimension is fixed; the width follows the words.
+    assert enc.phonological.enc_input_ids.shape[0] == 3
 
 
 def test_placeholder_encoder_and_decoder_masks_are_distinct_objects(tok):
@@ -213,3 +220,26 @@ def test_non_integral_dim_maps_to_unk(tok):
     old linear ``==`` scan did."""
     pt = tok.phoneme_tokenizer
     assert pt.phoneme_vectors_to_word([torch.tensor(pt.base_dim + 0.5)]) == ["[UNK]"]
+
+
+def test_placeholder_targets_do_not_alias_the_shared_target_table():
+    """The placeholder must own its storage.
+
+    ``padded_targets`` builds every placeholder position from the one [PAD] row of the
+    tokenizer's target table. Returning an expanded view of that row would give the
+    caller zero-stride aliases, so a single write would rewrite [PAD] for every later
+    ``encode``. ``TrainingPipeline`` now shares one tokenizer between the train and test
+    datasets, so that write would poison both splits.
+    """
+    tokenizer = BridgeTokenizer()
+    phoneme_tokenizer = tokenizer.phoneme_tokenizer
+    pad_row = phoneme_tokenizer.phoneme_table.row_index["[PAD]"]
+    before = phoneme_tokenizer._target_table[pad_row].clone()
+
+    encoding = tokenizer.encode([WORD], modality_filter="orthography")
+    assert encoding is not None
+    targets = encoding.phonological.phon_targets
+    assert torch.equal(targets[0, 0], before)
+
+    targets[0, 0, 0] = 999
+    assert torch.equal(phoneme_tokenizer._target_table[pad_row], before)

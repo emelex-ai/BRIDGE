@@ -7,13 +7,13 @@ exception TYPE and message for one malformed input, per pathway.
 
 Three properties matter and are easy to break:
 
-* **type** — ``op2op`` reports a non-tensor as ``TypeError``; the single-modality
-  pathways report it as ``ValueError``. That asymmetry is load-bearing for callers
-  that catch one and not the other.
-* **order** — when an input is wrong in two ways at once, which error fires is
+* **type**: ``op2op`` reports a non-tensor as ``TypeError``; the single-modality
+  pathways report it as ``ValueError``. Every other malformed input is a ``ValueError``
+  in both modalities.
+* **order**: when an input is wrong in two ways at once, which error fires is
   determined by check order. ``o2p`` checks the mask's dtype *before* the
   input/mask shape match, so ``mask_dtype_beats_shape_mismatch`` below pins that.
-* **coverage** — ``o2p`` deliberately performs neither vocabulary-bound nor device
+* **coverage**: ``o2p`` deliberately performs neither vocabulary-bound nor device
   checks, while ``o2o`` performs both. Adding a check to the shared helper would
   start rejecting input ``o2p`` used to accept.
 """
@@ -21,22 +21,12 @@ Three properties matter and are easy to break:
 import pytest
 import torch
 
-from bridge.domain.datamodels import ModelConfig, VocabSpec
+from bridge.domain.datamodels import ModelConfig
 from bridge.domain.model import Model
 from bridge.domain.model.model import PATHWAYS
+from tests.vocab import PHONEME_TABLE, TEST_VOCAB
 
-VOCAB = VocabSpec(
-    orth_vocab_size=49,
-    phon_vocab_size=34,
-    orth_pad_id=2,
-    orth_bos_id=0,
-    orth_eos_id=1,
-    orth_spc_id=41,
-    phon_pad_id=33,
-    phon_bos_id=29,
-    phon_eos_id=30,
-    phon_spc_id=32,
-)
+VOCAB = TEST_VOCAB
 
 
 @pytest.fixture(scope="module")
@@ -52,8 +42,9 @@ def orth_mask(rows=2, cols=5, dtype=torch.bool):
     return torch.zeros((rows, cols), dtype=dtype)
 
 
-def phon(rows=2, steps=3):
-    return [[torch.tensor([0]) for _ in range(steps)] for _ in range(rows)]
+def phon(rows=2, steps=3, dtype=torch.long):
+    """Phoneme *row* ids: (batch, sequence), indices into the phoneme table."""
+    return torch.zeros((rows, steps), dtype=dtype)
 
 
 def phon_mask(rows=2, cols=3, dtype=torch.bool):
@@ -72,9 +63,9 @@ CASES = [
     (
         "phon_seq_too_long",
         "p2o",
-        {"p": [[torch.tensor([0])] * 31 for _ in range(2)], "pm": phon_mask(2, 31)},
+        {"p": phon(2, 31), "pm": phon_mask(2, 31)},
         ValueError,
-        "Phonological input sequence length 31 exceeds maximum allowed length 30",
+        "phon_enc_input sequence length 31 exceeds maximum allowed length 30",
     ),
     # ---- o2p --------------------------------------------------------------
     ("o2p_missing_input", "o2p", {}, ValueError, "orth_enc_input is required for o2p pathway"),
@@ -89,7 +80,7 @@ CASES = [
         "o2p_input_not_tensor",
         "o2p",
         {"o": [1, 2], "om": orth_mask()},
-        ValueError,  # NOT TypeError — only op2op upgrades this
+        ValueError,  # NOT TypeError; only op2op upgrades this
         "orth_enc_input must be a torch.Tensor",
     ),
     (
@@ -118,7 +109,7 @@ CASES = [
         "o2p",
         {"o": orth(), "om": torch.zeros(5, dtype=torch.bool)},
         ValueError,
-        "Expected 2D input tensor for orth_enc_pad_mask",
+        "Shape mismatch: orth_enc_input is (2, 5) but orth_enc_pad_mask is (5,)",
     ),
     (
         # Ordering guard: the mask is BOTH the wrong dtype and the wrong shape.
@@ -134,7 +125,7 @@ CASES = [
         "o2p",
         {"o": orth(2, 5), "om": orth_mask(2, 6)},
         ValueError,
-        "Input and mask shapes must match",
+        "Shape mismatch: orth_enc_input is (2, 5) but orth_enc_pad_mask is (2, 6)",
     ),
     # ---- p2o / p2p (identical checks, pathway name interpolated) -----------
     *[
@@ -158,53 +149,55 @@ CASES = [
                 "Received None value(s).",
             ),
             (
-                f"{pw}_phon_not_list",
+                f"{pw}_phon_not_tensor",
                 pw,
                 {"p": "x", "pm": phon_mask()},
-                TypeError,
-                "phon_enc_input must be a list of lists of tensors",
+                ValueError,
+                "phon_enc_input must be a torch.Tensor",
             ),
             (
-                f"{pw}_phon_inner_not_list",
+                f"{pw}_phon_not_2d",
                 pw,
-                {"p": [torch.tensor([0])], "pm": phon_mask()},
-                TypeError,
-                "Each item in phon_enc_input must be a list of tensors containing feature indices",
+                {"p": torch.zeros(3, dtype=torch.long), "pm": phon_mask()},
+                ValueError,
+                "Expected 2D input tensor for phon_enc_input",
             ),
             (
-                f"{pw}_phon_inner_not_tensor",
+                f"{pw}_phon_wrong_dtype",
                 pw,
-                {"p": [[1]], "pm": phon_mask()},
-                TypeError,
-                "Feature indices in phon_enc_input must be torch.Tensor objects",
+                {"p": phon(dtype=torch.float), "pm": phon_mask()},
+                ValueError,
+                "phon_enc_input must have dtype torch.long or torch.int",
             ),
             (
                 f"{pw}_mask_not_tensor",
                 pw,
                 {"p": phon(), "pm": [1]},
-                TypeError,
+                ValueError,
                 "phon_enc_pad_mask must be a torch.Tensor",
             ),
             (
                 f"{pw}_mask_dtype",
                 pw,
                 {"p": phon(), "pm": phon_mask(dtype=torch.float)},
-                TypeError,
-                "phon_enc_pad_mask must be a boolean tensor",
+                ValueError,
+                "phon_enc_pad_mask must have dtype torch.bool",
             ),
             (
                 f"{pw}_batch_mismatch",
                 pw,
                 {"p": phon(rows=2), "pm": phon_mask(rows=5)},
                 ValueError,
-                "Batch size mismatch: phon_enc_input has 2 items but phon_enc_pad_mask has 5 items",
+                "Shape mismatch: phon_enc_input is (2, 3) but phon_enc_pad_mask is (5, 3)",
             ),
             (
-                f"{pw}_feature_out_of_vocab",
+                # Row space, not feature space: the bound is the phoneme count (~91),
+                # not the phonological vocabulary size (~36).
+                f"{pw}_row_out_of_range",
                 pw,
-                {"p": [[torch.tensor([VOCAB.phon_vocab_size])]], "pm": phon_mask(1, 1)},
+                {"p": torch.full((1, 1), PHONEME_TABLE.num_rows), "pm": phon_mask(1, 1)},
                 ValueError,
-                f"Feature indices must be less than vocabulary size ({VOCAB.phon_vocab_size})",
+                f"Phoneme row ids must lie in [0, {PHONEME_TABLE.num_rows})",
             ),
         ]
     ],
@@ -282,7 +275,7 @@ CASES = [
         "op2op",
         {"o": orth(2, 31), "om": orth_mask(2, 31), "p": phon(), "pm": phon_mask()},
         ValueError,
-        "Orthographic input sequence length 31 exceeds maximum allowed length 30",
+        "orth_enc_input sequence length 31 exceeds maximum allowed length 30",
     ),
     (
         "op2op_cross_modality_batch_mismatch",
@@ -292,53 +285,49 @@ CASES = [
         "Batch size mismatch: orthographic input has 5 items but phonological input has 2 items",
     ),
     (
-        # Before the shared helper existed, op2op raised the shorter
-        # "...must be a list of tensors" here while p2o/p2p raised this longer form.
-        # Deduplicating adopted the more informative wording for all three; the
-        # exception type is unchanged. Pinned so the unification stays deliberate.
-        "op2op_phon_inner_not_list",
+        "op2op_phon_not_2d",
         "op2op",
         {
             "o": orth(),
             "om": orth_mask(),
-            "p": [torch.tensor([0]), torch.tensor([1])],
+            "p": torch.zeros(2, dtype=torch.long),
             "pm": phon_mask(),
         },
-        TypeError,
-        "Each item in phon_enc_input must be a list of tensors containing feature indices",
+        ValueError,
+        "Expected 2D input tensor for phon_enc_input",
     ),
     (
-        "op2op_phon_not_list",
+        "op2op_phon_not_tensor",
         "op2op",
         {"o": orth(), "om": orth_mask(), "p": "x", "pm": phon_mask()},
-        TypeError,
-        "phon_enc_input must be a list of lists of tensors",
+        ValueError,
+        "phon_enc_input must be a torch.Tensor",
     ),
     (
-        "op2op_phon_leaf_not_tensor",
+        "op2op_phon_wrong_dtype",
         "op2op",
-        {"o": orth(), "om": orth_mask(), "p": [[1], [1]], "pm": phon_mask()},
-        TypeError,
-        "Feature indices in phon_enc_input must be torch.Tensor objects",
+        {"o": orth(), "om": orth_mask(), "p": phon(dtype=torch.float), "pm": phon_mask()},
+        ValueError,
+        "phon_enc_input must have dtype torch.long or torch.int",
     ),
     (
         "op2op_phon_mask_dtype",
         "op2op",
         {"o": orth(), "om": orth_mask(), "p": phon(), "pm": phon_mask(dtype=torch.float)},
-        TypeError,
-        "phon_enc_pad_mask must be a boolean tensor",
+        ValueError,
+        "phon_enc_pad_mask must have dtype torch.bool",
     ),
     (
-        "op2op_phon_out_of_vocab",
+        "op2op_phon_row_out_of_range",
         "op2op",
         {
             "o": orth(),
             "om": orth_mask(),
-            "p": [[torch.tensor([VOCAB.phon_vocab_size])] for _ in range(2)],
+            "p": torch.full((2, 1), PHONEME_TABLE.num_rows),
             "pm": phon_mask(2, 1),
         },
         ValueError,
-        f"Feature indices must be less than vocabulary size ({VOCAB.phon_vocab_size})",
+        f"Phoneme row ids must lie in [0, {PHONEME_TABLE.num_rows})",
     ),
     (
         # Distinct wording from o2o's "Input tokens ..." for the same condition.

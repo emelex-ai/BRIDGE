@@ -3,15 +3,18 @@ The BridgeTokenizer is a wrapper class that combines orthographic (character-bas
 phonological (phoneme-based) tokenization to support the various pathways in the BRIDGE model.
 
 Objects:
-- CharacterTokenizer: Simple tokenizer for mapping text to character indices
-- PhonemeTokenizer: More complex tokenizer that maps words to phonetic features
+- CharacterTokenizer: maps text to character ids
+- PhonemeTokenizer: maps words to phoneme row ids
 - BridgeTokenizer: A wrapper around both tokenizers
 
-The CharacterTokenizer is lean and simple. It contains all of the logic for encoding
-and decoding strings into token tensors.
+Both tokenizers emit the same shape: a ``(batch, sequence)`` integer tensor of ids plus a
+matching boolean pad mask. Only the id space differs. Character ids index the character
+vocabulary; phoneme ids index rows of the feature table in ``phonreps.csv`` (*which
+phoneme*, not which phonetic feature).
 
-The PhonemeTokenizer handles mapping words to phonetic feature vectors using CMUDict
-and phonreps.csv. It requires words to exist in the CMUDict to work properly.
+The PhonemeTokenizer reads the per-language pronunciation lexicons under
+``bridge/core/pronunciation_lexicons/`` together with ``phonreps.csv``. It requires words
+to exist in a lexicon to work properly.
 
 The BridgeTokenizer handles combining both encoding types into a unified format, with
 special handling for nonwords (words not in CMUDict).
@@ -42,18 +45,18 @@ class BridgeTokenizer:
 
     def __init__(
         self,
-        phoneme_cache_size: int = 10000,
         custom_cmudict_path: str | None = None,
     ):
         # Initialize device
         self.device = device_manager.device
         # Initialize both tokenizers with the same device
+        self.custom_cmudict_path = custom_cmudict_path
         self.char_tokenizer = CharacterTokenizer()
-        self.phoneme_tokenizer = PhonemeTokenizer(
-            max_cache_size=phoneme_cache_size, custom_cmudict_path=custom_cmudict_path
-        )
+        self.phoneme_tokenizer = PhonemeTokenizer(custom_cmudict_path=custom_cmudict_path)
+        self.phon_table_fingerprint = self.phoneme_tokenizer.phoneme_table.fingerprint
         self.phon_bos_id = self.phoneme_tokenizer.special_token_dims["[BOS]"]
         self.phon_pad_id = self.phoneme_tokenizer.special_token_dims["[PAD]"]
+        # Feature space, unlike the row ids `encode` emits. See VocabSpec.phon_pad_id.
         self.phon_spc_id = self.phoneme_tokenizer.special_token_dims["[SPC]"]
         self.phon_eos_id = self.phoneme_tokenizer.special_token_dims["[EOS]"]
         self.orth_bos_id = self.char_tokenizer.char_2_idx["[BOS]"]
@@ -116,18 +119,14 @@ class BridgeTokenizer:
                 phonological = self.phoneme_tokenizer.encode(text, language_map=language_map)
                 if phonological is None:
                     logger.error(
-                        f"Phonological encoding failed — word not found in the pronunciation "
+                        f"Phonological encoding failed: word not found in the pronunciation "
                         f"lexicon. Text: {text}, modality_filter: {modality_filter}"
                     )
                     return None
             else:
                 phonological = self._create_placeholder_phonological(batch_size)
 
-            return BridgeEncoding(
-                orthographic=orthographic,
-                phonological=phonological,
-                device=self.device,
-            )
+            return BridgeEncoding(orthographic=orthographic, phonological=phonological)
         except Exception:
             logger.exception(
                 f"Encoding failed for text: {text}, modality_filter: {modality_filter}"
@@ -141,19 +140,18 @@ class BridgeTokenizer:
 
     def _create_placeholder_phonological(self, batch_size: int) -> EncodingComponent:
         """Create a minimal phonological component for orthography-only encoding."""
-        pad_index = torch.tensor([self.phon_pad_id], dtype=torch.long, device=self.device)
+        # Row space, not feature space: this indexes the phoneme table, so it is
+        # `[PAD]`'s row rather than `self.phon_pad_id` (its feature index).
+        pad_row = self.phoneme_tokenizer.phoneme_table.row_index["[PAD]"]
+        pad_ids = torch.full((batch_size, 1), pad_row, dtype=torch.long, device=self.device)
         enc_pad_mask, dec_pad_mask = self._placeholder_pad_masks(batch_size)
 
         return EncodingComponent(
-            enc_input_ids=[[pad_index.clone()] for _ in range(batch_size)],
+            enc_input_ids=pad_ids,
             enc_pad_mask=enc_pad_mask,
-            dec_input_ids=[[pad_index.clone()] for _ in range(batch_size)],
+            dec_input_ids=pad_ids.clone(),
             dec_pad_mask=dec_pad_mask,
-            targets=torch.zeros(
-                (batch_size, 1, self.phoneme_tokenizer.get_vocabulary_size()),
-                dtype=torch.long,
-                device=self.device,
-            ),
+            targets=self.phoneme_tokenizer.padded_targets(batch_size, 1),
         )
 
     def _create_placeholder_orthographic(self, batch_size: int) -> EncodingComponent:
@@ -178,7 +176,8 @@ class BridgeTokenizer:
 
         Args:
             ortho_indices: Optional List of lists of character indices
-            phono_indices: Optional list of lists of phoneme feature indices
+            phono_indices: Optional list of lists of phoneme *feature* indices, as held by
+                ``GenerationOutput.phon_tokens``. Not the row ids ``encode`` returns.
 
         Returns:
             Dictionary containing decoded strings and tensors or None if no input

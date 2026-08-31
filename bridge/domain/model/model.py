@@ -3,7 +3,9 @@ from typing import Literal, TypedDict
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
+from bridge.core.phonreps import load_phoneme_table, row_normalize
 from bridge.domain.datamodels import BridgeEncoding, GenerationOutput, ModelConfig
 from bridge.domain.model.layers import Decoder, Encoder
 from bridge.utils import device_manager
@@ -56,6 +58,46 @@ class Model(nn.Module):
         self.phonology_embedding = nn.Embedding(
             self.phonological_vocabulary_size, self.model_config.d_model
         )
+        # Row-normalized phoneme -> feature matrix. `phon_feature_matrix @ phonology_embedding
+        # .weight` is every phoneme's mean-of-features embedding in one small matmul, which
+        # turns embedding a batch into a table lookup. Not a parameter and not persistent:
+        # it is derived from phonreps.csv, so it stays out of state_dict and existing
+        # checkpoints keep loading with strict=True.
+        # Annotated before register_buffer so the attribute types as Tensor, not
+        # `Tensor | Module` (nn.Module.__getattr__'s union).
+        self.phon_feature_matrix: torch.Tensor
+        phoneme_table = load_phoneme_table(device=self.device)
+        if phoneme_table.vocab_size != self.phonological_vocabulary_size:
+            raise ValueError(
+                f"vocab.phon_vocab_size is {self.phonological_vocabulary_size}, but the "
+                f"phoneme feature table in phonreps.csv defines "
+                f"{phoneme_table.vocab_size} features. The phonological vocabulary is not "
+                f"free; it is the feature table plus its special tokens. Build the "
+                f"VocabSpec with VocabSpec.from_tokenizer(...) rather than by hand."
+            )
+        # The special-token ids index the same feature space the table defines, and
+        # generation indexes with them directly. A wrong-but-in-range id produces silently
+        # wrong output rather than an error, so check them here alongside the size.
+        wrong = {
+            name: (getattr(vocab, name), phoneme_table.feature_of(token))
+            for name, token in (
+                ("phon_pad_id", "[PAD]"),
+                ("phon_bos_id", "[BOS]"),
+                ("phon_eos_id", "[EOS]"),
+            )
+            if getattr(vocab, name) != phoneme_table.feature_of(token)
+        }
+        if wrong:
+            detail = ", ".join(f"{n}={got} (table says {want})" for n, (got, want) in wrong.items())
+            raise ValueError(
+                f"VocabSpec special-token ids disagree with phonreps.csv: {detail}. Build the "
+                f"VocabSpec with VocabSpec.from_tokenizer(...) rather than by hand."
+            )
+        self.register_buffer(
+            "phon_feature_matrix", row_normalize(phoneme_table.multihot), persistent=False
+        )
+        # Recorded so a checkpoint can be compared against the table it was trained on.
+        self.phon_table_fingerprint = phoneme_table.fingerprint
         # Fixed position embeddings - will be replaced with dynamic position encoding (e.g., RoPE)
         self.phon_position_embedding = nn.Embedding(
             self.max_phon_seq_len, self.model_config.d_model
@@ -126,36 +168,54 @@ class Model(nn.Module):
         )
 
     # Helper functions
-    def embed_orth_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
-        return (
-            self.orthography_embedding(tokens)
-            + self.orth_position_embedding.weight[None, : tokens.shape[1]]
+    @staticmethod
+    def _positions(table: nn.Embedding, seq_len: int, offset: int) -> torch.Tensor:
+        """``seq_len`` position embeddings from ``table``, starting at ``offset``.
+
+        Every embedder takes an ``offset`` so it can embed a slice of a sequence rather
+        than only a whole one, which is what lets the generation loops append a single
+        row per step instead of re-embedding their whole prefix.
+        """
+        if offset + seq_len > table.num_embeddings:
+            raise ValueError(
+                f"Positions {offset}..{offset + seq_len} exceed the {table.num_embeddings}-slot "
+                f"position table; the sequence is longer than this model supports."
+            )
+        return table.weight[offset : offset + seq_len][None]
+
+    def embed_orth_tokens(self, tokens: torch.Tensor, position_offset: int = 0) -> torch.Tensor:
+        return self.orthography_embedding(tokens) + self._positions(
+            self.orth_position_embedding, tokens.shape[1], position_offset
         )
 
-    def embed_phon_tokens(self, tokens) -> torch.Tensor:
-        # tokens: list of list of tensors
-        # Here we average the embeddings for each feature in a phonological vector
-        # Each row of indices will become of batch once we extract rows from the embedding matrix
-        # So the size of the resulting 'output_embedding' tensor should be (batch_size, max_phon_len, d_model)
-        batch_size = len(tokens)
-        # Every batch should be the same size. If this function is called from the forward routine, then the dataset.encode
-        # routine will have already added the necessary padding. If this function is called from the generate routine, then
-        # each successive phonological vector (list of active features) will have been generated at the same time. So we can
-        # set the max_phon_len to the length of the first batch, since all batches should be the same length.
-        max_phon_len = len(tokens[0])
-        # len(tokens) is the batch size
-        output_embedding = torch.zeros(
-            (batch_size, max_phon_len, self.model_config.d_model), device=self.device
+    def embed_phon_tokens(self, rows: torch.Tensor, position_offset: int = 0) -> torch.Tensor:
+        """Embed ``(batch, seq)`` phoneme row ids as ``(batch, seq, d_model)``.
+
+        A phoneme's embedding is the mean of its active features' embeddings. That is linear
+        in the embedding weight, so the mean for *every* phoneme is one small matmul over the
+        91-row feature matrix, independent of batch size, after which embedding a batch is
+        a table lookup. The table is rebuilt each call because the weight trains.
+
+        Featureless phonemes (``phonreps.csv`` contains one, ``'_'``) embed to the zero
+        vector rather than NaN.
+        """
+        phoneme_embeddings = self.phon_feature_matrix @ self.phonology_embedding.weight
+        return F.embedding(rows, phoneme_embeddings) + self._positions(
+            self.phon_position_embedding, rows.shape[1], position_offset
         )
-        for batch_num, batch in enumerate(tokens):
-            for indx, tokes in enumerate(batch):
-                # Here tokens should be a pytorch tensor of integers.
-                # It extracts the indicated rows from self.phonology_embedding
-                avg_embedding = self.phonology_embedding(tokes).mean(axis=0)
-                # Insert the resulting averaged embedding vector into the
-                # output_embedding tensor as a new row
-                output_embedding[batch_num, indx, :] = avg_embedding
-        return output_embedding + self.phon_position_embedding.weight[None, : len(tokens[0])]
+
+    def embed_phon_vectors(self, multihot: torch.Tensor, position_offset: int = 0) -> torch.Tensor:
+        """Embed ``(batch, seq, features)`` binary feature vectors as ``(batch, seq, d_model)``.
+
+        The generation counterpart of :meth:`embed_phon_tokens`: sampled feature vectors need
+        not correspond to any real phoneme, so no table row exists for them and the mean has
+        to be taken over the vector itself.
+        """
+        normalized = row_normalize(multihot.to(self.phonology_embedding.weight.dtype))
+        averaged = normalized @ self.phonology_embedding.weight
+        return averaged + self._positions(
+            self.phon_position_embedding, multihot.shape[1], position_offset
+        )
 
     def generate_triangular_mask(self, size: int) -> torch.Tensor:
         return torch.triu(torch.ones((size, size), dtype=torch.bool, device=self.device), 1)
@@ -210,7 +270,7 @@ class Model(nn.Module):
     def _decode_phon(
         self,
         memory: torch.Tensor,
-        phon_dec_input: list[list[torch.Tensor]],
+        phon_dec_input: torch.Tensor,
         phon_dec_pad_mask: torch.Tensor,
     ) -> torch.Tensor:
         """Autoregressive phonological decode. Returns (batch, 2, seq, features) logits."""
@@ -226,7 +286,9 @@ class Model(nn.Module):
             self.linear_phonology_decoder(output).view(batch_size, seq_len, 2, -1).transpose(1, 2)
         )
 
-    def embed_o(self, orth_enc_input, orth_enc_pad_mask):
+    def embed_o(
+        self, orth_enc_input: torch.Tensor, orth_enc_pad_mask: torch.Tensor
+    ) -> torch.Tensor:
         """Encode orthography alone into the global representation."""
         orthography = self.embed_orth_tokens(orth_enc_input)
         orthography_encoding = self.orthography_encoder(
@@ -234,7 +296,9 @@ class Model(nn.Module):
         )
         return self._mix_with_global(orthography_encoding, orth_enc_pad_mask)
 
-    def embed_p(self, phon_enc_input: list[list[torch.Tensor]], phon_enc_pad_mask: torch.Tensor):
+    def embed_p(
+        self, phon_enc_input: torch.Tensor, phon_enc_pad_mask: torch.Tensor
+    ) -> torch.Tensor:
         """Encode phonology alone into the global representation."""
         phonology = self.embed_phon_tokens(phon_enc_input)
         phonology_encoding = self.phonology_encoder(
@@ -242,7 +306,13 @@ class Model(nn.Module):
         )
         return self._mix_with_global(phonology_encoding, phon_enc_pad_mask)
 
-    def embed_op(self, orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask):
+    def embed_op(
+        self,
+        orth_enc_input: torch.Tensor,
+        orth_enc_pad_mask: torch.Tensor,
+        phon_enc_input: torch.Tensor,
+        phon_enc_pad_mask: torch.Tensor,
+    ) -> torch.Tensor:
         """Cross-attend orthography and phonology, then mix into the global representation."""
         orthography = self.embed_orth_tokens(orth_enc_input)
         phonology = self.embed_phon_tokens(phon_enc_input)
@@ -288,7 +358,7 @@ class Model(nn.Module):
         self,
         orth_enc_input: torch.Tensor,
         orth_enc_pad_mask: torch.Tensor,
-        phon_dec_input: list[list[torch.Tensor]],
+        phon_dec_input: torch.Tensor,
         phon_dec_pad_mask: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
         memory = self.embed_o(orth_enc_input, orth_enc_pad_mask)
@@ -296,7 +366,7 @@ class Model(nn.Module):
 
     def forward_p2o(
         self,
-        phon_enc_input: list[list[torch.Tensor]],
+        phon_enc_input: torch.Tensor,
         phon_enc_pad_mask: torch.Tensor,
         orth_dec_input: torch.Tensor,
         orth_dec_pad_mask: torch.Tensor,
@@ -306,9 +376,9 @@ class Model(nn.Module):
 
     def forward_p2p(
         self,
-        phon_enc_input: list[list[torch.Tensor]],
+        phon_enc_input: torch.Tensor,
         phon_enc_pad_mask: torch.Tensor,
-        phon_dec_input: list[list[torch.Tensor]],
+        phon_dec_input: torch.Tensor,
         phon_dec_pad_mask: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
         memory = self.embed_p(phon_enc_input, phon_enc_pad_mask)
@@ -318,11 +388,11 @@ class Model(nn.Module):
         self,
         orth_enc_input: torch.Tensor,
         orth_enc_pad_mask: torch.Tensor,
-        phon_enc_input: list[list[torch.Tensor]],
+        phon_enc_input: torch.Tensor,
         phon_enc_pad_mask: torch.Tensor,
         orth_dec_input: torch.Tensor,
         orth_dec_pad_mask: torch.Tensor,
-        phon_dec_input: list[list[torch.Tensor]],
+        phon_dec_input: torch.Tensor,
         phon_dec_pad_mask: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
         memory = self.embed_op(orth_enc_input, orth_enc_pad_mask, phon_enc_input, phon_enc_pad_mask)
@@ -349,7 +419,7 @@ class Model(nn.Module):
 
     def phono_sample(
         self, last_token_probs: torch.Tensor, deterministic: bool
-    ) -> tuple[torch.Tensor, list[list[int]]]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Samples phonological features from the model's output distribution.
 
@@ -357,37 +427,40 @@ class Model(nn.Module):
             last_token_probs: (B, 2, num_features) distribution for each phonological
                 feature (num_features includes BOS, EOS, UNK and SPC). Index 0 of the
                 middle dimension is the probability the feature is OFF, index 1 that it
-                is ON — e.g. ``[0.6, 0.4]`` means the feature is most likely off.
+                is ON. So ``[0.6, 0.4]`` means the feature is most likely off.
             deterministic: Whether to sample greedily (> 0.5 => ON) or via Bernoulli.
 
         Returns:
-            feature_presence: A (B, num_features) binary tensor (0 or 1).
-            active_features: A list of lists, each inner list contains the active feature
-                indices for that sample. If all features are off, we default to [PAD].
+            feature_presence: A (B, num_predicted) binary tensor (0 or 1), exactly as
+                sampled, so an all-off row stays all-off. This is what ``phon_vecs``
+                records.
+            embedding_input: A (B, phon_vocab_size) binary tensor: ``feature_presence``
+                widened by one column and, for all-off rows only, [PAD] switched on. This
+                is what gets embedded and what ``phon_tokens`` is decoded from.
+
+        The two differ deliberately, and the asymmetry predates this implementation: an
+        all-off vector is *reported* as all-off but *decodes* to [PAD]. Collapsing them
+        into one tensor would silently change generation output.
+
+        [PAD] is never predicted (the decoder emits ``phon_vocab_size - 1`` features),
+        so the embedding input is one column wider than the sampled presence.
         """
-        # Determine which features are ON.
         if deterministic:
             # Greater than 0.5 probability indicates feature presence
             feature_presence = (last_token_probs[:, 1, :] > 0.5).long()
         else:  # non-deterministic
             feature_presence = torch.bernoulli(last_token_probs[:, 1, :]).long()
 
-        # This returns a tuple of indices ([x_indices], [y_indices]) we need to convert this to a list of lists
-        # where each sublist contains the indicies of activate features for each vector in the batch
-        batch_indices, feature_indices = torch.where(feature_presence)
-
-        # Group indices by batch item efficiently
-        active_features: list[list[int]] = [[] for _ in range(last_token_probs.size(0))]
-        for batch_idx, feature_idx in zip(
-            batch_indices.tolist(), feature_indices.tolist(), strict=False
-        ):
-            active_features[batch_idx].append(feature_idx)
-
+        batch_size, num_predicted = feature_presence.shape
+        embedding_input = feature_presence.new_zeros(
+            (batch_size, self.phonological_vocabulary_size)
+        )
+        embedding_input[:, :num_predicted] = feature_presence
         # A vector with every feature OFF decodes to [PAD]
-        pad_id = self.model_config.vocab.phon_pad_id
-        active_features = [feats if feats else [pad_id] for feats in active_features]
+        all_off = feature_presence.sum(1) == 0
+        embedding_input[all_off, self.model_config.vocab.phon_pad_id] = 1
 
-        return feature_presence, active_features
+        return feature_presence, embedding_input
 
     @torch.no_grad()
     def orthography_decoder_loop(
@@ -400,6 +473,9 @@ class Model(nn.Module):
     ) -> tuple[list[list[torch.Tensor]], torch.Tensor]:
         """
         Iteratively generates orthographic tokens for all sequences in the batch.
+
+        The orthographic twin of :meth:`phonology_decoder_loop`: the batch stays dense
+        inside the loop and the ragged ``orth_probs`` lists are cut once at the end.
 
         Args:
             mask: (max_seq_len, max_seq_len) Triangular causal mask for decoder attention
@@ -418,56 +494,68 @@ class Model(nn.Module):
         bos_id = self.model_config.vocab.orth_bos_id
         eos_id = self.model_config.vocab.orth_eos_id
 
-        # Initialize probability tracking for each sequence in batch
-        orth_probs: list[list[torch.Tensor]] = [[] for _ in range(batch_size)]
-
-        # Add initial probability placeholders for the BOS token
+        # Every sequence opens with a placeholder distribution that is certain of BOS.
         initial_prob = torch.zeros(
             (batch_size, self.orthographic_vocabulary_size),
             device=self.device,
         )
         initial_prob[:, bos_id] = 1
-        for b in range(batch_size):
-            orth_probs[b].append(initial_prob[b])
 
-        # Track which sequences have finished generating
+        step_probs: list[torch.Tensor] = []
+        # A sequence stops collecting probabilities once it emits EOS, so the per-item
+        # histories really are ragged. `sequence_finished` only ever flips on, so the rows
+        # an item keeps are a prefix and this count is enough to split them back out.
+        kept = torch.zeros(batch_size, dtype=torch.long, device=self.device)
         sequence_finished = torch.zeros(batch_size, dtype=torch.bool, device=self.device)
 
         for step in range(self.max_orth_seq_len - 1):
-            # Check if all sequences have generated an EOS token
-            if (generated_orth_tokens == eos_id).any(dim=1).all():
+            # `sequence_finished` already holds what rescanning the whole generated history
+            # for EOS would find, at one reduction instead of O(batch x length) per step.
+            if bool(sequence_finished.all()):
                 break
 
             step_mask = mask[: step + 1, : step + 1]
 
-            # Get decoder output for current step
             orth_output = self.orthography_decoder(
                 generated_orth_embeddings,
                 memory=prompt_encoding,
                 tgt_mask=step_mask,
             )
 
-            # Generate logits and probabilities
-            orthography_token_logits = self.linear_orthography_decoder(orth_output).transpose(1, 2)
-            last_token_logits = orthography_token_logits[:, :, -1]
+            # Only the last position is sampled, so project only that one: over a run the
+            # full-prefix form does O(L^2) head work for O(L) usable rows.
+            last_token_logits = self.linear_orthography_decoder(orth_output[:, -1])
             last_token_probs = torch.softmax(last_token_logits, dim=1)
 
-            # Store probabilities for each active sequence
-            for b in range(batch_size):
-                if not sequence_finished[b]:
-                    orth_probs[b].append(last_token_probs[b])
+            step_probs.append(last_token_probs)
+            kept += (~sequence_finished).long()
 
-            # Sample next tokens
             new_orthography_tokens = self.ortho_sample(last_token_probs, deterministic)
 
-            # Update generated tokens and the embeddings fed to the next step
+            # Append the one position just generated, at the slot it occupies: the
+            # orthographic twin of the phonological loop's incremental embedding.
+            generated_orth_embeddings = torch.cat(
+                (
+                    generated_orth_embeddings,
+                    self.embed_orth_tokens(
+                        new_orthography_tokens, position_offset=generated_orth_tokens.shape[1]
+                    ),
+                ),
+                dim=1,
+            )
             generated_orth_tokens = torch.cat(
                 (generated_orth_tokens, new_orthography_tokens), dim=-1
             )
-            generated_orth_embeddings = self.embed_orth_tokens(generated_orth_tokens)
 
-            # Update which sequences have finished
             sequence_finished = sequence_finished | (new_orthography_tokens == eos_id).squeeze(-1)
+
+        if not step_probs:  # empty batch: every sequence is vacuously finished at step 0
+            return [], generated_orth_tokens
+
+        # Split the batched history back into ragged per-item lists, with a single device
+        # sync for the whole call rather than one per item per step.
+        probs = torch.stack(step_probs, dim=1)
+        orth_probs = [[initial_prob[b], *probs[b, :n]] for b, n in enumerate(kept.tolist())]
 
         return orth_probs, generated_orth_tokens
 
@@ -476,27 +564,34 @@ class Model(nn.Module):
         self,
         mask: torch.Tensor,
         generated_phon_embeddings: torch.Tensor,
-        generated_phon_tokens: list[list[torch.Tensor]],
+        generated_phon_multihot: torch.Tensor,
         prompt_encoding: torch.Tensor,
         deterministic: bool,
     ) -> tuple[list[list[torch.Tensor]], list[list[torch.Tensor]], list[list[torch.Tensor]]]:
         """Autoregressive generation of phonological features.
 
+        The batch stays dense inside the loop; the ragged ``list[list[Tensor]]`` shapes
+        :class:`GenerationOutput` requires are cut once at the end. Each step embeds only
+        the position it just generated, so the loop is linear in sequence length.
+
         Args:
             mask: Causal mask for decoder attention
-            generated_phon_embeddings: Current sequence embeddings
-            generated_phon_tokens: List of active feature indices per position
-            prompt_encoding: Encoder context (batch_size, 1, hidden_dim)
+            generated_phon_embeddings: (batch, 1, d_model) embedding of the seed prefix.
+                Never recomputed; each step appends one row to it.
+            generated_phon_multihot: (batch, 1, phon_vocab_size) seed feature vectors
+                ([BOS]). Read once, after the loop, to prefix the generated history.
+            prompt_encoding: Encoder context, (batch_size, d_embedding, d_model)
             deterministic: Sampling strategy flag
         """
         batch_size = prompt_encoding.size(0)
         phon_eos_id = self.model_config.vocab.phon_eos_id
 
-        phon_probs: list[list[torch.Tensor]] = [[] for _ in range(batch_size)]
-        phon_vecs: list[list[torch.Tensor]] = [[] for _ in range(batch_size)]
+        step_probs: list[torch.Tensor] = []
+        step_vecs: list[torch.Tensor] = []
+        step_multihot: list[torch.Tensor] = []
+        finished = torch.zeros(batch_size, dtype=torch.bool, device=self.device)
 
         for step in range(self.max_phon_seq_len - 1):
-            # Get decoder output for current step
             step_mask = mask[: step + 1, : step + 1]
             phon_output = self.phonology_decoder(
                 generated_phon_embeddings,
@@ -504,38 +599,63 @@ class Model(nn.Module):
                 tgt_mask=step_mask,
             )
 
-            # Get logits for next position, then convert to probabilities
             batch, seq_len, _ = phon_output.shape
-            logits = self.linear_phonology_decoder(phon_output).view(batch, seq_len, 2, -1)
-            last_token_logits = logits.transpose(1, 2)[:, :, -1, :]
+            # Only the last position is sampled; the width is spelled out rather than
+            # inferred with -1, which is ambiguous for an empty batch.
+            last_token_logits = self.linear_phonology_decoder(phon_output[:, -1]).view(
+                batch, 2, self.phonological_vocabulary_size - 1
+            )
             last_token_probs = torch.softmax(last_token_logits, dim=1)
 
-            # Sample new features
-            new_vectors, new_tokens = self.phono_sample(last_token_probs, deterministic)
+            new_vectors, embedding_input = self.phono_sample(last_token_probs, deterministic)
 
-            # Update tracking for each batch item
-            for b in range(batch_size):
-                phon_probs[b].append(last_token_probs[b, 1])  # Probability of feature being ON
-                phon_vecs[b].append(new_vectors[b])
-                generated_phon_tokens[b].append(torch.tensor(new_tokens[b], device=self.device))
+            step_probs.append(last_token_probs[:, 1])  # Probability of feature being ON
+            step_vecs.append(new_vectors)
+            step_multihot.append(embedding_input)
 
-            # Update embeddings for next step
-            generated_phon_embeddings = self.embed_phon_tokens(generated_phon_tokens)
-
-            # Check for early stopping (if all sequences have hit EOS)
-            if all(
-                any(phon_eos_id in token for token in tokens) for tokens in generated_phon_tokens
-            ):
+            # Check for early stopping (if all sequences have hit EOS). One reduction per
+            # step against a running flag, rather than rescanning the whole history.
+            finished |= embedding_input[:, phon_eos_id].bool()
+            if bool(finished.all()):
                 break
 
-        return phon_probs, phon_vecs, generated_phon_tokens
+            # Embed only the position just generated and append it. `seq_len` is the length
+            # of the prefix just decoded, so it is also the index of the row being appended:
+            # the one position embedding still owed. Placed after the break so the final,
+            # never-read embedding is skipped.
+            generated_phon_embeddings = torch.cat(
+                (
+                    generated_phon_embeddings,
+                    self.embed_phon_vectors(embedding_input.unsqueeze(1), position_offset=seq_len),
+                ),
+                dim=1,
+            )
+
+        # Repack into the ragged per-batch-item shapes GenerationOutput expects. Every item
+        # ran for the same number of steps, so this is a pure transpose.
+        phon_probs = [list(item) for item in torch.stack(step_probs, dim=1)]
+        phon_vecs = [list(item) for item in torch.stack(step_vecs, dim=1)]
+        generated_phon_multihot = torch.cat(
+            (generated_phon_multihot, torch.stack(step_multihot, dim=1)), dim=1
+        )
+        # One nonzero over the flattened buffer, then split by per-position feature count.
+        # Calling nonzero per position instead costs a device sync apiece, which at
+        # batch x length is more round trips than the whole loop above makes.
+        flat = generated_phon_multihot.flatten(0, 1)
+        active = torch.split(flat.nonzero()[:, 1], flat.sum(1).tolist())
+        seq_len = generated_phon_multihot.shape[1]
+        phon_tokens = [
+            list(active[start : start + seq_len]) for start in range(0, len(active), seq_len)
+        ]
+
+        return phon_probs, phon_vecs, phon_tokens
 
     def _generate(
         self,
         pathway: Pathway,
         orth_enc_input: torch.Tensor | None = None,
         orth_enc_pad_mask: torch.Tensor | None = None,
-        phon_enc_input: list[list[torch.Tensor]] | None = None,
+        phon_enc_input: torch.Tensor | None = None,
         phon_enc_pad_mask: torch.Tensor | None = None,
         deterministic: bool = False,
     ) -> GenerationDict:
@@ -556,8 +676,8 @@ class Model(nn.Module):
             deterministic: Whether sampling is greedy (True) or stochastic (False).
 
         Returns:
-            A ``GenerationDict``. ``global_encoding`` — the (batch_size, d_embedding,
-            d_model) memory passed to the decoders — is always populated; the
+            A ``GenerationDict``. ``global_encoding``, the (batch_size, d_embedding,
+            d_model) memory passed to the decoders, is always populated; the
             orthographic and phonological fields are filled in only for the pathways
             that generate them, and stay ``None`` otherwise.
 
@@ -579,7 +699,7 @@ class Model(nn.Module):
 
         # Validation above guarantees the pathway's own modality is present.
         batch_size = (
-            orth_enc_input.size(0) if orth_enc_input is not None else len(phon_enc_input)  # type: ignore[arg-type]
+            orth_enc_input.size(0) if orth_enc_input is not None else phon_enc_input.size(0)  # type: ignore[union-attr]
         )
 
         with torch.no_grad():
@@ -612,22 +732,21 @@ class Model(nn.Module):
             if pathway in ["op2op", "o2p", "p2p"]:
                 mask = self.generate_triangular_mask(self.max_phon_seq_len)
 
-                generated_phon_tokens = [
-                    [
-                        torch.tensor(
-                            [self.model_config.vocab.phon_bos_id],
-                            dtype=torch.long,
-                            device=self.device,
-                        )
-                    ]
-                    for _ in range(batch_size)
-                ]
+                # Generation works in feature space, not phoneme-row space: the decoder
+                # samples features independently, so a generated vector need not be any
+                # real phoneme.
+                generated_phon_multihot = torch.zeros(
+                    (batch_size, 1, self.phonological_vocabulary_size),
+                    dtype=torch.long,
+                    device=self.device,
+                )
+                generated_phon_multihot[:, 0, self.model_config.vocab.phon_bos_id] = 1
 
-                generated_phon_embeddings = self.embed_phon_tokens(generated_phon_tokens)
+                generated_phon_embeddings = self.embed_phon_vectors(generated_phon_multihot)
                 phon_probs, phon_vecs, phon_tokens = self.phonology_decoder_loop(
                     mask,
                     generated_phon_embeddings,
-                    generated_phon_tokens,
+                    generated_phon_multihot,
                     global_encoding,
                     deterministic,
                 )
@@ -700,105 +819,66 @@ class Model(nn.Module):
         # validators check cross-field consistency.
         return GenerationOutput(**generation_results)
 
-    def _validate_orth_inputs(
+    def _validate_encoder_inputs(
         self,
-        orth_enc_input: torch.Tensor | None,
-        orth_enc_pad_mask: torch.Tensor | None,
+        name: str,
+        ids: torch.Tensor | None,
+        mask: torch.Tensor | None,
         *,
+        max_seq_len: int | None = None,
         tensor_exc: type[Exception] = ValueError,
-        check_seq_len: bool = False,
     ) -> None:
-        """Structural checks shared by every pathway that consumes orthography.
+        """Structural checks for one modality's encoder input and its padding mask.
 
-        ``tensor_exc`` selects the exception raised when an argument is not a tensor
-        at all: ``op2op`` reports that as a ``TypeError``, the single-modality
-        pathways as a ``ValueError``.
+        Both modalities carry ``(batch, sequence)`` integer ids and a boolean mask of the
+        same shape, so one check serves them; ``name`` only selects the message prefix.
+
+        ``tensor_exc`` selects the exception for an argument that is not a tensor at all.
+        It is ``ValueError`` everywhere except ``op2op``'s orthographic inputs, which
+        raise ``TypeError``. That one asymmetry predates this validator and is pinned by
+        ``tests/domain/model/test_validate_generate_input.py``. ``max_seq_len`` enables the
+        length bound, which only the pathways that own the sequence check.
         """
-        if not isinstance(orth_enc_input, torch.Tensor):
-            raise tensor_exc("orth_enc_input must be a torch.Tensor")
-        if orth_enc_input.dim() != 2:
+        if not isinstance(ids, torch.Tensor):
+            raise tensor_exc(f"{name}_enc_input must be a torch.Tensor, got {type(ids)}")
+        if ids.dim() != 2:
             raise ValueError(
-                "Expected 2D input tensor for orth_enc_input, got shape: "
-                f"{tuple(orth_enc_input.shape)}"
+                f"Expected 2D input tensor for {name}_enc_input, got shape: {tuple(ids.shape)}"
             )
-        if orth_enc_input.dtype not in [torch.long, torch.int]:
+        if ids.dtype not in (torch.long, torch.int):
             raise ValueError(
-                f"orth_enc_input must have dtype torch.long or torch.int, "
-                f"got {orth_enc_input.dtype}"
+                f"{name}_enc_input must have dtype torch.long or torch.int, got {ids.dtype}"
             )
-        if check_seq_len and orth_enc_input.size(1) > self.max_orth_seq_len:
+        if max_seq_len is not None and ids.size(1) > max_seq_len:
             raise ValueError(
-                f"Orthographic input sequence length {orth_enc_input.size(1)} exceeds "
-                f"maximum allowed length {self.max_orth_seq_len}"
+                f"{name}_enc_input sequence length {ids.size(1)} exceeds "
+                f"maximum allowed length {max_seq_len}"
             )
 
-        if not isinstance(orth_enc_pad_mask, torch.Tensor):
-            raise tensor_exc("orth_enc_pad_mask must be a torch.Tensor")
-        if orth_enc_pad_mask.dim() != 2:
-            raise ValueError("Expected 2D input tensor for orth_enc_pad_mask")
-        if orth_enc_pad_mask.dtype != torch.bool:
+        if not isinstance(mask, torch.Tensor):
+            raise tensor_exc(f"{name}_enc_pad_mask must be a torch.Tensor, got {type(mask)}")
+        if mask.dtype != torch.bool:
+            raise ValueError(f"{name}_enc_pad_mask must have dtype torch.bool, got {mask.dtype}")
+        if ids.shape != mask.shape:
             raise ValueError(
-                f"orth_enc_pad_mask must have dtype torch.bool, got {orth_enc_pad_mask.dtype}"
+                f"Shape mismatch: {name}_enc_input is {tuple(ids.shape)} but "
+                f"{name}_enc_pad_mask is {tuple(mask.shape)}"
             )
 
-        if orth_enc_input.shape != orth_enc_pad_mask.shape:
-            raise ValueError(
-                f"Input and mask shapes must match. Got "
-                f"orth_enc_input shape {tuple(orth_enc_input.shape)} and "
-                f"orth_enc_pad_mask shape {tuple(orth_enc_pad_mask.shape)}"
-            )
+    def _validate_phon_bounds(self, phon_enc_input: torch.Tensor) -> None:
+        """Check phoneme row ids index the phoneme table.
 
-    def _validate_phon_inputs(
-        self,
-        phon_enc_input: list[list[torch.Tensor]] | None,
-        phon_enc_pad_mask: torch.Tensor | None,
-    ) -> None:
-        """Structural checks shared by every pathway that consumes phonology."""
-        if not isinstance(phon_enc_input, list):
-            raise TypeError(
-                f"phon_enc_input must be a list of lists of tensors, got {type(phon_enc_input)}"
-            )
-        if not all(isinstance(batch_item, list) for batch_item in phon_enc_input):
-            raise TypeError(
-                "Each item in phon_enc_input must be a list of tensors containing feature indices"
-            )
-        if not all(
-            isinstance(features, torch.Tensor)
-            for batch_item in phon_enc_input
-            for features in batch_item
-        ):
-            raise TypeError("Feature indices in phon_enc_input must be torch.Tensor objects")
-
-        if not isinstance(phon_enc_pad_mask, torch.Tensor):
-            raise TypeError(
-                f"phon_enc_pad_mask must be a torch.Tensor, got {type(phon_enc_pad_mask)}"
-            )
-        if phon_enc_pad_mask.dtype != torch.bool:
-            raise TypeError(
-                f"phon_enc_pad_mask must be a boolean tensor, got dtype={phon_enc_pad_mask.dtype}"
-            )
-
-        batch_size = len(phon_enc_input)
-        if phon_enc_pad_mask.size(0) != batch_size:
-            raise ValueError(
-                f"Batch size mismatch: phon_enc_input has {batch_size} items but "
-                f"phon_enc_pad_mask has {phon_enc_pad_mask.size(0)} items"
-            )
-
-    def _validate_phon_bounds(self, phon_enc_input: list[list[torch.Tensor]]) -> None:
-        """Check phonological feature indices fit the phonological vocabulary."""
-        max_feature_idx = self.phonological_vocabulary_size
-        if any(
-            torch.any(features >= max_feature_idx)
-            for batch_item in phon_enc_input
-            for features in batch_item
-        ):
-            raise ValueError(
-                f"Feature indices must be less than vocabulary size ({max_feature_idx})"
-            )
+        Row space, not feature space: the bound is the number of phonemes (~91), not the
+        phonological vocabulary size (~36).
+        """
+        num_rows = self.phon_feature_matrix.shape[0]
+        if torch.any(phon_enc_input >= num_rows) or torch.any(phon_enc_input < 0):
+            raise ValueError(f"Phoneme row ids must lie in [0, {num_rows})")
 
     def _validate_orth_bounds(self, orth_enc_input: torch.Tensor, label: str) -> None:
         """Check orthographic token ids fit the orthographic vocabulary."""
+        if torch.any(orth_enc_input < 0):
+            raise ValueError(f"{label} cannot be negative")
         if torch.any(orth_enc_input >= self.orthographic_vocabulary_size):
             raise ValueError(
                 f"{label} must be less than vocabulary size ({self.orthographic_vocabulary_size})"
@@ -815,26 +895,18 @@ class Model(nn.Module):
         pathway: str,
         orth_enc_input: torch.Tensor | None,
         orth_enc_pad_mask: torch.Tensor | None,
-        phon_enc_input: list[list[torch.Tensor]] | None,
+        phon_enc_input: torch.Tensor | None,
         phon_enc_pad_mask: torch.Tensor | None,
     ) -> None:
         """Validate the encoder inputs against the selected pathway.
 
-        Each branch below states only what is specific to its pathway — which
+        Each branch below states only what is specific to its pathway: which
         modalities are required, which must be absent, and which bounds/device
         checks apply. The per-modality structural checks are shared via
-        :meth:`_validate_orth_inputs` and :meth:`_validate_phon_inputs`.
+        :meth:`_validate_encoder_inputs`.
         """
         if pathway not in PATHWAYS:
             raise ValueError(f"Invalid pathway: {pathway}")
-
-        if phon_enc_input is not None:
-            max_phon_len = max(len(seq) for seq in phon_enc_input)
-            if max_phon_len > self.max_phon_seq_len:
-                raise ValueError(
-                    f"Phonological input sequence length {max_phon_len} exceeds "
-                    f"maximum allowed length {self.max_phon_seq_len}"
-                )
 
         if pathway in ("p2o", "p2p"):
             if orth_enc_input is not None or orth_enc_pad_mask is not None:
@@ -847,7 +919,9 @@ class Model(nn.Module):
                     f"{pathway} pathway requires phonological inputs (phon_enc_input, "
                     "phon_enc_pad_mask). Received None value(s)."
                 )
-            self._validate_phon_inputs(phon_enc_input, phon_enc_pad_mask)
+            self._validate_encoder_inputs(
+                "phon", phon_enc_input, phon_enc_pad_mask, max_seq_len=self.max_phon_seq_len
+            )
             self._validate_device(phon_enc_pad_mask=phon_enc_pad_mask)
             self._validate_phon_bounds(phon_enc_input)
 
@@ -856,7 +930,7 @@ class Model(nn.Module):
                 raise ValueError("orth_enc_input is required for o2p pathway")
             if orth_enc_pad_mask is None:
                 raise ValueError("orth_enc_pad_mask is required for o2p pathway")
-            self._validate_orth_inputs(orth_enc_input, orth_enc_pad_mask)
+            self._validate_encoder_inputs("orth", orth_enc_input, orth_enc_pad_mask)
 
         elif pathway == "o2o":
             if phon_enc_input is not None or phon_enc_pad_mask is not None:
@@ -869,13 +943,13 @@ class Model(nn.Module):
                     "o2o pathway requires orthographic inputs (orth_enc_input, orth_enc_pad_mask). "
                     "Received None value(s)."
                 )
-            self._validate_orth_inputs(orth_enc_input, orth_enc_pad_mask)
+            self._validate_encoder_inputs("orth", orth_enc_input, orth_enc_pad_mask)
             self._validate_orth_bounds(orth_enc_input, "Input tokens")
             self._validate_device(
                 orth_enc_input=orth_enc_input, orth_enc_pad_mask=orth_enc_pad_mask
             )
 
-        else:  # op2op — the only pathway consuming both modalities
+        else:  # op2op, the only pathway consuming both modalities
             if orth_enc_input is None or orth_enc_pad_mask is None:
                 raise ValueError(
                     "op2op pathway requires orthographic inputs (orth_enc_input, orth_enc_pad_mask)"
@@ -884,17 +958,20 @@ class Model(nn.Module):
                 raise ValueError(
                     "op2op pathway requires phonological inputs (phon_enc_input, phon_enc_pad_mask)"
                 )
-            self._validate_orth_inputs(
+            self._validate_encoder_inputs(
+                "orth",
                 orth_enc_input,
                 orth_enc_pad_mask,
+                max_seq_len=self.max_orth_seq_len,
                 tensor_exc=TypeError,
-                check_seq_len=True,
             )
-            self._validate_phon_inputs(phon_enc_input, phon_enc_pad_mask)
-            if orth_enc_input.size(0) != len(phon_enc_input):
+            self._validate_encoder_inputs(
+                "phon", phon_enc_input, phon_enc_pad_mask, max_seq_len=self.max_phon_seq_len
+            )
+            if orth_enc_input.size(0) != phon_enc_input.size(0):
                 raise ValueError(
                     f"Batch size mismatch: orthographic input has {orth_enc_input.size(0)} items "
-                    f"but phonological input has {len(phon_enc_input)} items"
+                    f"but phonological input has {phon_enc_input.size(0)} items"
                 )
             self._validate_phon_bounds(phon_enc_input)
             self._validate_orth_bounds(orth_enc_input, "Orthographic tokens")
