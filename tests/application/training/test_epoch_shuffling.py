@@ -133,8 +133,8 @@ def artifacts_dir(tmp_path_factory):
 
 def build_pipeline(words_csv, tokenizer, artifacts_dir, num_epochs=EPOCHS, **overrides):
     """A real pipeline over the 48-word csv. Batches are large enough that an epoch is
-    two training steps and one validation step, and ``save_every`` is out of reach so
-    no checkpoint is written."""
+    two training steps and one validation step. The loop writes no checkpoints of its
+    own, so nothing lands in the artifacts directory."""
     dataset = BridgeDataset(DatasetConfig(dataset_filepath=words_csv), tokenizer=tokenizer)
     assert [(w, lang) for w, lang in zip(dataset.words, dataset.languages, strict=True)] == (
         FILE_ORDER
@@ -149,7 +149,6 @@ def build_pipeline(words_csv, tokenizer, artifacts_dir, num_epochs=EPOCHS, **ove
         train_test_split=TRAIN_TEST_SPLIT,
         batch_size_train=BATCH_SIZE_TRAIN,
         batch_size_val=32,
-        save_every=10_000,
         model_artifacts_dir=artifacts_dir,
         **overrides,
     )
@@ -189,7 +188,9 @@ def run_and_record(pipeline):
     pipeline.single_step = spy
 
     train_orders, val_orders = [], []
-    for _ in pipeline.run_train_val_loop("shuffling-test"):
+    for event in pipeline.run_train_val_loop():
+        if event.phase != "epoch":
+            continue
         train_orders.append(list(batch_train))
         val_orders.append(list(batch_val))
         batch_train.clear()

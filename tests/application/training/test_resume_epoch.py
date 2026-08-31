@@ -98,7 +98,7 @@ def state(dataset, tmp_path_factory):
 
 
 def write_checkpoint(state, path, epoch=SAVED_EPOCH):
-    """Write a checkpoint of the shape ``save_model`` writes. ``epoch=None`` omits the key
+    """Write a checkpoint of the shape ``save_checkpoint`` writes. ``epoch=None`` omits the key
     entirely, which is what a checkpoint written before that field existed looks like."""
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = dict(state)
@@ -198,18 +198,17 @@ def test_the_resumed_loop_runs_only_the_remaining_epochs(dataset, state, tmp_pat
     a run with no checkpoint must run all twelve. The control is that second list, and the
     oracle is ``range`` itself, so both expected lists are written out in full.
 
-    No training happens: ``train_single_epoch`` and ``save_model`` are replaced by recorders
+    No training happens: ``train_steps`` is replaced by a recorder
     on the instance, because the claim is about the loop bounds and the bounds come from the
     real ``load_model``.
     """
 
     def epochs_run(pipeline):
         seen: list[int] = []
-        pipeline.train_single_epoch = lambda epoch: (seen.append(epoch), {})[1]
-        pipeline.save_model = lambda epoch, run_name: None
+        pipeline.train_steps = lambda epoch: iter((seen.append(epoch), ())[1])
         pipeline.val_slices = []
         pipeline.test_dataset = None
-        list(pipeline.run_train_val_loop("resume-test"))
+        list(pipeline.run_train_val_loop())
         return seen
 
     path = write_checkpoint(state, tmp_path / "model_epoch_9.pth")

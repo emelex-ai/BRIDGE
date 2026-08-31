@@ -5,6 +5,8 @@ import os
 import random
 import sys
 import time
+from collections.abc import Iterator
+from pathlib import Path
 
 import torch
 from tqdm import tqdm
@@ -13,7 +15,7 @@ from bridge.application.training.ortho_metrics import calculate_orth_metrics
 from bridge.application.training.phon_metrics import calculate_phon_metrics
 from bridge.core.phonreps import load_phoneme_table
 from bridge.domain.data import BridgeDataset
-from bridge.domain.datamodels import EncodingComponent, TrainingConfig
+from bridge.domain.datamodels import EncodingComponent, TrainingConfig, TrainingEvent
 from bridge.domain.model import Model
 from bridge.infra.metrics.metrics_logger import MetricsLogger
 from bridge.utils import device_manager
@@ -336,16 +338,26 @@ class TrainingPipeline:
 
         return sub_slices
 
-    def train_single_epoch(self, epoch: int) -> NumericMetrics:
+    def train_steps(self, epoch: int) -> Iterator[TrainingEvent]:
+        """Run one training epoch, yielding after every optimizer step.
+
+        Public. This is the seam a caller reaches for to own the loop: checkpoint on a step
+        count, stop early on a loss, log at whatever cadence suits. The pipeline decides
+        none of that. :meth:`run_train_val_loop` is a thin wrapper over this.
+
+        Shuffling is deliberately *not* done here. It belongs to the epoch, and a caller
+        driving `train_steps` directly across several epochs would otherwise get a
+        reordering it did not ask for. `run_train_val_loop` calls
+        `_shuffle_training_partition` before each epoch; a caller doing their own loop calls
+        it themselves, or does not.
+        """
         self.model.train()
-        start = time.time()
         last_update_time = time.time()
         progress_bar = tqdm(
             self.train_slices,
             desc=f"Training Epoch {epoch + 1}",
             mininterval=min_interval,
         )
-        total_metrics: NumericMetrics = {}
         for step, batch_slice in enumerate(progress_bar):
             # Run garbage collection to free up memory
             if step % 10 == 0:
@@ -356,15 +368,30 @@ class TrainingPipeline:
                 batch_slice,
                 self.metrics_logger.metrics_config.training_metrics,
             )
-            step_numeric: NumericMetrics = {
-                key: value for key, value in metrics.items() if not isinstance(value, str)
-            }
             current_time = time.time()
             if current_time - last_update_time > min_interval:
                 progress_bar.set_postfix(
-                    {key: f"{value:.4f}" for key, value in step_numeric.items()}
+                    {
+                        key: f"{value:.4f}"
+                        for key, value in metrics.items()
+                        if not isinstance(value, str)
+                    }
                 )
                 last_update_time = current_time
+            yield TrainingEvent(phase="train", epoch=epoch, step=step, metrics=metrics)
+
+    def train_single_epoch(self, epoch: int) -> NumericMetrics:
+        """Run one training epoch and return its mean metrics, `train_` prefixed.
+
+        Kept as the aggregating convenience over :meth:`train_steps`, for callers who want
+        an epoch number rather than a stream.
+        """
+        start = time.time()
+        total_metrics: NumericMetrics = {}
+        for event in self.train_steps(epoch):
+            step_numeric: NumericMetrics = {
+                key: value for key, value in event.metrics.items() if not isinstance(value, str)
+            }
             if not total_metrics:
                 total_metrics = step_numeric
             else:
@@ -461,19 +488,70 @@ class TrainingPipeline:
         total_metrics["time_per_epoch"] = (time.time() - start) * len(test_slices)
         return {"test_" + str(key): val for key, val in total_metrics.items()}
 
-    def run_train_val_loop(self, run_name: str):
-        for epoch in range(self.start_epoch, self.training_config.num_epochs):
+    def run_train_val_loop(self, num_epochs: int | None = None) -> Iterator[TrainingEvent]:
+        """Train, validating each epoch, yielding a record at every step and boundary.
+
+        The convenience loop, and a thin one: everything it does is available separately as
+        :meth:`train_steps`, :meth:`validate_single_epoch`, :meth:`test_single_epoch` and
+        :meth:`_shuffle_training_partition`. A caller who wants a different loop writes it
+        out of those rather than passing flags into this one.
+
+        It writes no checkpoints. When to save, where, and under what name are the caller's
+        to decide, from the stream:
+
+            for event in pipeline.run_train_val_loop(num_epochs=3):
+                if event.phase == "train" and event.step % 100 == 0:
+                    pipeline.save_checkpoint(runs / f"step_{event.step}.pth", event.epoch)
+                elif event.phase == "epoch":
+                    pipeline.save_checkpoint(runs / f"epoch_{event.epoch}.pth", event.epoch)
+
+        Four phases arrive, and the ``epoch`` one is always last for its epoch. Its metrics
+        are the merged aggregate this generator used to yield before it yielded per step, so
+        a caller who only wants epoch rows filters on that phase and is otherwise unchanged.
+
+        Args:
+            num_epochs: Overrides `training_config.num_epochs` for this call. Counting still
+                starts at `self.start_epoch`, so a resumed run does the remaining epochs.
+        """
+        total = self.training_config.num_epochs if num_epochs is None else num_epochs
+        for epoch in range(self.start_epoch, total):
             self._shuffle_training_partition(epoch)
-            training_metrics = self.train_single_epoch(epoch)
+
+            epoch_metrics: NumericMetrics = {}
+            start = time.time()
+            step_total: NumericMetrics = {}
+            steps = 0
+            for event in self.train_steps(epoch):
+                steps += 1
+                numeric: NumericMetrics = {
+                    key: value for key, value in event.metrics.items() if not isinstance(value, str)
+                }
+                if not step_total:
+                    step_total = numeric
+                else:
+                    for key, value in numeric.items():
+                        step_total[key] = step_total[key] + value
+                yield event
+            if steps:
+                for key in step_total:
+                    step_total[key] = step_total[key] / steps
+                step_total["time_per_step"] = (time.time() - start) / steps
+                step_total["time_per_epoch"] = time.time() - start
+                epoch_metrics.update({"train_" + str(k): v for k, v in step_total.items()})
+
             if self.val_slices:
                 metrics = self.validate_single_epoch(epoch)
-                training_metrics.update(metrics)
+                epoch_metrics.update(metrics)
+                yield TrainingEvent(phase="validation", epoch=epoch, metrics=dict(metrics))
             if self.test_dataset:
                 metrics = self.test_single_epoch(epoch)
-                training_metrics.update(metrics)
-            self.metrics_logger.log_metrics(training_metrics, "EPOCH")
-            self.save_model(epoch, run_name)
-            yield training_metrics
+                epoch_metrics.update(metrics)
+                yield TrainingEvent(phase="test", epoch=epoch, metrics=dict(metrics))
+
+            self.metrics_logger.log_metrics(epoch_metrics, "EPOCH")
+            yield TrainingEvent(phase="epoch", epoch=epoch, metrics=dict(epoch_metrics))
+
+        self.metrics_logger.save()
 
     def _shuffle_training_partition(self, epoch: int) -> None:
         """Reorder the training words in place, leaving the validation tail untouched.
@@ -499,30 +577,44 @@ class TrainingPipeline:
             random.seed(self.training_config.seed * 10_000 + epoch)
         self.dataset.shuffle(self.cutpoint)
 
-    def save_model(self, epoch: int, run_name: str) -> None:
-        if (epoch + 1) % self.training_config.save_every == 0:
-            # The artifacts directory is created here rather than when the config was
-            # validated. Constructing a config is not a reason to write to disk, so the
-            # first write is what makes the directory.
-            os.makedirs(self.training_config.model_artifacts_dir, exist_ok=True)
-            model_path = f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}.pth"
-            torch.save(
-                {
-                    "model_config": self.model.model_config,
-                    "dataset_config": self.dataset.dataset_config,
-                    "model_state_dict": self.model.state_dict(),
-                    "optimizer_state_dict": self.optimizer.state_dict(),
-                    "epoch": epoch,
-                },
-                model_path,
+    def save_checkpoint(self, path: str | Path, epoch: int) -> Path:
+        """Write the full checkpoint bundle to ``path``, and return where it went.
+
+        No policy. The caller chooses when to save and what to call the file; the pipeline
+        knows what belongs in one. That split is why this takes a path rather than a run
+        name and a ``save_every`` cadence: two runs sharing an artifacts directory used to
+        overwrite each other silently, because the filename depended only on the epoch, and
+        no naming scheme the library picks can be right for every experiment.
+
+        A relative path resolves against `training_config.model_artifacts_dir`, so the
+        common case stays short. Parent directories are created here, which is the point of
+        first write now that validating a config no longer touches the filesystem.
+
+        `epoch` is recorded in the bundle and is what `load_model` resumes from, so it must
+        be the epoch these weights finished, not the one about to start.
+        """
+        destination = Path(path)
+        if not destination.is_absolute():
+            destination = Path(self.training_config.model_artifacts_dir) / destination
+        destination.parent.mkdir(parents=True, exist_ok=True)
+
+        torch.save(
+            {
+                "model_config": self.model.model_config,
+                "dataset_config": self.dataset.dataset_config,
+                "model_state_dict": self.model.state_dict(),
+                "optimizer_state_dict": self.optimizer.state_dict(),
+                "epoch": epoch,
+            },
+            destination,
+        )
+        if self.dataset.gcs_client:
+            self.dataset.gcs_client.upload_file(
+                os.environ["BUCKET_NAME"],
+                str(destination),
+                f"{self.training_config.gcs_path}/models/{destination.name}",
             )
-            if self.dataset.gcs_client:
-                self.dataset.gcs_client.upload_file(
-                    os.environ["BUCKET_NAME"],
-                    model_path,
-                    f"{self.training_config.gcs_path}/models/model_epoch_{epoch}.pth",
-                )
-            self.metrics_logger.save()
+        return destination
 
     def load_model(self, model_path: str):
         try:

@@ -11,7 +11,7 @@ accident: ``os.path.join`` discards its prefix when the second argument is absol
 The contract asserted here is that a relative directory means "relative to the working
 directory", the same rule ``open("runs/x")`` follows, and that constructing a config is a
 pure function of its arguments: nothing appears on disk until something is actually
-written. Creation moves to ``TrainingPipeline.save_model``, so the last test builds a real
+written. Creation moves to ``TrainingPipeline.save_checkpoint``, so the last test builds a real
 pipeline and checks that saving still works once eager creation is gone.
 
 ``checkpoint_path`` is the control. It names a file that must already exist, so its
@@ -224,11 +224,11 @@ def dataset(tmp_path_factory):
     return BridgeDataset(dataset_config=DatasetConfig(dataset_filepath=str(words)))
 
 
-def test_save_model_creates_the_artifacts_directory_on_first_write(tmp_path, dataset):
+def test_save_checkpoint_creates_the_artifacts_directory_on_first_write(tmp_path, dataset):
     """Deferring creation must not simply break saving.
 
-    ``save_model`` writes ``<model_artifacts_dir>/model_epoch_N.pth``. With eager creation
-    gone, nothing else has made that directory, so ``save_model`` has to make it itself.
+    ``save_checkpoint`` resolves a relative path against ``model_artifacts_dir``. With eager
+    creation gone, nothing else has made that directory, so the write has to make it.
     The assertion before the call is the control: it shows the directory really was absent,
     so the file landing afterwards is evidence of lazy creation and not of a directory that
     was already sitting there.
@@ -257,6 +257,6 @@ def test_save_model_creates_the_artifacts_directory_on_first_write(tmp_path, dat
 
     assert not artifacts.exists(), "the artifacts directory was created before anything was saved"
 
-    pipeline.save_model(epoch=0, run_name="run")
+    pipeline.save_checkpoint("model_epoch_0.pth", epoch=0)
 
     assert (artifacts / "model_epoch_0.pth").is_file()

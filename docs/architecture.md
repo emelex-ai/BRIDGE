@@ -104,6 +104,18 @@ Generation replaces the decoder call with `orthography_decoder_loop` or
 `phonology_decoder_loop`, which decode one position at a time and return ragged per-item
 lists because sequences finish at different lengths.
 
+## Who drives training
+
+The library owns the step; the caller owns the loop. `TrainingPipeline.single_step` runs one
+optimizer step over one slice, `train_steps(epoch)` yields after each of them, and
+`run_train_val_loop` is a thin wrapper that adds shuffling, validation and an epoch summary.
+It emits a `TrainingEvent` per step and per boundary, tagged `train`, `validation`, `test` or
+`epoch`, and writes no checkpoints of its own.
+
+`save_checkpoint(path, epoch)` takes a destination rather than a run name and a cadence, so
+where a run's weights land is the caller's decision. See
+`docs/decisions/0006-the-caller-owns-the-training-loop.md`.
+
 ## Dependencies
 
 PyTorch for the model, pydantic v2 for configs and validation, pandas for the feature CSV,
@@ -129,3 +141,4 @@ Tracked as GitHub issues rather than restated here:
 | [0003](decisions/0003-equivalence-by-differential-against-a-noise-floor.md) | Behavioural equivalence is proven by differential against a pristine baseline, judged against a measured noise floor |
 | [0004](decisions/0004-orthographic-teacher-forcing-alignment.md) | The orthographic loss and metrics target `enc_input_ids[:, 1:]`, so `[BOS]` predicts the first character |
 | [0005](decisions/0005-phonological-metrics-take-the-pad-id.md) | Phonological metrics take `phon_pad_id` as a required argument; every metric reported before this is void |
+| [0006](decisions/0006-the-caller-owns-the-training-loop.md) | The caller owns the training loop and decides when to checkpoint; the library owns the step |

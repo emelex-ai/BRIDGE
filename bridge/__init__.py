@@ -15,6 +15,8 @@ from bridge.domain.datamodels import (
     MetricsConfig,
     ModelConfig,
     TrainingConfig,
+    TrainingEvent,
+    TrainingPhase,
     VocabSpec,
 )
 from bridge.domain.model import Model
@@ -34,6 +36,8 @@ __all__ = [
     "Model",
     "ModelConfig",
     "TrainingConfig",
+    "TrainingEvent",
+    "TrainingPhase",
     "TrainingPipeline",
     "VocabSpec",
     "metrics_logger_factory",

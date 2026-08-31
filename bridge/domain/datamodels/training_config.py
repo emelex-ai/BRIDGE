@@ -14,7 +14,6 @@ class TrainingConfig(BaseModel):
     max_nb_steps: int | None = Field(default=None)
     learning_rate: float = Field(default=0.001)
     training_pathway: str = Field(default="o2p")
-    save_every: int = Field(default=1)
     model_artifacts_dir: str = Field(default="model_artifacts")
     weight_decay: float = Field(default=0.0)
     checkpoint_path: str | None = Field(default=None)
@@ -50,7 +49,7 @@ class TrainingConfig(BaseModel):
 
         Validation no longer creates the directory either. Constructing a config is not a
         reason to write to disk, and merely validating one in a test created directories.
-        ``TrainingPipeline.save_model`` creates it at the point of first write instead.
+        ``TrainingPipeline.save_checkpoint`` creates it at the point of first write instead.
 
         ``test_data_path`` still resolves under ``<project root>/data``, unchanged.
         """
