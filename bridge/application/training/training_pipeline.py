@@ -473,6 +473,10 @@ class TrainingPipeline:
 
     def save_model(self, epoch: int, run_name: str) -> None:
         if (epoch + 1) % self.training_config.save_every == 0:
+            # The artifacts directory is created here rather than when the config was
+            # validated. Constructing a config is not a reason to write to disk, so the
+            # first write is what makes the directory.
+            os.makedirs(self.training_config.model_artifacts_dir, exist_ok=True)
             model_path = f"{self.training_config.model_artifacts_dir}/model_epoch_{epoch}.pth"
             torch.save(
                 {

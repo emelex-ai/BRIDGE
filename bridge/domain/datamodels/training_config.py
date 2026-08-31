@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -26,14 +27,30 @@ class TrainingConfig(BaseModel):
 
     @model_validator(mode="before")
     def convert_paths(cls, values):
-        """Convert relative paths to absolute paths before validation occurs."""
+        """Resolve relative paths, without touching the filesystem.
+
+        A relative ``model_artifacts_dir`` resolves against the caller's working directory.
+        It used to be joined onto ``get_project_root()``, which is BRIDGE's own install
+        root, so ``model_artifacts_dir="runs/experiment1"`` wrote checkpoints inside the
+        installed package where nobody looks and the next reinstall deletes them. Absolute
+        paths happened to work only because ``os.path.join`` discards its prefix when the
+        second argument is absolute, so behaviour turned on a property of the string that
+        was never documented.
+
+        Validation no longer creates the directory either. Constructing a config is not a
+        reason to write to disk, and merely validating one in a test created directories.
+        ``TrainingPipeline.save_model`` creates it at the point of first write instead.
+
+        ``test_data_path`` still resolves under ``<project root>/data``, unchanged.
+        """
         project_root = get_project_root()
         values.setdefault(
             "model_artifacts_dir", cls.model_fields["model_artifacts_dir"].get_default()
         )
-        values["model_artifacts_dir"] = os.path.join(project_root, values["model_artifacts_dir"])
-        # Create the directory if it doesn't exist
-        os.makedirs(values["model_artifacts_dir"], exist_ok=True)
+        artifacts = Path(values["model_artifacts_dir"])
+        values["model_artifacts_dir"] = str(
+            artifacts if artifacts.is_absolute() else Path.cwd() / artifacts
+        )
         if "test_data_path" in values and values["test_data_path"]:
             values["test_data_path"] = os.path.join(project_root, "data", values["test_data_path"])
         return values
@@ -53,8 +70,12 @@ class TrainingConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_paths(self):
-        if not os.path.exists(self.model_artifacts_dir):
-            raise FileNotFoundError(f"Model directory not found: {self.model_artifacts_dir}")
+        """A missing checkpoint is an error; a missing artifacts directory is not.
+
+        The artifacts directory is created lazily on first write, so its absence at
+        construction says nothing. A checkpoint that does not exist is a genuine mistake
+        and is worth catching before a run starts rather than after it has trained.
+        """
         if self.checkpoint_path and not os.path.exists(self.checkpoint_path):
             raise FileNotFoundError(f"Checkpoint file not found: {self.checkpoint_path}")
         return self
