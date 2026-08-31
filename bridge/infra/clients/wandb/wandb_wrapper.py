@@ -35,9 +35,7 @@ class WandbWrapper(Singleton):
             # purely to stop it raising. Treat that placeholder as what it means: no key.
             api_key = os.environ.get("WANDB_API_KEY")
             if not api_key:
-                logger.warning(
-                    "WANDB_API_KEY is not set; disabling W&B logging for this run."
-                )
+                logger.warning("WANDB_API_KEY is not set; disabling W&B logging for this run.")
                 self.is_enabled = False
                 return
             wandb.login(key=api_key)
