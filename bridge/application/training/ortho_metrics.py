@@ -31,11 +31,13 @@ def calculate_orth_metrics(
     orth_pad_id: int,
 ) -> dict[str, float]:
     orth_pred = torch.argmax(logits["orth"], dim=1)
-    # Skip the prepended language token AND [BOS]. The character tokenizer lays
-    # each sequence out as [LANG, BOS, ...chars, EOS, PAD, ...], so the model
-    # predicts indices [LANG, ...chars, EOS] when paired with shifted inputs;
-    # [:, 2:] aligns ground truth with predictions starting from the first char.
-    orth_true = orthography.enc_input_ids[:, 2:]
+    # The encoder ids shifted left by one. The character tokenizer lays each sequence out
+    # as enc = [LANG, BOS, ...chars, EOS, PAD...] and dec = [LANG, BOS, ...chars, PAD...],
+    # so this gives the next token for every decoder position, at the same width as the
+    # logits. It must stay identical to the slice `TrainingPipeline.compute_loss` uses: a
+    # metric scoring different positions than the loss trains reports on a model that was
+    # never optimized, which is the exact shape of issue #225.
+    orth_true = orthography.enc_input_ids[:, 1:]
     orth_valid_mask = orth_true != orth_pad_id
     masked_orth_true = orth_true[orth_valid_mask]
     masked_orth_pred = orth_pred[orth_valid_mask]

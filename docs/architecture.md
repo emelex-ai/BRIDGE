@@ -115,8 +115,6 @@ Storage and Weights and Biases clients under `bridge/infra/`.
 Tracked as GitHub issues rather than restated here:
 
 - **#223** `Model._validate_device` rejects valid tensors under an indexless `cuda` device
-- **#225** orthographic loss and metrics target one position short, so `p2o` and `op2op`
-  cannot train at all
 - **#226** `load_model` discards the resume epoch
 - **#227** phonological metrics mask padding with the orthographic pad id, so every phon
   metric scores padded positions
@@ -128,3 +126,4 @@ Tracked as GitHub issues rather than restated here:
 | [0001](decisions/0001-record-architecture-decisions.md) | Record architecture decisions as numbered immutable files |
 | [0002](decisions/0002-phoneme-row-ids-replace-ragged-feature-lists.md) | Phonology uses `(batch, seq)` row ids, matching orthography, instead of ragged feature lists |
 | [0003](decisions/0003-equivalence-by-differential-against-a-noise-floor.md) | Behavioural equivalence is proven by differential against a pristine baseline, judged against a measured noise floor |
+| [0004](decisions/0004-orthographic-teacher-forcing-alignment.md) | The orthographic loss and metrics target `enc_input_ids[:, 1:]`, so `[BOS]` predicts the first character |

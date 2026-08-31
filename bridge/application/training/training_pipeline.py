@@ -137,8 +137,19 @@ class TrainingPipeline:
 
         # Calculate orth_loss if applicable
         if self.training_config.training_pathway in ["p2o", "op2op"]:
+            # Teacher forcing: decoder position i is scored against the token at i+1. The
+            # character tokenizer lays each sequence out as
+            #     enc = [LANG, BOS, ...chars, EOS, PAD...]
+            #     dec = [LANG, BOS, ...chars,      PAD...]
+            # so the encoder ids shifted left by one give the next token for every decoder
+            # position, at the same width. The `[BOS] -> first character` pair this creates
+            # is what generation needs: `orthography_decoder_loop` seeds a lone [BOS] and
+            # the token it samples next must be the word's first character. See
+            # docs/decisions/0004-orthographic-teacher-forcing-alignment.md.
+            orth_target = orthography.enc_input_ids[:, 1:]
+            self._check_orth_target_width(logits["orth"], orth_target)
             orth_loss = torch.nn.CrossEntropyLoss(ignore_index=vocab.orth_pad_id)(
-                logits["orth"], orthography.enc_input_ids[:, 2:]
+                logits["orth"], orth_target
             )
 
         if orth_loss is not None and phon_loss is not None:
@@ -159,6 +170,23 @@ class TrainingPipeline:
             loss_dict["phon_loss"] = phon_loss
 
         return loss_dict
+
+    @staticmethod
+    def _check_orth_target_width(orth_logits: torch.Tensor, orth_target: torch.Tensor) -> None:
+        """Fail with both shapes named when the target and the logits disagree.
+
+        Left to ``CrossEntropyLoss`` this reads ``Expected target size [8, 8], got [8, 7]``,
+        which names neither tensor nor where either came from. That message is what issue
+        #225 presented as, and it cost more to diagnose than it should have.
+        """
+        if orth_target.shape[1] != orth_logits.shape[-1]:
+            raise ValueError(
+                "Orthographic loss target and logits disagree on how many positions the "
+                f"decoder scored: target {tuple(orth_target.shape)} covers "
+                f"{orth_target.shape[1]} positions, logits {tuple(orth_logits.shape)} cover "
+                f"{orth_logits.shape[-1]}. The target must be enc_input_ids shifted left by "
+                "one, giving exactly one target per decoder input position."
+            )
 
     def compute_metrics(
         self,
