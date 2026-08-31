@@ -509,24 +509,49 @@ class TrainingPipeline:
             self.model.load_state_dict(checkpoint["model_state_dict"])
             self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
-            # Set the correct starting epoch
-            if "epoch" in checkpoint:
-                if self.training_config.checkpoint_path and (
-                    "pretraining" not in self.training_config.checkpoint_path
-                    or "finetuning" not in self.training_config.checkpoint_path
-                ):
-                    self.start_epoch = checkpoint["epoch"] + 1  # Start from the next epoch
-                    self.logger.info(f"Resuming training from epoch {self.start_epoch}")
-            else:
-                self.logger.warning("Checkpoint doesn't contain epoch information, starting from 0")
-                self.start_epoch = 0
-            self.start_epoch = 0
+            self._set_start_epoch(checkpoint, model_path)
 
             return True
         except Exception as e:
             self.logger.error(f"Error loading checkpoint {model_path}: {e}")
             self.start_epoch = 0
             return False
+
+    def _set_start_epoch(self, checkpoint: dict, model_path: str) -> None:
+        """Decide which epoch a resumed run counts from.
+
+        Three cases, and the middle one is a real distinction rather than a special case.
+        A checkpoint saved partway through a run is being *resumed*, so the counter picks up
+        where it left off. A pretraining or finetuning checkpoint is weights being carried
+        into a NEW run, so the counter restarts; `bridge/infra/data/storage_interface.py`
+        writes those under `models/pretraining/`, which is where the substring match comes
+        from. A checkpoint predating the `epoch` key cannot say, so it starts at 0.
+
+        The guard used to read `"pretraining" not in path or "finetuning" not in path`,
+        which is true for every path a checkpoint can realistically have, since one can
+        rarely contain both words. It admitted everything, and an unconditional
+        `self.start_epoch = 0` underneath undid whatever it decided anyway. This keyed on
+        `model_path`, the file actually being loaded, rather than on
+        `training_config.checkpoint_path`, so a direct `load_model` call resumes too.
+
+        The substring match is over the whole path, not the filename, because the marker
+        sits in a directory component. That is fragile in one direction worth knowing: an
+        artifacts directory named `finetuning_runs/` makes every checkpoint under it look
+        like a transfer checkpoint and silently restart the counter.
+        """
+        if "epoch" not in checkpoint:
+            self.logger.warning("Checkpoint doesn't contain epoch information, starting from 0")
+            self.start_epoch = 0
+        elif "pretraining" in model_path or "finetuning" in model_path:
+            self.start_epoch = 0
+            self.logger.info(
+                "%s is a pretraining or finetuning checkpoint, so its weights seed a new "
+                "run and the epoch counter starts from 0.",
+                model_path,
+            )
+        else:
+            self.start_epoch = checkpoint["epoch"] + 1
+            self.logger.info(f"Resuming training from epoch {self.start_epoch}")
 
     def _warn_on_phoneme_table_drift(self, checkpoint: dict, model_path: str) -> None:
         """Warn if the checkpoint was trained against a different phoneme feature table.
