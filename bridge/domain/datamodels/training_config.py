@@ -24,6 +24,17 @@ class TrainingConfig(BaseModel):
         description="Number of chunks to split a batch into for accumulated gradients",
     )
     gcs_path: str | None = Field(default=None)
+    seed: int | None = Field(
+        default=None,
+        description="Seeds the per-epoch training-order shuffle. None leaves it unseeded.",
+    )
+    shuffle_each_epoch: bool = Field(
+        default=True,
+        description=(
+            "Reorder the training partition between epochs. Defaults to True: defaulting to "
+            "False would preserve the defect this was added to fix."
+        ),
+    )
 
     @model_validator(mode="before")
     def convert_paths(cls, values):

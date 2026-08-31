@@ -2,6 +2,7 @@ import gc
 import json
 import logging
 import os
+import random
 import sys
 import time
 
@@ -65,7 +66,9 @@ class TrainingPipeline:
             self.load_model(training_config.checkpoint_path)
 
     def create_data_slices(self):
-        cutpoint = int(len(self.dataset) * self.training_config.train_test_split)
+        # Kept on the instance: `_shuffle_training_partition` reorders exactly the indices
+        # below this point, so the two must not compute it separately and drift.
+        self.cutpoint = cutpoint = int(len(self.dataset) * self.training_config.train_test_split)
         train_slices = [
             slice(i, min(i + self.training_config.batch_size_train, cutpoint))
             for i in range(0, cutpoint, self.training_config.batch_size_train)
@@ -460,6 +463,7 @@ class TrainingPipeline:
 
     def run_train_val_loop(self, run_name: str):
         for epoch in range(self.start_epoch, self.training_config.num_epochs):
+            self._shuffle_training_partition(epoch)
             training_metrics = self.train_single_epoch(epoch)
             if self.val_slices:
                 metrics = self.validate_single_epoch(epoch)
@@ -470,6 +474,30 @@ class TrainingPipeline:
             self.metrics_logger.log_metrics(training_metrics, "EPOCH")
             self.save_model(epoch, run_name)
             yield training_metrics
+
+    def _shuffle_training_partition(self, epoch: int) -> None:
+        """Reorder the training words in place, leaving the validation tail untouched.
+
+        Without this every epoch iterates the data in file order, identically, for every
+        model trained on it. For an alphabetically sorted lexicon that means training on all
+        the "a" words first, every epoch. It also means a seed intended to vary data order
+        contributes exactly nothing, so an experiment treating order as an independent
+        variable is silently measuring a constant.
+
+        The validation tail stays where it is, so validation scores remain comparable across
+        epochs. `create_data_slices` computed its slices as index ranges once, in `__init__`,
+        and reordering in place keeps them valid. `BridgeDataset`'s encoding cache is keyed
+        by (word, language) rather than by index, so it survives the reordering too.
+
+        `BridgeDataset.shuffle` draws from the global `random` module, so the per-epoch seed
+        has to go through `random.seed`. Deriving it from the config seed and the epoch gives
+        a different order each epoch while keeping the whole run reproducible.
+        """
+        if not self.training_config.shuffle_each_epoch:
+            return
+        if self.training_config.seed is not None:
+            random.seed(self.training_config.seed * 10_000 + epoch)
+        self.dataset.shuffle(self.cutpoint)
 
     def save_model(self, epoch: int, run_name: str) -> None:
         if (epoch + 1) % self.training_config.save_every == 0:
