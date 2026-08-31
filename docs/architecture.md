@@ -114,7 +114,6 @@ Storage and Weights and Biases clients under `bridge/infra/`.
 
 Tracked as GitHub issues rather than restated here:
 
-- **#223** `Model._validate_device` rejects valid tensors under an indexless `cuda` device
 
 ## Decision index
 
