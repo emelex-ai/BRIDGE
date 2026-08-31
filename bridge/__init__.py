@@ -19,6 +19,7 @@ from bridge.domain.datamodels import (
 )
 from bridge.domain.model import Model
 from bridge.domain.tokenizer import BridgeTokenizer
+from bridge.infra.metrics.metrics_logger import metrics_logger_factory
 
 __version__ = "0.1.0"
 
@@ -35,4 +36,5 @@ __all__ = [
     "TrainingConfig",
     "TrainingPipeline",
     "VocabSpec",
+    "metrics_logger_factory",
 ]
