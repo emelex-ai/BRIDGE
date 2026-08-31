@@ -116,8 +116,6 @@ Tracked as GitHub issues rather than restated here:
 
 - **#223** `Model._validate_device` rejects valid tensors under an indexless `cuda` device
 - **#226** `load_model` discards the resume epoch
-- **#227** phonological metrics mask padding with the orthographic pad id, so every phon
-  metric scores padded positions
 
 ## Decision index
 
@@ -127,3 +125,4 @@ Tracked as GitHub issues rather than restated here:
 | [0002](decisions/0002-phoneme-row-ids-replace-ragged-feature-lists.md) | Phonology uses `(batch, seq)` row ids, matching orthography, instead of ragged feature lists |
 | [0003](decisions/0003-equivalence-by-differential-against-a-noise-floor.md) | Behavioural equivalence is proven by differential against a pristine baseline, judged against a measured noise floor |
 | [0004](decisions/0004-orthographic-teacher-forcing-alignment.md) | The orthographic loss and metrics target `enc_input_ids[:, 1:]`, so `[BOS]` predicts the first character |
+| [0005](decisions/0005-phonological-metrics-take-the-pad-id.md) | Phonological metrics take `phon_pad_id` as a required argument; every metric reported before this is void |

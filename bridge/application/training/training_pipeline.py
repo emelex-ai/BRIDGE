@@ -196,7 +196,14 @@ class TrainingPipeline:
     ) -> dict[str, float]:
         metrics: dict[str, float] = {}
         if self.training_config.training_pathway in ["o2p", "op2op", "p2p"]:
-            metrics.update(calculate_phon_metrics(logits, phonology, self.phon_reps))
+            metrics.update(
+                calculate_phon_metrics(
+                    logits,
+                    phonology,
+                    self.phon_reps,
+                    phon_pad_id=self.model.model_config.vocab.phon_pad_id,
+                )
+            )
 
         if self.training_config.training_pathway in ["op2op", "p2o"]:
             metrics.update(
