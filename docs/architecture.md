@@ -114,6 +114,11 @@ Storage and Weights and Biases clients under `bridge/infra/`.
 
 Tracked as GitHub issues rather than restated here:
 
+- **#228** generation seeds `[BOS]` at decoder position 0 while training places it at
+  position 1, after `[LANG]`, so it carries a different position embedding in each regime
+- **#229** a constructed `Model` places one of its 169 parameters on
+  `device_manager.device` and leaves the other 168 on CPU, and `.to()` does not update the
+  device it reports
 
 ## Decision index
 

@@ -46,9 +46,18 @@ rather than per element. A mixed pass/fail over the whole structure hides which 
 
 ## What has not been measured
 
-As of 2026-08-30, all equivalence work is **CPU only**. `device_manager` defaults to CPU, and CUDA differs in
-reduction order and kernel selection, so none of it transfers to the RTX 5080 until re-run
-there. Anything claiming GPU equivalence is currently unsupported.
+**Numerical** equivalence work is still CPU only, as of 2026-08-30. CUDA differs in reduction
+order and kernel selection, so the noise floor above does not transfer to the RTX 5080 until
+re-measured there, and any claim of GPU equivalence is currently unsupported.
+
+CUDA *behaviour* has been measured, on an RTX 5080 with torch 2.12.0+cu130: device
+resolution and comparison, and that all five pathways generate on a GPU. That is placement
+and control flow, not numerics, and the two should not be conflated.
+
+`device_manager` no longer defaults to CPU unconditionally. It reads `BRIDGE_DEVICE`, so a
+measurement script inherits whatever the shell exports. Record the device the run actually
+used rather than assuming CPU. `tests/conftest.py` pops the variable so the suite is
+unaffected, but probes are not covered by that.
 
 ## Two integer id spaces
 
