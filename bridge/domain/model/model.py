@@ -36,7 +36,11 @@ class Model(nn.Module):
         self.model_config = model_config
         self.device = device_manager.device
 
-        if self.model_config.seed:
+        # `is not None`, not truthiness: 0 is a perfectly good seed and a falsy one, so
+        # `if seed:` left `seed=0` unseeded with no warning. An ensemble built over
+        # `range(n)` then had a member 0 that did not reproduce while every other member
+        # did, and the discrepancy looked like ordinary training noise.
+        if self.model_config.seed is not None:
             set_seed(seed=self.model_config.seed)
 
         vocab = self.model_config.vocab
