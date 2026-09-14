@@ -15,6 +15,19 @@ was verified genuine by rebuilding it from a pristine worktree at `5d7e8d9` and 
 byte-identical, zero differences. Regenerate only by running
 `tests/fixtures/capture_phon_baseline.py` on a pre-refactor commit.
 
+**Part of it is now superseded, and the file was still not touched.** Issue #228 deliberately
+changed how the orthographic decoder is seeded at generation, so the recorded `orth_tokens`
+and `orth_probs` describe behaviour that was wrong. The handling is the pattern to copy when
+this happens again: measure the change, bound it, reduce the superseded assertions to what
+still holds, and pin the new behaviour somewhere else against analytic oracles rather than
+against a re-recording. Measured 2026-09-14, `global_encoding` unchanged on all five
+pathways and every phonological value unchanged including `op2op`'s, which generates both
+modalities from one encoding; only the three orthographic pathways moved, at identical
+shapes. See `docs/decisions/0008`.
+
+Everything phonological in the fixture, which is what it was recorded for, is still asserted
+exactly.
+
 ## The baseline for a differential
 
 A pristine `git worktree` at the commit before the change. The working venv resolves the
@@ -51,8 +64,14 @@ order and kernel selection, so the noise floor above does not transfer to the RT
 re-measured there, and any claim of GPU equivalence is currently unsupported.
 
 CUDA *behaviour* has been measured, on an RTX 5080 with torch 2.12.0+cu130: device
-resolution and comparison, and that all five pathways generate on a GPU. That is placement
-and control flow, not numerics, and the two should not be conflated.
+resolution and comparison, that a constructed model is entirely on one device, and that all
+five pathways generate on a GPU with no explicit `.to()`. That is placement and control flow,
+not numerics, and the two should not be conflated.
+
+Since #229, initialisation no longer depends on the device: weights are drawn on the default
+device and then moved, so a seed gives bitwise identical parameters on CPU and CUDA, measured
+169/169 at seed 5. A CPU-recorded fingerprint is therefore a valid starting point for a CUDA
+run, which it was not before.
 
 `device_manager` no longer defaults to CPU unconditionally. It reads `BRIDGE_DEVICE`, so a
 measurement script inherits whatever the shell exports. Record the device the run actually
