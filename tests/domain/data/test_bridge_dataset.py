@@ -15,14 +15,6 @@ from bridge.domain.datamodels import BridgeEncoding, EncodingComponent
 from bridge.domain.tokenizer import BridgeTokenizer
 from bridge.infra.clients.gcp.gcs_client import GCSClient
 
-tokenizer = BridgeTokenizer()
-PHON_BOS_ID = tokenizer.phon_bos_id
-PHON_PAD_ID = tokenizer.phon_pad_id
-PHON_EOS_ID = tokenizer.phon_eos_id
-ORTH_BOS_ID = tokenizer.orth_bos_id
-ORTH_PAD_ID = tokenizer.orth_pad_id
-ORTH_EOS_ID = tokenizer.orth_eos_id
-
 
 @pytest.fixture
 def mock_gcs_client():
@@ -76,10 +68,7 @@ class MockDatasetConfig:
         # Updated attributes based on new DatasetConfig
         self.dataset_filepath = kwargs.get("dataset_filepath", "data.csv")
         self.device = kwargs.get("device", "cpu")
-        self.tokenizer_cache_size = kwargs.get("tokenizer_cache_size", 10000)
-        self.custom_cmudict_path = kwargs.get("custom_cmudict_path", "custom_cmudict.json")
-        # For backward compatibility
-        self.phoneme_cache_size = self.tokenizer_cache_size
+        self.custom_cmudict_path = kwargs.get("custom_cmudict_path", None)
 
 
 @pytest.fixture
@@ -90,135 +79,43 @@ def dataset_config(mock_dataset_file, mock_cmudict_file):
     )
 
 
+_TOKENIZER = BridgeTokenizer()
+
+
 def create_test_encoding(word: str, device: torch.device) -> BridgeEncoding:
-    """Helper function to create test BridgeEncoding instances with new structure."""
+    """A real encoding for a lexicon word, moved to ``device``.
 
-    if word == "cat":
-        # Create orthographic encoding component
-        orth_enc_ids = torch.tensor([[0, 18, 16, 35, 1]], device=device)
-        orth_enc_mask = torch.tensor([[False, False, False, False, False]], device=device)
-        orth_dec_ids = torch.tensor([[0, 18, 16, 35]], device=device)
-        orth_dec_mask = torch.tensor([[False, False, False, False]], device=device)
-
-        # Create phonological encoding component
-        phon_enc_ids = [
-            [
-                torch.tensor([PHON_BOS_ID], device=device),
-                torch.tensor([4, 6], device=device),
-                torch.tensor([14, 15, 17, 22, 29], device=device),
-                torch.tensor([2, 6], device=device),
-                torch.tensor([PHON_EOS_ID], device=device),
-            ]
-        ]
-        phon_enc_mask = torch.tensor([[False, False, False, False, False]], device=device)
-        phon_dec_ids = [
-            [
-                torch.tensor([PHON_BOS_ID], device=device),
-                torch.tensor([4, 6], device=device),
-                torch.tensor([14, 15, 17, 22, 29], device=device),
-                torch.tensor([2, 6], device=device),
-            ]
-        ]
-        phon_dec_mask = torch.tensor([[False, False, False, False]], device=device)
-
-        # Create phonological targets
-        phon_targets = torch.zeros([1, 4, 36], device=device)
-        for row, idx in enumerate(phon_enc_ids[0][1:]):
-            for i in idx:
-                phon_targets[0, row, i] = 1
-
-        # Create encoding components
-        orthographic = EncodingComponent(
-            enc_input_ids=orth_enc_ids,
-            enc_pad_mask=orth_enc_mask,
-            dec_input_ids=orth_dec_ids,
-            dec_pad_mask=orth_dec_mask,
-        )
-
-        phonological = EncodingComponent(
-            enc_input_ids=phon_enc_ids,
-            enc_pad_mask=phon_enc_mask,
-            dec_input_ids=phon_dec_ids,
-            dec_pad_mask=phon_dec_mask,
-            targets=phon_targets,
-        )
-
-        # Create BridgeEncoding with components
-        return BridgeEncoding(orthographic=orthographic, phonological=phonological, device=device)
-    elif word == "dog":
-        # Create orthographic encoding component
-        orth_enc_ids = torch.tensor([[0, 9, 15, 13, 1]], device=device)
-        orth_enc_mask = torch.tensor([[False, False, False, False, False]], device=device)
-        orth_dec_ids = torch.tensor([[0, 9, 15, 13]], device=device)
-        orth_dec_mask = torch.tensor([[False, False, False, False]], device=device)
-
-        # Create phonological encoding component
-        phon_enc_ids = [
-            [
-                torch.tensor([PHON_BOS_ID], device=device),
-                torch.tensor([7, 8], device=device),
-                torch.tensor([11, 17, 22], device=device),
-                torch.tensor([3, 6], device=device),
-                torch.tensor([PHON_EOS_ID], device=device),
-            ]
-        ]
-        phon_enc_mask = torch.tensor([[False, False, False, False, False]], device=device)
-        phon_dec_ids = [
-            [
-                torch.tensor([PHON_BOS_ID], device=device),
-                torch.tensor([7, 8], device=device),
-                torch.tensor([11, 17, 22], device=device),
-                torch.tensor([3, 6], device=device),
-            ]
-        ]
-        phon_dec_mask = torch.tensor([[False, False, False, False]], device=device)
-
-        # Create phonological targets
-        phon_targets = torch.zeros([1, 4, 36], device=device)
-        for row, idx in enumerate(phon_enc_ids[0][1:]):
-            for i in idx:
-                phon_targets[0, row, i] = 1
-
-        # Create encoding components
-        orthographic = EncodingComponent(
-            enc_input_ids=orth_enc_ids,
-            enc_pad_mask=orth_enc_mask,
-            dec_input_ids=orth_dec_ids,
-            dec_pad_mask=orth_dec_mask,
-        )
-
-        phonological = EncodingComponent(
-            enc_input_ids=phon_enc_ids,
-            enc_pad_mask=phon_enc_mask,
-            dec_input_ids=phon_dec_ids,
-            dec_pad_mask=phon_dec_mask,
-            targets=phon_targets,
-        )
-
-        # Create BridgeEncoding with components
-        return BridgeEncoding(orthographic=orthographic, phonological=phonological, device=device)
-    return None
+    Hand-building this used to mean restating the tokenizer's output shape here, which
+    then had to be migrated in lockstep with it. Encoding for real costs one lexicon
+    parse for the module and cannot drift.
+    """
+    encoding = _TOKENIZER.encode(word)
+    assert encoding is not None, f"{word!r} is missing from the pronunciation lexicon"
+    return encoding.to(device)
 
 
 @pytest.fixture
-def mock_bridge_tokenizer():
-    """Create a mock BridgeTokenizer with controlled behavior."""
-    mock_tokenizer = Mock(spec=BridgeTokenizer)
+def mock_bridge_tokenizer(mock_cmudict_file):
+    """A real tokenizer for the config's lexicon, wrapped so calls can be counted.
 
-    def mock_encode(word):
-        return create_test_encoding(word, torch.device("cpu"))
-
-    mock_tokenizer.encode.side_effect = mock_encode
-    return mock_tokenizer
+    ``wraps`` keeps real behaviour, since encoding is the thing under test in most of these
+    cases, while still recording ``encode.call_count``. A hand-written double has to
+    restate the tokenizer's batch contract, which is how this layer silently stopped
+    matching it.
+    """
+    real = BridgeTokenizer(custom_cmudict_path=mock_cmudict_file)
+    tokenizer = Mock(spec=BridgeTokenizer, wraps=real)
+    # `spec` exposes class attributes only; these are set in __init__.
+    tokenizer.custom_cmudict_path = real.custom_cmudict_path
+    return tokenizer
 
 
 @pytest.fixture
 def bridge_dataset(dataset_config, mock_bridge_tokenizer, mock_gcs_client):
     """Create a BridgeDataset instance with mocked components."""
-    with patch("bridge.domain.tokenizer.BridgeTokenizer", return_value=mock_bridge_tokenizer):
-        dataset = BridgeDataset(dataset_config, mock_gcs_client)
-        dataset.mock_tokenizer = mock_bridge_tokenizer
-        return dataset
+    dataset = BridgeDataset(dataset_config, mock_gcs_client, tokenizer=mock_bridge_tokenizer)
+    dataset.mock_tokenizer = mock_bridge_tokenizer
+    return dataset
 
 
 def test_dataset_initialization(bridge_dataset, mock_dataset_file):
@@ -252,8 +149,10 @@ def test_get_item_by_index(bridge_dataset):
     assert orth.enc_input_ids.device == bridge_dataset.device
 
     phon = item.phonological
-    assert isinstance(phon.enc_input_ids, list)
-    assert all(torch.is_tensor(t) for t in phon.enc_input_ids[0])
+    # Phoneme row ids, the same (batch, sequence) shape as the orthographic side.
+    assert torch.is_tensor(phon.enc_input_ids)
+    assert phon.enc_input_ids.shape[0] == 1
+    assert phon.enc_input_ids.device == bridge_dataset.device
 
 
 def test_get_item_by_word(bridge_dataset):
@@ -295,45 +194,27 @@ def test_invalid_index_access(bridge_dataset):
 
 
 def test_encoding_cache(dataset_config, mock_bridge_tokenizer, mock_gcs_client):
-    """Test encoding cache functionality."""
-    # Create fresh mock with call tracking
-    mock_tokenizer = Mock(spec=BridgeTokenizer)
+    """A repeated lookup must not re-encode."""
+    dataset = BridgeDataset(dataset_config, mock_gcs_client, tokenizer=mock_bridge_tokenizer)
 
-    def mock_encode(word):
-        """Side effect to simulate encode behavior"""
-        return create_test_encoding(word, torch.device("cpu"))
+    _ = dataset[0]
+    assert mock_bridge_tokenizer.encode.call_count > 0, "nothing was encoded; the spy is inert"
+    first_call_count = mock_bridge_tokenizer.encode.call_count
 
-    mock_tokenizer.encode.side_effect = mock_encode
-
-    # Create dataset with our controlled mock
-    with patch("bridge.domain.tokenizer.BridgeTokenizer", return_value=mock_tokenizer):
-        dataset = BridgeDataset(dataset_config, mock_gcs_client)
-
-        # Access same item twice
-        _ = dataset[0]
-
-        # Check call count after first access
-        first_call_count = mock_tokenizer.encode.call_count
-
-        # Access again - should use cache
-        _ = dataset[0]
-
-        # Verify encode wasn't called again
-        assert mock_tokenizer.encode.call_count == first_call_count
+    _ = dataset[0]
+    assert mock_bridge_tokenizer.encode.call_count == first_call_count
 
 
-def test_device_movement(dataset_config, mock_gcs_client):
+def test_device_movement(dataset_config, mock_bridge_tokenizer, mock_gcs_client):
     """Test moving dataset between devices."""
     if not torch.cuda.is_available():
         pytest.skip("CUDA not available")
 
-    with patch("bridge.domain.tokenizer.BridgeTokenizer"):
-        dataset = BridgeDataset(dataset_config, mock_gcs_client)
-        assert dataset.device.type == "cpu"
+    dataset = BridgeDataset(dataset_config, mock_gcs_client, tokenizer=mock_bridge_tokenizer)
+    assert dataset.device.type == "cpu"
 
-        # Move to CUDA
-        dataset.device = torch.device("cuda")
-        assert dataset.device.type == "cuda"
+    dataset.device = torch.device("cuda")
+    assert dataset.device.type == "cuda"
 
 
 def test_batch_consistency(bridge_dataset):
@@ -383,19 +264,12 @@ def test_data_validation(tmp_path, dataset_config, mock_gcs_client):
 
 def test_error_handling_invalid_encodings(dataset_config, mock_bridge_tokenizer, mock_gcs_client):
     """Test handling of invalid encodings from tokenizer."""
-    # For this test, we need to patch both the BridgeTokenizer class constructor
-    # and the _encode_single_word method in BridgeDataset to bypass the lru_cache
+    dataset = BridgeDataset(dataset_config, mock_gcs_client, tokenizer=mock_bridge_tokenizer)
 
-    with patch("bridge.domain.tokenizer.BridgeTokenizer", return_value=mock_bridge_tokenizer):
-        # Create the dataset
-        dataset = BridgeDataset(dataset_config, mock_gcs_client)
-
-        # Now patch the _encode_single_word method to always return None
-        # This simulates a failure in the tokenization process
-        with patch.object(dataset, "_encode_single_word", return_value=None):
-            # Now accessing the item should raise RuntimeError
-            with pytest.raises(RuntimeError, match="Failed to encode word"):
-                _ = dataset[0]
+    # Patch the per-word encoder rather than the tokenizer, to bypass the lru_cache.
+    with patch.object(dataset, "_encode_single_word", return_value=None):
+        with pytest.raises(RuntimeError, match="Failed to encode word"):
+            _ = dataset[0]
 
 
 def test_integration_with_training_pipeline(bridge_dataset):
@@ -424,21 +298,13 @@ def test_integration_with_training_pipeline(bridge_dataset):
     )
 
 
-def test_vocabulary_size_properties(bridge_dataset, mock_bridge_tokenizer, mock_gcs_client):
-    """Test the vocabulary size properties."""
-    # Setup mock to return expected vocabulary sizes
+def test_vocabulary_size_properties(dataset_config, mock_bridge_tokenizer, mock_gcs_client):
+    """Vocabulary sizes are taken from the tokenizer, not derived independently."""
     mock_bridge_tokenizer.get_vocabulary_sizes.return_value = {
         "orthographic": 100,
         "phonological": 200,
     }
+    dataset = BridgeDataset(dataset_config, mock_gcs_client, tokenizer=mock_bridge_tokenizer)
 
-    # Create new dataset with our controlled mock
-    with patch("bridge.domain.tokenizer.BridgeTokenizer", return_value=mock_bridge_tokenizer):
-        dataset_config = MockDatasetConfig(
-            dataset_filepath=bridge_dataset.dataset_filepath, device="cpu"
-        )
-        dataset = BridgeDataset(dataset_config, mock_gcs_client)
-
-        # Set vocab sizes manually for testing
-        dataset.orthographic_vocabulary_size = 100
-        dataset.phonological_vocabulary_size = 200
+    assert dataset.orthographic_vocabulary_size == 100
+    assert dataset.phonological_vocabulary_size == 200

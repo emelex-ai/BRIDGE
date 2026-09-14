@@ -6,24 +6,17 @@ invariants are asserted directly, plus the parameter-name stability that checkpo
 depend on.
 """
 
+import io
+
 import pytest
 import torch
 
 from bridge.domain.datamodels import ModelConfig, VocabSpec
 from bridge.domain.model import Decoder, Encoder, Model
+from bridge.domain.tokenizer import BridgeTokenizer
+from tests.vocab import PHONEME_TABLE, TEST_VOCAB
 
-VOCAB = VocabSpec(
-    orth_vocab_size=49,
-    phon_vocab_size=34,
-    orth_pad_id=2,
-    orth_bos_id=0,
-    orth_eos_id=1,
-    orth_spc_id=41,
-    phon_pad_id=33,
-    phon_bos_id=29,
-    phon_eos_id=30,
-    phon_spc_id=32,
-)
+VOCAB = TEST_VOCAB
 D_MODEL = 32
 BATCH = 3
 
@@ -44,11 +37,9 @@ def orth_inputs(seq=6):
     return ids, torch.zeros((BATCH, seq), dtype=torch.bool)
 
 
-def phon_inputs(seq=4, feats=2):
-    ids = [
-        [torch.randint(0, VOCAB.phon_vocab_size, (feats,)) for _ in range(seq)]
-        for _ in range(BATCH)
-    ]
+def phon_inputs(seq=4):
+    """Phoneme *row* ids: indices into the phoneme table, not feature indices."""
+    ids = torch.randint(0, PHONEME_TABLE.num_rows, (BATCH, seq), dtype=torch.long)
     return ids, torch.zeros((BATCH, seq), dtype=torch.bool)
 
 
@@ -115,7 +106,7 @@ def test_all_three_encoders_agree_on_output_shape(d_embedding):
 
 def test_mix_with_global_gradient_reaches_the_global_parameter(model):
     """``global_embedding`` is broadcast with ``.expand`` (stride 0). Its gradient must
-    still accumulate across the batch — a broadcasting mistake here silently stops the
+    still accumulate across the batch. A broadcasting mistake here silently stops the
     global token from learning."""
     model.zero_grad(set_to_none=True)
     encoding = torch.randn(BATCH, 5, D_MODEL)
@@ -238,38 +229,57 @@ def test_o2p_and_p2p_share_the_phonological_decode(model):
 # --- phono_sample ---------------------------------------------------------
 
 
+def active_features(embedding_input: torch.Tensor) -> list[list[int]]:
+    """Decode phono_sample's embedding input back to per-row active feature indices."""
+    return [torch.nonzero(row).flatten().tolist() for row in embedding_input]
+
+
 def test_phono_sample_all_features_off_falls_back_to_pad(model):
     """The empty-feature branch: a phoneme with no active feature decodes to [PAD]."""
     probs = torch.zeros((BATCH, 2, VOCAB.phon_vocab_size - 1))
     probs[:, 0, :] = 1.0
-    presence, active = model.phono_sample(probs, deterministic=True)
+    presence, embedding_input = model.phono_sample(probs, deterministic=True)
+    # `presence` is reported as sampled, all off, while the embedding input carries
+    # [PAD]. The two deliberately disagree here; `phon_vecs` records the former.
     assert torch.equal(presence, torch.zeros_like(presence))
-    assert active == [[VOCAB.phon_pad_id]] * BATCH
+    assert active_features(embedding_input) == [[VOCAB.phon_pad_id]] * BATCH
 
 
 def test_phono_sample_all_features_on(model):
     probs = torch.zeros((BATCH, 2, VOCAB.phon_vocab_size - 1))
     probs[:, 1, :] = 1.0
-    presence, active = model.phono_sample(probs, deterministic=True)
+    presence, embedding_input = model.phono_sample(probs, deterministic=True)
     assert torch.equal(presence, torch.ones_like(presence))
-    assert active == [list(range(VOCAB.phon_vocab_size - 1))] * BATCH
+    assert active_features(embedding_input) == [list(range(VOCAB.phon_vocab_size - 1))] * BATCH
 
 
 def test_phono_sample_mixed_features(model):
     probs = torch.zeros((BATCH, 2, VOCAB.phon_vocab_size - 1))
     probs[:, 1, [1, 4]] = 1.0
-    _, active = model.phono_sample(probs, deterministic=True)
-    assert active == [[1, 4]] * BATCH
+    _, embedding_input = model.phono_sample(probs, deterministic=True)
+    assert active_features(embedding_input) == [[1, 4]] * BATCH
 
 
 def test_phono_sample_only_one_row_empty(model):
-    """Per-row fallback — a row with features must not be overwritten by the PAD path."""
+    """Per-row fallback: a row with features must not be overwritten by the PAD path."""
     probs = torch.zeros((BATCH, 2, VOCAB.phon_vocab_size - 1))
     probs[1, 1, [2, 3]] = 1.0
-    _, active = model.phono_sample(probs, deterministic=True)
+    presence, embedding_input = model.phono_sample(probs, deterministic=True)
+    active = active_features(embedding_input)
     assert active[0] == [VOCAB.phon_pad_id]
     assert active[1] == [2, 3]
     assert active[2] == [VOCAB.phon_pad_id]
+    # Only the embedding input gains [PAD]; the reported presence stays all-off.
+    assert not presence[0].any()
+    assert not presence[2].any()
+
+
+def test_phono_sample_embedding_input_is_one_column_wider_than_presence(model):
+    """[PAD] is never predicted, so it needs a column the decoder does not emit."""
+    probs = torch.zeros((BATCH, 2, VOCAB.phon_vocab_size - 1))
+    presence, embedding_input = model.phono_sample(probs, deterministic=True)
+    assert presence.shape == (BATCH, VOCAB.phon_vocab_size - 1)
+    assert embedding_input.shape == (BATCH, VOCAB.phon_vocab_size)
 
 
 # --- checkpoint compatibility ---------------------------------------------
@@ -310,6 +320,58 @@ def test_a_state_dict_round_trips():
     ):
         assert ka == kb
         assert torch.equal(va, vb)
+
+
+def test_the_phoneme_feature_table_stays_out_of_the_state_dict():
+    """``phon_feature_matrix`` is derived from ``phonreps.csv``, not learned.
+
+    It is registered ``persistent=False`` precisely so it never reaches a checkpoint. If
+    that flag were dropped, every ``.pth`` written before the issue #221 refactor would
+    fail to load under ``strict=True``, the failure this test exists to prevent.
+    """
+    model = build()
+    assert "phon_feature_matrix" in dict(model.named_buffers())
+    assert "phon_feature_matrix" not in model.state_dict()
+
+
+def test_a_pre_refactor_checkpoint_loads_strictly():
+    """Spec acceptance gate: an existing ``.pth`` still loads with ``strict=True``.
+
+    The refactor added no parameters and changed no shapes, so a checkpoint saved before it
+    has exactly today's key set. Round-tripping through ``torch.save``/``torch.load`` is
+    what ``TrainingPipeline.load_model`` actually does, so this exercises that path rather
+    than a bare dict copy.
+    """
+    saved = io.BytesIO()
+    torch.save({"model_state_dict": build().state_dict()}, saved)
+    saved.seek(0)
+
+    fresh = build(seed=99)
+    missing, unexpected = fresh.load_state_dict(
+        torch.load(saved, weights_only=True)["model_state_dict"], strict=True
+    )
+    assert not missing and not unexpected
+
+
+# --- phoneme table provenance ----------------------------------------------
+
+
+def test_from_tokenizer_records_the_table_fingerprint():
+    tokenizer = BridgeTokenizer()
+    spec = VocabSpec.from_tokenizer(tokenizer)
+    assert spec.phon_table_fingerprint == tokenizer.phoneme_tokenizer.phoneme_table.fingerprint
+
+
+def test_a_model_records_the_fingerprint_of_the_table_it_built_from():
+    """Checkpoint drift is detected at load time, so the model must carry the comparand."""
+    assert build().phon_table_fingerprint == PHONEME_TABLE.fingerprint
+
+
+def test_a_vocab_spec_without_a_fingerprint_still_builds():
+    """Specs written before the field carry ``None`` and must construct without complaint."""
+    assert isinstance(
+        build(vocab=TEST_VOCAB.model_copy(update={"phon_table_fingerprint": None})), Model
+    )
 
 
 def test_layer_wrappers_are_still_exported():

@@ -33,6 +33,7 @@ class BridgeDataset:
         self,
         dataset_config: DatasetConfig,
         gcs_client: GCSClient | None = None,
+        tokenizer: BridgeTokenizer | None = None,
     ):
         """
         Initialize the dataset with configuration and setup tokenization.
@@ -41,15 +42,28 @@ class BridgeDataset:
             dataset_config: Configuration object containing dataset parameters
             gcs_client: Optional GCS client for reading datasets from
                 ``gs://`` paths. Required only if ``dataset_filepath`` is a GCS URI.
+            tokenizer: An existing tokenizer to reuse. Constructing one parses the
+                pronunciation lexicons, costing ~1 s and ~81 MB retained, so paired
+                train/test datasets should share a single instance rather than
+                building one each. It must have been built from the same
+                ``custom_cmudict_path`` as this config, since that lexicon is baked
+                into the tokenizer at construction.
         """
         self.dataset_config = dataset_config
         self.gcs_client = gcs_client
         self.device = device_manager.device
 
-        self.tokenizer = BridgeTokenizer(
-            # getattr, not attribute access: callers may pass any object exposing the
-            # DatasetConfig surface, and this field post-dates the original interface.
-            phoneme_cache_size=getattr(dataset_config, "tokenizer_cache_size", 10000),
+        if tokenizer is not None and (
+            tokenizer.custom_cmudict_path != dataset_config.custom_cmudict_path
+        ):
+            raise ValueError(
+                f"Injected tokenizer was built with custom_cmudict_path="
+                f"{tokenizer.custom_cmudict_path!r}, but this dataset's config specifies "
+                f"{dataset_config.custom_cmudict_path!r}. The custom lexicon is merged in at "
+                f"tokenizer construction, so sharing one across configs that disagree would "
+                f"silently encode against the wrong pronunciations."
+            )
+        self.tokenizer = tokenizer or BridgeTokenizer(
             custom_cmudict_path=dataset_config.custom_cmudict_path,
         )
 
@@ -57,8 +71,10 @@ class BridgeDataset:
         self.orthographic_vocabulary_size = vocab_sizes["orthographic"]
         self.phonological_vocabulary_size = vocab_sizes["phonological"]
 
-        # Memoized single-word encodings, keyed by (word, language). Instance-scoped so
-        # the cache — and the tokenizer's lexicon behind it — dies with the dataset.
+        # Memoized single-word encodings, keyed by (word, language). Instance-scoped, so
+        # this dict dies with the dataset. The parsed lexicon behind it does not:
+        # `_load_lexicon` and `load_phoneme_table` are process-lifetime caches, deliberately,
+        # since re-reading them per dataset costs ~1 s and ~81 MB each time.
         self._encoding_cache: dict[tuple[str, str | None], BridgeEncoding | None] = {}
 
         self.dataset_filepath = dataset_config.dataset_filepath
@@ -214,7 +230,7 @@ class BridgeDataset:
         strict_conflicts: bool = True,
     ) -> BridgeEncoding:
         """
-        Unified path for ``__getitem__`` and ``get_encoding`` — turns any indexer
+        Unified path for ``__getitem__`` and ``get_encoding``. Turns any indexer
         into a (words, language_map) pair, then encodes.
         """
         # Positional indexers carry their own language per position; lexical indexers
@@ -269,7 +285,7 @@ class BridgeDataset:
     def __getitem__(self, idx: int | slice | str | list[str]) -> BridgeEncoding:
         """
         Retrieve encoded data for specified index. Uses each word's stored language
-        with strict conflict checking — raises ``ValueError`` if a word string
+        with strict conflict checking, so it raises ``ValueError`` if a word string
         appears in the dataset with more than one language. In that case use
         :meth:`get_encoding` with an explicit ``language_map`` instead.
         """
@@ -284,7 +300,7 @@ class BridgeDataset:
         Retrieve encoded data with optional explicit language override.
 
         Unlike :meth:`__getitem__`, this does NOT raise on cross-language
-        homographs — it falls back to the first language found if no override
+        homographs: it falls back to the first language found if no override
         is supplied.
         """
         return self._get_encoding_unified(idx, language_map=language_map, strict_conflicts=False)

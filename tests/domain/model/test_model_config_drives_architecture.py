@@ -1,37 +1,34 @@
 """
 Behavioral tests pinning down the contract that `ModelConfig` (specifically
-its `vocab` field) is the sole source of truth for the model's vocabulary
-architecture: embedding dimensions, parameter counts, and special-token IDs
-all flow from the config — not from any tokenizer or dataset reference.
+its `vocab` field) is the model's source of truth for vocabulary architecture:
+embedding dimensions, parameter counts, and special-token IDs all flow from the
+config, not from any tokenizer or dataset reference. The phonological half must
+agree with `phonreps.csv`, which the model checks at construction.
 
 These tests survived the decoupling refactor and provide permanent regression
 coverage for the model↔tokenizer boundary. (The migration-only scaffolding
-tests — AST scans, signature checks, attribute checks — were intentionally
+tests (AST scans, signature checks, attribute checks) were intentionally
 deleted in Step 8 of `plans/sleepy-wishing-bird.md`: code review enforces
 their invariants more reliably and they become brittle to legitimate
 reorganization.)
 """
 
-from bridge.domain.datamodels import ModelConfig, VocabSpec
+import pytest
+
+from bridge.domain.datamodels import ModelConfig
 from bridge.domain.model import Model
+from tests.vocab import PHONEME_TABLE, TEST_VOCAB
 
 
 def _build_test_model(**vocab_overrides) -> Model:
-    """Construct a Model with controllable vocab numbers for testing."""
-    defaults = {
-        "orth_vocab_size": 109,
-        "phon_vocab_size": 36,
-        "orth_pad_id": 2,
-        "orth_bos_id": 0,
-        "orth_eos_id": 1,
-        "orth_spc_id": 92,
-        "phon_pad_id": 35,
-        "phon_bos_id": 31,
-        "phon_eos_id": 32,
-        "phon_spc_id": 34,
-    }
-    defaults.update(vocab_overrides)
-    return Model(ModelConfig(d_model=64, nhead=2, d_embedding=1, vocab=VocabSpec(**defaults)))
+    """Construct a Model with controllable vocab numbers for testing.
+
+    The orthographic half is free; the phonological half is derived from
+    ``phonreps.csv`` and is validated at construction, so it comes from TEST_VOCAB
+    rather than being hand-written here.
+    """
+    vocab = TEST_VOCAB.model_copy(update={"orth_vocab_size": 109, **vocab_overrides})
+    return Model(ModelConfig(d_model=64, nhead=2, d_embedding=1, vocab=vocab))
 
 
 def _find_in_pydantic(model_obj, attr_name):
@@ -71,7 +68,16 @@ class TestConfigDrivesArchitecture:
         """Sentinel special-token IDs supplied via config are reachable on
         `model.model_config` after construction (regardless of whether they
         live flat on the config or nested under a sub-object)."""
-        model = _build_test_model(phon_eos_id=99, phon_pad_id=100, phon_bos_id=101)
-        assert _find_in_pydantic(model.model_config, "phon_eos_id") == 99
-        assert _find_in_pydantic(model.model_config, "phon_pad_id") == 100
-        assert _find_in_pydantic(model.model_config, "phon_bos_id") == 101
+        model = _build_test_model()
+        for field, token in (
+            ("phon_eos_id", "[EOS]"),
+            ("phon_pad_id", "[PAD]"),
+            ("phon_bos_id", "[BOS]"),
+        ):
+            assert _find_in_pydantic(model.model_config, field) == PHONEME_TABLE.feature_of(token)
+
+    def test_special_token_ids_must_match_the_phoneme_table(self):
+        """Ids are not free: generation indexes the feature space with them directly, so a
+        wrong-but-in-range id silently produces the wrong phoneme rather than an error."""
+        with pytest.raises(ValueError, match="special-token ids disagree"):
+            _build_test_model(phon_bos_id=PHONEME_TABLE.feature_of("[EOS]"))

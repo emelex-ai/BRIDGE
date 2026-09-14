@@ -15,10 +15,13 @@ from bridge.domain.datamodels import (
     MetricsConfig,
     ModelConfig,
     TrainingConfig,
+    TrainingEvent,
+    TrainingPhase,
     VocabSpec,
 )
 from bridge.domain.model import Model
 from bridge.domain.tokenizer import BridgeTokenizer
+from bridge.infra.metrics.metrics_logger import metrics_logger_factory
 
 __version__ = "0.1.0"
 
@@ -33,6 +36,9 @@ __all__ = [
     "Model",
     "ModelConfig",
     "TrainingConfig",
+    "TrainingEvent",
+    "TrainingPhase",
     "TrainingPipeline",
     "VocabSpec",
+    "metrics_logger_factory",
 ]

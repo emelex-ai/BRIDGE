@@ -25,8 +25,11 @@ def validate_nested_tensors(
 ) -> list[list[torch.Tensor]] | None:
     """Validate a ``list[list[Tensor]]`` of per-step, per-batch 1-D tensors.
 
-    ``element_check`` runs an extra per-tensor assertion; it receives the tensor and
-    a pre-formatted ``"name[batch][step]"`` label for its error messages.
+    The structural walk is plain Python and costs nothing. ``element_check`` is numeric,
+    so it runs **once** over every row stacked together rather than per tensor: at batch
+    x steps the per-tensor form is thousands of whole-tensor reductions, each a device
+    sync, and it dominated ``generate()`` on CUDA. The trade is that a numeric failure
+    names the field rather than the offending ``[batch][step]``.
     """
     if v is None:
         return None
@@ -34,6 +37,7 @@ def validate_nested_tensors(
     if not isinstance(v, list) or not all(isinstance(x, list) for x in v):
         raise ValueError(f"{name} must be a list of lists of tensors")
 
+    stackable: tuple[int, torch.device] | None = None
     for batch_idx, sequence in enumerate(v):
         for step_idx, tensor in enumerate(sequence):
             label = f"{name}[{batch_idx}][{step_idx}]"
@@ -41,30 +45,47 @@ def validate_nested_tensors(
                 raise ValueError(f"{label} must be a tensor")
             if tensor.dim() != 1:
                 raise ValueError(f"{label} must be 1-dimensional")
-            if element_check is not None:
-                element_check(tensor, label)
+            if element_check is None:
+                # No numeric check means no stack, and nothing to agree on. `phon_tokens`
+                # is this case, and its rows are genuinely ragged: they hold each
+                # position's active feature indices, and phonemes differ in how many they
+                # have.
+                continue
+            # Width and device are tensor metadata, so agreeing on them here is free, and
+            # it keeps a mismatch inside pydantic. The stack below would otherwise raise a
+            # bare RuntimeError straight past the validator.
+            if stackable is None:
+                stackable = (tensor.shape[0], tensor.device)
+            elif tensor.shape[0] != stackable[0]:
+                raise ValueError(f"{label} has length {tensor.shape[0]}, expected {stackable[0]}")
+            elif tensor.device != stackable[1]:
+                raise ValueError(f"{label} is on device {tensor.device}, expected {stackable[1]}")
+
+    if stackable is not None and element_check is not None:
+        element_check(torch.stack([tensor for sequence in v for tensor in sequence]), name)
 
     return v
 
 
-def check_is_distribution(tensor: torch.Tensor, label: str) -> None:
-    """A normalized probability distribution: sums to 1, all entries in [0, 1]."""
-    if not torch.isclose(tensor.sum(), torch.tensor(1.0), atol=1e-5):
-        raise ValueError(f"{label} probabilities must sum to 1, got {tensor.sum()}")
-    if torch.any(tensor < 0) or torch.any(tensor > 1):
-        raise ValueError(f"{label} probabilities must be between 0 and 1")
+def check_is_distribution(rows: torch.Tensor, name: str) -> None:
+    """Every row is a normalized probability distribution: sums to 1, entries in [0, 1]."""
+    sums = rows.sum(-1)
+    if not torch.allclose(sums, torch.ones_like(sums), atol=1e-5):
+        raise ValueError(f"{name} probabilities must sum to 1")
+    if torch.any(rows < 0) or torch.any(rows > 1):
+        raise ValueError(f"{name} probabilities must be between 0 and 1")
 
 
-def check_in_unit_range(tensor: torch.Tensor, label: str) -> None:
+def check_in_unit_range(rows: torch.Tensor, name: str) -> None:
     """Independent per-feature probabilities: entries in [0, 1], no sum constraint."""
-    if torch.any(tensor < 0) or torch.any(tensor > 1):
-        raise ValueError(f"{label} probabilities must be between 0 and 1")
+    if torch.any(rows < 0) or torch.any(rows > 1):
+        raise ValueError(f"{name} probabilities must be between 0 and 1")
 
 
-def check_is_binary(tensor: torch.Tensor, label: str) -> None:
-    """A binary feature vector: every entry is exactly 0 or 1."""
-    if not torch.all((tensor == 0) | (tensor == 1)):
-        raise ValueError(f"{label} must contain only binary values")
+def check_is_binary(rows: torch.Tensor, name: str) -> None:
+    """Binary feature vectors: every entry is exactly 0 or 1."""
+    if not torch.all((rows == 0) | (rows == 1)):
+        raise ValueError(f"{name} must contain only binary values")
 
 
 def validate_orthographic_tokens(v: torch.Tensor | None) -> torch.Tensor | None:
@@ -114,6 +135,8 @@ class GenerationOutput(BaseModel):
     orth_tokens: torch.Tensor | None = None
     phon_probs: list[list[torch.Tensor]] | None = None
     phon_vecs: list[list[torch.Tensor]] | None = None
+    # One entry longer than phon_probs/phon_vecs: it includes the [BOS] seed position,
+    # which was never sampled and so has no probability or vector of its own.
     phon_tokens: list[list[torch.Tensor]] | None = None
 
     @model_validator(mode="after")

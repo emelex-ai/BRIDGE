@@ -3,7 +3,7 @@
 Two near-identical validators (``validate_probability_list`` /
 ``validate_phonological_vectors``) were merged into ``validate_nested_tensors`` plus a
 pluggable per-element check. The merge is only correct if each field keeps exactly the
-rules it had — the old code selected them with ``if name == "orth_probs"`` /
+rules it had. The old code selected them with ``if name == "orth_probs"`` /
 ``if name == "phon_vecs"`` string comparisons, which is easy to get wrong when
 refactoring. The asymmetries below are the whole point of this file:
 
@@ -18,7 +18,10 @@ import pytest
 import torch
 
 from bridge.domain.datamodels import GenerationOutput
-from bridge.domain.datamodels.generate_models import validate_nested_tensors
+from bridge.domain.datamodels.generate_models import (
+    check_is_distribution,
+    validate_nested_tensors,
+)
 
 BATCH = 2
 GLOBAL = torch.randn(BATCH, 1, 8)
@@ -132,8 +135,22 @@ def test_nested_fields_reject_two_dimensional_tensors(field):
         build(**kwargs)
 
 
-def test_error_message_names_the_field_and_position():
+def test_a_structural_error_names_the_field_and_position():
+    kwargs = {
+        "orth_probs": [[torch.zeros(2, 2)] for _ in range(BATCH)],
+        "orth_tokens": orth_tokens(),
+    }
     with pytest.raises(ValueError, match=r"orth_probs\[0\]\[0\]"):
+        build(**kwargs)
+
+
+def test_a_numeric_error_names_the_field():
+    """Numeric checks run once over every row at once, so they name the field only.
+
+    Per-tensor checking cost thousands of device syncs per ``generate()``; the position
+    is worth less than that.
+    """
+    with pytest.raises(ValueError, match="orth_probs probabilities must sum to 1"):
         build(orth_probs=nested(0.1, 0.1), orth_tokens=orth_tokens())
 
 
@@ -202,3 +219,37 @@ def test_orth_tokens_reject_negative_indices():
 def test_orth_tokens_must_be_two_dimensional():
     with pytest.raises(ValueError, match="orth_tokens must be 2-dimensional"):
         build(orth_probs=simplex(), orth_tokens=torch.zeros(BATCH, dtype=torch.long))
+
+
+def test_rows_of_unequal_length_are_a_validation_error():
+    """Batching the numeric check must not let a shape mismatch escape as RuntimeError.
+
+    ``element_check`` now runs once over every row stacked together rather than per
+    tensor. ``torch.stack`` raises a bare ``RuntimeError`` on ragged input, which would
+    bypass pydantic entirely, so the width is agreed in the structural walk instead.
+    """
+    with pytest.raises(ValueError, match="has length 3, expected 2"):
+        validate_nested_tensors(
+            [[torch.tensor([1.0, 0.0]), torch.tensor([0.5, 0.25, 0.25])]],
+            "orth_probs",
+            check_is_distribution,
+        )
+
+
+def test_rows_on_different_devices_are_a_validation_error():
+    """Same reason: ``torch.stack`` would raise past the validator."""
+    meta = torch.tensor([1.0, 0.0], device="meta")
+    with pytest.raises(ValueError, match="is on device"):
+        validate_nested_tensors(
+            [[torch.tensor([1.0, 0.0]), meta]], "orth_probs", check_is_distribution
+        )
+
+
+def test_phon_tokens_rows_stay_ragged():
+    """The width agreement must not leak onto the field that has no numeric check.
+
+    ``phon_tokens`` holds each position's active feature indices, and phonemes differ in
+    how many features they carry, so its rows are ragged by construction. Every
+    phon-producing pathway emits one.
+    """
+    validate_nested_tensors([[torch.tensor([1, 4, 9]), torch.tensor([2, 7])]], "phon_tokens", None)

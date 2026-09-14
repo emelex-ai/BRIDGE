@@ -4,6 +4,7 @@ from bridge.domain.datamodels.generate_models import GenerationOutput
 from bridge.domain.datamodels.metrics_config import MetricsConfig
 from bridge.domain.datamodels.model_config import ModelConfig
 from bridge.domain.datamodels.training_config import TrainingConfig
+from bridge.domain.datamodels.training_event import TrainingEvent, TrainingPhase
 from bridge.domain.datamodels.vocab_spec import VocabSpec
 
 __all__ = [
@@ -14,5 +15,7 @@ __all__ = [
     "MetricsConfig",
     "ModelConfig",
     "TrainingConfig",
+    "TrainingEvent",
+    "TrainingPhase",
     "VocabSpec",
 ]

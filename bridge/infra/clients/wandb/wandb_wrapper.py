@@ -29,7 +29,16 @@ class WandbWrapper(Singleton):
             logger.info(
                 "WandbWrapper initialized with project_name: %s, entity: %s", project_name, entity
             )
-            wandb.login(key=os.environ["WANDB_API_KEY"])
+            # `.get`, and an emptiness check on top of it. A bare subscript raised KeyError
+            # from inside a logging wrapper, which suggests nothing about the remedy, and
+            # the workaround people reach for is an empty placeholder in the environment
+            # purely to stop it raising. Treat that placeholder as what it means: no key.
+            api_key = os.environ.get("WANDB_API_KEY")
+            if not api_key:
+                logger.warning("WANDB_API_KEY is not set; disabling W&B logging for this run.")
+                self.is_enabled = False
+                return
+            wandb.login(key=api_key)
         else:
             logger.info("WandbWrapper initialized in disabled mode.")
 
