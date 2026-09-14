@@ -7,6 +7,29 @@ refactor began. This module rebuilds the same objects and asserts every recorded
 or the change was intentional and the spec says so. Regenerating the fixture to make a test
 pass defeats its entire purpose.
 
+One value has since been superseded, deliberately, and the fixture was not touched.
+Issue #228 changed how the orthographic decoder is seeded at generation: from a lone ``[BOS]``
+at position 0 to the ``[LANG, BOS]`` prefix training actually uses. The decoder therefore
+continues from a different state and emits different tokens, so the recorded
+``orth_tokens`` and ``orth_probs`` describe behaviour that was wrong. Measured at the commit
+that changed it, the effect is bounded to exactly that:
+
+===============  ==============  =============  ==============
+pathway          global_encoding  orth_tokens    phonological
+===============  ==============  =============  ==============
+o2p              same             n/a            same
+p2o              same             **moved**      n/a
+p2p              same             n/a            same
+op2op            same             **moved**      same
+o2o              same             **moved**      n/a
+===============  ==============  =============  ==============
+
+``op2op`` is the load-bearing row: it generates both modalities from one encoding, and its
+phonological output is unchanged while its orthographic output moved. Shapes are unchanged
+throughout, ``(9, 30)`` and ``(9, 30, 109)``. The orthographic equality assertions below are
+reduced to shape, and the new behaviour is pinned against analytic oracles in
+``tests/domain/model/test_orth_generation_prefix.py`` rather than against a re-recording.
+
 **The plumbing is not.** The refactor changes the phonological representation from a ragged
 ``list[list[Tensor]]`` to a ``(batch, sequence)`` tensor of row ids, and the adapters in the
 ADAPTERS block below absorb that; everything under ASSERTIONS compares recorded numbers and
@@ -237,10 +260,14 @@ def test_generation_unchanged(baseline, rebuilt, pathway):
 
     if "orth_tokens" in expected:
         assert result.orth_tokens is not None
-        assert torch.equal(result.orth_tokens, expected["orth_tokens"]), f"{pathway}/orth_tokens"
-        assert torch.allclose(
-            stack_nested(result.orth_probs), expected["orth_probs"], atol=FORWARD_ATOL
-        ), f"{pathway}/orth_probs"
+        # Values superseded by #228; see this module's docstring. Shape is still pinned,
+        # because a width change would mean something other than the seeding moved.
+        assert result.orth_tokens.shape == expected["orth_tokens"].shape, (
+            f"{pathway}/orth_tokens shape"
+        )
+        assert stack_nested(result.orth_probs).shape == expected["orth_probs"].shape, (
+            f"{pathway}/orth_probs shape"
+        )
     else:
         assert result.orth_tokens is None
 

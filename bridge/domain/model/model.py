@@ -27,6 +27,10 @@ class GenerationDict(TypedDict):
     phon_tokens: list[list[torch.Tensor]] | None
 
 
+# Pathways whose second half is orthography, so they run the orthographic decoder loop.
+ORTH_DECODING = ("op2op", "p2o", "o2o")
+
+
 class Model(nn.Module):
     def __init__(
         self,
@@ -521,15 +525,19 @@ class Model(nn.Module):
                 - orth_tokens: (batch_size, seq_len) Tensor of generated token sequences
         """
         batch_size = prompt_encoding.size(0)
-        bos_id = self.model_config.vocab.orth_bos_id
         eos_id = self.model_config.vocab.orth_eos_id
+        prefix_len = generated_orth_tokens.shape[1]
 
-        # Every sequence opens with a placeholder distribution that is certain of BOS.
-        initial_prob = torch.zeros(
-            (batch_size, self.orthographic_vocabulary_size),
+        # One placeholder distribution per seeded position, each certain of the token that
+        # was seeded there. The seed used to be a lone [BOS] and this was a single row; it is
+        # now the [LANG, BOS] prefix training uses, so the count follows the prefix rather
+        # than being fixed at one. Built from the tokens themselves, so a different prefix
+        # cannot silently desynchronise the probability history from the token history.
+        seed_probs = torch.zeros(
+            (batch_size, prefix_len, self.orthographic_vocabulary_size),
             device=self.device,
         )
-        initial_prob[:, bos_id] = 1
+        seed_probs.scatter_(2, generated_orth_tokens.unsqueeze(-1), 1.0)
 
         step_probs: list[torch.Tensor] = []
         # A sequence stops collecting probabilities once it emits EOS, so the per-item
@@ -538,13 +546,17 @@ class Model(nn.Module):
         kept = torch.zeros(batch_size, dtype=torch.long, device=self.device)
         sequence_finished = torch.zeros(batch_size, dtype=torch.bool, device=self.device)
 
-        for step in range(self.max_orth_seq_len - 1):
+        for _step in range(self.max_orth_seq_len - prefix_len):
             # `sequence_finished` already holds what rescanning the whole generated history
             # for EOS would find, at one reduction instead of O(batch x length) per step.
             if bool(sequence_finished.all()):
                 break
 
-            step_mask = mask[: step + 1, : step + 1]
+            # Sized from the prefix actually decoded so far, not from the step index. The
+            # step index only equalled the prefix length while the seed was one token, and
+            # a two-token seed then asked a 1x1 mask to cover two positions.
+            attended = generated_orth_embeddings.shape[1]
+            step_mask = mask[:attended, :attended]
 
             orth_output = self.orthography_decoder(
                 generated_orth_embeddings,
@@ -585,7 +597,7 @@ class Model(nn.Module):
         # Split the batched history back into ragged per-item lists, with a single device
         # sync for the whole call rather than one per item per step.
         probs = torch.stack(step_probs, dim=1)
-        orth_probs = [[initial_prob[b], *probs[b, :n]] for b, n in enumerate(kept.tolist())]
+        orth_probs = [[*seed_probs[b], *probs[b, :n]] for b, n in enumerate(kept.tolist())]
 
         return orth_probs, generated_orth_tokens
 
@@ -687,6 +699,7 @@ class Model(nn.Module):
         orth_enc_pad_mask: torch.Tensor | None = None,
         phon_enc_input: torch.Tensor | None = None,
         phon_enc_pad_mask: torch.Tensor | None = None,
+        orth_dec_prefix: torch.Tensor | None = None,
         deterministic: bool = False,
     ) -> GenerationDict:
         """
@@ -785,14 +798,21 @@ class Model(nn.Module):
                 output["phon_tokens"] = phon_tokens
 
             # All these pathways have "2o" meaning we need to run the orthography decoder loop
-            if pathway in ["op2op", "p2o", "o2o"]:
+            if pathway in ORTH_DECODING:
+                if orth_dec_prefix is None:
+                    raise ValueError(
+                        f"pathway {pathway!r} runs the orthographic decoder, which must be "
+                        "seeded with the [LANG, BOS] prefix training uses. Pass "
+                        "orth_dec_prefix, or call `generate`, which takes it off the "
+                        "encoding."
+                    )
                 mask = self.generate_triangular_mask(self.max_orth_seq_len)
-                generated_orth_tokens = torch.full(
-                    (batch_size, 1),
-                    self.model_config.vocab.orth_bos_id,
-                    dtype=torch.long,
-                    device=self.device,
-                )
+                # Seeded with the prefix training uses, [LANG, BOS], rather than a lone
+                # [BOS]. Training puts [BOS] at decoder position 1, so a lone [BOS] at
+                # position 0 asked the decoder to continue from a state it never saw, and
+                # the language token it conditions on was absent entirely. See
+                # docs/decisions/0008.
+                generated_orth_tokens = orth_dec_prefix
                 generated_orth_embeddings = self.embed_orth_tokens(generated_orth_tokens)
                 orth_probs, orth_tokens = self.orthography_decoder_loop(
                     mask,
@@ -836,12 +856,22 @@ class Model(nn.Module):
         uses_orth = pathway in ("o2p", "o2o", "op2op")
         uses_phon = pathway in ("p2o", "p2p", "op2op")
 
+        # The orthographic decoder is seeded with the same two positions training puts in
+        # front of every word, [LANG, BOS], taken straight off the encoding rather than
+        # rebuilt here. The language is therefore whatever the caller asked for through
+        # `BridgeTokenizer.encode(..., language_map=...)`, and `p2o` can be steered to spell
+        # the same phonemes differently per language. See docs/decisions/0008.
+        orth_dec_prefix = (
+            encodings.orthographic.dec_input_ids[:, :2] if pathway in ORTH_DECODING else None
+        )
+
         generation_results = self._generate(
             pathway=pathway,
             orth_enc_input=encodings.orthographic.enc_input_ids if uses_orth else None,
             orth_enc_pad_mask=encodings.orthographic.enc_pad_mask if uses_orth else None,
             phon_enc_input=encodings.phonological.enc_input_ids if uses_phon else None,
             phon_enc_pad_mask=encodings.phonological.enc_pad_mask if uses_phon else None,
+            orth_dec_prefix=orth_dec_prefix,
             deterministic=deterministic,
         )
 
