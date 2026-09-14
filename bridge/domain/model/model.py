@@ -34,7 +34,10 @@ class Model(nn.Module):
     ) -> None:
         super().__init__()
         self.model_config = model_config
-        self.device = device_manager.device
+        # A local, not an attribute. `device` is a property derived from the parameters
+        # below, so that `.to()` is authoritative and the module cannot report a device it
+        # does not live on. See docs/decisions/0007.
+        target_device = device_manager.device
 
         # `is not None`, not truthiness: 0 is a perfectly good seed and a falsy one, so
         # `if seed:` left `seed=0` unseeded with no warning. An ensemble built over
@@ -70,7 +73,7 @@ class Model(nn.Module):
         # Annotated before register_buffer so the attribute types as Tensor, not
         # `Tensor | Module` (nn.Module.__getattr__'s union).
         self.phon_feature_matrix: torch.Tensor
-        phoneme_table = load_phoneme_table(device=self.device)
+        phoneme_table = load_phoneme_table()
         if phoneme_table.vocab_size != self.phonological_vocabulary_size:
             raise ValueError(
                 f"vocab.phon_vocab_size is {self.phonological_vocabulary_size}, but the "
@@ -107,11 +110,12 @@ class Model(nn.Module):
             self.max_phon_seq_len, self.model_config.d_model
         )
 
+        # No `device=`: every other parameter here is built on torch's default device, and
+        # placing just this one is what left a model reporting a device 168 of its 169
+        # parameters were not on. Initialising on the default device also makes the weights
+        # for a given seed independent of where the model will run.
         self.global_embedding = nn.Parameter(
-            torch.randn(
-                (1, self.model_config.d_embedding, self.model_config.d_model),
-                device=self.device,
-            )
+            torch.randn((1, self.model_config.d_embedding, self.model_config.d_model))
             / self.model_config.d_model**0.5,
             requires_grad=True,
         )
@@ -170,6 +174,28 @@ class Model(nn.Module):
             self.model_config.d_model,
             2 * (self.phonological_vocabulary_size - 1),
         )
+
+        # Placed once, at the end, rather than per submodule. A submodule added later cannot
+        # be forgotten here, which is how 168 of 169 parameters came to be somewhere the
+        # model did not claim to be. Buffers move too, including the non-persistent feature
+        # matrix.
+        self.to(target_device)
+
+    @property
+    def device(self) -> torch.device:
+        """Where this module actually is.
+
+        Derived from a parameter rather than stored. A stored snapshot of
+        ``device_manager.device`` disagreed with the module the moment anyone called
+        ``.to()`` with anything else, and every runtime tensor this class builds, the causal
+        masks and the generation-loop buffers, is created on ``self.device``. A snapshot
+        therefore turned a deliberate ``.to()`` into device-mismatch errors deep inside a
+        decoder rather than into anything readable.
+
+        ``global_embedding`` is the witness because it is a plain parameter that every
+        configuration has. Any parameter would do; the module is placed as a whole.
+        """
+        return self.global_embedding.device
 
     # Helper functions
     @staticmethod
