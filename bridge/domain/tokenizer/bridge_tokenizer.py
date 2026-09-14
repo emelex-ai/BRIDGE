@@ -155,15 +155,30 @@ class BridgeTokenizer:
         )
 
     def _create_placeholder_orthographic(self, batch_size: int) -> EncodingComponent:
-        """Create a minimal orthographic component for phonology-only encoding."""
-        zeros = torch.zeros((batch_size, 1), dtype=torch.long, device=self.device)
-        enc_pad_mask, dec_pad_mask = self._placeholder_pad_masks(batch_size)
+        """A minimal but *valid* orthographic component, for phonology-only encoding.
+
+        Two positions, holding ``[--, BOS]``, which is the shortest prefix
+        ``CharacterTokenizer.encode`` can produce: the unspecified-language token followed by
+        BOS. It used to be a single column of zeros, and zero is ``[BOS]``, so a placeholder
+        looked like a sequence that had already started.
+
+        The width matters because :meth:`Model.generate` seeds the orthographic decoder with
+        ``dec_input_ids[:, :2]``, the same prefix training puts at positions 0 and 1. A
+        placeholder that cannot supply that prefix would force a special case into the model
+        for the one pathway, `p2o`, that emits orthography without consuming any. ``--``
+        rather than a real language is the honest default: a phonology-only encoding does not
+        say what language to spell in. Pass a ``language_map`` to choose one.
+        """
+        lang = self.char_tokenizer.char_2_idx["--"]
+        bos = self.char_tokenizer.char_2_idx["[BOS]"]
+        prefix = torch.tensor([[lang, bos]] * batch_size, dtype=torch.long, device=self.device)
+        mask = torch.ones((batch_size, 2), dtype=torch.bool, device=self.device)
 
         return EncodingComponent(
-            enc_input_ids=zeros,
-            enc_pad_mask=enc_pad_mask,
-            dec_input_ids=zeros.clone(),
-            dec_pad_mask=dec_pad_mask,
+            enc_input_ids=prefix,
+            enc_pad_mask=mask,
+            dec_input_ids=prefix.clone(),
+            dec_pad_mask=mask.clone(),
         )
 
     def decode(

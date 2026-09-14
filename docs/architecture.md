@@ -126,11 +126,9 @@ Storage and Weights and Biases clients under `bridge/infra/`.
 
 Tracked as GitHub issues rather than restated here:
 
-- **#228** generation seeds `[BOS]` at decoder position 0 while training places it at
-  position 1, after `[LANG]`, so it carries a different position embedding in each regime
-- **#229** a constructed `Model` places one of its 169 parameters on
-  `device_manager.device` and leaves the other 168 on CPU, and `.to()` does not update the
-  device it reports
+- **#231** `generate` returns orthographic tokens past `[EOS]` and `decode` strips `[EOS]`
+  rather than stopping at it, so a batched `generate` then `decode` returns a string longer
+  than the model produced for every sequence that is not the longest
 
 ## Decision index
 
@@ -142,3 +140,5 @@ Tracked as GitHub issues rather than restated here:
 | [0004](decisions/0004-orthographic-teacher-forcing-alignment.md) | The orthographic loss and metrics target `enc_input_ids[:, 1:]`, so `[BOS]` predicts the first character |
 | [0005](decisions/0005-phonological-metrics-take-the-pad-id.md) | Phonological metrics take `phon_pad_id` as a required argument; every metric reported before this is void |
 | [0006](decisions/0006-the-caller-owns-the-training-loop.md) | The caller owns the training loop and decides when to checkpoint; the library owns the step |
+| [0007](decisions/0007-model-device-is-derived-not-stored.md) | `Model.device` is derived from a parameter, so `.to()` is authoritative and the model cannot misreport where it is |
+| [0008](decisions/0008-generation-seeds-the-training-prefix.md) | Orthographic generation is seeded with `[LANG, BOS]`, the prefix training uses, keeping the language token usable |

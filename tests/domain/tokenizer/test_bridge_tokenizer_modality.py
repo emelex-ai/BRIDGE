@@ -129,22 +129,54 @@ def test_placeholder_phonological_targets_match_the_real_ones(tok):
     assert bool((targets == tok.phon_pad_id).all())
 
 
-def test_placeholder_orthographic_shape_and_values(tok):
+def test_placeholder_orthographic_is_a_valid_minimal_prefix(tok):
+    """Two positions holding ``[--, BOS]``, not a column of zeros.
+
+    Zero is ``[BOS]``, so the old placeholder read as a sequence that had already started,
+    and it was too narrow to supply the ``[LANG, BOS]`` prefix ``Model.generate`` seeds the
+    orthographic decoder with. ``p2o`` runs on exactly this component, so a placeholder that
+    could not supply the prefix would put a special case in the model for one pathway.
+    ``--`` is the unspecified-language token: a phonology-only encoding does not say what
+    language to spell in, and saying so is better than defaulting to one. See issue #228.
+    """
     enc = tok.encode(WORD, modality_filter="phonology")
     orth = enc.orthographic
+    char_2_idx = tok.char_tokenizer.char_2_idx
 
-    assert orth.enc_input_ids.shape == (1, 1)
-    assert orth.dec_input_ids.shape == (1, 1)
+    assert orth.enc_input_ids.shape == (1, 2)
+    assert orth.dec_input_ids.shape == (1, 2)
     assert orth.enc_input_ids.dtype == torch.long
-    assert bool((orth.enc_input_ids == 0).all())
-    assert orth.enc_pad_mask.shape == (1, 1)
-    assert bool(orth.enc_pad_mask.all())
+    assert orth.dec_input_ids[0].tolist() == [char_2_idx["--"], char_2_idx["[BOS]"]]
+    assert torch.equal(orth.enc_input_ids, orth.dec_input_ids)
+    assert orth.enc_pad_mask.shape == (1, 2)
+    assert bool(orth.enc_pad_mask.all()), "the placeholder is entirely padding"
     assert orth.targets is None
+
+
+def test_the_placeholder_prefix_matches_what_a_real_encoding_puts_there(tok):
+    """The placeholder and a real encoding must agree on what the first two positions are.
+
+    This is the property that lets generation seed from ``dec_input_ids[:, :2]`` with no
+    branch for the placeholder. Comparing against the real tokenizer output rather than
+    against hardcoded ids means the two cannot drift apart.
+    """
+    placeholder = tok.encode(WORD, modality_filter="phonology").orthographic
+    real = tok.encode(WORD).orthographic
+
+    assert placeholder.dec_input_ids.shape[1] == 2
+    assert real.dec_input_ids[:, 1].tolist() == placeholder.dec_input_ids[:, 1].tolist(), (
+        "both must carry [BOS] at position 1"
+    )
+    # Position 0 is a language token in both; the real one reflects the caller's map, the
+    # placeholder is unspecified.
+    language_ids = {tok.char_tokenizer.char_2_idx[t] for t in tok.char_tokenizer.language_tokens}
+    assert int(real.dec_input_ids[0, 0]) in language_ids
+    assert int(placeholder.dec_input_ids[0, 0]) in language_ids
 
 
 def test_placeholder_batch_size_follows_the_input(tok):
     enc = tok.encode([WORD, "dog", "hat"], modality_filter="phonology")
-    assert enc.orthographic.enc_input_ids.shape == (3, 1)
+    assert enc.orthographic.enc_input_ids.shape == (3, 2)
     # Real phonology here, so only the batch dimension is fixed; the width follows the words.
     assert enc.phonological.enc_input_ids.shape[0] == 3
 
