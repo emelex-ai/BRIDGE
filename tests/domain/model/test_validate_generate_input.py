@@ -1,21 +1,17 @@
-"""Pins the full error surface of ``Model._validate_generate_input``.
+"""Pins the error surface of ``Model._validate_generate_input``.
 
-This validation used to be five hand-copied per-pathway blocks (417 lines). It is now
-shared helpers plus per-pathway specifics, so a single edit can silently change the
-behaviour of a pathway that no other test covers. Each case below asserts the exact
-exception TYPE and message for one malformed input, per pathway.
+The validation used to be five hand-copied per-pathway blocks applying four different
+subsets of the available checks, and this file was 404 lines pinning those differences in
+place: ``o2p`` alone skipped the range and device checks, ``op2op`` alone reported a
+non-tensor as ``TypeError``, and only ``op2op`` bounded the orthographic sequence length.
+None of that was designed; it was what a partial refactor left behind, and issue #233
+reported the gaps as defects.
 
-Three properties matter and are easy to break:
-
-* **type**: ``op2op`` reports a non-tensor as ``TypeError``; the single-modality
-  pathways report it as ``ValueError``. Every other malformed input is a ``ValueError``
-  in both modalities.
-* **order**: when an input is wrong in two ways at once, which error fires is
-  determined by check order. ``o2p`` checks the mask's dtype *before* the
-  input/mask shape match, so ``mask_dtype_beats_shape_mismatch`` below pins that.
-* **coverage**: ``o2p`` deliberately performs neither vocabulary-bound nor device
-  checks, while ``o2o`` performs both. Adding a check to the shared helper would
-  start rejecting input ``o2p`` used to accept.
+There is one set of checks now, applied to whatever a pathway reads, so the test is a
+sweep rather than a list. Each malformation is generated for every pathway/modality pair
+that ``PATHWAY_IO`` says is read, which means a new pathway is covered the moment it is
+added to the table, and a check that stops applying to one modality fails here rather
+than silently narrowing.
 """
 
 import pytest
@@ -23,7 +19,7 @@ import torch
 
 from bridge.domain.datamodels import ModelConfig
 from bridge.domain.model import Model
-from bridge.domain.model.model import PATHWAYS
+from bridge.domain.model.model import MODALITIES, PATHWAY_IO, PATHWAYS
 from tests.vocab import PHONEME_TABLE, TEST_VOCAB
 
 VOCAB = TEST_VOCAB
@@ -34,371 +30,175 @@ def model():
     return Model(ModelConfig(vocab=VOCAB, d_model=32, nhead=2, seed=1))
 
 
-def orth(rows=2, cols=5, dtype=torch.long):
+def ids(rows=2, cols=4, dtype=torch.long):
+    """A well-formed id tensor. Zero indexes both id spaces, so it suits either modality."""
     return torch.zeros((rows, cols), dtype=dtype)
 
 
-def orth_mask(rows=2, cols=5, dtype=torch.bool):
+def mask(rows=2, cols=4, dtype=torch.bool):
     return torch.zeros((rows, cols), dtype=dtype)
 
 
-def phon(rows=2, steps=3, dtype=torch.long):
-    """Phoneme *row* ids: (batch, sequence), indices into the phoneme table."""
-    return torch.zeros((rows, steps), dtype=dtype)
-
-
-def phon_mask(rows=2, cols=3, dtype=torch.bool):
-    return torch.zeros((rows, cols), dtype=dtype)
+def well_formed(pathway):
+    """The keyword arguments ``pathway`` accepts: real tensors for what it reads, None else."""
+    reads = PATHWAY_IO[pathway][0]
+    return {
+        "o": ids() if "orth" in reads else None,
+        "om": mask() if "orth" in reads else None,
+        "p": ids() if "phon" in reads else None,
+        "pm": mask() if "phon" in reads else None,
+    }
 
 
 def validate(model, pathway, o=None, om=None, p=None, pm=None):
     model._validate_generate_input(pathway, o, om, p, pm)
 
 
-# (id, pathway, kwargs, expected exception, expected message fragment)
-CASES = [
-    # ---- pathway gate -----------------------------------------------------
-    ("invalid_pathway", "nope", {}, ValueError, "Invalid pathway: nope"),
-    # ---- global phonological sequence-length bound (applies to every pathway)
+# The id-space bound differs per modality; nothing else does.
+ID_SPACE = {"orth": VOCAB.orth_vocab_size, "phon": PHONEME_TABLE.num_rows}
+
+# (case id, what to substitute for the modality's ids/mask, expected message fragment).
+# `{m}` interpolates the modality prefix the validator uses in its messages.
+MALFORMED = [
+    ("input_not_tensor", lambda m: {"ids": [1, 2]}, "{m}_enc_input must be a torch.Tensor"),
+    ("mask_not_tensor", lambda m: {"mask": [1, 2]}, "{m}_enc_pad_mask must be a torch.Tensor"),
     (
-        "phon_seq_too_long",
-        "p2o",
-        {"p": phon(2, 31), "pm": phon_mask(2, 31)},
-        ValueError,
-        "phon_enc_input sequence length 31 exceeds maximum allowed length 30",
-    ),
-    # ---- o2p --------------------------------------------------------------
-    ("o2p_missing_input", "o2p", {}, ValueError, "orth_enc_input is required for o2p pathway"),
-    (
-        "o2p_missing_mask",
-        "o2p",
-        {"o": orth()},
-        ValueError,
-        "orth_enc_pad_mask is required for o2p pathway",
+        "input_1d",
+        lambda m: {"ids": torch.zeros(4, dtype=torch.long)},
+        "Expected 2D input tensor for {m}_enc_input",
     ),
     (
-        "o2p_input_not_tensor",
-        "o2p",
-        {"o": [1, 2], "om": orth_mask()},
-        ValueError,  # NOT TypeError; only op2op upgrades this
-        "orth_enc_input must be a torch.Tensor",
+        "input_float",
+        lambda m: {"ids": ids(dtype=torch.float)},
+        "{m}_enc_input must have dtype torch.long or torch.int",
     ),
     (
-        "o2p_input_1d",
-        "o2p",
-        {"o": torch.zeros(5, dtype=torch.long), "om": orth_mask()},
-        ValueError,
-        "Expected 2D input tensor for orth_enc_input, got shape: (5,)",
+        "mask_float",
+        lambda m: {"mask": mask(dtype=torch.float)},
+        "{m}_enc_pad_mask must have dtype torch.bool",
     ),
     (
-        "o2p_input_float",
-        "o2p",
-        {"o": orth(dtype=torch.float), "om": orth_mask()},
-        ValueError,
-        "orth_enc_input must have dtype torch.long or torch.int",
+        "shape_mismatch",
+        lambda m: {"mask": mask(cols=6)},
+        "Shape mismatch: {m}_enc_input is (2, 4) but {m}_enc_pad_mask is (2, 6)",
     ),
     (
-        "o2p_mask_not_tensor",
-        "o2p",
-        {"o": orth(), "om": [1]},
-        ValueError,
-        "orth_enc_pad_mask must be a torch.Tensor",
+        "empty_batch",
+        lambda m: {"ids": ids(rows=0), "mask": mask(rows=0)},
+        "{m}_enc_input has no rows",
     ),
     (
-        "o2p_mask_1d",
-        "o2p",
-        {"o": orth(), "om": torch.zeros(5, dtype=torch.bool)},
-        ValueError,
-        "Shape mismatch: orth_enc_input is (2, 5) but orth_enc_pad_mask is (5,)",
+        "sequence_too_long",
+        lambda m: {"ids": ids(cols=31), "mask": mask(cols=31)},
+        "{m}_enc_input sequence length 31 exceeds maximum allowed length 30",
     ),
     (
-        # Ordering guard: the mask is BOTH the wrong dtype and the wrong shape.
-        # The dtype check must win, as it did before the refactor.
-        "o2p_mask_dtype_beats_shape_mismatch",
-        "o2p",
-        {"o": orth(2, 5), "om": orth_mask(2, 6, dtype=torch.float)},
-        ValueError,
-        "orth_enc_pad_mask must have dtype torch.bool",
+        "id_out_of_range",
+        lambda m: {"ids": torch.full((2, 4), ID_SPACE[m])},
+        "ids must lie in [0, {space})",
     ),
     (
-        "o2p_shape_mismatch",
-        "o2p",
-        {"o": orth(2, 5), "om": orth_mask(2, 6)},
-        ValueError,
-        "Shape mismatch: orth_enc_input is (2, 5) but orth_enc_pad_mask is (2, 6)",
-    ),
-    # ---- p2o / p2p (identical checks, pathway name interpolated) -----------
-    *[
-        case
-        for pw in ("p2o", "p2p")
-        for case in [
-            (
-                f"{pw}_orth_must_be_none",
-                pw,
-                {"o": orth(), "p": phon(), "pm": phon_mask()},
-                ValueError,
-                f"{pw} pathway expects orthographic inputs (orth_enc_input, orth_enc_pad_mask) "
-                "to be None as they are not used in this pathway.",
-            ),
-            (
-                f"{pw}_missing_phon",
-                pw,
-                {},
-                ValueError,
-                f"{pw} pathway requires phonological inputs (phon_enc_input, phon_enc_pad_mask). "
-                "Received None value(s).",
-            ),
-            (
-                f"{pw}_phon_not_tensor",
-                pw,
-                {"p": "x", "pm": phon_mask()},
-                ValueError,
-                "phon_enc_input must be a torch.Tensor",
-            ),
-            (
-                f"{pw}_phon_not_2d",
-                pw,
-                {"p": torch.zeros(3, dtype=torch.long), "pm": phon_mask()},
-                ValueError,
-                "Expected 2D input tensor for phon_enc_input",
-            ),
-            (
-                f"{pw}_phon_wrong_dtype",
-                pw,
-                {"p": phon(dtype=torch.float), "pm": phon_mask()},
-                ValueError,
-                "phon_enc_input must have dtype torch.long or torch.int",
-            ),
-            (
-                f"{pw}_mask_not_tensor",
-                pw,
-                {"p": phon(), "pm": [1]},
-                ValueError,
-                "phon_enc_pad_mask must be a torch.Tensor",
-            ),
-            (
-                f"{pw}_mask_dtype",
-                pw,
-                {"p": phon(), "pm": phon_mask(dtype=torch.float)},
-                ValueError,
-                "phon_enc_pad_mask must have dtype torch.bool",
-            ),
-            (
-                f"{pw}_batch_mismatch",
-                pw,
-                {"p": phon(rows=2), "pm": phon_mask(rows=5)},
-                ValueError,
-                "Shape mismatch: phon_enc_input is (2, 3) but phon_enc_pad_mask is (5, 3)",
-            ),
-            (
-                # Row space, not feature space: the bound is the phoneme count (~91),
-                # not the phonological vocabulary size (~36).
-                f"{pw}_row_out_of_range",
-                pw,
-                {"p": torch.full((1, 1), PHONEME_TABLE.num_rows), "pm": phon_mask(1, 1)},
-                ValueError,
-                f"Phoneme row ids must lie in [0, {PHONEME_TABLE.num_rows})",
-            ),
-        ]
-    ],
-    # ---- o2o --------------------------------------------------------------
-    (
-        "o2o_phon_must_be_none",
-        "o2o",
-        {"o": orth(), "om": orth_mask(), "p": phon(), "pm": phon_mask()},
-        ValueError,
-        "o2o pathway expects phonological inputs (phon_enc_input, phon_enc_pad_mask) "
-        "to be None as they are not used in this pathway.",
-    ),
-    (
-        "o2o_missing_orth",
-        "o2o",
-        {},
-        ValueError,
-        "o2o pathway requires orthographic inputs (orth_enc_input, orth_enc_pad_mask). "
-        "Received None value(s).",
-    ),
-    (
-        "o2o_input_not_tensor",
-        "o2o",
-        {"o": [1], "om": orth_mask()},
-        ValueError,
-        "orth_enc_input must be a torch.Tensor",
-    ),
-    (
-        "o2o_token_out_of_vocab",
-        "o2o",
-        {"o": torch.full((2, 5), VOCAB.orth_vocab_size), "om": orth_mask()},
-        ValueError,
-        f"Input tokens must be less than vocabulary size ({VOCAB.orth_vocab_size})",
-    ),
-    # ---- op2op ------------------------------------------------------------
-    (
-        "op2op_missing_orth",
-        "op2op",
-        {"om": orth_mask(), "p": phon(), "pm": phon_mask()},
-        ValueError,
-        "op2op pathway requires orthographic inputs (orth_enc_input, orth_enc_pad_mask)",
-    ),
-    (
-        "op2op_missing_phon",
-        "op2op",
-        {"o": orth(), "om": orth_mask(), "pm": phon_mask()},
-        ValueError,
-        "op2op pathway requires phonological inputs (phon_enc_input, phon_enc_pad_mask)",
-    ),
-    (
-        # op2op is the ONLY pathway that reports a non-tensor as TypeError.
-        "op2op_input_not_tensor_is_TypeError",
-        "op2op",
-        {"o": [1, 2, 3], "om": orth_mask(), "p": phon(), "pm": phon_mask()},
-        TypeError,
-        "orth_enc_input must be a torch.Tensor",
-    ),
-    (
-        "op2op_mask_not_tensor_is_TypeError",
-        "op2op",
-        {"o": orth(), "om": [1], "p": phon(), "pm": phon_mask()},
-        TypeError,
-        "orth_enc_pad_mask must be a torch.Tensor",
-    ),
-    (
-        "op2op_mask_dtype_is_ValueError",
-        "op2op",
-        {"o": orth(), "om": orth_mask(dtype=torch.float), "p": phon(), "pm": phon_mask()},
-        ValueError,
-        "orth_enc_pad_mask must have dtype torch.bool",
-    ),
-    (
-        # Only op2op bounds the orthographic sequence length.
-        "op2op_orth_seq_too_long",
-        "op2op",
-        {"o": orth(2, 31), "om": orth_mask(2, 31), "p": phon(), "pm": phon_mask()},
-        ValueError,
-        "orth_enc_input sequence length 31 exceeds maximum allowed length 30",
-    ),
-    (
-        "op2op_cross_modality_batch_mismatch",
-        "op2op",
-        {"o": orth(rows=5), "om": orth_mask(rows=5), "p": phon(rows=2), "pm": phon_mask(rows=2)},
-        ValueError,
-        "Batch size mismatch: orthographic input has 5 items but phonological input has 2 items",
-    ),
-    (
-        "op2op_phon_not_2d",
-        "op2op",
-        {
-            "o": orth(),
-            "om": orth_mask(),
-            "p": torch.zeros(2, dtype=torch.long),
-            "pm": phon_mask(),
-        },
-        ValueError,
-        "Expected 2D input tensor for phon_enc_input",
-    ),
-    (
-        "op2op_phon_not_tensor",
-        "op2op",
-        {"o": orth(), "om": orth_mask(), "p": "x", "pm": phon_mask()},
-        ValueError,
-        "phon_enc_input must be a torch.Tensor",
-    ),
-    (
-        "op2op_phon_wrong_dtype",
-        "op2op",
-        {"o": orth(), "om": orth_mask(), "p": phon(dtype=torch.float), "pm": phon_mask()},
-        ValueError,
-        "phon_enc_input must have dtype torch.long or torch.int",
-    ),
-    (
-        "op2op_phon_mask_dtype",
-        "op2op",
-        {"o": orth(), "om": orth_mask(), "p": phon(), "pm": phon_mask(dtype=torch.float)},
-        ValueError,
-        "phon_enc_pad_mask must have dtype torch.bool",
-    ),
-    (
-        "op2op_phon_row_out_of_range",
-        "op2op",
-        {
-            "o": orth(),
-            "om": orth_mask(),
-            "p": torch.full((2, 1), PHONEME_TABLE.num_rows),
-            "pm": phon_mask(2, 1),
-        },
-        ValueError,
-        f"Phoneme row ids must lie in [0, {PHONEME_TABLE.num_rows})",
-    ),
-    (
-        # Distinct wording from o2o's "Input tokens ..." for the same condition.
-        "op2op_orth_out_of_vocab",
-        "op2op",
-        {
-            "o": torch.full((2, 5), VOCAB.orth_vocab_size),
-            "om": orth_mask(),
-            "p": phon(),
-            "pm": phon_mask(),
-        },
-        ValueError,
-        f"Orthographic tokens must be less than vocabulary size ({VOCAB.orth_vocab_size})",
+        "negative_id",
+        lambda m: {"ids": torch.full((2, 4), -1)},
+        "ids must lie in [0, {space})",
     ),
 ]
 
-
-@pytest.mark.parametrize(
-    ("pathway", "kwargs", "exc", "message"),
-    [pytest.param(*c[1:], id=c[0]) for c in CASES],
-)
-def test_validation_error_surface(model, pathway, kwargs, exc, message):
-    with pytest.raises(exc) as excinfo:
-        validate(model, pathway, **kwargs)
-    assert message in str(excinfo.value), (
-        f"expected {exc.__name__} containing:\n  {message}\ngot {type(excinfo.value).__name__}:\n  {excinfo.value}"
-    )
+SWEEP = [
+    pytest.param(pathway, modality, mutate, message, id=f"{pathway}_{modality}_{case}")
+    for pathway in PATHWAYS
+    for modality in MODALITIES
+    if modality in PATHWAY_IO[pathway][0]
+    for case, mutate, message in MALFORMED
+]
 
 
-# --- checks that must NOT be performed ------------------------------------
+@pytest.mark.parametrize(("pathway", "modality", "mutate", "message"), SWEEP)
+def test_every_pathway_rejects_every_malformation_of_what_it_reads(
+    model, pathway, modality, mutate, message
+):
+    """One check set, applied to whatever the pathway reads.
 
-
-def test_o2p_does_not_check_vocabulary_bounds(model):
-    """o2p never bounded orthographic token ids; o2o and op2op do.
-
-    Hoisting the bound check into the shared orthographic helper would start
-    rejecting input that o2p has always accepted.
+    Oracle: the invariant that both modalities carry the same ``(batch, sequence)`` shape,
+    which ``docs/architecture.md`` calls the load-bearing structural fact. If the shapes
+    are the same then the checks are the same, and a malformation rejected for one
+    modality on one pathway must be rejected everywhere that modality is read.
     """
-    validate(
-        model,
-        "o2p",
-        o=torch.full((2, 5), 10**6, dtype=torch.long),
-        om=orth_mask(),
+    kwargs = well_formed(pathway)
+    prefix = {"orth": ("o", "om"), "phon": ("p", "pm")}[modality]
+    for field, value in mutate(modality).items():
+        kwargs[prefix[0] if field == "ids" else prefix[1]] = value
+
+    expected = message.format(m=modality, space=ID_SPACE[modality])
+    with pytest.raises(ValueError) as excinfo:
+        validate(model, pathway, **kwargs)
+    assert expected in str(excinfo.value), (
+        f"{pathway}/{modality}: expected a ValueError containing\n  {expected}\n"
+        f"got {type(excinfo.value).__name__}:\n  {excinfo.value}"
     )
 
 
-def test_o2p_does_not_require_phon_inputs_to_be_none(model):
-    """Unlike o2o, o2p never rejected stray phonological arguments."""
-    validate(model, "o2p", o=orth(), om=orth_mask(), p=phon(), pm=phon_mask())
+@pytest.mark.parametrize("pathway", PATHWAYS)
+@pytest.mark.parametrize("modality", MODALITIES)
+def test_a_modality_a_pathway_does_not_read_must_be_absent(model, pathway, modality):
+    """Passing phonology to an orthography-only pathway is a mistake, not an extra.
+
+    ``o2p`` used to accept it silently, which is one of the three shapes issue #233
+    reported: a phonology-only encoding reached pathways that read orthography and failed
+    somewhere deep instead of at the boundary.
+    """
+    if modality in PATHWAY_IO[pathway][0]:
+        pytest.skip(f"{pathway} reads {modality}")
+    kwargs = well_formed(pathway)
+    key, mask_key = {"orth": ("o", "om"), "phon": ("p", "pm")}[modality]
+    kwargs[key], kwargs[mask_key] = ids(), mask()
+
+    with pytest.raises(ValueError, match="to be None as they are not used"):
+        validate(model, pathway, **kwargs)
 
 
-def test_op2op_does_not_check_device(model):
-    """o2o checks tensor device placement; op2op never did."""
-    validate(model, "op2op", o=orth(), om=orth_mask(), p=phon(), pm=phon_mask())
+@pytest.mark.parametrize("pathway", PATHWAYS)
+@pytest.mark.parametrize("missing", ["ids", "mask"])
+def test_a_modality_a_pathway_reads_must_be_present(model, pathway, missing):
+    """Half a modality is as unusable as none of it."""
+    for modality in PATHWAY_IO[pathway][0]:
+        kwargs = well_formed(pathway)
+        key, mask_key = {"orth": ("o", "om"), "phon": ("p", "pm")}[modality]
+        kwargs[key if missing == "ids" else mask_key] = None
+        with pytest.raises(ValueError, match="Received None value"):
+            validate(model, pathway, **kwargs)
+
+
+def test_an_unknown_pathway_is_rejected(model):
+    with pytest.raises(ValueError, match="Invalid pathway: nope"):
+        validate(model, "nope")
+
+
+def test_op2op_rejects_a_cross_modality_batch_mismatch(model):
+    """The one check that belongs to a pathway rather than to a modality."""
+    with pytest.raises(ValueError, match="Batch size mismatch"):
+        validate(model, "op2op", o=ids(rows=5), om=mask(rows=5), p=ids(rows=2), pm=mask(rows=2))
 
 
 @pytest.mark.parametrize("pathway", PATHWAYS)
 def test_valid_inputs_pass(model, pathway):
-    """Every pathway accepts a well-formed instance of exactly what it consumes."""
-    uses_orth = pathway in ("o2p", "o2o", "op2op")
-    uses_phon = pathway in ("p2o", "p2p", "op2op")
-    validate(
-        model,
-        pathway,
-        o=orth() if uses_orth else None,
-        om=orth_mask() if uses_orth else None,
-        p=phon() if uses_phon else None,
-        pm=phon_mask() if uses_phon else None,
-    )
+    """Every pathway accepts a well-formed instance of exactly what it consumes.
+
+    The control for the sweep above: without it, a validator that rejected everything
+    would pass every rejection case.
+    """
+    validate(model, pathway, **well_formed(pathway))
 
 
-def test_pathways_constant_matches_literal():
-    """PATHWAYS drives the validity gate; keep it in sync with the Pathway alias."""
+def test_pathways_constant_matches_the_io_table():
+    """``PATHWAYS`` drives the validity gate and ``PATHWAY_IO`` drives every check.
+
+    A pathway in one and not the other is a hole: listed as valid but with nothing to say
+    what it reads, or described but unreachable.
+    """
+    assert set(PATHWAYS) == set(PATHWAY_IO)
     assert set(PATHWAYS) == {"o2p", "p2o", "op2op", "p2p", "o2o"}
+    for pathway, (reads, writes) in PATHWAY_IO.items():
+        assert reads <= set(MODALITIES), pathway
+        assert writes <= set(MODALITIES), pathway
+        assert reads and writes, f"{pathway} must both read and write something"

@@ -22,23 +22,13 @@ from bridge.application.training.training_pipeline import TrainingPipeline
 from bridge.domain.data import BridgeDataset
 from bridge.domain.datamodels import (
     DatasetConfig,
-    MetricsConfig,
     ModelConfig,
     TrainingConfig,
     VocabSpec,
 )
 from bridge.domain.model import Model
-from bridge.infra.metrics.metrics_logger import STDOutMetricsLogger
 
 DATA_CSV = "tests/domain/model/data/data.csv"
-
-SILENT_METRICS = MetricsConfig(
-    batch_metrics=False,
-    training_metrics=False,
-    validation_metrics=False,
-    modes=[],
-    filename=None,
-)
 
 
 @pytest.fixture(scope="module")
@@ -58,7 +48,6 @@ def make_pipeline(dataset, artifacts_dir, **overrides):
             model_artifacts_dir=str(artifacts_dir),
             **overrides,
         ),
-        metrics_logger=STDOutMetricsLogger(SILENT_METRICS),
     )
 
 
@@ -135,28 +124,6 @@ def test_the_bundle_round_trips(dataset, tmp_path):
     assert loaded["model_config"].d_model == 16
     assert "optimizer_state_dict" in loaded
     assert loaded["dataset_config"].dataset_filepath == dataset.dataset_config.dataset_filepath
-
-
-def test_the_gcs_destination_is_named_after_the_file_written(dataset, tmp_path, monkeypatch):
-    """The upload follows the local name, so the two cannot disagree.
-
-    The oracle is the argument value the pipeline computes, not that a double was called at
-    all. A recorder that only proved a call happened would pass against any destination
-    string whatsoever, including the old epoch-only one.
-    """
-    monkeypatch.setenv("BUCKET_NAME", "a-bucket")
-    pipeline = make_pipeline(dataset, tmp_path, gcs_path="experiments/run17")
-
-    uploads = []
-
-    class Recorder:
-        def upload_file(self, bucket, local, remote):
-            uploads.append((bucket, local, remote))
-
-    monkeypatch.setattr(pipeline.dataset, "gcs_client", Recorder())
-    destination = pipeline.save_checkpoint("run_a/model_epoch_4.pth", epoch=4)
-
-    assert uploads == [("a-bucket", str(destination), "experiments/run17/models/model_epoch_4.pth")]
 
 
 def test_no_gcs_client_means_no_upload(dataset, tmp_path, monkeypatch):

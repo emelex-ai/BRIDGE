@@ -14,6 +14,36 @@ from bridge.utils.helper_functions import set_seed
 Pathway = Literal["o2p", "p2o", "op2op", "p2p", "o2o"]
 PATHWAYS: tuple[Pathway, ...] = ("o2p", "p2o", "op2op", "p2p", "o2o")
 
+# What each pathway reads and what it writes. This is the one place the answer lives.
+# Every "which pathways use orthography" question in the codebase used to be its own
+# literal tuple, thirteen of them across three modules, and two written one line apart in
+# different orders. Adding a pathway now means adding a row.
+PATHWAY_IO: dict[Pathway, tuple[frozenset[str], frozenset[str]]] = {
+    "o2p": (frozenset({"orth"}), frozenset({"phon"})),
+    "p2o": (frozenset({"phon"}), frozenset({"orth"})),
+    "o2o": (frozenset({"orth"}), frozenset({"orth"})),
+    "p2p": (frozenset({"phon"}), frozenset({"phon"})),
+    "op2op": (frozenset({"orth", "phon"}), frozenset({"orth", "phon"})),
+}
+
+MODALITIES: tuple[str, ...] = ("orth", "phon")
+
+READS_ORTH = tuple(p for p in PATHWAYS if "orth" in PATHWAY_IO[p][0])
+READS_PHON = tuple(p for p in PATHWAYS if "phon" in PATHWAY_IO[p][0])
+# Pathways whose second half is orthography, so they run the orthographic decoder loop.
+WRITES_ORTH = tuple(p for p in PATHWAYS if "orth" in PATHWAY_IO[p][1])
+WRITES_PHON = tuple(p for p in PATHWAYS if "phon" in PATHWAY_IO[p][1])
+
+# The encoder/decoder tensors a training forward needs, derived rather than restated: a
+# modality that is read supplies encoder input, one that is written supplies decoder input.
+PATHWAY_INPUTS: dict[Pathway, tuple[tuple[str, str], ...]] = {
+    pathway: tuple(
+        [(m, "enc") for m in MODALITIES if m in reads]
+        + [(m, "dec") for m in MODALITIES if m in writes]
+    )
+    for pathway, (reads, writes) in PATHWAY_IO.items()
+}
+
 
 class GenerationDict(TypedDict):
     """Internal return shape for `Model._generate`. Fields that don't apply to
@@ -25,10 +55,6 @@ class GenerationDict(TypedDict):
     phon_probs: list[list[torch.Tensor]] | None
     phon_vecs: list[list[torch.Tensor]] | None
     phon_tokens: list[list[torch.Tensor]] | None
-
-
-# Pathways whose second half is orthography, so they run the orthographic decoder loop.
-ORTH_DECODING = ("op2op", "p2o", "o2o")
 
 
 class Model(nn.Module):
@@ -260,9 +286,10 @@ class Model(nn.Module):
             "op2op": self.forward_op2op,
             "p2o": self.forward_p2o,
             "p2p": self.forward_p2p,
+            "o2o": self.forward_o2o,
         }
         if task not in pathways:
-            raise ValueError("Invalid pathway selected.")
+            raise ValueError(f"Invalid pathway selected. Expected one of {PATHWAYS}, got {task!r}.")
         return pathways[task](**kwargs)
 
     def _mix_with_global(self, encoding: torch.Tensor, pad_mask: torch.Tensor) -> torch.Tensor:
@@ -417,6 +444,16 @@ class Model(nn.Module):
     ) -> dict[str, torch.Tensor]:
         memory = self.embed_p(phon_enc_input, phon_enc_pad_mask)
         return {"phon": self._decode_phon(memory, phon_dec_input, phon_dec_pad_mask)}
+
+    def forward_o2o(
+        self,
+        orth_enc_input: torch.Tensor,
+        orth_enc_pad_mask: torch.Tensor,
+        orth_dec_input: torch.Tensor,
+        orth_dec_pad_mask: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        memory = self.embed_o(orth_enc_input, orth_enc_pad_mask)
+        return {"orth": self._decode_orth(memory, orth_dec_input, orth_dec_pad_mask)}
 
     def forward_op2op(
         self,
@@ -823,7 +860,7 @@ class Model(nn.Module):
             }
 
             # All these pathways have "2p" meaning we need to run the phonological decoder loop
-            if pathway in ["op2op", "o2p", "p2p"]:
+            if pathway in WRITES_PHON:
                 mask = self.generate_triangular_mask(self.max_phon_seq_len)
 
                 # Generation works in feature space, not phoneme-row space: the decoder
@@ -849,7 +886,7 @@ class Model(nn.Module):
                 output["phon_tokens"] = phon_tokens
 
             # All these pathways have "2o" meaning we need to run the orthography decoder loop
-            if pathway in ORTH_DECODING:
+            if pathway in WRITES_ORTH:
                 if orth_dec_prefix is None:
                     raise ValueError(
                         f"pathway {pathway!r} runs the orthographic decoder, which must be "
@@ -904,8 +941,8 @@ class Model(nn.Module):
         Raises:
             ValueError: If the selected pathway is incompatible with the provided encodings.
         """
-        uses_orth = pathway in ("o2p", "o2o", "op2op")
-        uses_phon = pathway in ("p2o", "p2p", "op2op")
+        uses_orth = pathway in READS_ORTH
+        uses_phon = pathway in READS_PHON
 
         # The orthographic decoder is seeded with the same two positions training puts in
         # front of every word, [LANG, BOS], taken straight off the encoding rather than
@@ -913,7 +950,7 @@ class Model(nn.Module):
         # `BridgeTokenizer.encode(..., language_map=...)`, and `p2o` can be steered to spell
         # the same phonemes differently per language. See docs/decisions/0008.
         orth_dec_prefix = (
-            encodings.orthographic.dec_input_ids[:, :2] if pathway in ORTH_DECODING else None
+            encodings.orthographic.dec_input_ids[:, :2] if pathway in WRITES_ORTH else None
         )
 
         generation_results = self._generate(
@@ -930,76 +967,73 @@ class Model(nn.Module):
         # validators check cross-field consistency.
         return GenerationOutput(**generation_results)
 
+    MODALITY_NAMES = {"orth": "orthographic", "phon": "phonological"}
+
     def _validate_encoder_inputs(
         self,
-        name: str,
+        modality: str,
         ids: torch.Tensor | None,
         mask: torch.Tensor | None,
-        *,
-        max_seq_len: int | None = None,
-        tensor_exc: type[Exception] = ValueError,
     ) -> None:
-        """Structural checks for one modality's encoder input and its padding mask.
+        """Every structural, range and placement check for one modality's encoder input.
 
-        Both modalities carry ``(batch, sequence)`` integer ids and a boolean mask of the
-        same shape, so one check serves them; ``name`` only selects the message prefix.
+        Both modalities carry ``(batch, sequence)`` integer ids plus a boolean mask of the
+        same shape, so one function serves them; ``modality`` selects the message prefix,
+        the length bound and which id space the ids must index.
 
-        ``tensor_exc`` selects the exception for an argument that is not a tensor at all.
-        It is ``ValueError`` everywhere except ``op2op``'s orthographic inputs, which
-        raise ``TypeError``. That one asymmetry predates this validator and is pinned by
-        ``tests/domain/model/test_validate_generate_input.py``. ``max_seq_len`` enables the
-        length bound, which only the pathways that own the sequence check.
+        This used to run a *subset* of the checks, with each pathway choosing its own
+        subset: ``o2p`` ran neither the range check nor the device check while ``o2o`` ran
+        both, ``op2op`` alone reported a non-tensor as ``TypeError``, and nothing recorded
+        why. Those gaps are what issue #233 reported. There is one set of checks now and
+        every pathway runs it on whatever it reads.
         """
+        name = self.MODALITY_NAMES[modality]
         if not isinstance(ids, torch.Tensor):
-            raise tensor_exc(f"{name}_enc_input must be a torch.Tensor, got {type(ids)}")
+            raise ValueError(f"{modality}_enc_input must be a torch.Tensor, got {type(ids)}")
+        if not isinstance(mask, torch.Tensor):
+            raise ValueError(f"{modality}_enc_pad_mask must be a torch.Tensor, got {type(mask)}")
         if ids.dim() != 2:
             raise ValueError(
-                f"Expected 2D input tensor for {name}_enc_input, got shape: {tuple(ids.shape)}"
+                f"Expected 2D input tensor for {modality}_enc_input, got shape: {tuple(ids.shape)}"
             )
         if ids.dtype not in (torch.long, torch.int):
             raise ValueError(
-                f"{name}_enc_input must have dtype torch.long or torch.int, got {ids.dtype}"
+                f"{modality}_enc_input must have dtype torch.long or torch.int, got {ids.dtype}"
             )
-        if max_seq_len is not None and ids.size(1) > max_seq_len:
-            raise ValueError(
-                f"{name}_enc_input sequence length {ids.size(1)} exceeds "
-                f"maximum allowed length {max_seq_len}"
-            )
-
-        if not isinstance(mask, torch.Tensor):
-            raise tensor_exc(f"{name}_enc_pad_mask must be a torch.Tensor, got {type(mask)}")
         if mask.dtype != torch.bool:
-            raise ValueError(f"{name}_enc_pad_mask must have dtype torch.bool, got {mask.dtype}")
+            raise ValueError(
+                f"{modality}_enc_pad_mask must have dtype torch.bool, got {mask.dtype}"
+            )
         if ids.shape != mask.shape:
             raise ValueError(
-                f"Shape mismatch: {name}_enc_input is {tuple(ids.shape)} but "
-                f"{name}_enc_pad_mask is {tuple(mask.shape)}"
+                f"Shape mismatch: {modality}_enc_input is {tuple(ids.shape)} but "
+                f"{modality}_enc_pad_mask is {tuple(mask.shape)}"
             )
+        # A zero-row batch has nothing to generate and segfaults the CUDA decoder rather
+        # than failing; reject it at the boundary where the shape is still readable.
+        if ids.size(0) == 0:
+            raise ValueError(f"{modality}_enc_input has no rows; there is nothing to generate.")
 
-    def _validate_phon_bounds(self, phon_enc_input: torch.Tensor) -> None:
-        """Check phoneme row ids index the phoneme table.
+        if modality == "orth":
+            max_seq_len, id_space = self.max_orth_seq_len, self.orthographic_vocabulary_size
+        else:
+            # Row space, not feature space: phoneme ids index table rows (~91), not the
+            # phonological feature vocabulary (~36).
+            max_seq_len, id_space = self.max_phon_seq_len, self.phon_feature_matrix.shape[0]
 
-        Row space, not feature space: the bound is the number of phonemes (~91), not the
-        phonological vocabulary size (~36).
-        """
-        num_rows = self.phon_feature_matrix.shape[0]
-        if torch.any(phon_enc_input >= num_rows) or torch.any(phon_enc_input < 0):
-            raise ValueError(f"Phoneme row ids must lie in [0, {num_rows})")
-
-    def _validate_orth_bounds(self, orth_enc_input: torch.Tensor, label: str) -> None:
-        """Check orthographic token ids fit the orthographic vocabulary."""
-        if torch.any(orth_enc_input < 0):
-            raise ValueError(f"{label} cannot be negative")
-        if torch.any(orth_enc_input >= self.orthographic_vocabulary_size):
+        if ids.size(1) > max_seq_len:
             raise ValueError(
-                f"{label} must be less than vocabulary size ({self.orthographic_vocabulary_size})"
+                f"{modality}_enc_input sequence length {ids.size(1)} exceeds maximum "
+                f"allowed length {max_seq_len}"
             )
-
-    def _validate_device(self, **tensors: torch.Tensor) -> None:
-        """Check the named tensors all live on the model's device."""
-        for name, tensor in tensors.items():
+        if torch.any(ids < 0) or torch.any(ids >= id_space):
+            raise ValueError(f"{name} ids must lie in [0, {id_space})")
+        for label, tensor in (
+            (f"{modality}_enc_input", ids),
+            (f"{modality}_enc_pad_mask", mask),
+        ):
             if tensor.device != self.device:
-                raise ValueError(f"{name} must be on device {self.device}, got {tensor.device}")
+                raise ValueError(f"{label} must be on device {self.device}, got {tensor.device}")
 
     def _validate_generate_input(
         self,
@@ -1009,80 +1043,44 @@ class Model(nn.Module):
         phon_enc_input: torch.Tensor | None,
         phon_enc_pad_mask: torch.Tensor | None,
     ) -> None:
-        """Validate the encoder inputs against the selected pathway.
+        """Check the encoder inputs against what ``pathway`` reads.
 
-        Each branch below states only what is specific to its pathway: which
-        modalities are required, which must be absent, and which bounds/device
-        checks apply. The per-modality structural checks are shared via
-        :meth:`_validate_encoder_inputs`.
+        Driven by :data:`PATHWAY_IO`, not by a branch per pathway. The five branches this
+        replaces applied four different subsets of the available checks to four groups of
+        pathways, and the differences were accidents of a partial refactor that a
+        404-line test had since pinned in place.
         """
         if pathway not in PATHWAYS:
             raise ValueError(f"Invalid pathway: {pathway}")
 
-        if pathway in ("p2o", "p2p"):
-            if orth_enc_input is not None or orth_enc_pad_mask is not None:
-                raise ValueError(
-                    f"{pathway} pathway expects orthographic inputs (orth_enc_input, "
-                    "orth_enc_pad_mask) to be None as they are not used in this pathway."
-                )
-            if phon_enc_input is None or phon_enc_pad_mask is None:
-                raise ValueError(
-                    f"{pathway} pathway requires phonological inputs (phon_enc_input, "
-                    "phon_enc_pad_mask). Received None value(s)."
-                )
-            self._validate_encoder_inputs(
-                "phon", phon_enc_input, phon_enc_pad_mask, max_seq_len=self.max_phon_seq_len
-            )
-            self._validate_device(phon_enc_pad_mask=phon_enc_pad_mask)
-            self._validate_phon_bounds(phon_enc_input)
+        supplied = {
+            "orth": (orth_enc_input, orth_enc_pad_mask),
+            "phon": (phon_enc_input, phon_enc_pad_mask),
+        }
+        reads = PATHWAY_IO[pathway][0]
 
-        elif pathway == "o2p":
-            if orth_enc_input is None:
-                raise ValueError("orth_enc_input is required for o2p pathway")
-            if orth_enc_pad_mask is None:
-                raise ValueError("orth_enc_pad_mask is required for o2p pathway")
-            self._validate_encoder_inputs("orth", orth_enc_input, orth_enc_pad_mask)
+        for modality in MODALITIES:
+            ids, mask = supplied[modality]
+            name = self.MODALITY_NAMES[modality]
+            if modality not in reads:
+                if ids is not None or mask is not None:
+                    raise ValueError(
+                        f"{pathway} pathway expects {name} inputs ({modality}_enc_input, "
+                        f"{modality}_enc_pad_mask) to be None as they are not used in this "
+                        f"pathway."
+                    )
+                continue
+            if ids is None or mask is None:
+                raise ValueError(
+                    f"{pathway} pathway requires {name} inputs ({modality}_enc_input, "
+                    f"{modality}_enc_pad_mask). Received None value(s)."
+                )
+            self._validate_encoder_inputs(modality, ids, mask)
 
-        elif pathway == "o2o":
-            if phon_enc_input is not None or phon_enc_pad_mask is not None:
-                raise ValueError(
-                    "o2o pathway expects phonological inputs (phon_enc_input, phon_enc_pad_mask) "
-                    "to be None as they are not used in this pathway."
-                )
-            if orth_enc_input is None or orth_enc_pad_mask is None:
-                raise ValueError(
-                    "o2o pathway requires orthographic inputs (orth_enc_input, orth_enc_pad_mask). "
-                    "Received None value(s)."
-                )
-            self._validate_encoder_inputs("orth", orth_enc_input, orth_enc_pad_mask)
-            self._validate_orth_bounds(orth_enc_input, "Input tokens")
-            self._validate_device(
-                orth_enc_input=orth_enc_input, orth_enc_pad_mask=orth_enc_pad_mask
-            )
-
-        else:  # op2op, the only pathway consuming both modalities
-            if orth_enc_input is None or orth_enc_pad_mask is None:
-                raise ValueError(
-                    "op2op pathway requires orthographic inputs (orth_enc_input, orth_enc_pad_mask)"
-                )
-            if phon_enc_input is None or phon_enc_pad_mask is None:
-                raise ValueError(
-                    "op2op pathway requires phonological inputs (phon_enc_input, phon_enc_pad_mask)"
-                )
-            self._validate_encoder_inputs(
-                "orth",
-                orth_enc_input,
-                orth_enc_pad_mask,
-                max_seq_len=self.max_orth_seq_len,
-                tensor_exc=TypeError,
-            )
-            self._validate_encoder_inputs(
-                "phon", phon_enc_input, phon_enc_pad_mask, max_seq_len=self.max_phon_seq_len
-            )
+        if len(reads) > 1:
+            assert orth_enc_input is not None and phon_enc_input is not None
             if orth_enc_input.size(0) != phon_enc_input.size(0):
                 raise ValueError(
-                    f"Batch size mismatch: orthographic input has {orth_enc_input.size(0)} items "
-                    f"but phonological input has {phon_enc_input.size(0)} items"
+                    f"Batch size mismatch: orthographic input has {orth_enc_input.size(0)} "
+                    f"items but phonological input has {phon_enc_input.size(0)} items"
                 )
-            self._validate_phon_bounds(phon_enc_input)
-            self._validate_orth_bounds(orth_enc_input, "Orthographic tokens")

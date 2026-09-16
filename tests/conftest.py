@@ -32,3 +32,61 @@ def restore_process_device():
     before = device_manager.device
     yield
     device_manager._device = before
+
+
+import pytest as _pytest  # noqa: E402,F811
+
+from bridge.domain.data import BridgeDataset  # noqa: E402
+from bridge.domain.datamodels import DatasetConfig, ModelConfig, TrainingConfig  # noqa: E402
+from bridge.domain.model import Model  # noqa: E402
+from bridge.domain.tokenizer import BridgeTokenizer  # noqa: E402
+
+# The 7300-word corpus most pipeline tests train over.
+WORDS_CSV = "tests/domain/model/data/data.csv"
+
+
+@_pytest.fixture(scope="session")
+def shared_tokenizer() -> BridgeTokenizer:
+    """One tokenizer for the whole session.
+
+    Thirteen test modules built their own. Construction is cheap after the first
+    (0.96 ms against 392 ms cold, since the lexicon parse is memoised process-wide), so
+    this is about having one definition rather than about speed.
+    """
+    return BridgeTokenizer()
+
+
+@_pytest.fixture
+def words_dataset(shared_tokenizer: BridgeTokenizer) -> BridgeDataset:
+    """A ``BridgeDataset`` over ``WORDS_CSV``, sharing the session tokenizer."""
+    return BridgeDataset(DatasetConfig(dataset_filepath=WORDS_CSV), tokenizer=shared_tokenizer)
+
+
+@_pytest.fixture
+def make_pipeline():
+    """Build a ``TrainingPipeline`` over a dataset, overriding any ``TrainingConfig`` field.
+
+    Six test modules had their own copy of this, so a new required config field broke
+    eight call sites in six files. Model hyperparameters are small and seeded, matching
+    what every copy used.
+    """
+    from bridge.application.training import TrainingPipeline
+
+    def build(dataset: BridgeDataset, /, **overrides) -> TrainingPipeline:
+        from bridge.domain.datamodels import VocabSpec
+
+        model_kwargs = {
+            key: overrides.pop(key)
+            for key in ("d_model", "nhead", "seed", "d_embedding")
+            if key in overrides
+        }
+        vocab = VocabSpec.from_tokenizer(dataset.tokenizer)
+        return TrainingPipeline(
+            model=Model(
+                ModelConfig(vocab=vocab, **{"d_model": 16, "nhead": 2, "seed": 5, **model_kwargs})
+            ),
+            training_config=TrainingConfig(num_epochs=1, training_pathway="o2p", **overrides),
+            dataset=dataset,
+        )
+
+    return build

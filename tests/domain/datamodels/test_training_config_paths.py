@@ -29,13 +29,11 @@ from bridge.application.training.training_pipeline import TrainingPipeline
 from bridge.domain.data import BridgeDataset
 from bridge.domain.datamodels import (
     DatasetConfig,
-    MetricsConfig,
     ModelConfig,
     TrainingConfig,
     VocabSpec,
 )
 from bridge.domain.model import Model
-from bridge.infra.metrics.metrics_logger import STDOutMetricsLogger
 from bridge.utils import get_project_root
 
 RELATIVE_DIR = "bridge_relative_artifacts_probe"
@@ -241,18 +239,10 @@ def test_save_checkpoint_creates_the_artifacts_directory_on_first_write(tmp_path
     training_config = TrainingConfig(
         num_epochs=1, training_pathway="p2o", model_artifacts_dir=str(artifacts)
     )
-    metrics_config = MetricsConfig(
-        batch_metrics=False,
-        training_metrics=False,
-        validation_metrics=False,
-        modes=[],
-        filename=None,
-    )
     pipeline = TrainingPipeline(
         model=model,
         dataset=dataset,
         training_config=training_config,
-        metrics_logger=STDOutMetricsLogger(metrics_config),
     )
 
     assert not artifacts.exists(), "the artifacts directory was created before anything was saved"

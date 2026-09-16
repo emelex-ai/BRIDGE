@@ -10,16 +10,19 @@ from unittest.mock import Mock, patch
 import pytest
 import torch
 
-from bridge.domain.data import BridgeDataset
+from bridge.domain.data import BridgeDataset, CSVReader
 from bridge.domain.datamodels import BridgeEncoding, EncodingComponent
 from bridge.domain.tokenizer import BridgeTokenizer
-from bridge.infra.clients.gcp.gcs_client import GCSClient
 
 
 @pytest.fixture
 def mock_gcs_client():
-    """A no‐op GCS client stub for BridgeDataset."""
-    return Mock(spec=GCSClient)
+    """A no-op reader stub for BridgeDataset.
+
+    Specced against the ``CSVReader`` protocol the dataset declares rather than against a
+    concrete cloud client: BRIDGE ships none, so the only contract is ``read_csv``.
+    """
+    return Mock(spec=CSVReader)
 
 
 @pytest.fixture

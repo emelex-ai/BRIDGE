@@ -15,26 +15,16 @@ from bridge.application.training.training_pipeline import TrainingPipeline
 from bridge.domain.data import BridgeDataset
 from bridge.domain.datamodels import (
     DatasetConfig,
-    MetricsConfig,
     ModelConfig,
     TrainingConfig,
     TrainingEvent,
     VocabSpec,
 )
 from bridge.domain.model import Model
-from bridge.infra.metrics.metrics_logger import STDOutMetricsLogger
 
 DATA_CSV = "tests/domain/model/data/data.csv"
 TRAIN_SLICES = 3
 VAL_SLICES = 2
-
-SILENT_METRICS = MetricsConfig(
-    batch_metrics=False,
-    training_metrics=False,
-    validation_metrics=False,
-    modes=[],
-    filename=None,
-)
 
 
 @pytest.fixture(scope="module")
@@ -60,7 +50,6 @@ def pipeline(dataset, tmp_path):
             model_artifacts_dir=str(tmp_path),
             shuffle_each_epoch=False,
         ),
-        metrics_logger=STDOutMetricsLogger(SILENT_METRICS),
     )
     built.train_slices = built.train_slices[:TRAIN_SLICES]
     built.val_slices = built.val_slices[:VAL_SLICES]

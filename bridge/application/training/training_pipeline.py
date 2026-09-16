@@ -1,9 +1,7 @@
 import gc
 import json
 import logging
-import os
 import random
-import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -17,8 +15,7 @@ from bridge.core.phonreps import load_phoneme_table
 from bridge.domain.data import BridgeDataset
 from bridge.domain.datamodels import EncodingComponent, TrainingConfig, TrainingEvent
 from bridge.domain.model import Model
-from bridge.infra.metrics.metrics_logger import MetricsLogger
-from bridge.utils import device_manager
+from bridge.domain.model.model import PATHWAY_INPUTS, WRITES_ORTH, WRITES_PHON
 
 # Per-step results: loss tensors + scalar metrics + the JSON-encoded `word`.
 type MetricsDict = dict[str, torch.Tensor | float | str]
@@ -30,15 +27,21 @@ min_interval = 1
 
 
 class TrainingPipeline:
+    """Runs optimizer steps over a dataset and reports what happened, one event at a time.
+
+    The library owns the step; the caller owns the loop. Nothing here writes checkpoints,
+    logs to a file, or uploads anything: every moment of a run arrives as a
+    :class:`~bridge.domain.datamodels.TrainingEvent`, and what to do with one is the
+    caller's decision. See ``docs/decisions/0006``.
+    """
+
     def __init__(
         self,
         model: Model,
         training_config: TrainingConfig,
         dataset: BridgeDataset,
-        metrics_logger: MetricsLogger,
     ):
         self.logger = logging.getLogger(__name__)
-        self.metrics_logger = metrics_logger
         self.training_config = training_config
         self.dataset = dataset
         self.test_dataset = None
@@ -50,11 +53,10 @@ class TrainingPipeline:
                 gcs_client=self.dataset.gcs_client,
                 # Reuse the train tokenizer: building a second one re-parses the
                 # pronunciation lexicons (~1 s, ~81 MB), and the duplicate also inflated
-                # the periodic gc.collect() below from ~109 ms to ~188 ms.
+                # the periodic collection this used to run from ~109 ms to ~188 ms.
                 tokenizer=self.dataset.tokenizer,
             )
-        self.device = device_manager.device
-        self.model = model.to(self.device)
+        self.model = model
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(),
             lr=training_config.learning_rate,
@@ -63,9 +65,32 @@ class TrainingPipeline:
         self.train_slices, self.val_slices = self.create_data_slices()
         self.phon_reps = load_phoneme_table(device=self.device).phonetic_features
 
+        # The pronunciation lexicon is a process-lifetime cache, so the ~768k objects it
+        # allocates are immortal and every generational collection rescans them to free
+        # nothing. Freezing moves everything allocated so far into a generation the
+        # collector skips, which takes `gc.collect()` from a measured 155 ms to 0.0 ms.
+        # This replaces a `gc.collect()` every ten steps that cost a measured 17% of every
+        # epoch; an RSS control across an epoch showed it reclaiming nothing. Objects
+        # allocated after this point are still collected normally.
+        gc.freeze()
+
         self.start_epoch = 0
         if training_config.checkpoint_path:
             self.load_model(training_config.checkpoint_path)
+
+    @property
+    def device(self) -> torch.device:
+        """Where the model is, asked rather than told.
+
+        A stored snapshot of ``device_manager.device`` plus a ``model.to(...)`` in
+        ``__init__`` silently undid the caller's own placement: a model explicitly moved to
+        CUDA came back on CPU, all 169 parameters, and the run trained an order of
+        magnitude slower with nothing but an INFO line to say so. That is the failure
+        ``docs/decisions/0007`` fixed inside :class:`Model`, reintroduced one layer up. The
+        pipeline follows the model now. A caller who wants the process device writes
+        ``model.to(device_manager.device)``, which is one visible line.
+        """
+        return self.model.device
 
     def create_data_slices(self):
         # Kept on the instance: `_shuffle_training_partition` reorders exactly the indices
@@ -84,44 +109,22 @@ class TrainingPipeline:
     def forward(
         self, orthography: EncodingComponent, phonology: EncodingComponent
     ) -> dict[str, torch.Tensor]:
-        if self.training_config.training_pathway == "o2p":
-            return self.model(
-                task="o2p",
-                orth_enc_input=orthography.enc_input_ids,
-                orth_enc_pad_mask=orthography.enc_pad_mask,
-                phon_dec_input=phonology.dec_input_ids,
-                phon_dec_pad_mask=phonology.dec_pad_mask,
-            )
-        elif self.training_config.training_pathway == "op2op":
-            return self.model(
-                task="op2op",
-                orth_enc_input=orthography.enc_input_ids,
-                orth_enc_pad_mask=orthography.enc_pad_mask,
-                orth_dec_input=orthography.dec_input_ids,
-                orth_dec_pad_mask=orthography.dec_pad_mask,
-                phon_enc_input=phonology.enc_input_ids,
-                phon_enc_pad_mask=phonology.enc_pad_mask,
-                phon_dec_input=phonology.dec_input_ids,
-                phon_dec_pad_mask=phonology.dec_pad_mask,
-            )
-        elif self.training_config.training_pathway == "p2o":
-            return self.model(
-                task="p2o",
-                phon_enc_input=phonology.enc_input_ids,
-                phon_enc_pad_mask=phonology.enc_pad_mask,
-                orth_dec_input=orthography.dec_input_ids,
-                orth_dec_pad_mask=orthography.dec_pad_mask,
-            )
-        elif self.training_config.training_pathway == "p2p":
-            return self.model(
-                task="p2p",
-                phon_enc_input=phonology.enc_input_ids,
-                phon_enc_pad_mask=phonology.enc_pad_mask,
-                phon_dec_input=phonology.dec_input_ids,
-                phon_dec_pad_mask=phonology.dec_pad_mask,
-            )
-        else:
-            raise ValueError(f"Unknown training_pathway: {self.training_config.training_pathway!r}")
+        """Run the configured pathway over one batch.
+
+        Which tensors a pathway consumes comes from ``PATHWAY_INPUTS`` rather than being
+        written out per pathway. Four hand-written branches spelled the same mapping four
+        times, and the baseline-capture harness spells it a fifth, so renaming one keyword
+        meant finding every copy or the golden master would keep recording the old
+        convention.
+        """
+        pathway = self.training_config.training_pathway
+        component = {"orth": orthography, "phon": phonology}
+        kwargs: dict[str, torch.Tensor] = {}
+        for modality, side in PATHWAY_INPUTS[pathway]:
+            part = component[modality]
+            kwargs[f"{modality}_{side}_input"] = getattr(part, f"{side}_input_ids")
+            kwargs[f"{modality}_{side}_pad_mask"] = getattr(part, f"{side}_pad_mask")
+        return self.model(task=pathway, **kwargs)
 
     def compute_loss(
         self,
@@ -129,58 +132,43 @@ class TrainingPipeline:
         orthography: EncodingComponent,
         phonology: EncodingComponent,
     ) -> dict[str, torch.Tensor]:
-        orth_loss: torch.Tensor | None = None
-        phon_loss: torch.Tensor | None = None
-
+        pathway = self.training_config.training_pathway
         vocab = self.model.model_config.vocab
+        losses: dict[str, torch.Tensor] = {}
 
-        # Calculate phon_loss if applicable
-        if self.training_config.training_pathway in ["o2p", "op2op", "p2p"]:
-            phon_loss = torch.nn.CrossEntropyLoss(ignore_index=vocab.phon_pad_id)(
-                logits["phon"], phonology.phon_targets
+        if pathway in WRITES_PHON:
+            losses["phon_loss"] = torch.nn.functional.cross_entropy(
+                logits["phon"], phonology.phon_targets, ignore_index=vocab.phon_pad_id
             )
 
-        # Calculate orth_loss if applicable
-        if self.training_config.training_pathway in ["p2o", "op2op"]:
+        if pathway in WRITES_ORTH:
             # Teacher forcing: decoder position i is scored against the token at i+1. The
             # character tokenizer lays each sequence out as
             #     enc = [LANG, BOS, ...chars, EOS, PAD...]
             #     dec = [LANG, BOS, ...chars,      PAD...]
             # so the encoder ids shifted left by one give the next token for every decoder
             # position, at the same width. The `[BOS] -> first character` pair this creates
-            # is what generation needs: `orthography_decoder_loop` seeds a lone [BOS] and
+            # is what generation needs: `orthography_decoder_loop` seeds the same prefix and
             # the token it samples next must be the word's first character. See
             # docs/decisions/0004-orthographic-teacher-forcing-alignment.md.
             orth_target = orthography.enc_input_ids[:, 1:]
             self._check_orth_target_width(logits["orth"], orth_target)
-            orth_loss = torch.nn.CrossEntropyLoss(ignore_index=vocab.orth_pad_id)(
-                logits["orth"], orth_target
+            losses["orth_loss"] = torch.nn.functional.cross_entropy(
+                logits["orth"], orth_target, ignore_index=vocab.orth_pad_id
             )
 
-        if orth_loss is not None and phon_loss is not None:
-            total_loss = orth_loss + phon_loss
-        elif orth_loss is not None:
-            total_loss = orth_loss
-        elif phon_loss is not None:
-            total_loss = phon_loss
-        else:
-            raise ValueError(
-                f"No loss configured for training_pathway={self.training_config.training_pathway!r}"
-            )
+        if not losses:
+            raise ValueError(f"No loss configured for training_pathway={pathway!r}")
 
-        loss_dict: dict[str, torch.Tensor] = {"loss": total_loss}
-        if orth_loss is not None:
-            loss_dict["orth_loss"] = orth_loss
-        if phon_loss is not None:
-            loss_dict["phon_loss"] = phon_loss
-
-        return loss_dict
+        # The pathway decides how many terms there are; summing the ones present replaces
+        # a four-branch cascade over (orth_loss, phon_loss) presence.
+        return {"loss": torch.stack(list(losses.values())).sum(), **losses}
 
     @staticmethod
     def _check_orth_target_width(orth_logits: torch.Tensor, orth_target: torch.Tensor) -> None:
         """Fail with both shapes named when the target and the logits disagree.
 
-        Left to ``CrossEntropyLoss`` this reads ``Expected target size [8, 8], got [8, 7]``,
+        Left to ``cross_entropy`` this reads ``Expected target size [8, 8], got [8, 7]``,
         which names neither tensor nor where either came from. That message is what issue
         #225 presented as, and it cost more to diagnose than it should have.
         """
@@ -199,8 +187,9 @@ class TrainingPipeline:
         orthography: EncodingComponent,
         phonology: EncodingComponent,
     ) -> dict[str, float]:
+        pathway = self.training_config.training_pathway
         metrics: dict[str, float] = {}
-        if self.training_config.training_pathway in ["o2p", "op2op", "p2p"]:
+        if pathway in WRITES_PHON:
             metrics.update(
                 calculate_phon_metrics(
                     logits,
@@ -209,14 +198,12 @@ class TrainingPipeline:
                     phon_pad_id=self.model.model_config.vocab.phon_pad_id,
                 )
             )
-
-        if self.training_config.training_pathway in ["op2op", "p2o"]:
+        if pathway in WRITES_ORTH:
             metrics.update(
                 calculate_orth_metrics(
                     logits, orthography, orth_pad_id=self.model.model_config.vocab.orth_pad_id
                 )
             )
-
         return metrics
 
     def single_step(
@@ -225,118 +212,135 @@ class TrainingPipeline:
         batch_slice: slice,
         calculate_metrics: bool = False,
     ) -> MetricsDict:
-        num_chunks = self.training_config.num_chunks if self.training_config.num_chunks else 1
-        # Fast path when not using accumulated gradients
-        if num_chunks == 1:
-            # Zero gradients
-            if self.model.training:
-                self.optimizer.zero_grad()
+        """Run one optimizer step over one slice, in ``num_chunks`` accumulated sub-batches.
 
-            # Process the entire batch at once
-            batch = dataset[batch_slice]
-            orthography, phonology = batch.orthographic, batch.phonological
+        One path, not two. ``num_chunks=1`` is a single sub-slice covering the whole batch,
+        which is exactly what the separate fast path did; keeping both meant 62 lines of
+        loop-carried bookkeeping shadowing 41 lines that did the same work.
 
-            # Forward pass
-            logits = self.forward(orthography, phonology)
-
-            # Compute loss (no scaling needed). Kept as `dict[str, Tensor]` so
-            # `.backward()` is well-typed; widened to MetricsDict only after.
-            loss_metrics = self.compute_loss(logits, orthography, phonology)
-
-            # Backward pass
-            if self.model.training:
-                loss_metrics["loss"].backward()
-                self.optimizer.step()
-                self.optimizer.zero_grad()  # Reset gradients after update
-
-            metrics: MetricsDict = dict(loss_metrics)
-
-            # Calculate additional metrics if needed
-            if calculate_metrics:
-                metrics.update(self.compute_metrics(logits, orthography, phonology))
-
-            if self.metrics_logger.metrics_config.batch_metrics:
-                self.metrics_logger.log_metrics(metrics, "BATCH")
-
-            metrics["word"] = json.dumps(dataset.words[batch_slice])
-            return metrics
-
-        # Original accumulated gradients path for num_chunks > 1
-        accumulated_losses: dict[str, torch.Tensor] = {}
+        Reported losses are the sum over sub-batches, unscaled. Only the gradient is divided
+        by ``num_chunks``, so accumulating changes what a step costs in memory rather than
+        what it optimizes.
+        """
+        num_chunks = self.training_config.num_chunks or 1
         sub_slices = self._create_sub_slices(batch_slice, num_chunks=num_chunks)
+        if not sub_slices:
+            raise ValueError(f"batch_slice {batch_slice} is empty; there is nothing to step over.")
 
-        # Zero gradients once at the beginning
-        self.optimizer.zero_grad()
+        if self.model.training:
+            self.optimizer.zero_grad()
 
-        # Losses accumulate across every sub-batch, but metrics are computed once, from
-        # the final sub-batch, so the loop carries that one forward. Distinct names from
-        # the `num_chunks == 1` path above, which binds `logits`/`orthography`/`phonology`
-        # in this same function scope.
-        last_logits: dict[str, torch.Tensor] | None = None
-        last_orthography: EncodingComponent | None = None
-        last_phonology: EncodingComponent | None = None
-
+        totals: dict[str, torch.Tensor] = {}
         for sub_slice in sub_slices:
             batch = dataset[sub_slice]
-            last_orthography, last_phonology = batch.orthographic, batch.phonological
+            orthography, phonology = batch.orthographic, batch.phonological
+            logits = self.forward(orthography, phonology)
+            losses = self.compute_loss(logits, orthography, phonology)
 
-            # Forward pass
-            last_logits = self.forward(last_orthography, last_phonology)
-
-            # Compute loss with scaled factor
-            sub_metrics = self.compute_loss(last_logits, last_orthography, last_phonology)
-            loss = sub_metrics["loss"] / num_chunks  # Scale loss by number of chunks
-
-            # Backward pass (accumulate gradients)
             if self.model.training:
-                loss.backward()
+                (losses["loss"] / num_chunks).backward()
 
-            # Update metrics
-            if not accumulated_losses:
-                accumulated_losses = dict(sub_metrics)
-            else:
-                for k, v in sub_metrics.items():
-                    accumulated_losses[k] = accumulated_losses[k] + v
+            for key, value in losses.items():
+                totals[key] = totals[key] + value if key in totals else value
 
-        # Only step optimizer after processing all sub-batches
         if self.model.training:
             self.optimizer.step()
             self.optimizer.zero_grad()
 
-        # `_create_sub_slices` yields nothing for an empty batch slice, leaving the
-        # loop-carried values unset. Raise rather than assert: `assert` is stripped under
-        # `python -O`, which would let None reach `compute_metrics` as an AttributeError.
-        if last_logits is None or last_orthography is None or last_phonology is None:
-            raise ValueError(
-                f"No sub-batches produced for batch_slice {batch_slice} with "
-                f"num_chunks={num_chunks}; the slice is empty."
-            )
+        # Detached before they leave this method. These are the tensors `backward()` just
+        # ran on, so handing them out live means every `TrainingEvent` a caller keeps pins
+        # an autograd graph: measured at +581 MB of steady-state RSS inside the loop, and
+        # +527 MB per epoch, unbounded, for a caller who keeps the stream to plot a loss
+        # curve. Values are identical to 8 decimals either way. `.detach()` rather than
+        # `.item()`, which would add a device sync per metric per step on CUDA.
+        metrics: MetricsDict = {key: value.detach() for key, value in totals.items()}
 
-        accumulated_metrics: MetricsDict = dict(accumulated_losses)
+        # Metrics come from the last sub-batch. With one chunk that is the whole batch.
         if calculate_metrics:
-            accumulated_metrics.update(
-                self.compute_metrics(last_logits, last_orthography, last_phonology)
-            )
+            metrics.update(self.compute_metrics(logits, orthography, phonology))
 
-        if self.metrics_logger.metrics_config.batch_metrics:
-            self.metrics_logger.log_metrics(accumulated_metrics, "BATCH")
+        metrics["word"] = json.dumps(dataset.words[batch_slice])
+        return metrics
 
-        accumulated_metrics["word"] = json.dumps(dataset.words[batch_slice])
-        return accumulated_metrics
-
-    def _create_sub_slices(self, batch_slice: slice, num_chunks: int) -> list[slice]:
+    @staticmethod
+    def _create_sub_slices(batch_slice: slice, num_chunks: int) -> list[slice]:
         """Split a slice into smaller slices."""
         start, stop = batch_slice.start, batch_slice.stop
         size = stop - start
         chunk_size = max(1, size // num_chunks)
 
-        sub_slices = []
-        for i in range(0, size, chunk_size):
-            sub_start = start + i
-            sub_stop = min(start + i + chunk_size, stop)
-            sub_slices.append(slice(sub_start, sub_stop))
+        return [
+            slice(start + i, min(start + i + chunk_size, stop)) for i in range(0, size, chunk_size)
+        ]
 
-        return sub_slices
+    @staticmethod
+    def _accumulate(total: NumericMetrics, metrics: MetricsDict) -> NumericMetrics:
+        """Add one step's numeric metrics into a running total, dropping the string fields."""
+        numeric: NumericMetrics = {
+            key: value for key, value in metrics.items() if not isinstance(value, str)
+        }
+        if not total:
+            return numeric
+        for key, value in numeric.items():
+            total[key] = total[key] + value
+        return total
+
+    @staticmethod
+    def _summarize(
+        total: NumericMetrics, steps: int, elapsed: float, prefix: str
+    ) -> NumericMetrics:
+        """Mean the accumulated metrics, add the two timings, prefix every key.
+
+        One definition. The four hand-written copies this replaces had already drifted:
+        three computed ``time_per_epoch`` as elapsed seconds *times* the step count, which
+        is not a duration, and the fourth subtracted correctly. A single epoch record
+        therefore mixed a correct ``train_time_per_epoch`` with a multiplied ``valid_`` one.
+        """
+        summary: NumericMetrics = {key: value / steps for key, value in total.items()}
+        summary["time_per_step"] = elapsed / steps
+        summary["time_per_epoch"] = elapsed
+        return {prefix + str(key): value for key, value in summary.items()}
+
+    def _progress(self, slices: list[slice], desc: str) -> Iterator[tuple[int, slice]]:
+        """Iterate slices behind a tqdm bar, yielding ``(step, slice)``.
+
+        The postfix is refreshed by :meth:`_show`, which the caller invokes with the metrics
+        it just produced. Splitting it this way keeps the throttle in one place instead of
+        once per epoch method.
+        """
+        self._bar = tqdm(slices, desc=desc, mininterval=min_interval)
+        self._last_update = time.time()
+        yield from enumerate(self._bar)
+
+    def _show(self, metrics: MetricsDict) -> None:
+        """Refresh the progress bar postfix, at most once per ``min_interval`` seconds."""
+        now = time.time()
+        if now - self._last_update <= min_interval:
+            return
+        self._bar.set_postfix(
+            {key: f"{value:.4f}" for key, value in metrics.items() if not isinstance(value, str)}
+        )
+        self._last_update = now
+
+    def _evaluate(
+        self, dataset: BridgeDataset, slices: list[slice], prefix: str, desc: str
+    ) -> NumericMetrics:
+        """Run one no-grad pass over ``slices``, returning the mean metrics, ``prefix``ed.
+
+        Shared by validation and test, which differed only in the dataset, the slice list
+        and the prefix. They were 46 and 42 lines agreeing on 30 of them.
+        """
+        self.model.eval()
+        start = time.time()
+        total: NumericMetrics = {}
+        with torch.no_grad():
+            for _step, batch_slice in self._progress(slices, desc):
+                metrics = self.single_step(
+                    dataset, batch_slice, self.training_config.compute_metrics
+                )
+                self._show(metrics)
+                total = self._accumulate(total, metrics)
+        return self._summarize(total, len(slices), time.time() - start, prefix)
 
     def train_steps(self, epoch: int) -> Iterator[TrainingEvent]:
         """Run one training epoch, yielding after every optimizer step.
@@ -352,118 +356,28 @@ class TrainingPipeline:
         it themselves, or does not.
         """
         self.model.train()
-        last_update_time = time.time()
-        progress_bar = tqdm(
-            self.train_slices,
-            desc=f"Training Epoch {epoch + 1}",
-            mininterval=min_interval,
-        )
-        for step, batch_slice in enumerate(progress_bar):
-            # Run garbage collection to free up memory
-            if step % 10 == 0:
-                gc.collect()
-
+        for step, batch_slice in self._progress(self.train_slices, f"Training Epoch {epoch + 1}"):
             metrics = self.single_step(
-                self.dataset,
-                batch_slice,
-                self.metrics_logger.metrics_config.training_metrics,
+                self.dataset, batch_slice, self.training_config.compute_metrics
             )
-            current_time = time.time()
-            if current_time - last_update_time > min_interval:
-                progress_bar.set_postfix(
-                    {
-                        key: f"{value:.4f}"
-                        for key, value in metrics.items()
-                        if not isinstance(value, str)
-                    }
-                )
-                last_update_time = current_time
+            self._show(metrics)
             yield TrainingEvent(phase="train", epoch=epoch, step=step, metrics=metrics)
 
     def validate_single_epoch(self, epoch: int) -> NumericMetrics:
-        self.model.eval()
-        start = time.time()
-        last_update_time = time.time()
-        progress_bar = tqdm(
-            self.val_slices,
-            desc=f"Validating Epoch {epoch + 1}",
-            mininterval=min_interval,
+        """Score the validation partition, returning ``valid_``-prefixed mean metrics."""
+        return self._evaluate(
+            self.dataset, self.val_slices, "valid_", f"Validating Epoch {epoch + 1}"
         )
-
-        with torch.no_grad():
-            total_metrics: NumericMetrics = {}
-            for _step, batch_slice in enumerate(progress_bar):
-                metrics = self.single_step(
-                    self.dataset,
-                    batch_slice,
-                    self.metrics_logger.metrics_config.validation_metrics,
-                )
-                step_numeric: NumericMetrics = {
-                    key: value for key, value in metrics.items() if not isinstance(value, str)
-                }
-                current_time = time.time()
-                if current_time - last_update_time > min_interval:
-                    progress_bar.set_postfix(
-                        {key: f"{value:.4f}" for key, value in step_numeric.items()}
-                    )
-                    last_update_time = current_time
-                if not total_metrics:
-                    total_metrics = step_numeric
-                else:
-                    for key, value in step_numeric.items():
-                        total_metrics[key] = total_metrics[key] + value
-            for key in total_metrics:
-                total_metrics[key] = total_metrics[key] / len(self.val_slices)
-        total_metrics["time_per_step"] = (time.time() - start) / len(self.val_slices)
-        total_metrics["time_per_epoch"] = (time.time() - start) * len(self.val_slices)
-        return {"valid_" + str(key): val for key, val in total_metrics.items()}
 
     def test_single_epoch(self, epoch: int) -> NumericMetrics:
-        self.model.eval()
-        start = time.time()
-        last_update_time = time.time()
+        """Score the held-out test set, returning ``test_``-prefixed mean metrics."""
         if self.test_dataset is None:
             raise ValueError("Test dataset not provided in the configuration.")
-
-        # Create test slices based on batch size
         test_slices = [
-            slice(
-                i,
-                min(i + self.training_config.batch_size_train, len(self.test_dataset)),
-            )
+            slice(i, min(i + self.training_config.batch_size_train, len(self.test_dataset)))
             for i in range(0, len(self.test_dataset), self.training_config.batch_size_train)
         ]
-        progress_bar = tqdm(
-            test_slices, desc=f"Testing Epoch {epoch + 1}", mininterval=min_interval
-        )
-
-        with torch.no_grad():
-            total_metrics: NumericMetrics = {}
-            for _step, batch_slice in enumerate(progress_bar):
-                metrics = self.single_step(
-                    self.test_dataset,
-                    batch_slice,
-                    self.metrics_logger.metrics_config.validation_metrics,
-                )
-                step_numeric: NumericMetrics = {
-                    key: value for key, value in metrics.items() if not isinstance(value, str)
-                }
-                current_time = time.time()
-                if current_time - last_update_time > min_interval:
-                    progress_bar.set_postfix(
-                        {key: f"{value:.4f}" for key, value in step_numeric.items()}
-                    )
-                    last_update_time = current_time
-                if not total_metrics:
-                    total_metrics = step_numeric
-                else:
-                    for key, value in step_numeric.items():
-                        total_metrics[key] = total_metrics[key] + value
-            for key in total_metrics:
-                total_metrics[key] = total_metrics[key] / len(test_slices)
-        total_metrics["time_per_step"] = (time.time() - start) / len(test_slices)
-        total_metrics["time_per_epoch"] = (time.time() - start) * len(test_slices)
-        return {"test_" + str(key): val for key, val in total_metrics.items()}
+        return self._evaluate(self.test_dataset, test_slices, "test_", f"Testing Epoch {epoch + 1}")
 
     def run_train_val_loop(self, num_epochs: int | None = None) -> Iterator[TrainingEvent]:
         """Train, validating each epoch, yielding a record at every step and boundary.
@@ -473,8 +387,8 @@ class TrainingPipeline:
         :meth:`_shuffle_training_partition`. A caller who wants a different loop writes it
         out of those rather than passing flags into this one.
 
-        It writes no checkpoints. When to save, where, and under what name are the caller's
-        to decide, from the stream:
+        It writes no checkpoints and logs nothing. When to save, where, under what name, and
+        what to record are all the caller's, from the stream:
 
             for event in pipeline.run_train_val_loop(num_epochs=3):
                 if event.phase == "train" and event.step % 100 == 0:
@@ -483,8 +397,8 @@ class TrainingPipeline:
                     pipeline.save_checkpoint(runs / f"epoch_{event.epoch}.pth", event.epoch)
 
         Four phases arrive, and the ``epoch`` one is always last for its epoch. Its metrics
-        are the merged aggregate this generator used to yield before it yielded per step, so
-        a caller who only wants epoch rows filters on that phase and is otherwise unchanged.
+        are the merged aggregate, so a caller who only wants epoch rows filters on that
+        phase and is otherwise unchanged.
 
         Args:
             num_epochs: Overrides `training_config.num_epochs` for this call. Counting still
@@ -500,21 +414,12 @@ class TrainingPipeline:
             steps = 0
             for event in self.train_steps(epoch):
                 steps += 1
-                numeric: NumericMetrics = {
-                    key: value for key, value in event.metrics.items() if not isinstance(value, str)
-                }
-                if not step_total:
-                    step_total = numeric
-                else:
-                    for key, value in numeric.items():
-                        step_total[key] = step_total[key] + value
+                step_total = self._accumulate(step_total, event.metrics)
                 yield event
             if steps:
-                for key in step_total:
-                    step_total[key] = step_total[key] / steps
-                step_total["time_per_step"] = (time.time() - start) / steps
-                step_total["time_per_epoch"] = time.time() - start
-                epoch_metrics.update({"train_" + str(k): v for k, v in step_total.items()})
+                epoch_metrics.update(
+                    self._summarize(step_total, steps, time.time() - start, "train_")
+                )
 
             if self.val_slices:
                 metrics = self.validate_single_epoch(epoch)
@@ -525,10 +430,7 @@ class TrainingPipeline:
                 epoch_metrics.update(metrics)
                 yield TrainingEvent(phase="test", epoch=epoch, metrics=dict(metrics))
 
-            self.metrics_logger.log_metrics(epoch_metrics, "EPOCH")
             yield TrainingEvent(phase="epoch", epoch=epoch, metrics=dict(epoch_metrics))
-
-        self.metrics_logger.save()
 
     def _shuffle_training_partition(self, epoch: int) -> None:
         """Reorder the training words in place, leaving the validation tail untouched.
@@ -563,6 +465,10 @@ class TrainingPipeline:
         overwrite each other silently, because the filename depended only on the epoch, and
         no naming scheme the library picks can be right for every experiment.
 
+        It returns the path for the same reason it uploads nowhere. Copying the file to
+        object storage is one more thing the caller decides, and reading a bucket name out
+        of the environment made a successful ``torch.save`` raise ``KeyError`` afterwards.
+
         A relative path resolves against `training_config.model_artifacts_dir`, so the
         common case stays short. Parent directories are created here, which is the point of
         first write now that validating a config no longer touches the filesystem.
@@ -585,38 +491,22 @@ class TrainingPipeline:
             },
             destination,
         )
-        if self.dataset.gcs_client:
-            self.dataset.gcs_client.upload_file(
-                os.environ["BUCKET_NAME"],
-                str(destination),
-                f"{self.training_config.gcs_path}/models/{destination.name}",
-            )
         return destination
 
-    def load_model(self, model_path: str):
-        try:
-            import bridge
-            import bridge.domain as bridge_domain
-            import bridge.domain.datamodels as bridge_datamodels
-            import bridge.domain.datamodels.model_config as old_module_reference
+    def load_model(self, model_path: str) -> None:
+        """Restore weights, optimizer state and the epoch counter from a checkpoint.
 
-            sys.modules["src"] = bridge
-            sys.modules["src.domain"] = bridge_domain
-            sys.modules["src.domain.datamodels"] = bridge_datamodels
-            sys.modules["src.domain.datamodels.model_config"] = old_module_reference
-
-            checkpoint = torch.load(model_path, weights_only=False)
-            self._warn_on_phoneme_table_drift(checkpoint, model_path)
-            self.model.load_state_dict(checkpoint["model_state_dict"])
-            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-
-            self._set_start_epoch(checkpoint, model_path)
-
-            return True
-        except Exception as e:
-            self.logger.error(f"Error loading checkpoint {model_path}: {e}")
-            self.start_epoch = 0
-            return False
+        Raises rather than reporting failure. A blanket ``except Exception: return False``
+        turned a corrupt file, a missing one, a shape mismatch and an unpickling error into
+        one return value, and ``__init__`` did not check it, so a failed resume started a
+        fresh run from random weights with nothing but a log line to say so. A caller who
+        wants best-effort resume writes the ``try`` themselves.
+        """
+        checkpoint = torch.load(model_path, weights_only=False)
+        self._warn_on_phoneme_table_drift(checkpoint, model_path)
+        self.model.load_state_dict(checkpoint["model_state_dict"])
+        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        self._set_start_epoch(checkpoint, model_path)
 
     def _set_start_epoch(self, checkpoint: dict, model_path: str) -> None:
         """Decide which epoch a resumed run counts from.
@@ -624,21 +514,20 @@ class TrainingPipeline:
         Three cases, and the middle one is a real distinction rather than a special case.
         A checkpoint saved partway through a run is being *resumed*, so the counter picks up
         where it left off. A pretraining or finetuning checkpoint is weights being carried
-        into a NEW run, so the counter restarts; `bridge/infra/data/storage_interface.py`
-        writes those under `models/pretraining/`, which is where the substring match comes
-        from. A checkpoint predating the `epoch` key cannot say, so it starts at 0.
+        into a NEW run, so the counter restarts. A checkpoint predating the `epoch` key
+        cannot say, so it starts at 0.
 
         The guard used to read `"pretraining" not in path or "finetuning" not in path`,
         which is true for every path a checkpoint can realistically have, since one can
         rarely contain both words. It admitted everything, and an unconditional
-        `self.start_epoch = 0` underneath undid whatever it decided anyway. This keyed on
+        `self.start_epoch = 0` underneath undid whatever it decided anyway. This keys on
         `model_path`, the file actually being loaded, rather than on
         `training_config.checkpoint_path`, so a direct `load_model` call resumes too.
 
         The substring match is over the whole path, not the filename, because the marker
-        sits in a directory component. That is fragile in one direction worth knowing: an
-        artifacts directory named `finetuning_runs/` makes every checkpoint under it look
-        like a transfer checkpoint and silently restart the counter.
+        usually sits in a directory component. That is fragile in one direction worth
+        knowing: an artifacts directory named `finetuning_runs/` makes every checkpoint
+        under it look like a transfer checkpoint and silently restart the counter.
         """
         if "epoch" not in checkpoint:
             self.logger.warning("Checkpoint doesn't contain epoch information, starting from 0")
@@ -680,7 +569,8 @@ class TrainingPipeline:
 
     def transfer_partial_model_parameters(
         self, pretrained_model_path: str, module_prefixes: list[str]
-    ):
+    ) -> None:
+        """Copy the modules named by ``module_prefixes`` out of another checkpoint."""
         checkpoint = torch.load(pretrained_model_path, weights_only=False)
         # Transferring a phonological module across a relabelled feature table is the
         # silent-corruption case the fingerprint exists for: shapes still match, so
@@ -688,17 +578,11 @@ class TrainingPipeline:
         self._warn_on_phoneme_table_drift(checkpoint, pretrained_model_path)
         pretrained_state = checkpoint["model_state_dict"]
         filtered_state = {
-            k: v
-            for k, v in pretrained_state.items()
-            if any(k.startswith(prefix) for prefix in module_prefixes)
+            key: value
+            for key, value in pretrained_state.items()
+            if any(key.startswith(prefix) for prefix in module_prefixes)
         }
 
         model_dict = self.model.state_dict()
         model_dict.update(filtered_state)
         self.model.load_state_dict(model_dict)
-
-        new_state = self.model.state_dict()
-        for key, pretrained_weight in filtered_state.items():
-            assert torch.equal(new_state[key], pretrained_weight), (
-                f"Weight transfer failed for {key}"
-            )

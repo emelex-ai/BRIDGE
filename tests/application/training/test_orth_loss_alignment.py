@@ -40,23 +40,14 @@ from bridge.application.training.training_pipeline import TrainingPipeline
 from bridge.domain.data import BridgeDataset
 from bridge.domain.datamodels import (
     DatasetConfig,
-    MetricsConfig,
     ModelConfig,
     TrainingConfig,
     VocabSpec,
 )
 from bridge.domain.model import Model
-from bridge.infra.metrics.metrics_logger import STDOutMetricsLogger
 
 DATA_CSV = "tests/domain/model/data/data.csv"
 
-SILENT_METRICS = MetricsConfig(
-    batch_metrics=False,
-    training_metrics=False,
-    validation_metrics=False,
-    modes=[],
-    filename=None,
-)
 
 # Hand-computed from the tokenizer layout for "long". Encoder ids are
 # ['--', '[BOS]', 'l', 'o', 'n', 'g', '[EOS]'] and decoder ids are
@@ -110,27 +101,29 @@ def make_pipeline(dataset, artifacts_dir):
                 training_pathway=pathway,
                 model_artifacts_dir=artifacts_dir,
             ),
-            metrics_logger=STDOutMetricsLogger(SILENT_METRICS),
         )
 
     return build
 
 
 def record_cross_entropy_calls(monkeypatch) -> list[tuple[torch.Tensor, torch.Tensor]]:
-    """Capture the (logits, target) pairs ``compute_loss`` hands ``CrossEntropyLoss``.
+    """Capture the (logits, target) pairs ``compute_loss`` hands ``cross_entropy``.
 
     Instruments the real path instead of re-deriving the slice in the test. Whatever
     ``compute_loss`` chose as the target is what gets inspected, so a test that passes
     here cannot pass by agreeing with itself.
+
+    Patched on the module ``compute_loss`` reads the name from, not on
+    ``torch.nn.functional``, since the pipeline imports ``torch`` and calls through it.
     """
     calls: list[tuple[torch.Tensor, torch.Tensor]] = []
-    real_forward = torch.nn.CrossEntropyLoss.forward
+    real = torch.nn.functional.cross_entropy
 
-    def spy(self, input, target):
+    def spy(input, target, **kwargs):
         calls.append((input, target))
-        return real_forward(self, input, target)
+        return real(input, target, **kwargs)
 
-    monkeypatch.setattr(torch.nn.CrossEntropyLoss, "forward", spy)
+    monkeypatch.setattr(torch.nn.functional, "cross_entropy", spy)
     return calls
 
 

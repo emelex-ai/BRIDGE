@@ -90,7 +90,6 @@ class DeviceManager:
         return torch.tensor(*args, **kwargs)
 
 
-
 # The process-wide device, selectable without editing code. There is no other supported
 # way to reach a GPU: before this, the only working override was assigning the private
 # attribute before constructing any BRIDGE object.

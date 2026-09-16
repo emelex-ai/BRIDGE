@@ -12,9 +12,9 @@ never fires and a branch that always fires look identical from the outside:
 * a path naming a pretraining or finetuning checkpoint restarts at 0 on purpose, since those
   weights are being carried into a different run and the old epoch count means nothing there;
 * a checkpoint carrying no epoch stays at 0 and says so in the log;
-* a load that throws stays at 0 and reports failure by returning False. The return value is
-  the only difference between a failed load and a deliberate reset, because ``load_model``
-  swallows the exception.
+* a load that throws propagates the exception. A failed load and a deliberate reset used
+  to be indistinguishable, because ``load_model`` swallowed everything and returned a
+  ``False`` that ``__init__`` never checked.
 
 Every numeric assertion here is paired with a control in the same test: the same recipe under
 a condition that must come out the other way. The oracle throughout is the arithmetic stated
@@ -22,6 +22,7 @@ in the code's own comment, "Start from the next epoch", plus ``range(start, stop
 """
 
 import logging
+import pickle
 
 import pytest
 import torch
@@ -30,13 +31,11 @@ from bridge.application.training.training_pipeline import TrainingPipeline
 from bridge.domain.data import BridgeDataset
 from bridge.domain.datamodels import (
     DatasetConfig,
-    MetricsConfig,
     ModelConfig,
     TrainingConfig,
     VocabSpec,
 )
 from bridge.domain.model import Model
-from bridge.infra.metrics.metrics_logger import STDOutMetricsLogger
 
 LOGGER = "bridge.application.training.training_pipeline"
 
@@ -70,18 +69,10 @@ def build_pipeline(dataset, artifacts_dir, checkpoint_path=None, num_epochs=2):
         model_artifacts_dir=str(artifacts_dir),
         checkpoint_path=checkpoint_path,
     )
-    metrics_config = MetricsConfig(
-        batch_metrics=False,
-        training_metrics=False,
-        validation_metrics=False,
-        modes=[],
-        filename=None,
-    )
     return TrainingPipeline(
         model=model,
         dataset=dataset,
         training_config=training_config,
-        metrics_logger=STDOutMetricsLogger(metrics_config),
     )
 
 
@@ -120,7 +111,7 @@ def test_a_plain_checkpoint_resumes_at_the_next_epoch(dataset, state, tmp_path):
     pipeline = build_pipeline(dataset, tmp_path / "artifacts", checkpoint_path=path)
 
     assert pipeline.start_epoch == NEXT_EPOCH
-    assert pipeline.load_model(path) is True
+    pipeline.load_model(path)
 
 
 @pytest.mark.parametrize("kind", ["pretraining", "finetuning"])
@@ -138,7 +129,7 @@ def test_transfer_learning_checkpoints_restart_the_counter(dataset, state, tmp_p
     transfer = build_pipeline(dataset, tmp_path / "artifacts", checkpoint_path=transfer_path)
     plain = build_pipeline(dataset, tmp_path / "artifacts", checkpoint_path=plain_path)
 
-    assert transfer.load_model(transfer_path) is True
+    transfer.load_model(transfer_path)
     assert transfer.start_epoch == 0
     assert plain.start_epoch == NEXT_EPOCH
     assert transfer.start_epoch != plain.start_epoch
@@ -159,7 +150,7 @@ def test_a_checkpoint_without_an_epoch_key_starts_at_zero_and_warns(
     with caplog.at_level(logging.WARNING, logger=LOGGER):
         pipeline = build_pipeline(dataset, tmp_path / "artifacts", checkpoint_path=epochless)
     assert pipeline.start_epoch == 0
-    assert pipeline.load_model(epochless) is True
+    pipeline.load_model(epochless)
     assert "epoch" in caplog.text.lower()
 
     caplog.clear()
@@ -169,12 +160,14 @@ def test_a_checkpoint_without_an_epoch_key_starts_at_zero_and_warns(
     assert caplog.text == ""
 
 
-def test_a_corrupt_checkpoint_reports_failure(dataset, state, tmp_path):
-    """``load_model`` catches every exception, so a load that failed and a load that
-    deliberately reset the counter leave identical state behind. The return value is the
-    only thing that separates them, so it is what this asserts.
+def test_a_corrupt_checkpoint_raises_rather_than_resuming_from_nothing(dataset, state, tmp_path):
+    """A load that failed and a load that deliberately reset the counter used to leave
+    identical state behind, because ``load_model`` swallowed every exception and returned
+    ``False`` that nobody checked. A run then trained from random weights believing it had
+    resumed. It raises now, so the two are distinguishable by construction.
 
-    The control is a good checkpoint through the same pipeline: True, and epoch 10.
+    The control is a good checkpoint through the same pipeline, which must still reach
+    epoch 10 rather than raising.
     """
     corrupt = tmp_path / "corrupt.pth"
     corrupt.write_bytes(b"not a torch checkpoint")
@@ -182,11 +175,14 @@ def test_a_corrupt_checkpoint_reports_failure(dataset, state, tmp_path):
 
     pipeline = build_pipeline(dataset, tmp_path / "artifacts")
 
-    assert pipeline.load_model(str(corrupt)) is False
+    # Pinned to the type, not to `Exception`: the point is that the failure reaches the
+    # caller intact, and `torch.load` on a non-checkpoint raises UnpicklingError.
+    with pytest.raises(pickle.UnpicklingError, match="invalid load key"):
+        pipeline.load_model(str(corrupt))
     assert pipeline.start_epoch == 0
 
     pipeline.training_config.checkpoint_path = good
-    assert pipeline.load_model(good) is True
+    pipeline.load_model(good)
     assert pipeline.start_epoch == NEXT_EPOCH
 
 

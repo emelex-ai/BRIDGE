@@ -1,17 +1,14 @@
 """The top-level ``bridge`` package must be enough to do the package's main job.
 
 ``bridge/__init__.py`` is the supported import surface. Everything under
-``bridge.application``, ``bridge.domain`` and ``bridge.infra`` is internal layout that a
-reorganisation is free to move. That promise only holds if the exported names are
-*sufficient*: if assembling the primary object, a ``TrainingPipeline``, forces a consumer
-to reach into ``bridge.infra.metrics.metrics_logger``, then moving that module breaks code
-that had no supported alternative.
+``bridge.application`` and ``bridge.domain`` is internal layout that a reorganisation is
+free to move. That promise only holds if the exported names are *sufficient*: if
+assembling the primary object, a ``TrainingPipeline``, forces a consumer to reach into an
+internal module, then moving that module breaks code that had no supported alternative.
 
-``TrainingPipeline.__init__`` requires a ``MetricsLogger``, and ``metrics_logger_factory``
-is the only way to build one from a ``MetricsConfig``. ``MetricsConfig`` is exported and
-the factory is not, so the public API stops one step short of a usable pipeline. The
-assembly test below is the real assertion; the rest guard the export list itself against
-the two ways it drifts, a name listed but not imported, and a name quietly deleted.
+The assembly test below is the real assertion. The rest guard the export list itself
+against the two ways it drifts: a name listed but not imported, and a name quietly
+deleted.
 """
 
 import math
@@ -20,8 +17,7 @@ import bridge
 
 # The names downstream code already relies on. A superset check rather than equality:
 # adding an export is not a breaking change and must not fail the suite, while removing
-# one is, and does. `metrics_logger_factory` is deliberately absent here, since its
-# absence is the defect and has its own test.
+# one is, and does.
 ESTABLISHED_EXPORTS = frozenset(
     {
         "BridgeDataset",
@@ -30,10 +26,11 @@ ESTABLISHED_EXPORTS = frozenset(
         "DatasetConfig",
         "EncodingComponent",
         "GenerationOutput",
-        "MetricsConfig",
         "Model",
         "ModelConfig",
         "TrainingConfig",
+        "TrainingEvent",
+        "TrainingPhase",
         "TrainingPipeline",
         "VocabSpec",
     }
@@ -43,26 +40,9 @@ DATA = "tests/domain/model/data/data.csv"
 
 
 def loss_of(metrics):
-    """The step's loss as a plain float, detached so reading it is side-effect free."""
+    """The step's loss as a plain float."""
     value = metrics["loss"]
     return float(value.detach()) if hasattr(value, "detach") else float(value)
-
-
-def test_metrics_logger_factory_is_part_of_the_public_api():
-    """The one name the assembly below needs and cannot get.
-
-    Oracle: the invariant that a package's ``__all__`` must cover the arguments its own
-    exported constructors require. ``MetricsConfig`` and ``TrainingPipeline`` are both
-    exported, and no exported name turns the former into the ``MetricsLogger`` the latter
-    demands.
-    """
-    from bridge import metrics_logger_factory
-
-    assert callable(metrics_logger_factory)
-    assert "metrics_logger_factory" in bridge.__all__, (
-        f"importable but unlisted, so `from bridge import *` misses it; "
-        f"__all__ is {sorted(bridge.__all__)}"
-    )
 
 
 def test_a_working_pipeline_assembles_from_the_top_level_package_alone(tmp_path):
@@ -76,43 +56,30 @@ def test_a_working_pipeline_assembles_from_the_top_level_package_alone(tmp_path)
 
     Oracle: an invariant with an analytic anchor. The ``o2p`` loss is cross entropy over
     two classes per phonetic feature column, so an untrained model scores near chance,
-    ``log 2`` or about 0.693 nats; the measured value with ``seed=5`` is 0.819. The
-    assertion stays at finiteness and sign rather than pinning that number, because the
-    claim under test is that the pipeline computes at all, and a mock or a broken forward
-    pass gives ``nan``, ``inf`` or exactly zero. The paired control test below rules out
-    the alternative explanation that this recipe is simply wrong.
+    ``log 2`` or about 0.693 nats. The assertion stays at finiteness and sign rather than
+    pinning a number, because the claim under test is that the pipeline computes at all,
+    and a broken forward pass gives ``nan``, ``inf`` or exactly zero.
     """
     from bridge import (
         BridgeDataset,
         DatasetConfig,
-        MetricsConfig,
         Model,
         ModelConfig,
         TrainingConfig,
         TrainingPipeline,
         VocabSpec,
-        metrics_logger_factory,
     )
 
     dataset = BridgeDataset(dataset_config=DatasetConfig(dataset_filepath=DATA))
     model = Model(
         ModelConfig(vocab=VocabSpec.from_tokenizer(dataset.tokenizer), d_model=32, nhead=2, seed=5)
     )
-    training_config = TrainingConfig(
-        num_epochs=1, training_pathway="o2p", model_artifacts_dir=str(tmp_path)
-    )
-    metrics_config = MetricsConfig(
-        batch_metrics=False,
-        training_metrics=False,
-        validation_metrics=False,
-        modes=[],
-        filename=None,
-    )
     pipeline = TrainingPipeline(
         model=model,
+        training_config=TrainingConfig(
+            num_epochs=1, training_pathway="o2p", model_artifacts_dir=str(tmp_path)
+        ),
         dataset=dataset,
-        training_config=training_config,
-        metrics_logger=metrics_logger_factory(metrics_config, training_config),
     )
 
     metrics = pipeline.single_step(dataset, slice(0, 8), calculate_metrics=False)
@@ -122,53 +89,37 @@ def test_a_working_pipeline_assembles_from_the_top_level_package_alone(tmp_path)
     assert loss > 0.0
 
 
-def test_control_the_same_pipeline_assembles_from_the_internal_module_paths(tmp_path):
-    """Control for the test above, and the reason its failure means what it claims.
+def test_the_two_phoneme_id_spaces_are_convertible_through_the_public_api():
+    """``docs/architecture.md`` names confusing row space for feature space as the defect
+    that yields silently wrong output rather than an error, and names
+    ``PhonemeTable.features_of`` / ``row_of`` as the remedy. A remedy a consumer cannot
+    import is not one.
 
-    Identical construction, identical step, one difference: the metrics logger comes from
-    ``bridge.infra.metrics.metrics_logger`` instead of from ``bridge``. If this passes
-    while the public-API version fails, the recipe is sound and the missing export is the
-    whole difference. If both fail, the test file is broken and neither result says
-    anything about the export list.
+    Oracle: a round trip. ``row_of`` maps a phoneme to its table row; ``features_of``
+    gives that row's active feature columns, which must be non-empty and inside feature
+    space for a phoneme that carries features.
     """
-    from bridge import (
-        BridgeDataset,
-        DatasetConfig,
-        MetricsConfig,
-        Model,
-        ModelConfig,
-        TrainingConfig,
-        TrainingPipeline,
-        VocabSpec,
-    )
-    from bridge.infra.metrics.metrics_logger import metrics_logger_factory
+    from bridge import load_phoneme_table
 
-    dataset = BridgeDataset(dataset_config=DatasetConfig(dataset_filepath=DATA))
-    model = Model(
-        ModelConfig(vocab=VocabSpec.from_tokenizer(dataset.tokenizer), d_model=32, nhead=2, seed=5)
-    )
-    training_config = TrainingConfig(
-        num_epochs=1, training_pathway="o2p", model_artifacts_dir=str(tmp_path)
-    )
-    metrics_config = MetricsConfig(
-        batch_metrics=False,
-        training_metrics=False,
-        validation_metrics=False,
-        modes=[],
-        filename=None,
-    )
-    pipeline = TrainingPipeline(
-        model=model,
-        dataset=dataset,
-        training_config=training_config,
-        metrics_logger=metrics_logger_factory(metrics_config, training_config),
-    )
+    table = load_phoneme_table()
+    row = table.row_of("AE")
+    assert 0 <= row < table.num_rows
 
-    metrics = pipeline.single_step(dataset, slice(0, 8), calculate_metrics=False)
+    features = table.features_of(row)
+    assert features.numel() > 0, "AE carries phonetic features, so its row cannot be empty"
+    assert int(features.max()) < table.vocab_size
 
-    loss = loss_of(metrics)
-    assert math.isfinite(loss), f"loss is {loss}, so the control step did not really run"
-    assert loss > 0.0
+
+def test_the_pathways_are_enumerable_through_the_public_api():
+    """``Model.generate`` takes a pathway; a consumer needs a supported way to list them.
+
+    Oracle: a differential against the model module's own tuple, which is what
+    ``generate`` validates against.
+    """
+    from bridge.domain.model.model import PATHWAYS as internal
+
+    assert set(bridge.PATHWAYS) == set(internal)
+    assert len(bridge.PATHWAYS) == 5
 
 
 def test_every_listed_export_resolves():
@@ -189,9 +140,8 @@ def test_no_established_export_has_been_dropped():
     """The reverse drift: a name removed from ``__all__`` breaks importers silently here
     and loudly for them.
 
-    Oracle: a pinned baseline of the names already published, captured from the export
-    list at the commit where this test was written. Superset rather than equality, so
-    growing the API is free and shrinking it is not.
+    Oracle: a pinned baseline of the names already published. Superset rather than
+    equality, so growing the API is free and shrinking it is not.
     """
     exported = set(bridge.__all__)
     dropped = sorted(ESTABLISHED_EXPORTS - exported)

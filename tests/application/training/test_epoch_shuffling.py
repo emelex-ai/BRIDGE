@@ -34,14 +34,12 @@ from bridge.application.training.training_pipeline import TrainingPipeline
 from bridge.domain.data import BridgeDataset
 from bridge.domain.datamodels import (
     DatasetConfig,
-    MetricsConfig,
     ModelConfig,
     TrainingConfig,
     VocabSpec,
 )
 from bridge.domain.model import Model
 from bridge.domain.tokenizer import BridgeTokenizer
-from bridge.infra.metrics.metrics_logger import STDOutMetricsLogger
 
 # All 30 are keys of bridge/core/pronunciation_lexicons/en.json (uppercased there).
 ENGLISH_WORDS = [
@@ -152,18 +150,10 @@ def build_pipeline(words_csv, tokenizer, artifacts_dir, num_epochs=EPOCHS, **ove
         model_artifacts_dir=artifacts_dir,
         **overrides,
     )
-    metrics_config = MetricsConfig(
-        batch_metrics=False,
-        training_metrics=False,
-        validation_metrics=False,
-        modes=[],
-        filename=None,
-    )
     return TrainingPipeline(
         model=model,
         dataset=dataset,
         training_config=training_config,
-        metrics_logger=STDOutMetricsLogger(metrics_config),
     )
 
 
