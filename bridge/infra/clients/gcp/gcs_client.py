@@ -31,15 +31,6 @@ class GCSClient:
             # Authenticate via GOOGLE_APPLICATION_CREDENTIALS env var or default
             self.client = storage.Client(project=project)
 
-    def download_file(self, bucket_name: str, blob_name: str, destination_file_name: str) -> None:
-        """
-        Download a blob from a bucket to a local file.
-        """
-        bucket = self.client.bucket(bucket_name)
-        blob = bucket.blob(blob_name)
-        blob.download_to_filename(destination_file_name)
-        print(f"Downloaded gs://{bucket_name}/{blob_name} to {destination_file_name}")
-
     def upload_file(
         self, bucket_name: str, source_file_name: str, destination_blob_name: str
     ) -> None:
@@ -82,17 +73,3 @@ class GCSClient:
         csv_text = self.read_file(bucket_name, blob_name, as_text=True)
         return pd.read_csv(StringIO(csv_text), **read_csv_kwargs)
 
-    def exists(self, bucket_name: str, blob_name: str) -> bool:
-        """
-        Check if a blob exists in the specified GCS bucket.
-
-        Args:
-            bucket_name (str): Name of the GCS bucket.
-            blob_name (str): Name of the blob in the bucket.
-
-        Returns:
-            bool: True if the blob exists, False otherwise.
-        """
-        bucket = self.client.bucket(bucket_name)
-        blob = bucket.blob(blob_name)
-        return blob.exists()

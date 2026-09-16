@@ -380,29 +380,6 @@ class TrainingPipeline:
                 last_update_time = current_time
             yield TrainingEvent(phase="train", epoch=epoch, step=step, metrics=metrics)
 
-    def train_single_epoch(self, epoch: int) -> NumericMetrics:
-        """Run one training epoch and return its mean metrics, `train_` prefixed.
-
-        Kept as the aggregating convenience over :meth:`train_steps`, for callers who want
-        an epoch number rather than a stream.
-        """
-        start = time.time()
-        total_metrics: NumericMetrics = {}
-        for event in self.train_steps(epoch):
-            step_numeric: NumericMetrics = {
-                key: value for key, value in event.metrics.items() if not isinstance(value, str)
-            }
-            if not total_metrics:
-                total_metrics = step_numeric
-            else:
-                for key, value in step_numeric.items():
-                    total_metrics[key] = total_metrics[key] + value
-        for key in total_metrics:
-            total_metrics[key] = total_metrics[key] / len(self.train_slices)
-        total_metrics["time_per_step"] = (time.time() - start) / len(self.train_slices)
-        total_metrics["time_per_epoch"] = (time.time() - start) * len(self.train_slices)
-        return {"train_" + str(key): val for key, val in total_metrics.items()}
-
     def validate_single_epoch(self, epoch: int) -> NumericMetrics:
         self.model.eval()
         start = time.time()

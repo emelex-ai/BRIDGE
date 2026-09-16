@@ -14,14 +14,6 @@ class DatasetConfig(BaseModel):
         ),
     )
 
-    @model_validator(mode="before")
-    def convert_paths(cls, values):
-        """Convert relative paths to absolute paths before validation occurs."""
-        if "dataset_filepath" not in values:
-            raise FileNotFoundError("No dataset file specified")
-
-        return values
-
     @model_validator(mode="after")
     def validate_paths(self):
         if "gs://" not in self.dataset_filepath:
