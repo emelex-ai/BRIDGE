@@ -12,6 +12,13 @@ the recorded fingerprint against `phonreps.csv`, the documented target width, ev
 in the layout, the decision index against the files on disk, and whether the issues listed
 under Known defects are still open.
 
+It covers `README.md` too, as of 2026-09-16: its import list against `bridge.__all__`, its
+worked example against `inspect.signature(TrainingPipeline.__init__)`, its pathway list, its
+id-space bounds, its link targets, and its dependency sentence against `pyproject.toml`. The
+README was outside the net until it had drifted four ways at once and its only worked example
+raised `TypeError`. Each of those four assertions was verified to fail against the defect it
+describes before being trusted.
+
 Drift in any of those is a **failing test naming the file to edit**, not a document nobody
 notices has gone wrong. Each planted defect was verified to fail the suite before the tests
 were trusted.
@@ -41,6 +48,7 @@ general instruction to keep things updated.
   is what was expected
 - the oracle fixture is regenerated, which should approach never
 - the commands for running the suite or the checks change
+- the suite's runtime moves enough to change the "single-digit seconds" claim
 
 ## Write a decision record when
 

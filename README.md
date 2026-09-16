@@ -8,7 +8,9 @@
 A multilingual neural model of printed-word naming. **BRIDGE** maps orthographic and phonological representations of arbitrary length into a unified embedding via cross-attention, then decodes back into either modality. Multilingual lexicons (English, Spanish) and per-word language tagging are supported out of the box, enabling code-switching studies.
 
 > [!NOTE]
-> This repository ships the **core model and tokenizers** as an importable library. It does **not** contain experiment scripts, training configs, or datasets, those live in downstream research repos that depend on `bridge`.
+> This repository ships the **core model and tokenizers** as an importable library. It does **not** contain experiment scripts, training configs, datasets, loggers, or cloud integrations, those live in downstream research repos that depend on `bridge`.
+
+`docs/architecture.md` is the map of the system. Read it before changing anything structural.
 
 ---
 
@@ -23,6 +25,8 @@ uv run python -c "from bridge import Model, BridgeTokenizer; print(BridgeTokeniz
 
 If `uv` is not installed: `curl -LsSf https://astral.sh/uv/install.sh | sh`.
 
+Dependencies are torch, pydantic, pandas, numpy and tqdm. Nothing else is installed.
+
 ---
 
 ## What's in here
@@ -35,40 +39,32 @@ bridge/
 │   ├── tokenizer/                # BridgeTokenizer, PhonemeTokenizer, CharacterTokenizer
 │   ├── data/                     # BridgeDataset
 │   └── model/                    # Encoder, Decoder, Model
-├── application/
-│   ├── shared/                   # Singleton
-│   └── training/                 # TrainingPipeline, ortho_metrics, phon_metrics
-├── infra/                        # Optional integrations: GCS, W&B, metrics logger
-└── utils/                        # device_manager, helpers
-tests/                            # 87 tests covering tokenizers, dataset, model, metrics
+├── application/training/         # TrainingPipeline, ortho_metrics, phon_metrics
+└── utils/                        # device_manager, get_project_root, set_seed
+docs/decisions/                   # numbered, immutable architecture decision records
+tests/                            # unit tests, the golden-master fixture, and bench_phon.py
 ```
 
 ---
 
 ## Public API
 
+`bridge.__all__` is the supported surface. Everything under `bridge.application` and `bridge.domain` is internal layout a reorganisation is free to move, and [`tests/test_public_api.py`](tests/test_public_api.py) asserts that the exported names are enough to assemble and run a pipeline.
+
 ```python
 from bridge import (
-    Model, ModelConfig,
+    Model, ModelConfig, PATHWAYS, Pathway,
     BridgeDataset, DatasetConfig,
-    BridgeTokenizer,
-    TrainingPipeline, TrainingConfig,
+    BridgeTokenizer, CharacterTokenizer, PhonemeTokenizer,
+    TrainingPipeline, TrainingConfig, TrainingEvent, TrainingPhase,
     BridgeEncoding, EncodingComponent, GenerationOutput,
-    MetricsConfig,
+    PhonemeTable, load_phoneme_table,
     VocabSpec,
 )
 ```
 
 > [!NOTE]
 > `Model` and `BridgeTokenizer` are **sibling objects** — neither holds a reference to the other. The model needs vocab sizes and special-token IDs (to size embeddings and to know when to stop generating); these flow through `ModelConfig.vocab` (a `VocabSpec`). Use `VocabSpec.from_tokenizer(tokenizer)` to derive one in a single line.
-
-Optional integrations (not re-exported at top level — import only if you use them):
-
-```python
-from bridge.infra.clients.wandb import WandbWrapper
-from bridge.infra.clients.gcp.gcs_client import GCSClient
-from bridge.infra.metrics import metrics_logger_factory
-```
 
 ---
 
@@ -89,7 +85,26 @@ flowchart LR
     PD --> Yp[phon output]
 ```
 
-Four training pathways are supported on the `Model`: `o2p`, `p2o`, `op2op`, `p2p`. Selected via `TrainingConfig.training_pathway`.
+Five pathways, listed in `bridge.PATHWAYS` and tabulated in [`docs/architecture.md`](docs/architecture.md): `o2p`, `p2o`, `o2o`, `p2p` and `op2op`. Any of them can train (`TrainingConfig.training_pathway`) or generate (`Model.generate(encoding, pathway)`).
+
+---
+
+## Two phoneme id spaces
+
+The single easiest way to get silently wrong output. Both are `torch.long` and only naming separates them.
+
+| space | range | indexes | where it appears |
+|---|---|---|---|
+| **row** | 0–90 | *which phoneme*, a row of the feature table | `EncodingComponent.enc_input_ids`, `Model.embed_phon_tokens` |
+| **feature** | 0–35 | *which phonetic feature*, a column | `GenerationOutput.phon_tokens`, `PhonemeTokenizer.decode`, `VocabSpec.phon_*_id`, loss targets |
+
+```python
+from bridge import load_phoneme_table
+
+table = load_phoneme_table()
+table.row_of("AE")            # phoneme -> row id
+table.features_of(row)        # row id -> its active feature columns
+```
 
 ---
 
@@ -113,10 +128,9 @@ The character tokenizer prepends a language token (`"--"`, `"EN"`, or `"ES"`) be
 
 ---
 
-## Usage example (training pipeline)
+## Usage example
 
 ```python
-import torch
 from bridge import (
     BridgeDataset, DatasetConfig,
     BridgeTokenizer,
@@ -125,27 +139,39 @@ from bridge import (
     VocabSpec,
 )
 
-# Tokenizer and dataset come first
+# Tokenizer and dataset come first. Share one tokenizer across datasets: building a
+# second re-parses the pronunciation lexicons.
 tokenizer = BridgeTokenizer()
-dataset = BridgeDataset(DatasetConfig(dataset_filepath="my_words.pkl"))
+dataset = BridgeDataset(DatasetConfig(dataset_filepath="my_words.pkl"), tokenizer=tokenizer)
 
-# Model is constructed from config alone — vocab info flows through ModelConfig.vocab
-model_config = ModelConfig(..., vocab=VocabSpec.from_tokenizer(tokenizer))
-model = Model(model_config)
+# The model is built from config alone; vocab info flows through ModelConfig.vocab.
+model = Model(ModelConfig(d_model=64, nhead=2, vocab=VocabSpec.from_tokenizer(tokenizer)))
 
-# TrainingPipeline wires them together
-pipeline = TrainingPipeline(model, dataset, TrainingConfig(...), wandb_wrapper=None)
-pipeline.run_train_val_loop()
+# Placement is yours. The pipeline follows the model, it does not move it.
+model.to("cuda")
+
+pipeline = TrainingPipeline(
+    model=model,
+    training_config=TrainingConfig(num_epochs=3, training_pathway="o2p"),
+    dataset=dataset,
+)
+
+# The library owns the step; you own the loop. Nothing is written or logged unless you
+# do it. See docs/decisions/0006.
+for event in pipeline.run_train_val_loop():
+    if event.phase == "epoch":
+        print(event.epoch, event.metrics)
+        pipeline.save_checkpoint(f"epoch_{event.epoch}.pth", event.epoch)
 ```
 
 > [!IMPORTANT]
-> The library does not provide a `Trainer` or YAML-based launcher. Downstream research repos compose these primitives into their own training scripts.
+> The library provides no `Trainer`, no YAML launcher, no metrics logger and no cloud client. Downstream research repos compose these primitives into their own training scripts and decide for themselves what to record and where.
 
 ---
 
 ## Phonological representations
 
-Phonemes are encoded against the feature table at [`bridge/core/phonreps.csv`](bridge/core/phonreps.csv) (31 distinctive features) augmented with 5 special tokens (`[BOS]`, `[EOS]`, `[UNK]`, `[SPC]`, `[PAD]`). Pronunciations are looked up from the bundled lexicons; for unknown words the tokenizer returns `None`.
+Phonemes are encoded against the feature table at [`bridge/core/phonreps.csv`](bridge/core/phonreps.csv) (31 distinctive features) augmented with 5 special tokens (`[BOS]`, `[EOS]`, `[UNK]`, `[SPC]`, `[PAD]`). A phoneme's embedding is the mean of its active feature embeddings, never a free parameter of its own, so phonemes sharing features share embedding mass. Pronunciations are looked up from the bundled lexicons; for unknown words the tokenizer returns `None`.
 
 The feature inventory is based on the phonological vectors from [Traindata](https://github.com/MCooperBorkenhagen/Traindata).
 
@@ -155,13 +181,15 @@ The feature inventory is based on the phonological vectors from [Traindata](http
 
 ```bash
 uv sync --group dev                      # install dev deps (ruff, mypy, pytest)
-uv run pytest                            # tests
+uv run pytest -q                         # tests
 uv run ruff check bridge tests           # lint
 uv run ruff format bridge tests          # format
-uv run mypy                              # type-check (advisory)
+uv run mypy                              # type-check
 ```
 
-CI runs `lint`, `typecheck` (advisory), and `test` jobs on every push and PR. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+CI runs `lint`, `typecheck` and `test` on every push and PR. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+
+[`tests/test_documentation.py`](tests/test_documentation.py) asserts the checkable claims in this file and in `docs/architecture.md` against the running system, so a structural change that outdates either one fails the suite rather than going unnoticed.
 
 > GPU verification: BRIDGE is tested against PyTorch 2.12 + CUDA 13 (Blackwell / sm_120 supported). Run `python -c "import torch; print(torch.cuda.is_available())"` after `uv sync` to confirm.
 

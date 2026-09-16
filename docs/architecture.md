@@ -19,6 +19,12 @@ back out to either, which gives five pathways:
 | `p2p` | phonology | phonology |
 | `op2op` | both, cross-attended | both |
 
+Which modalities a pathway reads and writes is declared once, in `PATHWAY_IO`
+(`bridge/domain/model/model.py`), and every other question, which decoder loop runs, which
+loss terms exist, which tensors a training forward needs, which inputs the boundary
+validates, is a query against it rather than its own list. All five train and all five
+generate. See `docs/decisions/0011`.
+
 The scientific premise is that phonemes sharing phonetic features share embedding mass. A
 phoneme's embedding is the mean of its active feature embeddings, never a free parameter of
 its own. See `docs/decisions/0002-phoneme-row-ids-replace-ragged-feature-lists.md`.
@@ -70,16 +76,22 @@ a checkpoint loads, so a `phonreps.csv` edit that silently relabels every id is 
 bridge/core/phonreps.py               the feature scheme and PhonemeTable
 bridge/core/pronunciation_lexicons/   per-language word to phoneme dictionaries
 bridge/domain/datamodels/             EncodingComponent, BridgeEncoding, VocabSpec,
-                                      ModelConfig, GenerationOutput
+                                      ModelConfig, GenerationOutput, TrainingEvent
 bridge/domain/tokenizer/              CharacterTokenizer, PhonemeTokenizer, BridgeTokenizer
-bridge/domain/model/model.py          encoders, decoders, generation loops
+bridge/domain/model/model.py          the pathway table, encoders, decoders, generation
 bridge/domain/data/bridge_dataset.py  dataset, language resolution, encoding memo
 bridge/application/training/          TrainingPipeline, loss, metrics
-bridge/infra/                         metrics loggers, GCS and wandb clients
+bridge/utils/device_manager.py        the process device, selected by BRIDGE_DEVICE
 tests/fixtures/phon_baseline.pt       golden master, immutable
+tests/fixtures/bench_phon.py          phonological hot-path benchmarks
 tests/test_documentation.py           asserts this document against the live system
 docs/decisions/                       architecture decision records
 ```
+
+The library performs no I/O of its own: no metrics sink, no cloud client, no logger. It
+reads the dataset path it is given and writes the checkpoint path it is given, and
+everything else reaches the caller through the `TrainingEvent` stream. See
+`docs/decisions/0010`.
 
 ## How a batch flows
 
@@ -126,10 +138,11 @@ Storage and Weights and Biases clients under `bridge/infra/`.
 
 Tracked as GitHub issues rather than restated here:
 
-- **#233** `Model.generate` crashes or fails opaquely on three input shapes it should reject
-  at the boundary: a zero-row batch segfaults on CUDA, a half-precision model is rejected by
-  a validator tolerance built for float32, and a phonology-only encoding reaches three
-  pathways that read orthography
+- **#233** A half-precision model is rejected by `GenerationOutput`'s
+  `probabilities must sum to 1` check, whose `atol=1e-5` is a float32 tolerance applied to
+  a float16 sum. The other two shapes this issue reported, a zero-row batch that segfaulted
+  the CUDA decoder and a phonology-only encoding reaching pathways that read orthography,
+  are now rejected at the boundary by the unified validator (`docs/decisions/0011`)
 
 ## Decision index
 
@@ -144,3 +157,6 @@ Tracked as GitHub issues rather than restated here:
 | [0007](decisions/0007-model-device-is-derived-not-stored.md) | `Model.device` is derived from a parameter, so `.to()` is authoritative and the model cannot misreport where it is |
 | [0008](decisions/0008-generation-seeds-the-training-prefix.md) | Orthographic generation is seeded with `[LANG, BOS]`, the prefix training uses, keeping the language token usable |
 | [0009](decisions/0009-a-finished-sequence-emits-padding.md) | A finished sequence emits padding, so generation output ends cleanly; only the accepted sequence is masked |
+| [0010](decisions/0010-the-library-ships-no-io.md) | The library computes and the caller does the I/O; `bridge/infra/` is gone and no cloud SDK is installed |
+| [0011](decisions/0011-one-table-says-what-each-pathway-reads-and-writes.md) | `PATHWAY_IO` is the single definition of what each pathway reads and writes; validation is uniform across pathways |
+| [0012](decisions/0012-the-pipeline-follows-the-model.md) | `TrainingPipeline.device` reads `model.device`; the pipeline never moves the model |

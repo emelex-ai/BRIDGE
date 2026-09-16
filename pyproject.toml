@@ -49,7 +49,6 @@ packages = ["bridge"]
 pythonpath = "."
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-v -s"
 
 [tool.ruff]
 line-length = 100
@@ -62,16 +61,13 @@ select = ["E", "W", "F", "I", "B", "UP"]
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
-# tests use a lot of unused imports / fixture function args / asserts
+# `assert False` is a legitimate way to fail a test explicitly.
 "tests/**/*.py" = ["B011"]
 
 [tool.mypy]
 python_version = "3.12"
 files = ["bridge"]
-# Start permissive; ratchet up over time
 ignore_missing_imports = true
 check_untyped_defs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
-# Don't fail on test code
-exclude = ["tests/"]

@@ -61,9 +61,8 @@ class PhonemeTable:
 
     A phoneme's embedding is the mean of its active features' embeddings, which is linear
     in the embedding weight, so ``row_normalize(multihot) @ W`` yields *every* phoneme's
-    embedding in
-    one small matrix multiply, and embedding a batch becomes a table lookup. See
-    ``specs/221-vectorize-embed-phon-tokens.md``.
+    embedding in one small matrix multiply, and embedding a batch becomes a table lookup.
+    See ``docs/decisions/0002-phoneme-row-ids-replace-ragged-feature-lists.md``.
     """
 
     multihot: torch.Tensor

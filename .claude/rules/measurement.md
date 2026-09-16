@@ -57,6 +57,26 @@ Compare integer ids, boolean masks, generated token sequences and canonicalised 
 feature sets **bitwise**. Only float tensors get a tolerance, normalised by tensor scale
 rather than per element. A mixed pass/fail over the whole structure hides which kind failed.
 
+## Measured on 2026-09-16, during the simplification pass
+
+Four numbers worth not rediscovering, all CPU, torch 2.12.0+cu130, commit `7979d5e`:
+
+| what | reading |
+|---|---|
+| `gc.collect()` with the lexicon loaded | 155 ms median (768k tracked objects) |
+| the same after `gc.freeze()` | 0.0 ms |
+| the old per-ten-step `gc.collect()` | 17% of every epoch, freeing nothing (flat RSS control) |
+| undetached loss tensors in `TrainingEvent` | +581 MB steady state, +527 MB/epoch if kept |
+
+`TrainingPipeline` used to call `model.to(device_manager.device)` in `__init__`, which
+silently moved a model the caller had placed: 169/169 parameters back on CPU after an
+explicit `.to("cuda")`. See `docs/decisions/0012`.
+
+The phonological metric helpers were verified equivalent across the dedup by differential
+against the committed implementation, paired inputs, 6 seeds x 8 metrics, max relative
+deviation 0.000e+00. The differential was validated by planting two defects and confirming
+both were caught.
+
 ## What has not been measured
 
 **Numerical** equivalence work is still CPU only, as of 2026-08-30. CUDA differs in reduction
@@ -102,10 +122,16 @@ uv run ruff check . && uv run ruff format --check .
 The suite runs in single-digit seconds because the pronunciation lexicon parse is memoised
 process-wide. A change that pushes it past about 10 seconds has probably reintroduced
 per-instance parsing, which cost 45 seconds before the memo (measured 2026-08-30).
+Currently ~7 s for 557 tests (measured 2026-09-16); it was 12.9 s before the pipeline
+stopped running `gc.collect()` every ten steps.
+
+`mypy` is clean over `bridge/`. CI enforces it rather than advising, as of 2026-09-16.
 
 ## Probes
 
 Investigation scripts belong in the session scratchpad and are expected to be thrown away.
 Promote one into the repo only when it will be re-run against a future change, and when you
 do, it belongs beside the harness it resembles rather than in a new directory:
-`tests/fixtures/capture_phon_baseline.py` is the existing example.
+`tests/fixtures/capture_phon_baseline.py` and `tests/fixtures/bench_phon.py` are the two
+that earned it. Named `capture_`/`bench_` rather than `test_`, so pytest does not collect
+them.

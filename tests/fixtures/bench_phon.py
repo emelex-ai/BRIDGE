@@ -11,9 +11,13 @@ same script runs unchanged before and after:
 The reference double-loop implementation is carried here permanently so the speedup stays
 measurable after the loop is gone from the model.
 
-    BENCH_DEV=cpu  uv run python benchmarks/bench_phon.py
-    BENCH_DEV=cuda uv run python benchmarks/bench_phon.py
-    BENCH_SIZES=32,256 BENCH_DEV=cpu uv run python benchmarks/bench_phon.py
+    BENCH_DEV=cpu  uv run python tests/fixtures/bench_phon.py
+    BENCH_DEV=cuda uv run python tests/fixtures/bench_phon.py
+    BENCH_SIZES=32,256 BENCH_DEV=cpu uv run python tests/fixtures/bench_phon.py
+
+Named `bench_` rather than `test_`, so pytest collects `capture_phon_baseline.py`'s
+neighbour and not this. It lives here because a promoted probe belongs beside the harness
+it resembles, per `.claude/rules/measurement.md`.
 """
 
 from __future__ import annotations
@@ -25,7 +29,7 @@ from pathlib import Path
 
 import torch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 torch.set_num_threads(1)
 

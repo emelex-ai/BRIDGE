@@ -31,9 +31,7 @@ jobs:
 
   typecheck:
     runs-on: ubuntu-latest
-    # Advisory only: mypy currently surfaces ~83 pre-existing type issues. Failures
-    # do not block PRs. Remove `continue-on-error` once the baseline is clean.
-    continue-on-error: true
+    # Enforced. The baseline was cleaned up; `uv run mypy` reports no issues over bridge/.
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
@@ -63,4 +61,4 @@ jobs:
       - name: Install project + dev dependencies
         run: uv sync --frozen --group dev
       - name: Run tests
-        run: uv run pytest -v
+        run: uv run pytest -q
