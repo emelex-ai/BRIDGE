@@ -325,6 +325,7 @@ class Model(nn.Module):
             tgt_mask=self.generate_triangular_mask(embeds.shape[1]),
             tgt_key_padding_mask=orth_dec_pad_mask,
             memory=memory,
+            tgt_is_causal=True,
         )
         return self.linear_orthography_decoder(output).transpose(1, 2)
 
@@ -341,6 +342,7 @@ class Model(nn.Module):
             tgt_mask=self.generate_triangular_mask(embeds.shape[1]),
             tgt_key_padding_mask=phon_dec_pad_mask,
             memory=memory,
+            tgt_is_causal=True,
         )
         batch_size, seq_len, _ = output.shape
         return (
@@ -606,6 +608,7 @@ class Model(nn.Module):
                 generated_orth_embeddings,
                 memory=prompt_encoding,
                 tgt_mask=step_mask,
+                tgt_is_causal=True,
             )
 
             # Only the last position is sampled, so project only that one: over a run the
@@ -708,6 +711,7 @@ class Model(nn.Module):
                 generated_phon_embeddings,
                 memory=prompt_encoding,
                 tgt_mask=step_mask,
+                tgt_is_causal=True,
             )
 
             batch, seq_len, _ = phon_output.shape
