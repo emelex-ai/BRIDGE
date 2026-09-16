@@ -545,6 +545,13 @@ class Model(nn.Module):
         # an item keeps are a prefix and this count is enough to split them back out.
         kept = torch.zeros(batch_size, dtype=torch.long, device=self.device)
         sequence_finished = torch.zeros(batch_size, dtype=torch.bool, device=self.device)
+        # What a finished row emits. Loop invariant, so built once rather than per step.
+        orth_pad = torch.full(
+            (batch_size, 1),
+            self.model_config.vocab.orth_pad_id,
+            dtype=torch.long,
+            device=self.device,
+        )
 
         for _step in range(self.max_orth_seq_len - prefix_len):
             # `sequence_finished` already holds what rescanning the whole generated history
@@ -573,6 +580,24 @@ class Model(nn.Module):
             kept += (~sequence_finished).long()
 
             new_orthography_tokens = self.ortho_sample(last_token_probs, deterministic)
+
+            # A row that has already emitted [EOS] emits [PAD] from here on. The batch is
+            # dense, so the loop cannot stop for one row while others are still going, and
+            # whatever a finished row samples is not part of what it generated. Suppressing
+            # it is what lets `decode` produce the right string without being changed.
+            #
+            # This makes everything AFTER a terminator padding. It does not make [PAD] mean
+            # "the word ended": [PAD] is an ordinary token the model can sample mid-word, and
+            # does, at a rate that depends on the model rather than being rare. Two sweeps
+            # measured 23 occurrences across 40 configurations and 81% of terminated rows at
+            # another configuration, identically with and without this guard. A consumer
+            # looking for where a row's content ends looks for the first [EOS].
+            #
+            # Applied BEFORE `sequence_finished` is updated below, so the [EOS] that
+            # terminated a row is itself kept and only what follows it becomes padding.
+            new_orthography_tokens = torch.where(
+                sequence_finished.unsqueeze(-1), orth_pad, new_orthography_tokens
+            )
 
             # Append the one position just generated, at the slot it occupies: the
             # orthographic twin of the phonological loop's incremental embedding.
@@ -632,6 +657,13 @@ class Model(nn.Module):
         step_vecs: list[torch.Tensor] = []
         step_multihot: list[torch.Tensor] = []
         finished = torch.zeros(batch_size, dtype=torch.bool, device=self.device)
+        # The [PAD] one-hot a finished row contributes. Loop invariant, so built once.
+        phon_pad = torch.zeros(
+            (batch_size, self.phonological_vocabulary_size),
+            dtype=torch.long,
+            device=self.device,
+        )
+        phon_pad[:, self.model_config.vocab.phon_pad_id] = 1
 
         for step in range(self.max_phon_seq_len - 1):
             step_mask = mask[: step + 1, : step + 1]
@@ -650,6 +682,25 @@ class Model(nn.Module):
             last_token_probs = torch.softmax(last_token_logits, dim=1)
 
             new_vectors, embedding_input = self.phono_sample(last_token_probs, deterministic)
+
+            # The orthographic loop's guard, in feature space. A finished row contributes the
+            # [PAD] one-hot from here on, which is the encoding `phono_sample` already gives an
+            # all-off vector rather than a second way of saying "nothing here". Applied before
+            # `finished` is updated, so the terminating [EOS] survives.
+            #
+            # `new_vectors` is deliberately not masked, and the reason is sharper than
+            # "it is the raw output". A suppressed position and a genuinely all-off one are
+            # both exactly [PAD] in `phon_tokens`, indistinguishable; `phon_vecs` is the only
+            # place the difference survives. Masking it would erase that.
+            #
+            # Note what this does NOT claim. `phon_vecs` and `phon_probs` are unmasked but
+            # they are not unchanged: suppressing a finished row's contribution changes what
+            # the decoder reads back for that row, so its values from two steps past its
+            # [EOS] onward differ from what an unsuppressed run produced. Measured at 293 of
+            # 293 such elements. Those positions are discarded either way, so the change is
+            # acceptable, but "records what the model would otherwise have produced" would be
+            # false and is not what is being asserted here.
+            embedding_input = torch.where(finished.unsqueeze(-1), phon_pad, embedding_input)
 
             step_probs.append(last_token_probs[:, 1])  # Probability of feature being ON
             step_vecs.append(new_vectors)

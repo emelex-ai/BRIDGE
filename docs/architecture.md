@@ -126,9 +126,10 @@ Storage and Weights and Biases clients under `bridge/infra/`.
 
 Tracked as GitHub issues rather than restated here:
 
-- **#231** `generate` returns orthographic tokens past `[EOS]` and `decode` strips `[EOS]`
-  rather than stopping at it, so a batched `generate` then `decode` returns a string longer
-  than the model produced for every sequence that is not the longest
+- **#233** `Model.generate` crashes or fails opaquely on three input shapes it should reject
+  at the boundary: a zero-row batch segfaults on CUDA, a half-precision model is rejected by
+  a validator tolerance built for float32, and a phonology-only encoding reaches three
+  pathways that read orthography
 
 ## Decision index
 
@@ -142,3 +143,4 @@ Tracked as GitHub issues rather than restated here:
 | [0006](decisions/0006-the-caller-owns-the-training-loop.md) | The caller owns the training loop and decides when to checkpoint; the library owns the step |
 | [0007](decisions/0007-model-device-is-derived-not-stored.md) | `Model.device` is derived from a parameter, so `.to()` is authoritative and the model cannot misreport where it is |
 | [0008](decisions/0008-generation-seeds-the-training-prefix.md) | Orthographic generation is seeded with `[LANG, BOS]`, the prefix training uses, keeping the language token usable |
+| [0009](decisions/0009-a-finished-sequence-emits-padding.md) | A finished sequence emits padding, so generation output ends cleanly; only the accepted sequence is masked |
