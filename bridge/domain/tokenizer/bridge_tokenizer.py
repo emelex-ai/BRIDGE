@@ -96,7 +96,6 @@ class BridgeTokenizer:
             or None if encoding fails based on the filter rules
         """
         if modality_filter not in ("both", "orthography", "phonology"):
-            logger.error(f"Invalid modality_filter: {modality_filter}")
             raise ValueError(
                 f"Invalid modality_filter: {modality_filter}. "
                 f"Must be one of ['both', 'orthography', 'phonology']"
@@ -104,34 +103,33 @@ class BridgeTokenizer:
 
         batch_size = len(text) if isinstance(text, list) else 1
 
-        try:
-            # Each modality is either encoded for real or stubbed with a placeholder;
-            # `BridgeEncoding` always carries both components.
-            if modality_filter in ("both", "orthography"):
-                orthographic = self.char_tokenizer.encode(text, language_map=language_map)
-                if orthographic is None:
-                    logger.error(f"Orthographic encoding failed for text: {text}")
-                    return None
-            else:
-                orthographic = self._create_placeholder_orthographic(batch_size)
+        # No blanket `except Exception: return None` here. `None` means one thing, "this
+        # word is not in the pronunciation lexicon", which is an ordinary data condition a
+        # caller must handle. Catching everything made it mean that *and* "the caller
+        # passed a language code that does not exist" *and* "something in here is broken",
+        # and a caller cannot tell those apart from a `None`. A TypeError raised inside
+        # BridgeEncoding surfaced 150 lines away as
+        # `RuntimeError: Failed to encode word(s): long, pencil, ...`, with the real
+        # message logged and discarded. Argument errors and defects propagate; a missing
+        # pronunciation returns None.
+        if modality_filter in ("both", "orthography"):
+            orthographic = self.char_tokenizer.encode(text, language_map=language_map)
+        else:
+            orthographic = self._create_placeholder_orthographic(batch_size)
 
-            if modality_filter in ("both", "phonology"):
-                phonological = self.phoneme_tokenizer.encode(text, language_map=language_map)
-                if phonological is None:
-                    logger.error(
-                        f"Phonological encoding failed: word not found in the pronunciation "
-                        f"lexicon. Text: {text}, modality_filter: {modality_filter}"
-                    )
-                    return None
-            else:
-                phonological = self._create_placeholder_phonological(batch_size)
+        if modality_filter in ("both", "phonology"):
+            phonological = self.phoneme_tokenizer.encode(text, language_map=language_map)
+            if phonological is None:
+                logger.info(
+                    "No pronunciation for %r in the lexicon (modality_filter=%r)",
+                    text,
+                    modality_filter,
+                )
+                return None
+        else:
+            phonological = self._create_placeholder_phonological(batch_size)
 
-            return BridgeEncoding(orthographic=orthographic, phonological=phonological)
-        except Exception:
-            logger.exception(
-                f"Encoding failed for text: {text}, modality_filter: {modality_filter}"
-            )
-            return None
+        return BridgeEncoding(orthographic=orthographic, phonological=phonological)
 
     def _placeholder_pad_masks(self, batch_size: int) -> tuple[torch.Tensor, torch.Tensor]:
         """Encoder/decoder pad masks for a single all-padding placeholder position."""
