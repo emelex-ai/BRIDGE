@@ -394,23 +394,3 @@ class TrainingPipeline:
                 recorded,
                 current,
             )
-
-    def transfer_partial_model_parameters(
-        self, pretrained_model_path: str, module_prefixes: list[str]
-    ) -> None:
-        """Copy the modules named by ``module_prefixes`` out of another checkpoint."""
-        checkpoint = torch.load(pretrained_model_path, weights_only=False)
-        # Transferring a phonological module across a relabelled feature table is the
-        # silent-corruption case the fingerprint exists for: shapes still match, so
-        # load_state_dict succeeds and nothing else would notice.
-        self._warn_on_phoneme_table_drift(checkpoint, pretrained_model_path)
-        pretrained_state = checkpoint["model_state_dict"]
-        filtered_state = {
-            key: value
-            for key, value in pretrained_state.items()
-            if any(key.startswith(prefix) for prefix in module_prefixes)
-        }
-
-        model_dict = self.model.state_dict()
-        model_dict.update(filtered_state)
-        self.model.load_state_dict(model_dict)

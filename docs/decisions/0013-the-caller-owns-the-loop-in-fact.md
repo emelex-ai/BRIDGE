@@ -47,6 +47,14 @@ Nothing outside the training half imports into it; the dependency runs one way.
 | `train_steps(dataset, batch_slices, epoch, calculate_metrics)` | one step per slice, one `TrainingEvent` each. Takes the partition rather than owning it |
 | `save_checkpoint`, `load_model`, `_warn_on_phoneme_table_drift` | what belongs in a bundle, and the fingerprint check, are privileged knowledge |
 
+`transfer_partial_model_parameters` went too, in the same pass. It had no caller of any
+kind: the one test that named it read the method's source with `inspect.getsource` and
+asserted a substring appeared in it. Filtering a `state_dict` by module prefix and calling
+`load_state_dict` is six lines of public torch API, and the only privileged part, the
+phoneme-table drift check, is reachable through `load_model`. That check is now pinned by
+driving a real drifted checkpoint through `load_model` and asserting the warning, which
+was verified to fail when the call is removed.
+
 Removed: `run_train_val_loop`, `_evaluate`, `validate_single_epoch`, `test_single_epoch`,
 `_accumulate`, `_summarize`, `_postfix` and every `tqdm` bar, `create_data_slices`,
 `_shuffle_training_partition`, and the test-dataset construction in `__init__`.
