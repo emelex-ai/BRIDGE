@@ -136,7 +136,7 @@ where a run's weights land is the caller's decision. See
 ## Dependencies
 
 PyTorch for the model, pydantic v2 for configs and validation, pandas for the feature CSV,
-numpy and tqdm. `uv` for environment and task running, pytest, mypy and ruff for checks.
+and numpy. `uv` for environment and task running, pytest, mypy and ruff for checks.
 Nothing else is installed: the library performs no I/O of its own, so it ships no cloud or
 experiment-tracking client. See `docs/decisions/0010`.
 

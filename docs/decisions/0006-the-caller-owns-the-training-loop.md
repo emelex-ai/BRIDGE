@@ -1,6 +1,10 @@
 # 0006. The caller owns the training loop; the library owns the step
 
-Status: Accepted
+Status: Accepted, superseded in part by [0013](0013-the-caller-owns-the-loop-in-fact.md)
+
+> The seam this record draws still holds. What it got wrong was shipping both
+> sides of it: `run_train_val_loop`, `validate_single_epoch`, the data split and
+> the per-epoch shuffle described below no longer exist. See 0013.
 Date: 2026-08-30
 
 ## Context

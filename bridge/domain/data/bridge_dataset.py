@@ -316,16 +316,24 @@ class BridgeDataset:
         """
         return self._get_encoding_unified(idx, language_map=language_map, strict_conflicts=False)
 
-    def shuffle(self, cutoff: int) -> None:
-        """
-        Shuffle the dataset up to ``cutoff`` (exclusive). Shuffling is performed
-        on indices so the parallel ``words`` / ``languages`` lists stay aligned.
+    def shuffle(self, cutoff: int, seed: int | None = None) -> None:
+        """Shuffle the dataset up to ``cutoff`` (exclusive), leaving the tail in place.
+
+        Shuffling is performed on indices so the parallel ``words`` / ``languages`` lists
+        stay aligned, and the tail stays put so a validation partition remains comparable
+        across epochs.
+
+        ``seed`` makes the order reproducible. Without it this draws from the global
+        ``random`` module, which is how data-order reproducibility used to depend on
+        ``ModelConfig.seed`` by accident: ``Model.__init__`` calls ``set_seed``, which
+        calls ``random.seed``, so constructing a model silently determined the shuffle.
+        A seed here uses its own ``random.Random`` and touches no global state.
         """
         if cutoff > len(self.words):
             raise ValueError(f"Cutoff {cutoff} exceeds dataset size {len(self.words)}")
 
         indices = list(range(cutoff))
-        random.shuffle(indices)
+        (random.Random(seed) if seed is not None else random).shuffle(indices)
 
         self.words = [self.words[i] for i in indices] + self.words[cutoff:]
         self.languages = [self.languages[i] for i in indices] + self.languages[cutoff:]

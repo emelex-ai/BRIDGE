@@ -71,7 +71,6 @@ def build_pipeline(dataset, artifacts_dir, checkpoint_path=None, num_epochs=2):
     )
     return TrainingPipeline(
         model=model,
-        dataset=dataset,
         training_config=training_config,
     )
 

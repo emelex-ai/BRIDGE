@@ -168,7 +168,6 @@ def test_save_checkpoint_creates_the_artifacts_directory_on_first_write(tmp_path
     training_config = TrainingConfig(training_pathway="p2o", model_artifacts_dir=str(artifacts))
     pipeline = TrainingPipeline(
         model=model,
-        dataset=words_dataset,
         training_config=training_config,
     )
 

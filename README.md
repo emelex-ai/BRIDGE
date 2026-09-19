@@ -153,19 +153,23 @@ model.to("cuda")
 pipeline = TrainingPipeline(
     model=model,
     training_config=TrainingConfig(training_pathway="o2p"),
-    dataset=dataset,
 )
 
 # The library owns the step; you own the loop. Which slices, how many epochs, when to
 # shuffle, what to log and when to checkpoint are all yours. See docs/decisions/0013.
 cutpoint = int(len(dataset) * 0.8)
-slices = [slice(i, min(i + 32, cutpoint)) for i in range(0, cutpoint, 32)]
+train_slices = [slice(i, min(i + 32, cutpoint)) for i in range(0, cutpoint, 32)]
+val_slices = [slice(i, min(i + 32, len(dataset))) for i in range(cutpoint, len(dataset), 32)]
 
 for epoch in range(pipeline.start_epoch, 3):
-    dataset.shuffle(cutpoint)
-    for event in pipeline.train_steps(dataset, slices, epoch, calculate_metrics=True):
+    dataset.shuffle(cutpoint, seed=epoch)
+    for event in pipeline.train_steps(dataset, train_slices, epoch):
         print(event.epoch, event.step, float(event.metrics["loss"]))
-    pipeline.save_checkpoint(f"epoch_{epoch}.pth", epoch)
+
+    # `evaluate` is the no-grad counterpart of `single_step`. Scoring is opt-in on the
+    # training path because the metrics cost ~7 ms and ~12 extra device syncs per step.
+    scores = [pipeline.evaluate(dataset, s) for s in val_slices]
+    pipeline.save_checkpoint(f"epoch_{epoch}.pth", epoch, dataset=dataset)
 ```
 
 > [!IMPORTANT]

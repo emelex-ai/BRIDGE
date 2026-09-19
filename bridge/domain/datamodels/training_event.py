@@ -1,11 +1,12 @@
 """What a training run emits, one record at a time.
 
-`TrainingPipeline.run_train_val_loop` yields these. A caller reads the stream and decides
-what to do with each: log it, checkpoint on it, stop early on it. The pipeline no longer
-decides any of that, which is why the record has to say enough for the caller to tell one
-kind of moment from another.
+The shared vocabulary for a run. `TrainingPipeline.train_steps` emits the `train` ones; a
+caller's own loop emits the rest, since the library runs no loop of its own. That is the
+point of keeping all four phases here rather than only the one the library produces: a
+downstream logger can consume any BRIDGE run without inventing its own record type.
 
-See docs/decisions/0006-the-caller-owns-the-training-loop.md.
+See docs/decisions/0013-the-caller-owns-the-loop-in-fact.md, which supersedes the half of
+0006 that shipped the loop alongside the step.
 """
 
 from dataclasses import dataclass, field
@@ -32,16 +33,17 @@ class TrainingEvent:
     Attributes:
         phase: Which kind of moment this is.
 
-            ``train``       one optimizer step. ``step`` is its index within the epoch.
-            ``validation``  the validation partition, once per epoch. ``step`` is None.
-            ``test``        the held-out test set, once per epoch, when one is configured.
-            ``epoch``       the epoch summary, always last for its epoch. Its metrics are
-                            the aggregate the loop used to yield before it yielded per
-                            step, so a caller that only wants epoch rows filters on this.
+            ``train``       one optimizer step, emitted by `train_steps`. ``step`` is its
+                            index within the epoch.
+            ``validation``  a validation pass. Emitted by the caller's loop.
+            ``test``        a held-out test pass. Emitted by the caller's loop.
+            ``epoch``       an epoch summary. Emitted by the caller's loop, which is also
+                            what decides what an epoch aggregate means.
         epoch: Zero-based epoch index, counting from `start_epoch` on a resumed run.
         step: Zero-based step index within the epoch, for ``train`` only.
-        metrics: The metrics for this moment. Keys are prefixed by phase on the aggregate
-            rows (``train_``, ``valid_``, ``test_``) and unprefixed on ``train`` steps.
+        metrics: The metrics for this moment. `train_steps` fills these from
+            `single_step`, unprefixed. A caller aggregating across steps chooses its own
+            key convention for the rows it emits.
     """
 
     phase: TrainingPhase

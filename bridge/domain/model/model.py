@@ -824,6 +824,12 @@ class Model(nn.Module):
             phon_enc_pad_mask,
         )
 
+        # Restored on the way out. Leaving the model in `eval` is a side effect on
+        # something else's state: a `generate()` call from inside a training loop set it
+        # and never put it back, and every optimizer step afterwards moved 0 of 169
+        # parameters while the loss went on falling, because each step scores a different
+        # batch. Nothing raised and nothing logged.
+        was_training = self.training
         self.eval()
 
         # Validation above guarantees the pathway's own modality is present.
@@ -910,6 +916,7 @@ class Model(nn.Module):
                 output["orth_probs"] = orth_probs
                 output["orth_tokens"] = orth_tokens
 
+            self.train(was_training)
             return output
 
     def generate(

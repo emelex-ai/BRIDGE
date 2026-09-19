@@ -30,9 +30,11 @@ seconds *times* the step count. The shared progress bar, held on the instance, c
 at interpreter teardown when two public iterations interleaved. `_shuffle_training_partition`
 reseeded process-global RNG from inside a library call.
 
-Measured before deciding: a workflow that tokenizes, builds a model, runs all five pathways
-forward, generates on all five and decodes executes **zero** lines of `training_pipeline.py`.
-Nothing outside the training half imports into it; the dependency runs one way.
+Measured before deciding, by `sys.settrace` over two workloads in one process
+(`scratchpad/reach.py`): a workflow that tokenizes, builds a model, runs all five pathways
+forward, generates on all five and decodes executes **zero** lines of `training_pipeline.py`,
+against 135 for the training workload. Nothing outside the training half imports into it;
+the dependency runs one way, confirmed by an AST walk of every import in `bridge/`.
 
 ## Decision
 
@@ -73,8 +75,9 @@ what lets a downstream logger consume any BRIDGE run without inventing its own r
 
 `tqdm` leaves the dependency list. Install is torch, pydantic, pandas and numpy.
 
-`TrainingPipeline` goes from 606 lines to 416, and the four-copy aggregate, the shared bar
-and the global reseed go with the loop rather than needing individual fixes.
+`TrainingPipeline` goes from 610 lines to 396 (`wc -l`, measured at `7f8adb4` and at the
+commit that landed this), and the four-copy aggregate, the shared bar and the global
+reseed go with the loop rather than needing individual fixes.
 
 A caller now writes the loop, which is the point but is also more code than before:
 

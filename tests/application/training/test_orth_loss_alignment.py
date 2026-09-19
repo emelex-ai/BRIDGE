@@ -95,7 +95,6 @@ def make_pipeline(dataset, artifacts_dir):
     def build(pathway: str) -> TrainingPipeline:
         return TrainingPipeline(
             model=Model(ModelConfig(vocab=vocab, d_model=32, nhead=2, seed=5)),
-            dataset=dataset,
             training_config=TrainingConfig(
                 training_pathway=pathway,
                 model_artifacts_dir=artifacts_dir,
@@ -249,10 +248,12 @@ def test_p2o_loss_descends_over_twelve_steps(make_pipeline, dataset):
     pipeline = make_pipeline("p2o")
     batch_slice = slice(0, 8)
 
-    pipeline.model.eval()
-    frozen = [step_loss(pipeline, dataset, batch_slice) for _ in range(3)]
+    frozen = [
+        float(pipeline.evaluate(dataset, batch_slice, calculate_metrics=False)["loss"])
+        for _ in range(3)
+    ]
     assert frozen[0] == frozen[1] == frozen[2], (
-        f"no optimizer step is taken in eval mode, so the loss must not move: {frozen}"
+        f"`evaluate` takes no optimizer step, so the loss must not move: {frozen}"
     )
 
     pipeline.model.train()

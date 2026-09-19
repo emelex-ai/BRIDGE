@@ -96,7 +96,6 @@ def make_pipeline():
                 ModelConfig(vocab=vocab, **{"d_model": 16, "nhead": 2, "seed": 5, **model_kwargs})
             ),
             training_config=TrainingConfig(**{"training_pathway": "o2p", **overrides}),
-            dataset=dataset,
         )
 
     return build

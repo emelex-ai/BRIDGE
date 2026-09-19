@@ -43,7 +43,6 @@ def make_pipeline(dataset, artifacts_dir, **overrides):
     vocab = VocabSpec.from_tokenizer(dataset.tokenizer)
     return TrainingPipeline(
         model=Model(ModelConfig(vocab=vocab, d_model=16, nhead=2, seed=5)),
-        dataset=dataset,
         training_config=TrainingConfig(
             training_pathway="o2p",
             model_artifacts_dir=str(artifacts_dir),
@@ -124,39 +123,68 @@ def test_the_bundle_round_trips(dataset, tmp_path):
         assert torch.equal(saved, before[key]), f"{key} did not survive the round trip"
     assert loaded["model_config"].d_model == 16
     assert "optimizer_state_dict" in loaded
-    assert loaded["dataset_config"].dataset_filepath == dataset.dataset_config.dataset_filepath
+    # Recorded only when the caller names the dataset. The pipeline no longer holds one,
+    # so it cannot stamp a bundle with data that did not train the weights.
+    assert "dataset_config" not in loaded
+
+    with_data = pipeline.save_checkpoint(tmp_path / "with_data.pth", epoch=7, dataset=dataset)
+    reloaded = torch.load(with_data, weights_only=False)
+    assert reloaded["dataset_config"].dataset_filepath == dataset.dataset_config.dataset_filepath
 
 
 def test_nothing_writes_a_checkpoint_except_save_checkpoint(words_dataset, make_pipeline, tmp_path):
     """The library owns no save policy, which is now a structural fact rather than a
     property of one loop: there is no loop left to check.
 
-    Oracle: a search with a stated space, parsed rather than grepped. Every `torch.save`
-    *call* in bridge/ must sit inside `save_checkpoint`; a substring search would also
-    match the docstring two lines above the call explaining why nothing uploads. Then
-    driving real steps must leave the artifacts directory empty.
+    Oracle: a search with a stated space, parsed rather than grepped, and the space is
+    the whole module rather than the bodies of plain functions. The first version of this
+    walked only `ast.FunctionDef` for a literal `torch.save` attribute, so a call at module
+    scope, a call inside an `async def`, and `from torch import save` all passed it while
+    claiming to have searched for "every torch.save call". Validated by planting each of
+    those three spellings plus the ordinary one and confirming all four are caught.
     """
+    import ast
+
     from tests.conftest import batch_slices
 
-    callers = []
-    for path in pathlib.Path("bridge").rglob("*.py"):
-        tree = ast.parse(path.read_text())
-        for fn in ast.walk(tree):
-            if not isinstance(fn, ast.FunctionDef):
+    def saving_functions(tree: ast.AST) -> list[str]:
+        """Names of the enclosing defs, or '<module>', for every call that saves a tensor."""
+        aliased = {
+            alias.asname or alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module == "torch"
+            for alias in node.names
+            if alias.name == "save"
+        }
+        enclosing: dict[ast.AST, str] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                for child in ast.walk(node):
+                    enclosing.setdefault(child, node.name)
+        found = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
                 continue
-            for node in ast.walk(fn):
-                if (
-                    isinstance(node, ast.Call)
-                    and isinstance(node.func, ast.Attribute)
-                    and node.func.attr == "save"
-                    and isinstance(node.func.value, ast.Name)
-                    and node.func.value.id == "torch"
-                ):
-                    callers.append(f"{path}:{fn.name}")
+            func = node.func
+            saves = (
+                isinstance(func, ast.Attribute)
+                and func.attr == "save"
+                and isinstance(func.value, ast.Name)
+                and func.value.id == "torch"
+            ) or (isinstance(func, ast.Name) and func.id in aliased)
+            if saves:
+                found.append(enclosing.get(node, "<module>"))
+        return found
+
+    callers = [
+        f"{path}:{name}"
+        for path in sorted(pathlib.Path("bridge").rglob("*.py"))
+        for name in saving_functions(ast.parse(path.read_text()))
+    ]
     assert callers == ["bridge/application/training/training_pipeline.py:save_checkpoint"], callers
 
     pipeline = make_pipeline(words_dataset, model_artifacts_dir=str(tmp_path))
-    list(pipeline.train_steps(words_dataset, batch_slices(words_dataset)[:2]))
+    list(pipeline.train_steps(words_dataset, batch_slices(words_dataset)[:2], epoch=0))
 
     assert list(tmp_path.rglob("*.pth")) == [], "a step wrote a checkpoint nobody asked for"
 

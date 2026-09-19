@@ -26,15 +26,9 @@ class TrainingPipeline:
     caller's decision. See ``docs/decisions/0006``.
     """
 
-    def __init__(
-        self,
-        model: Model,
-        training_config: TrainingConfig,
-        dataset: BridgeDataset,
-    ):
+    def __init__(self, model: Model, training_config: TrainingConfig):
         self.logger = logging.getLogger(__name__)
         self.training_config = training_config
-        self.dataset = dataset
         self.model = model
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(),
@@ -182,109 +176,143 @@ class TrainingPipeline:
             )
         return metrics
 
+    def _resolve(self, dataset: BridgeDataset, batch_slice: slice) -> slice:
+        """Check a caller-supplied slice against the dataset before anything indexes it.
+
+        The library used to build every slice itself and could assume they were sound.
+        The caller supplies the partition now (decision 0013), so the assumptions have to
+        become checks. Each of these was reachable and silent or opaque:
+
+        * a ``step`` was dropped on the floor. ``_create_sub_slices`` rebuilt the slice
+          from ``.start`` and ``.stop`` only, so ``slice(0, 16, 2)`` trained on 16 rows
+          while the event's ``word`` field named the 8 the caller asked for.
+        * a ``stop`` past the end either trained a short batch in silence or raised
+          ``max() iterable argument is empty`` from inside the tokenizer, naming neither
+          the slice nor the dataset.
+        * an empty slice reached the model and failed somewhere below here.
+        """
+        start, stop, step = batch_slice.indices(len(dataset))
+        if step != 1:
+            raise ValueError(
+                f"batch_slice {batch_slice} has step {step}; a step is silently dropped when "
+                f"the batch is indexed, so the rows trained would not be the rows named. "
+                f"Pass an explicit list of contiguous slices instead."
+            )
+        if batch_slice.stop is not None and batch_slice.stop > len(dataset):
+            raise ValueError(
+                f"batch_slice {batch_slice} ends past the dataset, which has {len(dataset)} words."
+            )
+        if start >= stop:
+            raise ValueError(f"batch_slice {batch_slice} is empty; there is nothing to step over.")
+        return slice(start, stop)
+
     def single_step(
         self,
         dataset: BridgeDataset,
         batch_slice: slice,
         calculate_metrics: bool = False,
     ) -> MetricsDict:
-        """Run one optimizer step over one slice, in ``num_chunks`` accumulated sub-batches.
+        """Run one optimizer step over one slice.
 
-        One path, not two. ``num_chunks=1`` is a single sub-slice covering the whole batch,
-        which is exactly what the separate fast path did; keeping both meant 62 lines of
-        loop-carried bookkeeping shadowing 41 lines that did the same work.
-
-        Reported losses are the sum over sub-batches, unscaled. Only the gradient is divided
-        by ``num_chunks``, so accumulating changes what a step costs in memory rather than
-        what it optimizes.
+        Always steps, and puts the model in train mode to do it. It used to gate every
+        part of itself on ``self.model.training``, which meant a model left in ``eval``
+        turned the step into a silent no-op: one ``model.generate(...)`` call from inside
+        a caller's loop set ``eval`` and never restored it, and the remaining steps moved
+        0 of 169 parameters while the reported loss went on falling, because each step
+        scores a different batch. Inferring intent from a mutable flag was the mistake.
+        :meth:`evaluate` is the no-grad counterpart, and it says so in its name.
         """
-        num_chunks = self.training_config.num_chunks or 1
-        sub_slices = self._create_sub_slices(batch_slice, num_chunks=num_chunks)
-        if not sub_slices:
-            raise ValueError(f"batch_slice {batch_slice} is empty; there is nothing to step over.")
+        batch_slice = self._resolve(dataset, batch_slice)
+        self.model.train()
+        self.optimizer.zero_grad()
 
-        if self.model.training:
-            self.optimizer.zero_grad()
+        # Placed at the point of use, not at construction. The dataset builds its encodings
+        # on the process device and the model goes wherever the caller put it, so something
+        # has to reconcile the two; doing it here rather than by moving the model in
+        # `__init__` keeps the caller's placement authoritative (decision 0012) and still
+        # holds when the model moves mid-run. `BridgeEncoding.to` returns self when the
+        # device already matches.
+        batch = dataset[batch_slice].to(self.device)
+        orthography, phonology = batch.orthographic, batch.phonological
+        logits = self.forward(orthography, phonology)
+        losses = self.compute_loss(logits, orthography, phonology)
 
-        totals: dict[str, torch.Tensor] = {}
-        for sub_slice in sub_slices:
-            # Placed at the point of use, not at construction. The dataset builds its
-            # encodings on the process device and the model goes wherever the caller put
-            # it, so something has to reconcile the two; doing it here rather than by
-            # moving the model in `__init__` keeps the caller's placement authoritative
-            # (decision 0012) and still holds when the model moves mid-run.
-            # `BridgeEncoding.to` returns self when the device already matches.
-            batch = dataset[sub_slice].to(self.device)
-            orthography, phonology = batch.orthographic, batch.phonological
-            logits = self.forward(orthography, phonology)
-            losses = self.compute_loss(logits, orthography, phonology)
+        losses["loss"].backward()
+        self.optimizer.step()
+        self.optimizer.zero_grad()
 
-            if self.model.training:
-                (losses["loss"] / num_chunks).backward()
+        return self._report(
+            losses, logits, orthography, phonology, dataset, batch_slice, calculate_metrics
+        )
 
-            for key, value in losses.items():
-                totals[key] = totals[key] + value if key in totals else value
+    @torch.no_grad()
+    def evaluate(
+        self,
+        dataset: BridgeDataset,
+        batch_slice: slice,
+        calculate_metrics: bool = True,
+    ) -> MetricsDict:
+        """Score one slice without training on it.
 
-        if self.model.training:
-            self.optimizer.step()
-            self.optimizer.zero_grad()
+        The counterpart to :meth:`single_step`, and a separate method rather than a flag
+        on it. The two differ in whether an optimizer step happens, which is exactly the
+        thing that must not be inferred from mutable state a `generate()` call can change.
+        """
+        self.model.eval()
+        batch = dataset[self._resolve(dataset, batch_slice)].to(self.device)
+        orthography, phonology = batch.orthographic, batch.phonological
+        logits = self.forward(orthography, phonology)
+        losses = self.compute_loss(logits, orthography, phonology)
+        return self._report(
+            losses, logits, orthography, phonology, dataset, batch_slice, calculate_metrics
+        )
 
-        # Detached before they leave this method. These are the tensors `backward()` just
-        # ran on, so handing them out live means every `TrainingEvent` a caller keeps pins
-        # an autograd graph: measured at +581 MB of steady-state RSS inside the loop, and
-        # +527 MB per epoch, unbounded, for a caller who keeps the stream to plot a loss
-        # curve. Values are identical to 8 decimals either way. `.detach()` rather than
-        # `.item()`, which would add a device sync per metric per step on CUDA.
-        metrics: MetricsDict = {key: value.detach() for key, value in totals.items()}
+    def _report(
+        self, losses, logits, orthography, phonology, dataset, batch_slice, calculate_metrics
+    ) -> MetricsDict:
+        """Package one batch's losses and optional metrics for the caller.
 
-        # Metrics come from the last sub-batch. With one chunk that is the whole batch.
+        Losses are detached before they leave. These are the tensors ``backward()`` just
+        ran on, so handing them out live means every ``TrainingEvent`` a caller keeps pins
+        an autograd graph: measured at +581 MB of steady-state RSS inside the loop, and
+        +527 MB per epoch, unbounded, for a caller retaining the stream to plot a curve.
+        ``.detach()`` rather than ``.item()``, which costs a device sync per metric per
+        step on CUDA.
+        """
+        metrics: MetricsDict = {key: value.detach() for key, value in losses.items()}
         if calculate_metrics:
             metrics.update(self.compute_metrics(logits, orthography, phonology))
-
         metrics["word"] = json.dumps(dataset.words[batch_slice])
         return metrics
-
-    @staticmethod
-    def _create_sub_slices(batch_slice: slice, num_chunks: int) -> list[slice]:
-        """Split a slice into smaller slices."""
-        start, stop = batch_slice.start, batch_slice.stop
-        size = stop - start
-        chunk_size = max(1, size // num_chunks)
-
-        return [
-            slice(start + i, min(start + i + chunk_size, stop)) for i in range(0, size, chunk_size)
-        ]
 
     def train_steps(
         self,
         dataset: BridgeDataset,
         batch_slices: list[slice],
-        epoch: int = 0,
+        epoch: int,
         calculate_metrics: bool = False,
     ) -> Iterator[TrainingEvent]:
         """Take one optimizer step per slice, yielding a record after each.
 
-        The library owns the step; the caller owns the loop. ``docs/decisions/0006``
-        drew that seam and then shipped both halves anyway, so the library still decided
-        the train/validation split, the batch size, the per-epoch shuffle, the progress
-        bar, the epoch aggregate and the timings. All of that is experiment policy, and
-        it is the caller's now. See ``docs/decisions/0013``.
+        ``epoch`` is required rather than defaulted. It is the caller's only handle on
+        which epoch a step belongs to, and a forgotten default of 0 would tag every event
+        in a multi-epoch run identically, which ``save_checkpoint(path, event.epoch)``
+        would then stamp into every bundle.
 
-        ``batch_slices`` is whatever partition the caller wants; nothing here assumes the
-        slices are contiguous, ordered, disjoint, or drawn from a training split. A caller
-        wanting validation runs the same slices under ``torch.no_grad()`` with the model
-        in ``eval()``, which is what the deleted ``validate_single_epoch`` did.
+        ``batch_slices`` is whatever contiguous partition the caller wants; nothing here
+        assumes the slices are ordered, disjoint, or drawn from a training split. For a
+        validation pass use :meth:`evaluate`, which does the same forward without the
+        optimizer step:
 
-            model.eval()
-            with torch.no_grad():
-                rows = [pipeline.single_step(ds, s, True) for s in val_slices]
+            rows = [pipeline.evaluate(dataset, s) for s in val_slices]
         """
-        self.model.train()
         for step, batch_slice in enumerate(batch_slices):
             metrics = self.single_step(dataset, batch_slice, calculate_metrics)
             yield TrainingEvent(phase="train", epoch=epoch, step=step, metrics=metrics)
 
-    def save_checkpoint(self, path: str | Path, epoch: int) -> Path:
+    def save_checkpoint(
+        self, path: str | Path, epoch: int, dataset: BridgeDataset | None = None
+    ) -> Path:
         """Write the full checkpoint bundle to ``path``, and return where it went.
 
         No policy. The caller chooses when to save and what to call the file; the pipeline
@@ -304,21 +332,21 @@ class TrainingPipeline:
         `epoch` is recorded in the bundle and is what `load_model` resumes from, so it must
         be the epoch these weights finished, not the one about to start.
         """
+        bundle = {
+            "model_config": self.model.model_config,
+            "model_state_dict": self.model.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "epoch": epoch,
+        }
+        if dataset is not None:
+            bundle["dataset_config"] = dataset.dataset_config
+
         destination = Path(path)
         if not destination.is_absolute():
             destination = Path(self.training_config.model_artifacts_dir) / destination
         destination.parent.mkdir(parents=True, exist_ok=True)
 
-        torch.save(
-            {
-                "model_config": self.model.model_config,
-                "dataset_config": self.dataset.dataset_config,
-                "model_state_dict": self.model.state_dict(),
-                "optimizer_state_dict": self.optimizer.state_dict(),
-                "epoch": epoch,
-            },
-            destination,
-        )
+        torch.save(bundle, destination)
         return destination
 
     def load_model(self, model_path: str) -> None:

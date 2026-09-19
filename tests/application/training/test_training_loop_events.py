@@ -28,7 +28,7 @@ def slices(words_dataset):
 
 def test_one_event_per_slice_in_order(pipeline, words_dataset, slices):
     """The arithmetic of the stream, counted against the slices handed in."""
-    events = list(pipeline.train_steps(words_dataset, slices))
+    events = list(pipeline.train_steps(words_dataset, slices, epoch=0))
 
     assert len(events) == SLICES
     assert [e.step for e in events] == list(range(SLICES))
@@ -46,7 +46,7 @@ def test_the_epoch_index_is_the_callers_to_set(pipeline, words_dataset, slices):
 
 def test_events_carry_a_finite_loss_and_the_words_they_trained_on(pipeline, words_dataset, slices):
     """A step event has to say enough to act on, or the caller cannot own the loop."""
-    for event in pipeline.train_steps(words_dataset, slices):
+    for event in pipeline.train_steps(words_dataset, slices, epoch=0):
         assert math.isfinite(float(event.metrics["loss"]))
         assert isinstance(event.metrics["word"], str)
         assert event.metrics["word"].startswith("[")
@@ -58,15 +58,17 @@ def test_the_reported_loss_carries_no_autograd_graph(pipeline, words_dataset, sl
     Oracle: the invariant that a detached tensor has no ``grad_fn``. Handing these out
     live measured +527 MB per epoch for a caller retaining events to plot a curve.
     """
-    for event in pipeline.train_steps(words_dataset, slices):
+    for event in pipeline.train_steps(words_dataset, slices, epoch=0):
         loss = event.metrics["loss"]
         assert loss.grad_fn is None and not loss.requires_grad
 
 
 def test_metrics_are_off_unless_asked_for(pipeline, words_dataset, slices):
     """Scoring costs ~7 ms a step, so it is opt-in per call rather than always on."""
-    plain = next(iter(pipeline.train_steps(words_dataset, slices)))
-    scored = next(iter(pipeline.train_steps(words_dataset, slices, calculate_metrics=True)))
+    plain = next(iter(pipeline.train_steps(words_dataset, slices, epoch=0)))
+    scored = next(
+        iter(pipeline.train_steps(words_dataset, slices, epoch=0, calculate_metrics=True))
+    )
 
     assert not any("accuracy" in key for key in plain.metrics)
     assert any("accuracy" in key for key in scored.metrics)
@@ -81,7 +83,7 @@ def test_abandoning_the_generator_does_no_further_work(pipeline, words_dataset, 
     """
     import torch
 
-    stream = pipeline.train_steps(words_dataset, slices)
+    stream = pipeline.train_steps(words_dataset, slices, epoch=0)
     next(stream)
     after_one = pipeline.model.global_embedding.detach().clone()
     stream.close()

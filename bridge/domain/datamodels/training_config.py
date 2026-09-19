@@ -17,14 +17,6 @@ class TrainingConfig(BaseModel):
     model_artifacts_dir: str = Field(default="model_artifacts")
     weight_decay: float = Field(default=0.0)
     checkpoint_path: str | None = Field(default=None)
-    num_chunks: int | None = Field(
-        default=1,
-        description=(
-            "Split each batch into this many sub-batches, accumulating gradients across "
-            "them. A memory property of the step, not loop policy: it changes what one "
-            "step costs, not what it optimizes."
-        ),
-    )
 
     @model_validator(mode="before")
     def convert_paths(cls, values):
