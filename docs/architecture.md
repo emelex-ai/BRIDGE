@@ -119,11 +119,15 @@ lists because sequences finish at different lengths.
 
 ## Who drives training
 
-The library owns the step; the caller owns the loop. `TrainingPipeline.single_step` runs one
-optimizer step over one slice, `train_steps(epoch)` yields after each of them, and
-`run_train_val_loop` is a thin wrapper that adds shuffling, validation and an epoch summary.
-It emits a `TrainingEvent` per step and per boundary, tagged `train`, `validation`, `test` or
-`epoch`, and writes no checkpoints of its own.
+The library owns the step; the caller owns the loop, and now in fact rather than only in
+principle. `TrainingPipeline.single_step` runs one optimizer step over one slice and
+`train_steps(dataset, slices, epoch)` yields a `TrainingEvent` after each of them. It takes
+the partition rather than building one: which slices a run uses, how many epochs it does,
+whether to shuffle between them, and what to record are the caller's. See
+`docs/decisions/0013`.
+
+`TrainingEvent` and `TrainingPhase` remain the shared vocabulary for a run. The library
+emits `train` events; a caller's loop emits `validation`, `test` and `epoch` ones.
 
 `save_checkpoint(path, epoch)` takes a destination rather than a run name and a cadence, so
 where a run's weights land is the caller's decision. See
@@ -166,3 +170,4 @@ Tracked as GitHub issues rather than restated here:
 | [0010](decisions/0010-the-library-ships-no-io.md) | The library computes and the caller does the I/O; `bridge/infra/` is gone and no cloud SDK is installed |
 | [0011](decisions/0011-one-table-says-what-each-pathway-reads-and-writes.md) | `PATHWAY_IO` is the single definition of what each pathway reads and writes; validation is uniform across pathways |
 | [0012](decisions/0012-the-pipeline-follows-the-model.md) | `TrainingPipeline.device` reads `model.device`; the pipeline never moves the model |
+| [0013](decisions/0013-the-caller-owns-the-loop-in-fact.md) | The library keeps the step and loses the loop; split, batching, shuffling, epochs and progress bars are the caller's |

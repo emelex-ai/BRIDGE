@@ -62,6 +62,16 @@ def words_dataset(shared_tokenizer: BridgeTokenizer) -> BridgeDataset:
     return BridgeDataset(DatasetConfig(dataset_filepath=WORDS_CSV), tokenizer=shared_tokenizer)
 
 
+def batch_slices(dataset, size: int = 8) -> list[slice]:
+    """Contiguous slices over a dataset, the partition the pipeline used to build itself.
+
+    A test helper now rather than library code: which slices a run uses is experiment
+    policy, so `TrainingPipeline` no longer owns a train/validation split. See
+    docs/decisions/0013.
+    """
+    return [slice(i, min(i + size, len(dataset))) for i in range(0, len(dataset), size)]
+
+
 @_pytest.fixture
 def make_pipeline():
     """Build a ``TrainingPipeline`` over a dataset, overriding any ``TrainingConfig`` field.
@@ -85,9 +95,7 @@ def make_pipeline():
             model=Model(
                 ModelConfig(vocab=vocab, **{"d_model": 16, "nhead": 2, "seed": 5, **model_kwargs})
             ),
-            training_config=TrainingConfig(
-                **{"num_epochs": 1, "training_pathway": "o2p", **overrides}
-            ),
+            training_config=TrainingConfig(**{"training_pathway": "o2p", **overrides}),
             dataset=dataset,
         )
 

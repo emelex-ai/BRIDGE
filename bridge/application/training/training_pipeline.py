@@ -1,12 +1,9 @@
 import json
 import logging
-import random
-import time
 from collections.abc import Iterator
 from pathlib import Path
 
 import torch
-from tqdm import tqdm
 
 from bridge.application.training.ortho_metrics import calculate_orth_metrics
 from bridge.application.training.phon_metrics import calculate_phon_metrics
@@ -18,11 +15,6 @@ from bridge.domain.model.model import PATHWAY_INPUTS, WRITES_ORTH, WRITES_PHON
 
 # Per-step results: loss tensors + scalar metrics + the JSON-encoded `word`.
 type MetricsDict = dict[str, torch.Tensor | float | str]
-# Per-epoch results: tensors and floats only. `word` is dropped during
-# accumulation, and timing values are added as floats.
-type NumericMetrics = dict[str, torch.Tensor | float]
-
-min_interval = 1
 
 
 class TrainingPipeline:
@@ -43,26 +35,12 @@ class TrainingPipeline:
         self.logger = logging.getLogger(__name__)
         self.training_config = training_config
         self.dataset = dataset
-        self.test_dataset = None
-        if self.training_config.test_data_path:
-            test_dataset_config = self.dataset.dataset_config.model_copy()
-            test_dataset_config.dataset_filepath = self.training_config.test_data_path
-            self.test_dataset = BridgeDataset(
-                dataset_config=test_dataset_config,
-                gcs_client=self.dataset.gcs_client,
-                # Reuse the train tokenizer: building a second one re-parses the
-                # pronunciation lexicons (~1 s, ~81 MB), and the duplicate also inflated
-                # the periodic collection this used to run from ~109 ms to ~188 ms.
-                tokenizer=self.dataset.tokenizer,
-            )
         self.model = model
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(),
             lr=training_config.learning_rate,
             weight_decay=training_config.weight_decay,
         )
-        self.train_slices, self.val_slices = self.create_data_slices()
-
         # Nothing here touches the garbage collector. A `gc.collect()` every ten steps cost
         # a measured 17% of every epoch and reclaimed nothing (RSS across an epoch was flat
         # with and without it), because the ~768k objects it rescanned are the
@@ -103,20 +81,6 @@ class TrainingPipeline:
         `load_phoneme_table` is cached per device, so this costs a dict lookup.
         """
         return load_phoneme_table(device=self.device).phonetic_features
-
-    def create_data_slices(self):
-        # Kept on the instance: `_shuffle_training_partition` reorders exactly the indices
-        # below this point, so the two must not compute it separately and drift.
-        self.cutpoint = cutpoint = int(len(self.dataset) * self.training_config.train_test_split)
-        train_slices = [
-            slice(i, min(i + self.training_config.batch_size_train, cutpoint))
-            for i in range(0, cutpoint, self.training_config.batch_size_train)
-        ]
-        val_slices = [
-            slice(i, min(i + self.training_config.batch_size_val, len(self.dataset)))
-            for i in range(cutpoint, len(self.dataset), self.training_config.batch_size_val)
-        ]
-        return train_slices, val_slices
 
     def forward(
         self, orthography: EncodingComponent, phonology: EncodingComponent
@@ -291,192 +255,34 @@ class TrainingPipeline:
             slice(start + i, min(start + i + chunk_size, stop)) for i in range(0, size, chunk_size)
         ]
 
-    @staticmethod
-    def _accumulate(total: NumericMetrics, metrics: MetricsDict) -> NumericMetrics:
-        """Add one step's numeric metrics into a running total, dropping the string fields."""
-        numeric: NumericMetrics = {
-            key: value for key, value in metrics.items() if not isinstance(value, str)
-        }
-        if not total:
-            return numeric
-        for key, value in numeric.items():
-            total[key] = total[key] + value
-        return total
+    def train_steps(
+        self,
+        dataset: BridgeDataset,
+        batch_slices: list[slice],
+        epoch: int = 0,
+        calculate_metrics: bool = False,
+    ) -> Iterator[TrainingEvent]:
+        """Take one optimizer step per slice, yielding a record after each.
 
-    @staticmethod
-    def _summarize(
-        total: NumericMetrics, steps: int, elapsed: float, prefix: str
-    ) -> NumericMetrics:
-        """Mean the accumulated metrics, add the two timings, prefix every key.
+        The library owns the step; the caller owns the loop. ``docs/decisions/0006``
+        drew that seam and then shipped both halves anyway, so the library still decided
+        the train/validation split, the batch size, the per-epoch shuffle, the progress
+        bar, the epoch aggregate and the timings. All of that is experiment policy, and
+        it is the caller's now. See ``docs/decisions/0013``.
 
-        One definition. The four hand-written copies this replaces had already drifted:
-        three computed ``time_per_epoch`` as elapsed seconds *times* the step count, which
-        is not a duration, and the fourth subtracted correctly. A single epoch record
-        therefore mixed a correct ``train_time_per_epoch`` with a multiplied ``valid_`` one.
-        """
-        summary: NumericMetrics = {key: value / steps for key, value in total.items()}
-        summary["time_per_step"] = elapsed / steps
-        summary["time_per_epoch"] = elapsed
-        return {prefix + str(key): value for key, value in summary.items()}
+        ``batch_slices`` is whatever partition the caller wants; nothing here assumes the
+        slices are contiguous, ordered, disjoint, or drawn from a training split. A caller
+        wanting validation runs the same slices under ``torch.no_grad()`` with the model
+        in ``eval()``, which is what the deleted ``validate_single_epoch`` did.
 
-    @staticmethod
-    def _postfix(bar: tqdm, metrics: MetricsDict, last_update: float) -> float:
-        """Refresh ``bar``'s postfix at most once per ``min_interval``; return the new time.
-
-        The bar and its throttle are the caller's locals, passed in and handed back, rather
-        than attributes on the pipeline. Held on the instance, two live iterations shared
-        one bar: starting ``train_steps`` and then calling ``validate_single_epoch``
-        repointed the stored bar at the validation one, so the training loop went on
-        repainting a finished bar and the abandoned one died at interpreter teardown inside
-        tqdm with ``AttributeError: 'NoneType' object has no attribute 'format_interval'``.
-        Both methods are public, and ``train_steps`` is documented as the seam a caller
-        reaches for to own the loop, so interleaving them is ordinary use.
-        """
-        now = time.time()
-        if now - last_update <= min_interval:
-            return last_update
-        bar.set_postfix(
-            {key: f"{value:.4f}" for key, value in metrics.items() if not isinstance(value, str)}
-        )
-        return now
-
-    def _evaluate(
-        self, dataset: BridgeDataset, slices: list[slice], prefix: str, desc: str
-    ) -> NumericMetrics:
-        """Run one no-grad pass over ``slices``, returning the mean metrics, ``prefix``ed.
-
-        Shared by validation and test, which differed only in the dataset, the slice list
-        and the prefix. They were 46 and 42 lines agreeing on 30 of them.
-        """
-        self.model.eval()
-        start = time.time()
-        total: NumericMetrics = {}
-        bar = tqdm(slices, desc=desc, mininterval=min_interval)
-        last_update = time.time()
-        with torch.no_grad():
-            for batch_slice in bar:
-                metrics = self.single_step(
-                    dataset, batch_slice, self.training_config.compute_metrics
-                )
-                last_update = self._postfix(bar, metrics, last_update)
-                total = self._accumulate(total, metrics)
-        return self._summarize(total, len(slices), time.time() - start, prefix)
-
-    def train_steps(self, epoch: int) -> Iterator[TrainingEvent]:
-        """Run one training epoch, yielding after every optimizer step.
-
-        Public. This is the seam a caller reaches for to own the loop: checkpoint on a step
-        count, stop early on a loss, log at whatever cadence suits. The pipeline decides
-        none of that. :meth:`run_train_val_loop` is a thin wrapper over this.
-
-        Shuffling is deliberately *not* done here. It belongs to the epoch, and a caller
-        driving `train_steps` directly across several epochs would otherwise get a
-        reordering it did not ask for. `run_train_val_loop` calls
-        `_shuffle_training_partition` before each epoch; a caller doing their own loop calls
-        it themselves, or does not.
+            model.eval()
+            with torch.no_grad():
+                rows = [pipeline.single_step(ds, s, True) for s in val_slices]
         """
         self.model.train()
-        bar = tqdm(self.train_slices, desc=f"Training Epoch {epoch + 1}", mininterval=min_interval)
-        last_update = time.time()
-        for step, batch_slice in enumerate(bar):
-            metrics = self.single_step(
-                self.dataset, batch_slice, self.training_config.compute_metrics
-            )
-            last_update = self._postfix(bar, metrics, last_update)
+        for step, batch_slice in enumerate(batch_slices):
+            metrics = self.single_step(dataset, batch_slice, calculate_metrics)
             yield TrainingEvent(phase="train", epoch=epoch, step=step, metrics=metrics)
-
-    def validate_single_epoch(self, epoch: int) -> NumericMetrics:
-        """Score the validation partition, returning ``valid_``-prefixed mean metrics."""
-        return self._evaluate(
-            self.dataset, self.val_slices, "valid_", f"Validating Epoch {epoch + 1}"
-        )
-
-    def test_single_epoch(self, epoch: int) -> NumericMetrics:
-        """Score the held-out test set, returning ``test_``-prefixed mean metrics."""
-        if self.test_dataset is None:
-            raise ValueError("Test dataset not provided in the configuration.")
-        test_slices = [
-            slice(i, min(i + self.training_config.batch_size_train, len(self.test_dataset)))
-            for i in range(0, len(self.test_dataset), self.training_config.batch_size_train)
-        ]
-        return self._evaluate(self.test_dataset, test_slices, "test_", f"Testing Epoch {epoch + 1}")
-
-    def run_train_val_loop(self, num_epochs: int | None = None) -> Iterator[TrainingEvent]:
-        """Train, validating each epoch, yielding a record at every step and boundary.
-
-        The convenience loop, and a thin one: everything it does is available separately as
-        :meth:`train_steps`, :meth:`validate_single_epoch`, :meth:`test_single_epoch` and
-        :meth:`_shuffle_training_partition`. A caller who wants a different loop writes it
-        out of those rather than passing flags into this one.
-
-        It writes no checkpoints and logs nothing. When to save, where, under what name, and
-        what to record are all the caller's, from the stream:
-
-            for event in pipeline.run_train_val_loop(num_epochs=3):
-                if event.phase == "train" and event.step % 100 == 0:
-                    pipeline.save_checkpoint(runs / f"step_{event.step}.pth", event.epoch)
-                elif event.phase == "epoch":
-                    pipeline.save_checkpoint(runs / f"epoch_{event.epoch}.pth", event.epoch)
-
-        Four phases arrive, and the ``epoch`` one is always last for its epoch. Its metrics
-        are the merged aggregate, so a caller who only wants epoch rows filters on that
-        phase and is otherwise unchanged.
-
-        Args:
-            num_epochs: Overrides `training_config.num_epochs` for this call. Counting still
-                starts at `self.start_epoch`, so a resumed run does the remaining epochs.
-        """
-        total = self.training_config.num_epochs if num_epochs is None else num_epochs
-        for epoch in range(self.start_epoch, total):
-            self._shuffle_training_partition(epoch)
-
-            epoch_metrics: NumericMetrics = {}
-            start = time.time()
-            step_total: NumericMetrics = {}
-            steps = 0
-            for event in self.train_steps(epoch):
-                steps += 1
-                step_total = self._accumulate(step_total, event.metrics)
-                yield event
-            if steps:
-                epoch_metrics.update(
-                    self._summarize(step_total, steps, time.time() - start, "train_")
-                )
-
-            if self.val_slices:
-                metrics = self.validate_single_epoch(epoch)
-                epoch_metrics.update(metrics)
-                yield TrainingEvent(phase="validation", epoch=epoch, metrics=dict(metrics))
-            if self.test_dataset:
-                metrics = self.test_single_epoch(epoch)
-                epoch_metrics.update(metrics)
-                yield TrainingEvent(phase="test", epoch=epoch, metrics=dict(metrics))
-
-            yield TrainingEvent(phase="epoch", epoch=epoch, metrics=dict(epoch_metrics))
-
-    def _shuffle_training_partition(self, epoch: int) -> None:
-        """Reorder the training words in place, leaving the validation tail untouched.
-
-        Without this every epoch iterates the data in file order, identically, for every
-        model trained on it. For an alphabetically sorted lexicon that means training on all
-        the "a" words first, every epoch. It also means a seed intended to vary data order
-        contributes exactly nothing, so an experiment treating order as an independent
-        variable is silently measuring a constant.
-
-        The validation tail stays where it is, so validation scores remain comparable across
-        epochs. `create_data_slices` computed its slices as index ranges once, in `__init__`,
-        and reordering in place keeps them valid. `BridgeDataset`'s encoding cache is keyed
-        by (word, language) rather than by index, so it survives the reordering too.
-
-        `BridgeDataset.shuffle` draws from the global `random` module, so the per-epoch seed
-        has to go through `random.seed`. Deriving it from the config seed and the epoch gives
-        a different order each epoch while keeping the whole run reproducible.
-        """
-        if not self.training_config.shuffle_each_epoch:
-            return
-        if self.training_config.seed is not None:
-            random.seed(self.training_config.seed * 10_000 + epoch)
-        self.dataset.shuffle(self.cutpoint)
 
     def save_checkpoint(self, path: str | Path, epoch: int) -> Path:
         """Write the full checkpoint bundle to ``path``, and return where it went.

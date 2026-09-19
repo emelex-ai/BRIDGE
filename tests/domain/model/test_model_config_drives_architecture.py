@@ -102,7 +102,7 @@ def test_every_pathway_trains(words_dataset, make_pipeline):
     from bridge.domain.datamodels.pathways import PATHWAY_IO, PATHWAYS
 
     for pathway in PATHWAYS:
-        pipeline = make_pipeline(words_dataset, training_pathway=pathway, compute_metrics=True)
+        pipeline = make_pipeline(words_dataset, training_pathway=pathway)
         before = pipeline.model.global_embedding.detach().clone()
         metrics = pipeline.single_step(words_dataset, slice(0, 8), calculate_metrics=True)
 

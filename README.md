@@ -25,7 +25,7 @@ uv run python -c "from bridge import Model, BridgeTokenizer; print(BridgeTokeniz
 
 If `uv` is not installed: `curl -LsSf https://astral.sh/uv/install.sh | sh`.
 
-Dependencies are torch, pydantic, pandas, numpy and tqdm. Nothing else is installed.
+Dependencies are torch, pydantic, pandas and numpy. Nothing else is installed.
 
 ---
 
@@ -152,16 +152,20 @@ model.to("cuda")
 
 pipeline = TrainingPipeline(
     model=model,
-    training_config=TrainingConfig(num_epochs=3, training_pathway="o2p"),
+    training_config=TrainingConfig(training_pathway="o2p"),
     dataset=dataset,
 )
 
-# The library owns the step; you own the loop. Nothing is written or logged unless you
-# do it. See docs/decisions/0006.
-for event in pipeline.run_train_val_loop():
-    if event.phase == "epoch":
-        print(event.epoch, event.metrics)
-        pipeline.save_checkpoint(f"epoch_{event.epoch}.pth", event.epoch)
+# The library owns the step; you own the loop. Which slices, how many epochs, when to
+# shuffle, what to log and when to checkpoint are all yours. See docs/decisions/0013.
+cutpoint = int(len(dataset) * 0.8)
+slices = [slice(i, min(i + 32, cutpoint)) for i in range(0, cutpoint, 32)]
+
+for epoch in range(pipeline.start_epoch, 3):
+    dataset.shuffle(cutpoint)
+    for event in pipeline.train_steps(dataset, slices, epoch, calculate_metrics=True):
+        print(event.epoch, event.step, float(event.metrics["loss"]))
+    pipeline.save_checkpoint(f"epoch_{epoch}.pth", epoch)
 ```
 
 > [!IMPORTANT]

@@ -14,6 +14,7 @@ code by construction.
 
 import ast
 import inspect
+import pathlib
 
 import pytest
 import torch
@@ -44,7 +45,6 @@ def make_pipeline(dataset, artifacts_dir, **overrides):
         model=Model(ModelConfig(vocab=vocab, d_model=16, nhead=2, seed=5)),
         dataset=dataset,
         training_config=TrainingConfig(
-            num_epochs=1,
             training_pathway="o2p",
             model_artifacts_dir=str(artifacts_dir),
             **overrides,
@@ -127,20 +127,38 @@ def test_the_bundle_round_trips(dataset, tmp_path):
     assert loaded["dataset_config"].dataset_filepath == dataset.dataset_config.dataset_filepath
 
 
-def test_the_loop_writes_no_checkpoints_of_its_own(dataset, tmp_path):
-    """`run_train_val_loop` saves nothing. That is the whole change.
+def test_nothing_writes_a_checkpoint_except_save_checkpoint(words_dataset, make_pipeline, tmp_path):
+    """The library owns no save policy, which is now a structural fact rather than a
+    property of one loop: there is no loop left to check.
 
-    With `save_every` gone there is no cadence for the library to apply, so a run that the
-    caller never asks to checkpoint must leave the artifacts directory empty.
+    Oracle: a search with a stated space, parsed rather than grepped. Every `torch.save`
+    *call* in bridge/ must sit inside `save_checkpoint`; a substring search would also
+    match the docstring two lines above the call explaining why nothing uploads. Then
+    driving real steps must leave the artifacts directory empty.
     """
-    pipeline = make_pipeline(dataset, tmp_path)
-    pipeline.train_slices = pipeline.train_slices[:1]
-    pipeline.val_slices = pipeline.val_slices[:1]
+    from tests.conftest import batch_slices
 
-    events = list(pipeline.run_train_val_loop(num_epochs=1))
+    callers = []
+    for path in pathlib.Path("bridge").rglob("*.py"):
+        tree = ast.parse(path.read_text())
+        for fn in ast.walk(tree):
+            if not isinstance(fn, ast.FunctionDef):
+                continue
+            for node in ast.walk(fn):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "save"
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "torch"
+                ):
+                    callers.append(f"{path}:{fn.name}")
+    assert callers == ["bridge/application/training/training_pipeline.py:save_checkpoint"], callers
 
-    assert events, "the loop yielded nothing at all"
-    assert list(tmp_path.rglob("*.pth")) == [], "the loop wrote a checkpoint nobody asked for"
+    pipeline = make_pipeline(words_dataset, model_artifacts_dir=str(tmp_path))
+    list(pipeline.train_steps(words_dataset, batch_slices(words_dataset)[:2]))
+
+    assert list(tmp_path.rglob("*.pth")) == [], "a step wrote a checkpoint nobody asked for"
 
 
 def test_save_every_is_gone(tmp_path):

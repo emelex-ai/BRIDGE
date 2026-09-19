@@ -76,9 +76,7 @@ def test_a_working_pipeline_assembles_from_the_top_level_package_alone(tmp_path)
     )
     pipeline = TrainingPipeline(
         model=model,
-        training_config=TrainingConfig(
-            num_epochs=1, training_pathway="o2p", model_artifacts_dir=str(tmp_path)
-        ),
+        training_config=TrainingConfig(training_pathway="o2p", model_artifacts_dir=str(tmp_path)),
         dataset=dataset,
     )
 

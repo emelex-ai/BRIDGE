@@ -1,172 +1,89 @@
-"""What ``run_train_val_loop`` emits, now that the caller owns the loop.
+"""``train_steps`` is the seam: one optimizer step per slice, one record per step.
 
-The generator used to yield one aggregated dict per epoch and checkpoint on its own
-schedule. It now yields a :class:`TrainingEvent` per optimizer step and per boundary, and
-writes nothing. That makes the stream the public contract, so these tests pin its shape:
-how many events arrive, in what order, and what each carries.
-
-See docs/decisions/0006-the-caller-owns-the-training-loop.md.
+The library used to ship the loop as well, and this file used to assert its arithmetic:
+epochs, a validation pass per epoch, a merged epoch aggregate, a ``num_epochs`` override.
+All of that was experiment policy and moved to the caller (docs/decisions/0013), so what
+is left to pin is narrow and should stay narrow: the stream is one event per slice, in
+order, carrying enough to act on, and abandoning it does no further work.
 """
 
+import math
+
 import pytest
-import torch
 
-from bridge.application.training.training_pipeline import TrainingPipeline
-from bridge.domain.data import BridgeDataset
-from bridge.domain.datamodels import (
-    DatasetConfig,
-    ModelConfig,
-    TrainingConfig,
-    TrainingEvent,
-    VocabSpec,
-)
-from bridge.domain.model import Model
+from tests.conftest import batch_slices
 
-DATA_CSV = "tests/domain/model/data/data.csv"
-TRAIN_SLICES = 3
-VAL_SLICES = 2
-
-
-@pytest.fixture(scope="module")
-def dataset():
-    return BridgeDataset(dataset_config=DatasetConfig(dataset_filepath=DATA_CSV))
+SLICES = 4
 
 
 @pytest.fixture
-def pipeline(dataset, tmp_path):
-    """A pipeline cut down to a fixed, small number of slices.
-
-    The counts below are asserted against these two constants rather than against
-    ``len(pipeline.train_slices)`` read back at assertion time, so a loop that silently
-    skipped slices could not satisfy them by agreeing with itself.
-    """
-    vocab = VocabSpec.from_tokenizer(dataset.tokenizer)
-    built = TrainingPipeline(
-        model=Model(ModelConfig(vocab=vocab, d_model=16, nhead=2, seed=5)),
-        dataset=dataset,
-        training_config=TrainingConfig(
-            num_epochs=2,
-            training_pathway="o2p",
-            model_artifacts_dir=str(tmp_path),
-            shuffle_each_epoch=False,
-        ),
-    )
-    built.train_slices = built.train_slices[:TRAIN_SLICES]
-    built.val_slices = built.val_slices[:VAL_SLICES]
-    return built
+def pipeline(words_dataset, make_pipeline):
+    return make_pipeline(words_dataset)
 
 
-def test_the_stream_has_one_train_event_per_step_and_one_epoch_event_per_epoch(pipeline):
-    """The arithmetic of the stream, counted against constants set in the fixture."""
-    epochs = 2
-    events = list(pipeline.run_train_val_loop(num_epochs=epochs))
-
-    assert all(isinstance(event, TrainingEvent) for event in events)
-    phases = [event.phase for event in events]
-    assert phases.count("train") == TRAIN_SLICES * epochs
-    assert phases.count("validation") == epochs
-    assert phases.count("epoch") == epochs
-    assert phases.count("test") == 0, "no test dataset is configured"
-    assert len(events) == (TRAIN_SLICES + 2) * epochs
+@pytest.fixture
+def slices(words_dataset):
+    return batch_slices(words_dataset, size=8)[:SLICES]
 
 
-def test_each_epoch_ends_with_its_epoch_event(pipeline):
-    """Ordering is part of the contract: a caller checkpointing on ``epoch`` needs the
-    training steps for that epoch to have already happened when it arrives."""
-    events = list(pipeline.run_train_val_loop(num_epochs=2))
+def test_one_event_per_slice_in_order(pipeline, words_dataset, slices):
+    """The arithmetic of the stream, counted against the slices handed in."""
+    events = list(pipeline.train_steps(words_dataset, slices))
 
-    for epoch in (0, 1):
-        of_epoch = [event for event in events if event.epoch == epoch]
-        assert [event.phase for event in of_epoch] == (
-            ["train"] * TRAIN_SLICES + ["validation", "epoch"]
-        )
-        assert [event.step for event in of_epoch[:TRAIN_SLICES]] == list(range(TRAIN_SLICES))
-
-    assert [event.epoch for event in events] == sorted(event.epoch for event in events), (
-        "epochs must arrive in order"
-    )
+    assert len(events) == SLICES
+    assert [e.step for e in events] == list(range(SLICES))
+    assert {e.phase for e in events} == {"train"}
+    assert {e.epoch for e in events} == {0}
 
 
-def test_train_events_carry_a_finite_loss_and_the_words_they_trained_on(pipeline):
+def test_the_epoch_index_is_the_callers_to_set(pipeline, words_dataset, slices):
+    """The library counts steps within a call and nothing else. Which epoch this is, and
+    how many there are, is the caller's bookkeeping."""
+    events = list(pipeline.train_steps(words_dataset, slices, epoch=7))
+    assert {e.epoch for e in events} == {7}
+    assert [e.step for e in events] == list(range(SLICES))
+
+
+def test_events_carry_a_finite_loss_and_the_words_they_trained_on(pipeline, words_dataset, slices):
     """A step event has to say enough to act on, or the caller cannot own the loop."""
-    events = [e for e in pipeline.run_train_val_loop(num_epochs=1) if e.phase == "train"]
-
-    for event in events:
-        assert "loss" in event.metrics
-        assert torch.isfinite(event.metrics["loss"].detach()).all()
-        assert "word" in event.metrics, "the batch's words are how a caller identifies a step"
+    for event in pipeline.train_steps(words_dataset, slices):
+        assert math.isfinite(float(event.metrics["loss"]))
+        assert isinstance(event.metrics["word"], str)
+        assert event.metrics["word"].startswith("[")
 
 
-def test_the_epoch_event_carries_the_merged_aggregate(pipeline):
-    """The epoch row is what this generator yielded before it yielded per step, so a
-    caller that only wants epoch rows filters on the phase and is otherwise unchanged."""
-    events = list(pipeline.run_train_val_loop(num_epochs=1))
-    epoch_event = next(e for e in events if e.phase == "epoch")
+def test_the_reported_loss_carries_no_autograd_graph(pipeline, words_dataset, slices):
+    """A caller keeping the stream must not be keeping the graph with it.
 
-    assert any(key.startswith("train_") for key in epoch_event.metrics)
-    assert any(key.startswith("valid_") for key in epoch_event.metrics)
-    assert "train_time_per_step" in epoch_event.metrics
-
-    # The mean of the step losses, computed here from the stream rather than read back.
-    step_losses = [float(e.metrics["loss"].detach()) for e in events if e.phase == "train"]
-    assert float(epoch_event.metrics["train_loss"].detach()) == pytest.approx(
-        sum(step_losses) / len(step_losses), rel=1e-5
-    )
-
-
-def test_num_epochs_overrides_the_config(pipeline):
-    """The convenience argument, since the caller owning the loop still wants the short
-    form. The config says 2; the call says 1, and the call wins."""
-    assert pipeline.training_config.num_epochs == 2
-
-    events = list(pipeline.run_train_val_loop(num_epochs=1))
-
-    assert {event.epoch for event in events} == {0}
-
-
-def test_a_resumed_run_does_only_the_remaining_epochs(pipeline):
-    """Counting starts at ``start_epoch``, so resume and the override compose."""
-    pipeline.start_epoch = 3
-
-    events = list(pipeline.run_train_val_loop(num_epochs=5))
-
-    assert sorted({event.epoch for event in events}) == [3, 4]
-
-
-def test_the_caller_can_stop_early_without_finishing_the_epoch(pipeline):
-    """The point of a generator: abandoning it must not run the rest of the work.
-
-    Measured by counting the optimizer steps that actually happened, not by trusting that
-    breaking out of a for loop did what it looks like it does.
+    Oracle: the invariant that a detached tensor has no ``grad_fn``. Handing these out
+    live measured +527 MB per epoch for a caller retaining events to plot a curve.
     """
-    steps = 0
-    original = pipeline.single_step
-
-    def counting(*args, **kwargs):
-        nonlocal steps
-        steps += 1
-        return original(*args, **kwargs)
-
-    pipeline.single_step = counting
-
-    for event in pipeline.run_train_val_loop(num_epochs=2):
-        if event.phase == "train" and event.step == 1:
-            break
-
-    assert steps == 2, f"expected to stop after 2 steps, ran {steps}"
+    for event in pipeline.train_steps(words_dataset, slices):
+        loss = event.metrics["loss"]
+        assert loss.grad_fn is None and not loss.requires_grad
 
 
-def test_train_steps_runs_one_epoch_on_its_own(pipeline):
-    """The seam underneath the convenience loop, usable directly.
+def test_metrics_are_off_unless_asked_for(pipeline, words_dataset, slices):
+    """Scoring costs ~7 ms a step, so it is opt-in per call rather than always on."""
+    plain = next(iter(pipeline.train_steps(words_dataset, slices)))
+    scored = next(iter(pipeline.train_steps(words_dataset, slices, calculate_metrics=True)))
 
-    It does not shuffle: reordering belongs to the epoch, and a caller driving this across
-    several epochs should not get a permutation it did not ask for.
+    assert not any("accuracy" in key for key in plain.metrics)
+    assert any("accuracy" in key for key in scored.metrics)
+
+
+def test_abandoning_the_generator_does_no_further_work(pipeline, words_dataset, slices):
+    """The point of a generator: stopping early must not run the rest of the steps.
+
+    Oracle: a differential on the parameters. Taking one step of four and stopping must
+    leave the model exactly where one step leaves it, which is what makes early stopping
+    and step-count checkpointing possible at all.
     """
-    before = list(pipeline.dataset.words)
+    import torch
 
-    events = list(pipeline.train_steps(epoch=7))
+    stream = pipeline.train_steps(words_dataset, slices)
+    next(stream)
+    after_one = pipeline.model.global_embedding.detach().clone()
+    stream.close()
 
-    assert [e.phase for e in events] == ["train"] * TRAIN_SLICES
-    assert [e.epoch for e in events] == [7] * TRAIN_SLICES
-    assert [e.step for e in events] == list(range(TRAIN_SLICES))
-    assert pipeline.dataset.words == before, "train_steps must not reorder the dataset"
+    assert torch.equal(after_one, pipeline.model.global_embedding)

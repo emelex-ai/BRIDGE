@@ -19,16 +19,12 @@ existence check has to survive; if that check disappeared along with the directo
 a typo in a resume path would fail deep inside ``load_model`` instead of at construction.
 """
 
-import os
 from pathlib import Path
 
 import pytest
-import torch
 
 from bridge.application.training.training_pipeline import TrainingPipeline
-from bridge.domain.data import BridgeDataset
 from bridge.domain.datamodels import (
-    DatasetConfig,
     ModelConfig,
     TrainingConfig,
     VocabSpec,
@@ -153,76 +149,7 @@ def test_missing_artifacts_dir_is_not_an_error(tmp_path):
     assert config.model_artifacts_dir == str(artifacts)
 
 
-# --- test_data_path is untouched by this change ----------------------------
-
-
-def test_relative_test_data_path_still_joins_project_root_data(tmp_path):
-    """Golden master of the current ``test_data_path`` rule, so the edit cannot move it.
-
-    ``convert_paths`` treats ``test_data_path`` differently from ``model_artifacts_dir``: a
-    truthy value is joined onto ``get_project_root()`` plus a literal ``data`` segment, an
-    absolute value survives because ``os.path.join`` discards the prefix, and ``None``
-    passes straight through. Nothing about this is validated for existence. The fix targets
-    ``model_artifacts_dir`` only, so all three of these must read the same afterwards.
-    """
-    root_data = os.path.join(get_project_root(), "data")
-    artifacts = str(tmp_path / "artifacts")
-
-    relative = TrainingConfig(model_artifacts_dir=artifacts, test_data_path="held_out.csv")
-    assert relative.test_data_path == os.path.join(root_data, "held_out.csv")
-
-    absolute_path = str(tmp_path / "held_out.csv")
-    absolute = TrainingConfig(model_artifacts_dir=artifacts, test_data_path=absolute_path)
-    assert absolute.test_data_path == absolute_path
-
-    unset = TrainingConfig(model_artifacts_dir=artifacts)
-    assert unset.test_data_path is None
-
-
-# --- checkpoint_path is the control ----------------------------------------
-
-
-def test_missing_checkpoint_raises_at_construction(tmp_path):
-    """A checkpoint that is not there is a real error, and it must still fire early.
-
-    This is the half of ``validate_paths`` that stays. It is the control for the directory
-    check being removed: if both disappeared, this test would go quiet and a mistyped
-    resume path would only surface as a caught exception inside ``load_model``.
-    """
-    missing = tmp_path / "no_such_checkpoint.pth"
-
-    with pytest.raises(FileNotFoundError, match="Checkpoint file not found"):
-        TrainingConfig(
-            model_artifacts_dir=str(tmp_path / "artifacts"),
-            checkpoint_path=str(missing),
-        )
-
-
-def test_existing_checkpoint_is_accepted(tmp_path):
-    """The other side of the control: a checkpoint that exists must construct cleanly."""
-    checkpoint = tmp_path / "model_epoch_0.pth"
-    torch.save({"epoch": 0}, checkpoint)
-
-    config = TrainingConfig(
-        model_artifacts_dir=str(tmp_path / "artifacts"),
-        checkpoint_path=str(checkpoint),
-    )
-
-    assert config.checkpoint_path == str(checkpoint)
-
-
-# --- saving still works once creation is deferred --------------------------
-
-
-@pytest.fixture(scope="module")
-def dataset(tmp_path_factory):
-    """One dataset for the module. Building a tokenizer parses the pronunciation lexicons."""
-    words = tmp_path_factory.mktemp("data") / "words.csv"
-    words.write_text("word_raw,count\nlong,3\npencil,2\ncat,5\ndog,4\nhouse,2\nbook,7\n")
-    return BridgeDataset(dataset_config=DatasetConfig(dataset_filepath=str(words)))
-
-
-def test_save_checkpoint_creates_the_artifacts_directory_on_first_write(tmp_path, dataset):
+def test_save_checkpoint_creates_the_artifacts_directory_on_first_write(tmp_path, words_dataset):
     """Deferring creation must not simply break saving.
 
     ``save_checkpoint`` resolves a relative path against ``model_artifacts_dir``. With eager
@@ -234,14 +161,14 @@ def test_save_checkpoint_creates_the_artifacts_directory_on_first_write(tmp_path
     artifacts = tmp_path / "runs" / "experiment1"
 
     model = Model(
-        ModelConfig(vocab=VocabSpec.from_tokenizer(dataset.tokenizer), d_model=32, nhead=2, seed=5)
+        ModelConfig(
+            vocab=VocabSpec.from_tokenizer(words_dataset.tokenizer), d_model=32, nhead=2, seed=5
+        )
     )
-    training_config = TrainingConfig(
-        num_epochs=1, training_pathway="p2o", model_artifacts_dir=str(artifacts)
-    )
+    training_config = TrainingConfig(training_pathway="p2o", model_artifacts_dir=str(artifacts))
     pipeline = TrainingPipeline(
         model=model,
-        dataset=dataset,
+        dataset=words_dataset,
         training_config=training_config,
     )
 

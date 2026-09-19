@@ -97,7 +97,6 @@ def make_pipeline(dataset, artifacts_dir):
             model=Model(ModelConfig(vocab=vocab, d_model=32, nhead=2, seed=5)),
             dataset=dataset,
             training_config=TrainingConfig(
-                num_epochs=1,
                 training_pathway=pathway,
                 model_artifacts_dir=artifacts_dir,
             ),

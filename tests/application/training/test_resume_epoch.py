@@ -1,9 +1,10 @@
 """Resuming from a checkpoint has to actually resume.
 
 ``load_model`` reads the epoch out of the checkpoint, logs "Resuming training from epoch N",
-and then throws the number away on the next line. ``run_train_val_loop`` iterates
-``range(self.start_epoch, num_epochs)``, so a run resumed from epoch 9 of 12 re-trains all
-twelve epochs while the log says it started at ten. Nothing raises and nothing looks wrong.
+and then used to throw the number away on the next line, so a run resumed from epoch 9 of 12
+re-trained all twelve while the log said it started at ten. Nothing raised and nothing looked
+wrong. The library no longer runs the loop, so ``start_epoch`` is now a value the caller
+reads rather than one the library consumes, and it still has to be right.
 
 The guard in front of the assignment needs every branch exercised, because a branch that
 never fires and a branch that always fires look identical from the outside:
@@ -64,7 +65,6 @@ def build_pipeline(dataset, artifacts_dir, checkpoint_path=None, num_epochs=2):
     vocab = VocabSpec.from_tokenizer(dataset.tokenizer)
     model = Model(ModelConfig(vocab=vocab, d_model=32, nhead=2, seed=5))
     training_config = TrainingConfig(
-        num_epochs=num_epochs,
         training_pathway="o2p",
         model_artifacts_dir=str(artifacts_dir),
         checkpoint_path=checkpoint_path,
@@ -186,30 +186,21 @@ def test_a_corrupt_checkpoint_raises_rather_than_resuming_from_nothing(dataset, 
     assert pipeline.start_epoch == NEXT_EPOCH
 
 
-def test_the_resumed_loop_runs_only_the_remaining_epochs(dataset, state, tmp_path):
-    """The consequence of the field, not the field itself.
+def test_start_epoch_is_what_a_callers_own_loop_resumes_from(dataset, state, tmp_path):
+    """The consequence of the field, now that the loop belongs to the caller.
 
-    ``run_train_val_loop`` iterates ``range(self.start_epoch, num_epochs)``. Resuming a
-    12-epoch run from a checkpoint at epoch 9 must run epochs 10 and 11 and nothing else;
-    a run with no checkpoint must run all twelve. The control is that second list, and the
-    oracle is ``range`` itself, so both expected lists are written out in full.
+    The library used to iterate ``range(self.start_epoch, num_epochs)`` itself. It does
+    not run a loop any more (docs/decisions/0013), so what has to hold is that
+    ``start_epoch`` is correct and reachable, and that a caller writing the obvious
+    ``range(pipeline.start_epoch, n)`` gets the remaining epochs and no others.
 
-    No training happens: ``train_steps`` is replaced by a recorder
-    on the instance, because the claim is about the loop bounds and the bounds come from the
-    real ``load_model``.
+    Oracle: ``range`` itself, with both expected lists written out in full. The control is
+    the second pipeline, built identically but with no checkpoint, which must run all
+    twelve.
     """
-
-    def epochs_run(pipeline):
-        seen: list[int] = []
-        pipeline.train_steps = lambda epoch: iter((seen.append(epoch), ())[1])
-        pipeline.val_slices = []
-        pipeline.test_dataset = None
-        list(pipeline.run_train_val_loop())
-        return seen
-
     path = write_checkpoint(state, tmp_path / "model_epoch_9.pth")
-    resumed = build_pipeline(dataset, tmp_path / "artifacts", checkpoint_path=path, num_epochs=12)
-    fresh = build_pipeline(dataset, tmp_path / "artifacts", num_epochs=12)
+    resumed = build_pipeline(dataset, tmp_path / "artifacts", checkpoint_path=path)
+    fresh = build_pipeline(dataset, tmp_path / "artifacts")
 
-    assert epochs_run(resumed) == [10, 11]
-    assert epochs_run(fresh) == list(range(12))
+    assert list(range(resumed.start_epoch, 12)) == [10, 11]
+    assert list(range(fresh.start_epoch, 12)) == list(range(12))
