@@ -13,7 +13,10 @@ their invariants more reliably and they become brittle to legitimate
 reorganization.)
 """
 
+import math
+
 import pytest
+import torch
 
 from bridge.domain.datamodels import ModelConfig
 from bridge.domain.model import Model
@@ -81,3 +84,37 @@ class TestConfigDrivesArchitecture:
         wrong-but-in-range id silently produces the wrong phoneme rather than an error."""
         with pytest.raises(ValueError, match="special-token ids disagree"):
             _build_test_model(phon_bos_id=PHONEME_TABLE.feature_of("[EOS]"))
+
+
+def test_every_pathway_trains(words_dataset, make_pipeline):
+    """All five pathways take an optimizer step and report the loss terms their row implies.
+
+    ``o2o`` became trainable when ``forward_o2o`` was added and ``training_pathway`` widened
+    to the ``Pathway`` literal, and nothing exercised it: a wrong row in ``PATHWAY_IO``
+    would have passed the whole suite, because ``PATHWAY_INPUTS``, the ``forward_*``
+    dispatch and the ``WRITES_ORTH``/``WRITES_PHON`` membership that selects losses and
+    metrics are all derived from that one table.
+
+    Oracle: the table itself. A pathway that writes orthography must produce ``orth_loss``
+    and no other, and likewise for phonology, so the assertion is a differential between
+    the loss keys and ``PATHWAY_IO[pathway][1]`` rather than a pinned number.
+    """
+    from bridge.domain.datamodels.pathways import PATHWAY_IO, PATHWAYS
+
+    for pathway in PATHWAYS:
+        pipeline = make_pipeline(words_dataset, training_pathway=pathway, compute_metrics=True)
+        before = pipeline.model.global_embedding.detach().clone()
+        metrics = pipeline.single_step(words_dataset, slice(0, 8), calculate_metrics=True)
+
+        written = PATHWAY_IO[pathway][1]
+        expected = {"loss"} | {f"{m}_loss" for m in written}
+        got = {k for k in metrics if k.endswith("loss")}
+        assert got == expected, f"{pathway}: loss keys {sorted(got)} != {sorted(expected)}"
+
+        assert math.isfinite(float(metrics["loss"])), f"{pathway}: loss is not finite"
+        assert not torch.equal(before, pipeline.model.global_embedding), (
+            f"{pathway}: the optimizer step changed nothing, so nothing was trained"
+        )
+        # Metrics follow the same table: orthographic ones iff orthography is written.
+        assert ("word_wise_accuracy" in metrics) == ("orth" in written), pathway
+        assert ("phon_word_accuracy" in metrics) == ("phon" in written), pathway

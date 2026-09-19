@@ -102,6 +102,21 @@ MALFORMED = [
         lambda m: {"ids": torch.full((2, 4), -1)},
         "ids must lie in [0, {space})",
     ),
+    # The validator's device check had no test at all. main pinned the old gap with
+    # `test_op2op_does_not_check_device`, so deleting that removed the only reference to
+    # the branch, and dropping the `tensor.device != self.device` loop entirely would have
+    # passed the whole suite. "meta" is a real torch device that needs no hardware, so this
+    # runs everywhere rather than only where CUDA is present.
+    (
+        "ids_on_another_device",
+        lambda m: {"ids": ids().to("meta")},
+        "_enc_input must be on device",
+    ),
+    (
+        "mask_on_another_device",
+        lambda m: {"mask": mask().to("meta")},
+        "_enc_pad_mask must be on device",
+    ),
 ]
 
 SWEEP = [

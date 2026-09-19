@@ -20,7 +20,7 @@ back out to either, which gives five pathways:
 | `op2op` | both, cross-attended | both |
 
 Which modalities a pathway reads and writes is declared once, in `PATHWAY_IO`
-(`bridge/domain/model/model.py`), and every other question, which decoder loop runs, which
+(`bridge/domain/datamodels/pathways.py`), and every other question, which decoder loop runs, which
 loss terms exist, which tensors a training forward needs, which inputs the boundary
 validates, is a query against it rather than its own list. All five train and all five
 generate. See `docs/decisions/0011`.
@@ -77,8 +77,9 @@ bridge/core/phonreps.py               the feature scheme and PhonemeTable
 bridge/core/pronunciation_lexicons/   per-language word to phoneme dictionaries
 bridge/domain/datamodels/             EncodingComponent, BridgeEncoding, VocabSpec,
                                       ModelConfig, GenerationOutput, TrainingEvent
+bridge/domain/datamodels/pathways.py  PATHWAY_IO: what each pathway reads and writes
 bridge/domain/tokenizer/              CharacterTokenizer, PhonemeTokenizer, BridgeTokenizer
-bridge/domain/model/model.py          the pathway table, encoders, decoders, generation
+bridge/domain/model/model.py          encoders, decoders, generation loops
 bridge/domain/data/bridge_dataset.py  dataset, language resolution, encoding memo
 bridge/application/training/          TrainingPipeline, loss, metrics
 bridge/utils/device_manager.py        the process device, selected by BRIDGE_DEVICE
@@ -131,18 +132,23 @@ where a run's weights land is the caller's decision. See
 ## Dependencies
 
 PyTorch for the model, pydantic v2 for configs and validation, pandas for the feature CSV,
-`uv` for environment and task running, pytest, mypy and ruff for checks. Optional Google Cloud
-Storage and Weights and Biases clients under `bridge/infra/`.
+numpy and tqdm. `uv` for environment and task running, pytest, mypy and ruff for checks.
+Nothing else is installed: the library performs no I/O of its own, so it ships no cloud or
+experiment-tracking client. See `docs/decisions/0010`.
 
 ## Known defects
 
 Tracked as GitHub issues rather than restated here:
 
-- **#233** A half-precision model is rejected by `GenerationOutput`'s
-  `probabilities must sum to 1` check, whose `atol=1e-5` is a float32 tolerance applied to
-  a float16 sum. The other two shapes this issue reported, a zero-row batch that segfaulted
-  the CUDA decoder and a phonology-only encoding reaching pathways that read orthography,
-  are now rejected at the boundary by the unified validator (`docs/decisions/0011`)
+- **#233** `Model.generate` fails opaquely on two remaining input shapes. A half-precision
+  model is rejected by `GenerationOutput`'s `probabilities must sum to 1` check, whose
+  `atol=1e-5` is a float32 tolerance applied to a float16 sum. A phonology-only encoding
+  still reaches the three pathways that read orthography and dies inside the encoder with
+  `to_padded_tensor: at least one constituent tensor should have non-zero numel`, because
+  what arrives there is the `[--, BOS]` placeholder every `BridgeEncoding` carries, which is
+  indistinguishable from a real two-character encoding; closing it needs the encoding to
+  record which modalities are real. The third shape, a zero-row batch that segfaulted the
+  CUDA decoder, is rejected at the boundary (`docs/decisions/0011`)
 
 ## Decision index
 

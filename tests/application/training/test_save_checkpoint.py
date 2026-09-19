@@ -17,6 +17,7 @@ import inspect
 
 import pytest
 import torch
+from pydantic import ValidationError
 
 from bridge.application.training.training_pipeline import TrainingPipeline
 from bridge.domain.data import BridgeDataset
@@ -126,16 +127,6 @@ def test_the_bundle_round_trips(dataset, tmp_path):
     assert loaded["dataset_config"].dataset_filepath == dataset.dataset_config.dataset_filepath
 
 
-def test_no_gcs_client_means_no_upload(dataset, tmp_path, monkeypatch):
-    """The control showing the recorder above can observe a call NOT happening."""
-    pipeline = make_pipeline(dataset, tmp_path, gcs_path="experiments/run17")
-    monkeypatch.setattr(pipeline.dataset, "gcs_client", None)
-
-    destination = pipeline.save_checkpoint("model_epoch_0.pth", epoch=0)
-
-    assert destination.exists(), "the local write still happens without a GCS client"
-
-
 def test_the_loop_writes_no_checkpoints_of_its_own(dataset, tmp_path):
     """`run_train_val_loop` saves nothing. That is the whole change.
 
@@ -155,16 +146,16 @@ def test_the_loop_writes_no_checkpoints_of_its_own(dataset, tmp_path):
 def test_save_every_is_gone(tmp_path):
     """A leftover cadence field would quietly reintroduce library-owned save policy.
 
-    Three checks, because one is not enough. The field is off the schema; a config that is
-    handed one anyway does not grow the attribute, since pydantic ignores extras by default
-    and a caller's old kwargs will keep arriving for a while; and no code reads it. The last
-    is the one that matters, and it is a search with a stated space: the two modules that
-    ever referred to it.
+    Three checks, because one is not enough. The field is off the schema; a config handed
+    one anyway is rejected rather than quietly ignored, so a stale `save_every=2` in
+    someone's experiment config is a loud failure instead of a run that silently saves
+    nothing; and no code reads it. The last is the one that matters, and it is a search
+    with a stated space: the two modules that ever referred to it.
     """
     assert "save_every" not in TrainingConfig.model_fields
 
-    config = TrainingConfig(model_artifacts_dir=str(tmp_path), save_every=2)
-    assert not hasattr(config, "save_every"), "an ignored kwarg still reached the model"
+    with pytest.raises(ValidationError, match="save_every"):
+        TrainingConfig(model_artifacts_dir=str(tmp_path), save_every=2)
 
     # The search space: every attribute access and every name bound in the two modules that
     # ever mentioned the field. Parsed rather than grepped, because a substring search over

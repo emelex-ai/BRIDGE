@@ -48,7 +48,7 @@ predating the validator. The gaps are issue #233.
 
 ## Decision
 
-**`PATHWAY_IO` in `bridge/domain/model/model.py` is the single definition.** Each pathway
+**`PATHWAY_IO` in `bridge/domain/datamodels/pathways.py` is the single definition.** Each pathway
 maps to the set of modalities it reads and the set it writes. Everything else is a query:
 
 ```python
@@ -67,13 +67,37 @@ rejection. `TypeError` for a non-tensor is gone; everything is `ValueError`.
 **`forward_o2o` exists,** so the five declared pathways are five working pathways and
 `TrainingConfig.training_pathway` is `Pathway` rather than a hand-maintained subset.
 
+It lives in `datamodels` rather than in `model.py`, and that placement is load-bearing
+rather than tidy. With the table inside the model, `TrainingConfig` importing `Pathway`
+closed a cycle: `datamodels/__init__` imports `training_config`, which imports
+`bridge.domain.model.model`, which imports back from the partially initialised
+`bridge.domain.datamodels`. It resolved only because `model.py` happened to need three
+names that `__init__` binds before line 5. Adding a fourth to that same import line, one
+word, gave `ImportError: cannot import name 'VocabSpec' from partially initialized module`
+on a bare `import bridge`. A pathway table is data about modality structure, which is what
+`datamodels` is for, and from there nothing imports upward. `model.py` re-exports every
+name, so existing imports are unaffected.
+
 ## Consequences
 
 `o2p` now rejects out-of-range ids and wrong-device tensors, which it always should have.
-That is a behaviour change, and it is the point: the three shapes issue #233 reported are a
-zero-row batch that segfaulted the CUDA decoder, a phonology-only encoding reaching
-orthographic pathways, and inconsistent coverage. The first two are rejected at the boundary
-now.
+That is a behaviour change, and it is the point.
+
+**Correction, 2026-09-19.** This record originally claimed that two of issue #233's three
+shapes were "rejected at the boundary now". Only one is. The zero-row batch that segfaulted
+the CUDA decoder is rejected, verified. The phonology-only encoding is **not**: measured on
+all three orthographic pathways, `tok.encode(words, modality_filter="phonology")` followed
+by `model.generate(enc, "o2p")` still raises
+`RuntimeError: to_padded_tensor: at least one constituent tensor should have non-zero numel`
+from inside the encoder, byte-identically to the behaviour before this change.
+
+The new absence check cannot fire on it, and the reason is worth recording. `Model.generate`
+passes `None` for any modality the pathway does not read, so the check only ever sees
+arguments `generate` itself constructed. What actually reaches `embed_o` is the two-wide
+`[--, BOS]` placeholder that `BridgeTokenizer._create_placeholder_orthographic` puts on
+every `BridgeEncoding`, and a placeholder is structurally indistinguishable from a real
+two-character encoding. Closing it needs the encoding to record which modalities are real,
+not a better check at the boundary. Tracked under #233, which stays open on that shape.
 
 `tests/domain/model/test_validate_generate_input.py` drops from 404 lines to 190 and covers
 more: it sweeps every pathway against every modality it reads against every malformation,

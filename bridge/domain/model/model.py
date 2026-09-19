@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Literal, TypedDict
+from typing import TypedDict
 
 import torch
 import torch.nn as nn
@@ -7,42 +7,36 @@ import torch.nn.functional as F
 
 from bridge.core.phonreps import load_phoneme_table, row_normalize
 from bridge.domain.datamodels import BridgeEncoding, GenerationOutput, ModelConfig
+from bridge.domain.datamodels.pathways import (
+    MODALITIES,
+    PATHWAY_INPUTS,
+    PATHWAY_IO,
+    PATHWAYS,
+    READS_ORTH,
+    READS_PHON,
+    WRITES_ORTH,
+    WRITES_PHON,
+    Pathway,
+)
 from bridge.domain.model.layers import Decoder, Encoder
 from bridge.utils import device_manager
 from bridge.utils.helper_functions import set_seed
 
-Pathway = Literal["o2p", "p2o", "op2op", "p2p", "o2o"]
-PATHWAYS: tuple[Pathway, ...] = ("o2p", "p2o", "op2op", "p2p", "o2o")
-
-# What each pathway reads and what it writes. This is the one place the answer lives.
-# Every "which pathways use orthography" question in the codebase used to be its own
-# literal tuple, thirteen of them across three modules, and two written one line apart in
-# different orders. Adding a pathway now means adding a row.
-PATHWAY_IO: dict[Pathway, tuple[frozenset[str], frozenset[str]]] = {
-    "o2p": (frozenset({"orth"}), frozenset({"phon"})),
-    "p2o": (frozenset({"phon"}), frozenset({"orth"})),
-    "o2o": (frozenset({"orth"}), frozenset({"orth"})),
-    "p2p": (frozenset({"phon"}), frozenset({"phon"})),
-    "op2op": (frozenset({"orth", "phon"}), frozenset({"orth", "phon"})),
-}
-
-MODALITIES: tuple[str, ...] = ("orth", "phon")
-
-READS_ORTH = tuple(p for p in PATHWAYS if "orth" in PATHWAY_IO[p][0])
-READS_PHON = tuple(p for p in PATHWAYS if "phon" in PATHWAY_IO[p][0])
-# Pathways whose second half is orthography, so they run the orthographic decoder loop.
-WRITES_ORTH = tuple(p for p in PATHWAYS if "orth" in PATHWAY_IO[p][1])
-WRITES_PHON = tuple(p for p in PATHWAYS if "phon" in PATHWAY_IO[p][1])
-
-# The encoder/decoder tensors a training forward needs, derived rather than restated: a
-# modality that is read supplies encoder input, one that is written supplies decoder input.
-PATHWAY_INPUTS: dict[Pathway, tuple[tuple[str, str], ...]] = {
-    pathway: tuple(
-        [(m, "enc") for m in MODALITIES if m in reads]
-        + [(m, "dec") for m in MODALITIES if m in writes]
-    )
-    for pathway, (reads, writes) in PATHWAY_IO.items()
-}
+# Re-exported from datamodels.pathways, which owns them. See that module for why they do
+# not live here.
+__all__ = [
+    "MODALITIES",
+    "PATHWAYS",
+    "PATHWAY_INPUTS",
+    "PATHWAY_IO",
+    "READS_ORTH",
+    "READS_PHON",
+    "WRITES_ORTH",
+    "WRITES_PHON",
+    "GenerationDict",
+    "Model",
+    "Pathway",
+]
 
 
 class GenerationDict(TypedDict):
@@ -1030,14 +1024,21 @@ class Model(nn.Module):
                 f"{modality}_enc_input sequence length {ids.size(1)} exceeds maximum "
                 f"allowed length {max_seq_len}"
             )
-        if torch.any(ids < 0) or torch.any(ids >= id_space):
-            raise ValueError(f"{name} ids must lie in [0, {id_space})")
+        # Placement before content, and the order is load-bearing. Everything above reads
+        # only metadata; the range check below reads the data. A tensor on the wrong device
+        # therefore has to be rejected here or the range check dereferences it first and
+        # fails with something about the wrong thing: a meta tensor gives
+        # `RuntimeError: Tensor.item() cannot be called on meta tensors`, which says
+        # nothing about placement, and a CUDA/CPU mix gives a device-assert from inside a
+        # comparison kernel.
         for label, tensor in (
             (f"{modality}_enc_input", ids),
             (f"{modality}_enc_pad_mask", mask),
         ):
             if tensor.device != self.device:
                 raise ValueError(f"{label} must be on device {self.device}, got {tensor.device}")
+        if torch.any(ids < 0) or torch.any(ids >= id_space):
+            raise ValueError(f"{name} ids must lie in [0, {id_space})")
 
     def _validate_generate_input(
         self,

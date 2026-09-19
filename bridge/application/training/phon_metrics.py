@@ -57,41 +57,48 @@ def calculate_cosine_distance(true_rows: torch.Tensor, pred_rows: torch.Tensor) 
     return torch.mean(torch.nn.CosineSimilarity(dim=1)(pred_rows, true_rows))
 
 
-def calculate_closest_phoneme_cdist(
-    true_base: torch.Tensor,
-    pred_base: torch.Tensor,
-    phon_reps: torch.Tensor,
-    norm: float = 2,
-) -> torch.Tensor:
-    """Rate at which the p-norm-closest real phoneme to the prediction is the target's.
+def nearest_phoneme(rows: torch.Tensor, phon_reps: torch.Tensor, metric: str) -> torch.Tensor:
+    """Index of the closest real phoneme to each row of ``rows``, under ``metric``.
 
-    ``true_base`` and ``pred_base`` carry only the phonetic-feature columns, since
-    ``phon_reps`` (``PhonemeTable.phonetic_features``) has no special-token columns to
-    compare against.
+    ``rows`` and ``phon_reps`` both carry only the phonetic-feature columns.
+
+    One function, and it returns *distances* so the reduction is always ``argmin``. The
+    cosine variant used to take ``argmin`` over a cosine **similarity**, which selects the
+    least similar phoneme. Measured: over the 86 real phoneme rows, that reduction picks a
+    row's own index 0 times out of 86, where ``argmax`` picks it 85 times, and on a fully
+    scrambled prediction the metric read 0.6395 where the L2 control correctly read 0.0.
+    Expressing cosine as a distance rather than a similarity is what makes the direction
+    impossible to get wrong again.
     """
-    return torch.mean(
-        torch.eq(
-            torch.argmin(torch.cdist(true_base, phon_reps, norm), dim=1),
-            torch.argmin(torch.cdist(pred_base, phon_reps, norm), dim=1),
-        ).float()
-    )
+    if metric == "cosine":
+        eps = 1e-8
+        a = rows / rows.norm(p=2, dim=1, keepdim=True).clamp(min=eps)
+        b = phon_reps / phon_reps.norm(p=2, dim=1, keepdim=True).clamp(min=eps)
+        distances = 1.0 - torch.mm(a, b.t())
+    else:
+        distances = torch.cdist(rows, phon_reps, {"l1": 1.0, "l2": 2.0}[metric])
+    return distances.argmin(dim=1)
 
 
-def calculate_closest_phoneme_cosine(
+def calculate_closest_phoneme(
     true_base: torch.Tensor,
     pred_base: torch.Tensor,
     phon_reps: torch.Tensor,
-    eps: float = 1e-8,
+    metric: str,
 ) -> torch.Tensor:
-    """The same comparison as :func:`calculate_closest_phoneme_cdist`, under cosine distance."""
-    phon_n = phon_reps.norm(p=2, dim=1, keepdim=True)
-    pred_norm = (pred_base.norm(p=2, dim=1, keepdim=True) * phon_n.t()).clamp(min=eps)
-    true_norm = (true_base.norm(p=2, dim=1, keepdim=True) * phon_n.t()).clamp(min=eps)
-    return torch.mean(
+    """Rate at which the prediction's nearest real phoneme is also the target's.
+
+    Not "is the prediction correct" but "does it round to the same phoneme", which is the
+    tolerant reading: a feature vector can be wrong in a bit or two and still decode to the
+    intended phoneme.
+    """
+    return (
         torch.eq(
-            torch.argmin(torch.mm(true_base, phon_reps.t()) / true_norm, dim=1),
-            torch.argmin(torch.mm(pred_base, phon_reps.t()) / pred_norm, dim=1),
-        ).float()
+            nearest_phoneme(true_base, phon_reps, metric),
+            nearest_phoneme(pred_base, phon_reps, metric),
+        )
+        .float()
+        .mean()
     )
 
 
@@ -146,13 +153,10 @@ def calculate_phon_metrics(
         "phon_word_accuracy": calculate_phon_word_accuracy(
             phon_true, phoneme_wise_mask, phon_pad_id
         ).item(),
-        "closest_phoneme_l1_accuracy": calculate_closest_phoneme_cdist(
-            true_base, pred_base, phon_reps, 1
-        ).item(),
-        "closest_phoneme_l2_accuracy": calculate_closest_phoneme_cdist(
-            true_base, pred_base, phon_reps, 2
-        ).item(),
-        "closest_phoneme_cosine_accuracy": calculate_closest_phoneme_cosine(
-            true_base, pred_base, phon_reps
-        ).item(),
+        **{
+            f"closest_phoneme_{metric}_accuracy": calculate_closest_phoneme(
+                true_base, pred_base, phon_reps, metric
+            ).item()
+            for metric in ("l1", "l2", "cosine")
+        },
     }

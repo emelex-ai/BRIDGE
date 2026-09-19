@@ -80,3 +80,18 @@ for the two-id-space hazard, and neither was reachable through a supported impor
 
 W&B integration is not replaced. A caller writes `wandb.log(event.metrics)` inside their own
 loop, which is shorter than the wrapper was and does not need a singleton.
+
+
+## Also removed here, and worth naming
+
+`TrainingPipeline.load_model` installed four `sys.modules` aliases mapping `src`,
+`src.domain`, `src.domain.datamodels` and `src.domain.datamodels.model_config` onto their
+`bridge` equivalents, so that checkpoints pickled before the package was renamed could still
+be unpickled. They are gone.
+
+This is a real compatibility loss and not a no-op: a checkpoint whose `model_config` records
+the module path `src.domain.datamodels.model_config` now raises `ModuleNotFoundError: No
+module named 'src'`, and since `load_model` no longer swallows exceptions that propagates out
+of `TrainingPipeline.__init__` rather than silently starting from random weights. Converting
+one is a few lines against the same aliases in a script; carrying them inside the resume path
+forever, with nothing recording when they could go, is what was not worth keeping.

@@ -1,7 +1,7 @@
 """Pinned values for the phonological metrics, over two committed fixtures.
 
 The fixtures are untouched and have never been regenerated. The expectations have moved
-twice, and both moves are recorded here rather than silently absorbed, because a golden
+three times, and every move is recorded here rather than silently absorbed, because a golden
 master rewritten to make a test pass is worth nothing.
 
 **First move, the pad sentinel.** ``phon_true.pt`` is 54.2% padding, and the old mask,
@@ -25,13 +25,28 @@ production table, which is what ``test_phon_metrics_padding.py`` already did.
     metric                  85 candidates    86 candidates (production)
     closest phoneme, L1            0.8504                        0.8530
     closest phoneme, L2            0.8504                        0.8530
-    closest phoneme, cosine        0.9738                        0.9738
+    closest phoneme, cosine        0.9738                        0.9738  (pre-correction)
 
 One position of 381 changes its nearest neighbour, which is what restoring an all-zero
 candidate row to an L1/L2 search should do. Cosine is unaffected, and the two metrics that
 never touch the matrix, cosine similarity and euclidean distance, are unchanged at 0.9487
 and 0.2339, which is what shows the substitution touched the candidate set and nothing
 else.
+
+**Third move, the cosine direction.** `calculate_closest_phoneme_cosine` took `argmin`
+over a cosine *similarity*, which selects the least similar phoneme, so the metric named
+"closest phoneme" was scoring agreement on the *farthest* one. Over the 86 real phoneme
+rows that reduction picks a row's own index 0 times out of 86, where `argmax` picks it 85
+times, and on a fully scrambled prediction it read 0.6395 where the L2 control correctly
+read 0.0. Cosine is now expressed as a distance, `1 - similarity`, so every variant reduces
+with `argmin`.
+
+    metric                  as similarity (wrong)    as distance (correct)
+    closest phoneme, cosine                0.9738                   0.8504
+
+The corrected figure sits beside L1 and L2 at 0.8530 rather than 12 points above them,
+which is what a metric measuring the same thing under a different norm should do. Any
+`closest_phoneme_cosine_accuracy` reported before this is void.
 
 The identity cases are the control throughout. Comparing a tensor against itself is 1.0,
 or 0.0 for a distance, at every position any mask could select, so those must not move
@@ -40,13 +55,14 @@ under either substitution, and they do not.
 
 import math
 
+import pytest
 import torch
 
 from bridge.application.training.phon_metrics import (
-    calculate_closest_phoneme_cdist,
-    calculate_closest_phoneme_cosine,
+    calculate_closest_phoneme,
     calculate_cosine_distance,
     calculate_euclidean_distance,
+    nearest_phoneme,
 )
 from tests.vocab import PHONEME_TABLE
 
@@ -132,34 +148,52 @@ def test_euclidean_distance():
     )
 
 
-def test_closest_phoneme_cdist():
-    true_base, pred_base = base_block(
-        *real_rows(load_fixture("phon_true"), load_fixture("phon_pred"))
-    )
-    for norm in (1, 2):
-        assert math.isclose(
-            calculate_closest_phoneme_cdist(true_base, pred_base, PHON_REPS, norm).item(),
-            0.8530,
-            rel_tol=1e-3,
-        ), f"L{norm}"
-
-
-def test_closest_phoneme_cdist_identity():
-    (true_base,) = base_block(*real_rows(load_fixture("phon_true")))
-    assert calculate_closest_phoneme_cdist(true_base, true_base, PHON_REPS, 2).item() == 1.0
-
-
-def test_closest_phoneme_cosine():
+@pytest.mark.parametrize(
+    ("metric", "expected"), [("l1", 0.8530), ("l2", 0.8530), ("cosine", 0.8504)]
+)
+def test_closest_phoneme(metric, expected):
     true_base, pred_base = base_block(
         *real_rows(load_fixture("phon_true"), load_fixture("phon_pred"))
     )
     assert math.isclose(
-        calculate_closest_phoneme_cosine(true_base, pred_base, PHON_REPS).item(),
-        0.9738,
+        calculate_closest_phoneme(true_base, pred_base, PHON_REPS, metric).item(),
+        expected,
         rel_tol=1e-3,
     )
 
 
-def test_closest_phoneme_cosine_identity():
+@pytest.mark.parametrize("metric", ["l1", "l2", "cosine"])
+def test_closest_phoneme_identity(metric):
+    """A prediction equal to its target rounds to the same phoneme, whatever the norm."""
     (true_base,) = base_block(*real_rows(load_fixture("phon_true")))
-    assert calculate_closest_phoneme_cosine(true_base, true_base, PHON_REPS).item() == 1.0
+    assert calculate_closest_phoneme(true_base, true_base, PHON_REPS, metric).item() == 1.0
+
+
+@pytest.mark.parametrize("metric", ["l1", "l2", "cosine"])
+def test_a_phoneme_is_its_own_nearest_phoneme(metric):
+    """The analytic oracle, and the one the identity tests above cannot supply.
+
+    Comparing a tensor against itself passes for *any* reduction, including ``argmin`` over
+    a similarity, because both sides pick the same wrong row. Asking instead whether each
+    phoneme's own feature vector resolves to its own index is what distinguishes nearest
+    from farthest, and it is what the pre-correction cosine failed 86 times out of 86.
+
+    ``cosine`` is 85 of 86 rather than 86: ``phonreps.csv`` contains one featureless
+    phoneme, ``'_'``, and an all-zero vector has no direction for cosine to compare.
+    """
+    own = torch.arange(PHON_REPS.shape[0])
+    hits = int((nearest_phoneme(PHON_REPS, PHON_REPS, metric) == own).sum())
+    assert hits == (85 if metric == "cosine" else 86), f"{metric} resolved {hits}/86"
+
+
+@pytest.mark.parametrize("metric", ["l1", "l2", "cosine"])
+def test_a_scrambled_prediction_scores_zero(metric):
+    """The control that fails loudest on a reversed comparison.
+
+    A prediction that is every phoneme except its own must agree nowhere. The
+    pre-correction cosine scored 0.6395 here.
+    """
+    scrambled = PHON_REPS[
+        torch.randperm(PHON_REPS.shape[0], generator=torch.Generator().manual_seed(0))
+    ]
+    assert calculate_closest_phoneme(PHON_REPS, scrambled, PHON_REPS, metric).item() == 0.0

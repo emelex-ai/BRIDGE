@@ -1,9 +1,14 @@
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from bridge.domain.datamodels.vocab_spec import VocabSpec
 
 
 class ModelConfig(BaseModel):
+    # An unknown key is a typo in someone's experiment config, and silently
+    # ignoring it means the run does something other than what the file says.
+    # Removing a field (gcs_path, max_nb_steps) made that reachable.
+    model_config = ConfigDict(extra="forbid")
+
     num_phon_enc_layers: int = Field(default=2)
     num_orth_enc_layers: int = Field(default=2)
     num_mixing_enc_layers: int = Field(default=2)

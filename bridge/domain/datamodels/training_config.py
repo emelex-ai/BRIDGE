@@ -1,13 +1,18 @@
 import os
 from pathlib import Path
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from bridge.domain.model.model import Pathway
+from bridge.domain.datamodels.pathways import Pathway
 from bridge.utils import get_project_root
 
 
 class TrainingConfig(BaseModel):
+    # An unknown key is a typo in someone's experiment config, and silently
+    # ignoring it means the run does something other than what the file says.
+    # Removing a field (gcs_path, max_nb_steps) made that reachable.
+    model_config = ConfigDict(extra="forbid")
+
     num_epochs: int = Field(default=2)
     batch_size_train: int = Field(default=32)
     batch_size_val: int = Field(default=32)

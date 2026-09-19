@@ -1,4 +1,3 @@
-import gc
 import json
 import logging
 import random
@@ -63,16 +62,18 @@ class TrainingPipeline:
             weight_decay=training_config.weight_decay,
         )
         self.train_slices, self.val_slices = self.create_data_slices()
-        self.phon_reps = load_phoneme_table(device=self.device).phonetic_features
 
-        # The pronunciation lexicon is a process-lifetime cache, so the ~768k objects it
-        # allocates are immortal and every generational collection rescans them to free
-        # nothing. Freezing moves everything allocated so far into a generation the
-        # collector skips, which takes `gc.collect()` from a measured 155 ms to 0.0 ms.
-        # This replaces a `gc.collect()` every ten steps that cost a measured 17% of every
-        # epoch; an RSS control across an epoch showed it reclaiming nothing. Objects
-        # allocated after this point are still collected normally.
-        gc.freeze()
+        # Nothing here touches the garbage collector. A `gc.collect()` every ten steps cost
+        # a measured 17% of every epoch and reclaimed nothing (RSS across an epoch was flat
+        # with and without it), because the ~768k objects it rescanned are the
+        # process-lifetime pronunciation lexicon cache and can never be freed. Removing it
+        # was the whole win. Freezing the heap was tried in its place and is not here
+        # either: it bought +0.025 s on a 2.9 s epoch against a 0.149 s run-to-run spread,
+        # and in exchange moved every object alive at construction, the caller's included,
+        # into a generation the collector never examines. A caller cycle held across
+        # `TrainingPipeline(...)` then leaked for the process lifetime, measured at 32 MB,
+        # with nothing anywhere to undo it. A library does not get to decide that about
+        # someone else's heap.
 
         self.start_epoch = 0
         if training_config.checkpoint_path:
@@ -91,6 +92,17 @@ class TrainingPipeline:
         ``model.to(device_manager.device)``, which is one visible line.
         """
         return self.model.device
+
+    @property
+    def phon_reps(self) -> torch.Tensor:
+        """The phonetic-feature block, on whatever device the model is on right now.
+
+        Derived rather than stored, for the same reason `device` is. Snapshotting it in
+        `__init__` left a model moved afterwards, which decision 0012 makes legal,
+        comparing against a table on the old device, and `cdist` raised.
+        `load_phoneme_table` is cached per device, so this costs a dict lookup.
+        """
+        return load_phoneme_table(device=self.device).phonetic_features
 
     def create_data_slices(self):
         # Kept on the instance: `_shuffle_training_partition` reorders exactly the indices
@@ -232,7 +244,13 @@ class TrainingPipeline:
 
         totals: dict[str, torch.Tensor] = {}
         for sub_slice in sub_slices:
-            batch = dataset[sub_slice]
+            # Placed at the point of use, not at construction. The dataset builds its
+            # encodings on the process device and the model goes wherever the caller put
+            # it, so something has to reconcile the two; doing it here rather than by
+            # moving the model in `__init__` keeps the caller's placement authoritative
+            # (decision 0012) and still holds when the model moves mid-run.
+            # `BridgeEncoding.to` returns self when the device already matches.
+            batch = dataset[sub_slice].to(self.device)
             orthography, phonology = batch.orthographic, batch.phonological
             logits = self.forward(orthography, phonology)
             losses = self.compute_loss(logits, orthography, phonology)
@@ -301,26 +319,26 @@ class TrainingPipeline:
         summary["time_per_epoch"] = elapsed
         return {prefix + str(key): value for key, value in summary.items()}
 
-    def _progress(self, slices: list[slice], desc: str) -> Iterator[tuple[int, slice]]:
-        """Iterate slices behind a tqdm bar, yielding ``(step, slice)``.
+    @staticmethod
+    def _postfix(bar: tqdm, metrics: MetricsDict, last_update: float) -> float:
+        """Refresh ``bar``'s postfix at most once per ``min_interval``; return the new time.
 
-        The postfix is refreshed by :meth:`_show`, which the caller invokes with the metrics
-        it just produced. Splitting it this way keeps the throttle in one place instead of
-        once per epoch method.
+        The bar and its throttle are the caller's locals, passed in and handed back, rather
+        than attributes on the pipeline. Held on the instance, two live iterations shared
+        one bar: starting ``train_steps`` and then calling ``validate_single_epoch``
+        repointed the stored bar at the validation one, so the training loop went on
+        repainting a finished bar and the abandoned one died at interpreter teardown inside
+        tqdm with ``AttributeError: 'NoneType' object has no attribute 'format_interval'``.
+        Both methods are public, and ``train_steps`` is documented as the seam a caller
+        reaches for to own the loop, so interleaving them is ordinary use.
         """
-        self._bar = tqdm(slices, desc=desc, mininterval=min_interval)
-        self._last_update = time.time()
-        yield from enumerate(self._bar)
-
-    def _show(self, metrics: MetricsDict) -> None:
-        """Refresh the progress bar postfix, at most once per ``min_interval`` seconds."""
         now = time.time()
-        if now - self._last_update <= min_interval:
-            return
-        self._bar.set_postfix(
+        if now - last_update <= min_interval:
+            return last_update
+        bar.set_postfix(
             {key: f"{value:.4f}" for key, value in metrics.items() if not isinstance(value, str)}
         )
-        self._last_update = now
+        return now
 
     def _evaluate(
         self, dataset: BridgeDataset, slices: list[slice], prefix: str, desc: str
@@ -333,12 +351,14 @@ class TrainingPipeline:
         self.model.eval()
         start = time.time()
         total: NumericMetrics = {}
+        bar = tqdm(slices, desc=desc, mininterval=min_interval)
+        last_update = time.time()
         with torch.no_grad():
-            for _step, batch_slice in self._progress(slices, desc):
+            for batch_slice in bar:
                 metrics = self.single_step(
                     dataset, batch_slice, self.training_config.compute_metrics
                 )
-                self._show(metrics)
+                last_update = self._postfix(bar, metrics, last_update)
                 total = self._accumulate(total, metrics)
         return self._summarize(total, len(slices), time.time() - start, prefix)
 
@@ -356,11 +376,13 @@ class TrainingPipeline:
         it themselves, or does not.
         """
         self.model.train()
-        for step, batch_slice in self._progress(self.train_slices, f"Training Epoch {epoch + 1}"):
+        bar = tqdm(self.train_slices, desc=f"Training Epoch {epoch + 1}", mininterval=min_interval)
+        last_update = time.time()
+        for step, batch_slice in enumerate(bar):
             metrics = self.single_step(
                 self.dataset, batch_slice, self.training_config.compute_metrics
             )
-            self._show(metrics)
+            last_update = self._postfix(bar, metrics, last_update)
             yield TrainingEvent(phase="train", epoch=epoch, step=step, metrics=metrics)
 
     def validate_single_epoch(self, epoch: int) -> NumericMetrics:
