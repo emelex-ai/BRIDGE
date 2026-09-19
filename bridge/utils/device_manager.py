@@ -77,18 +77,6 @@ class DeviceManager:
         """Returns the current compute device."""
         return self._device
 
-    def synchronize(self):
-        """Synchronizes the current device if necessary."""
-        if self._device.type == "cuda":
-            torch.cuda.synchronize()
-        elif self._device.type == "mps":
-            torch.mps.synchronize()
-
-    def create_tensor(self, *args, **kwargs):
-        """Creates a tensor on the current device."""
-        kwargs["device"] = self._device
-        return torch.tensor(*args, **kwargs)
-
 
 # The process-wide device, selectable without editing code. There is no other supported
 # way to reach a GPU: before this, the only working override was assigning the private

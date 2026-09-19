@@ -117,23 +117,3 @@ def test_model_initialization_with_dataset(mock_dataset, model_config):
     assert model.phonology_embedding.num_embeddings == mock_dataset.phonological_vocabulary_size
     assert model.orth_position_embedding.num_embeddings == 30
     assert model.phon_position_embedding.num_embeddings == 30
-
-
-def test_gpu_availability():
-    """Test GPU availability and basic tensor operations."""
-    from bridge.utils import device_manager
-
-    # Create test tensor
-    x = device_manager.create_tensor([[1.0, 2.0], [3.0, 4.0]])
-    y = device_manager.create_tensor([[5.0, 6.0], [7.0, 8.0]])
-
-    # Perform computation
-    z = torch.matmul(x, y)
-
-    # Ensure computation was done on the right device
-    assert z.device.type == device_manager.device.type
-    device_manager.synchronize()  # Ensure computation is complete
-
-    # Test basic operations
-    result = z.cpu().numpy()  # Move back to CPU for comparison
-    assert result.shape == (2, 2)
