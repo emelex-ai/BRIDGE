@@ -1,9 +1,14 @@
 import os
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class DatasetConfig(BaseModel):
+    # An unknown key is a typo in someone's experiment config, and silently
+    # ignoring it means the run does something other than what the file says.
+    # Removing a field (gcs_path, max_nb_steps) made that reachable.
+    model_config = ConfigDict(extra="forbid")
+
     dataset_filepath: str = Field(description="Path to dataset file")
     custom_cmudict_path: str | None = Field(
         default=None,
@@ -13,14 +18,6 @@ class DatasetConfig(BaseModel):
             "of the lexicons shipped under `bridge/core/pronunciation_lexicons/`."
         ),
     )
-
-    @model_validator(mode="before")
-    def convert_paths(cls, values):
-        """Convert relative paths to absolute paths before validation occurs."""
-        if "dataset_filepath" not in values:
-            raise FileNotFoundError("No dataset file specified")
-
-        return values
 
     @model_validator(mode="after")
     def validate_paths(self):

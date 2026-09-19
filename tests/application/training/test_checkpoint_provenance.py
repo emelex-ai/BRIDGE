@@ -7,11 +7,11 @@ derived feature matrix is a non-persistent buffer, so ``load_state_dict`` succee
 only meaningful where two independently-produced tables meet: at the checkpoint boundary.
 """
 
-import inspect
 import logging
 from types import SimpleNamespace
 
 import pytest
+import torch
 
 from bridge.application.training.training_pipeline import TrainingPipeline
 from bridge.domain.datamodels import ModelConfig
@@ -62,14 +62,45 @@ def test_a_checkpoint_predating_the_field_is_silent(pipeline, caplog, ckpt):
     assert caplog.text == ""
 
 
-def test_both_checkpoint_readers_run_the_drift_check():
-    """``load_model`` is not the only door a foreign checkpoint comes through.
+def test_load_model_runs_the_drift_check_on_a_real_checkpoint(
+    words_dataset, make_pipeline, tmp_path, caplog
+):
+    """The check is wired into the door a foreign checkpoint actually comes through.
 
-    ``transfer_partial_model_parameters`` copies selected modules out of someone else's
-    checkpoint, which is the same silent-corruption case: shapes still match, so
-    ``load_state_dict`` succeeds and nothing else would notice a relabelled feature table.
+    This replaces a test that read ``TrainingPipeline``'s source and asserted the string
+    ``_warn_on_phoneme_table_drift`` appeared inside two method bodies. That had no oracle
+    beyond "the text is in the file", and one of the two methods it guarded was never
+    called by anything. Driving a real checkpoint through the real ``load_model`` is the
+    claim the source search was standing in for.
+
+    The control is the second half: a checkpoint whose fingerprint matches must load in
+    silence, so the warning above is evidence of drift detection rather than of a loader
+    that warns unconditionally.
     """
-    source = inspect.getsource(TrainingPipeline)
-    for reader in ("load_model", "transfer_partial_model_parameters"):
-        body = source.split(f"def {reader}(", 1)[1].split("\n    def ", 1)[0]
-        assert "_warn_on_phoneme_table_drift" in body, f"{reader} skips the drift check"
+    pipeline = make_pipeline(words_dataset, model_artifacts_dir=str(tmp_path))
+    bundle = {
+        "model_config": pipeline.model.model_config,
+        "dataset_config": words_dataset.dataset_config,
+        "model_state_dict": pipeline.model.state_dict(),
+        "optimizer_state_dict": pipeline.optimizer.state_dict(),
+        "epoch": 0,
+    }
+
+    stale = bundle["model_config"].model_copy(deep=True)
+    stale.vocab.phon_table_fingerprint = "0000000000000000"
+    drifted = tmp_path / "drifted.pth"
+    torch.save({**bundle, "model_config": stale}, drifted)
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger=LOGGER):
+        pipeline.load_model(str(drifted))
+    assert "Phoneme feature table mismatch" in caplog.text
+    assert PHONEME_TABLE.fingerprint in caplog.text, "the warning names the current table"
+
+    matching = tmp_path / "matching.pth"
+    torch.save(bundle, matching)
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger=LOGGER):
+        pipeline.load_model(str(matching))
+    assert caplog.text == "", "a checkpoint from the same table must load in silence"

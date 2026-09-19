@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
     from bridge.domain.tokenizer.bridge_tokenizer import BridgeTokenizer
@@ -38,6 +38,11 @@ class VocabSpec(BaseModel):
     with hardcoded numbers (e.g. for testing or when loading a checkpoint
     without instantiating the tokenizer).
     """
+
+    # An unknown key is a typo in someone's experiment config, and silently
+    # ignoring it means the run does something other than what the file says.
+    # Removing a field (gcs_path, max_nb_steps) made that reachable.
+    model_config = ConfigDict(extra="forbid")
 
     orth_vocab_size: int = Field(description="Orthographic vocabulary size.")
     phon_vocab_size: int = Field(description="Phonological vocabulary size.")

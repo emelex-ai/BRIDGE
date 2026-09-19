@@ -38,7 +38,7 @@ import torch
 
 from bridge.domain.datamodels import ModelConfig, VocabSpec
 from bridge.domain.model import Model
-from bridge.domain.model.model import ORTH_DECODING
+from bridge.domain.model.model import WRITES_ORTH
 from bridge.domain.tokenizer import BridgeTokenizer
 
 # Chosen so the batch terminates raggedly rather than in lockstep: a lockstep batch has no
@@ -227,7 +227,7 @@ def test_the_orthographic_eos_itself_survives(tokenizer, model, vocab):
         )
 
 
-@pytest.mark.parametrize("pathway", sorted(ORTH_DECODING))
+@pytest.mark.parametrize("pathway", sorted(WRITES_ORTH))
 def test_orthographic_content_does_not_depend_on_the_rest_of_the_batch(
     tokenizer, model, vocab, pathway
 ):

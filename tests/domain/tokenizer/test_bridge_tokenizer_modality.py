@@ -204,10 +204,26 @@ def test_invalid_modality_filter_raises(tok):
         tok.encode(WORD, modality_filter="nope")
 
 
-def test_invalid_language_code_returns_none_rather_than_raising(tok):
-    """The character tokenizer raises on an unsupported language; ``encode`` converts
-    every failure into ``None`` so callers have a single failure mode."""
-    assert tok.encode(WORD, language_map={WORD: "FR"}) is None
+def test_an_unsupported_language_code_raises(tok):
+    """A language BRIDGE does not have is the caller's mistake, not a data condition.
+
+    ``encode`` used to convert every failure into ``None``, so a typo in a language code
+    and a word genuinely absent from the pronunciation lexicon were the same return value
+    and a caller could not tell them apart. The real message was logged and discarded.
+    ``None`` now means one thing; everything else propagates.
+    """
+    with pytest.raises(ValueError, match="Invalid languages"):
+        tok.encode(WORD, language_map={WORD: "FR"})
+
+
+def test_a_word_absent_from_the_lexicon_still_returns_none(tok):
+    """The control for the test above, and the reason its failure means what it claims.
+
+    Same call shape, a supported language, a word with no pronunciation. If this returned
+    an exception too then ``None`` would have stopped meaning anything; if the test above
+    returned ``None`` then the two conditions would still be conflated.
+    """
+    assert tok.encode("zzqxwv", language_map={"zzqxwv": "EN"}) is None
 
 
 def test_string_and_single_element_list_agree(tok):

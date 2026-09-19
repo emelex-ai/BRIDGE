@@ -144,15 +144,16 @@ class TestMultilingual:
         placeholder_idx = bridge_tokenizer.char_tokenizer.char_2_idx["--"]
         assert encoding.orthographic.enc_input_ids[0, 0].item() == placeholder_idx
 
-    def test_unknown_language_returns_none(self, bridge_tokenizer):
-        """An unsupported language code should fail orthographic encoding, returning None.
+    def test_unknown_language_propagates_the_character_tokenizer_error(self, bridge_tokenizer):
+        """An unsupported language code reaches the caller as the error it is.
 
-        The character tokenizer rejects unknown language codes outright; BridgeTokenizer
-        catches that and surfaces it as a failed encoding (None) rather than propagating
-        the ValueError. The phoneme tokenizer is more permissive and falls back to English.
+        The character tokenizer rejects unknown language codes outright, and BridgeTokenizer
+        no longer catches that: a typo in a language code and a word genuinely missing from
+        the lexicon used to be the same ``None``, with the message that distinguished them
+        logged and thrown away.
         """
-        result = bridge_tokenizer.encode(["bonjour"], language_map={"bonjour": "FR"})
-        assert result is None
+        with pytest.raises(ValueError, match="Invalid languages"):
+            bridge_tokenizer.encode(["bonjour"], language_map={"bonjour": "FR"})
 
     def test_unknown_language_raises_at_char_tokenizer(self, bridge_tokenizer):
         """Direct call to the char tokenizer DOES raise ValueError on unknown language."""

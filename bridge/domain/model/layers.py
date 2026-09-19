@@ -44,7 +44,17 @@ class Decoder(nn.Module):
         memory_mask: torch.Tensor | None = None,
         tgt_key_padding_mask: torch.Tensor | None = None,
         memory_key_padding_mask: torch.Tensor | None = None,
+        tgt_is_causal: bool | None = None,
     ) -> torch.Tensor:
+        """``tgt_is_causal`` is passed through rather than left for torch to work out.
+
+        With a ``tgt_mask`` supplied and this left as ``None``, every layer call runs
+        ``_detect_is_causal_mask``, which allocates a reference triangular mask and
+        compares against it. The answer is always True for BRIDGE's masks, which are
+        built by ``generate_triangular_mask``, so the work is always wasted, and on CUDA
+        the comparison's ``bool(...)`` forces a device sync: 28 to 34 of them per
+        ``generate()`` call, measured with ``torch.cuda.set_sync_debug_mode("warn")``.
+        """
         return self.transformer_decoder(
             tgt,
             memory,
@@ -52,4 +62,5 @@ class Decoder(nn.Module):
             memory_mask=memory_mask,
             tgt_key_padding_mask=tgt_key_padding_mask,
             memory_key_padding_mask=memory_key_padding_mask,
+            tgt_is_causal=tgt_is_causal,
         )

@@ -19,6 +19,12 @@ back out to either, which gives five pathways:
 | `p2p` | phonology | phonology |
 | `op2op` | both, cross-attended | both |
 
+Which modalities a pathway reads and writes is declared once, in `PATHWAY_IO`
+(`bridge/domain/datamodels/pathways.py`), and every other question, which decoder loop runs, which
+loss terms exist, which tensors a training forward needs, which inputs the boundary
+validates, is a query against it rather than its own list. All five train and all five
+generate. See `docs/decisions/0011`.
+
 The scientific premise is that phonemes sharing phonetic features share embedding mass. A
 phoneme's embedding is the mean of its active feature embeddings, never a free parameter of
 its own. See `docs/decisions/0002-phoneme-row-ids-replace-ragged-feature-lists.md`.
@@ -70,16 +76,23 @@ a checkpoint loads, so a `phonreps.csv` edit that silently relabels every id is 
 bridge/core/phonreps.py               the feature scheme and PhonemeTable
 bridge/core/pronunciation_lexicons/   per-language word to phoneme dictionaries
 bridge/domain/datamodels/             EncodingComponent, BridgeEncoding, VocabSpec,
-                                      ModelConfig, GenerationOutput
+                                      ModelConfig, GenerationOutput, TrainingEvent
+bridge/domain/datamodels/pathways.py  PATHWAY_IO: what each pathway reads and writes
 bridge/domain/tokenizer/              CharacterTokenizer, PhonemeTokenizer, BridgeTokenizer
 bridge/domain/model/model.py          encoders, decoders, generation loops
 bridge/domain/data/bridge_dataset.py  dataset, language resolution, encoding memo
 bridge/application/training/          TrainingPipeline, loss, metrics
-bridge/infra/                         metrics loggers, GCS and wandb clients
+bridge/utils/device_manager.py        the process device, selected by BRIDGE_DEVICE
 tests/fixtures/phon_baseline.pt       golden master, immutable
+tests/fixtures/bench_phon.py          phonological hot-path benchmarks
 tests/test_documentation.py           asserts this document against the live system
 docs/decisions/                       architecture decision records
 ```
+
+The library performs no I/O of its own: no metrics sink, no cloud client, no logger. It
+reads the dataset path it is given and writes the checkpoint path it is given, and
+everything else reaches the caller through the `TrainingEvent` stream. See
+`docs/decisions/0010`.
 
 ## How a batch flows
 
@@ -106,11 +119,15 @@ lists because sequences finish at different lengths.
 
 ## Who drives training
 
-The library owns the step; the caller owns the loop. `TrainingPipeline.single_step` runs one
-optimizer step over one slice, `train_steps(epoch)` yields after each of them, and
-`run_train_val_loop` is a thin wrapper that adds shuffling, validation and an epoch summary.
-It emits a `TrainingEvent` per step and per boundary, tagged `train`, `validation`, `test` or
-`epoch`, and writes no checkpoints of its own.
+The library owns the step; the caller owns the loop, and now in fact rather than only in
+principle. `TrainingPipeline.single_step` runs one optimizer step over one slice and
+`train_steps(dataset, slices, epoch)` yields a `TrainingEvent` after each of them. It takes
+the partition rather than building one: which slices a run uses, how many epochs it does,
+whether to shuffle between them, and what to record are the caller's. See
+`docs/decisions/0013`.
+
+`TrainingEvent` and `TrainingPhase` remain the shared vocabulary for a run. The library
+emits `train` events; a caller's loop emits `validation`, `test` and `epoch` ones.
 
 `save_checkpoint(path, epoch)` takes a destination rather than a run name and a cadence, so
 where a run's weights land is the caller's decision. See
@@ -119,17 +136,23 @@ where a run's weights land is the caller's decision. See
 ## Dependencies
 
 PyTorch for the model, pydantic v2 for configs and validation, pandas for the feature CSV,
-`uv` for environment and task running, pytest, mypy and ruff for checks. Optional Google Cloud
-Storage and Weights and Biases clients under `bridge/infra/`.
+and numpy. `uv` for environment and task running, pytest, mypy and ruff for checks.
+Nothing else is installed: the library performs no I/O of its own, so it ships no cloud or
+experiment-tracking client. See `docs/decisions/0010`.
 
 ## Known defects
 
 Tracked as GitHub issues rather than restated here:
 
-- **#233** `Model.generate` crashes or fails opaquely on three input shapes it should reject
-  at the boundary: a zero-row batch segfaults on CUDA, a half-precision model is rejected by
-  a validator tolerance built for float32, and a phonology-only encoding reaches three
-  pathways that read orthography
+- **#233** `Model.generate` fails opaquely on two remaining input shapes. A half-precision
+  model is rejected by `GenerationOutput`'s `probabilities must sum to 1` check, whose
+  `atol=1e-5` is a float32 tolerance applied to a float16 sum. A phonology-only encoding
+  still reaches the three pathways that read orthography and dies inside the encoder with
+  `to_padded_tensor: at least one constituent tensor should have non-zero numel`, because
+  what arrives there is the `[--, BOS]` placeholder every `BridgeEncoding` carries, which is
+  indistinguishable from a real two-character encoding; closing it needs the encoding to
+  record which modalities are real. The third shape, a zero-row batch that segfaulted the
+  CUDA decoder, is rejected at the boundary (`docs/decisions/0011`)
 
 ## Decision index
 
@@ -144,3 +167,7 @@ Tracked as GitHub issues rather than restated here:
 | [0007](decisions/0007-model-device-is-derived-not-stored.md) | `Model.device` is derived from a parameter, so `.to()` is authoritative and the model cannot misreport where it is |
 | [0008](decisions/0008-generation-seeds-the-training-prefix.md) | Orthographic generation is seeded with `[LANG, BOS]`, the prefix training uses, keeping the language token usable |
 | [0009](decisions/0009-a-finished-sequence-emits-padding.md) | A finished sequence emits padding, so generation output ends cleanly; only the accepted sequence is masked |
+| [0010](decisions/0010-the-library-ships-no-io.md) | The library computes and the caller does the I/O; `bridge/infra/` is gone and no cloud SDK is installed |
+| [0011](decisions/0011-one-table-says-what-each-pathway-reads-and-writes.md) | `PATHWAY_IO` is the single definition of what each pathway reads and writes; validation is uniform across pathways |
+| [0012](decisions/0012-the-pipeline-follows-the-model.md) | `TrainingPipeline.device` reads `model.device`; the pipeline never moves the model |
+| [0013](decisions/0013-the-caller-owns-the-loop-in-fact.md) | The library keeps the step and loses the loop; split, batching, shuffling, epochs and progress bars are the caller's |

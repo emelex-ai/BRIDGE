@@ -1,12 +1,19 @@
 """The documentation is executable.
 
-`docs/architecture.md` and `.claude/rules/measurement.md` state facts about the live system.
+`README.md`, `docs/architecture.md` and `.claude/rules/measurement.md` state facts about the
+live system.
 Prose rots silently; an assertion does not. Every fact here that a code change could
 invalidate is checked against the running system, so drift surfaces as a failing test naming
 the file to edit rather than as a document nobody notices has gone wrong.
 
 Facts that cannot be checked mechanically (a measured noise floor, which devices have been
 swept) carry a date and the artifact that produced them, in the documents themselves.
+
+The README was outside this net until it had drifted four ways at once: it claimed 87 tests
+against 535, four pathways against five, an import list three names short, and a
+`TrainingPipeline(...)` example whose argument order and argument names were both wrong, so
+the only worked example in the file raised `TypeError`. Prose about intent can rot quietly;
+a signature cannot.
 """
 
 from __future__ import annotations
@@ -23,6 +30,7 @@ from bridge.domain.tokenizer import BridgeTokenizer
 
 ROOT = Path(__file__).resolve().parents[1]
 ARCHITECTURE = ROOT / "docs" / "architecture.md"
+README = ROOT / "README.md"
 PROJECT_RULES = ROOT / ".claude" / "rules" / "measurement.md"
 DECISIONS = ROOT / "docs" / "decisions"
 
@@ -43,6 +51,11 @@ def architecture() -> str:
 @pytest.fixture(scope="module")
 def project_rules() -> str:
     return PROJECT_RULES.read_text()
+
+
+@pytest.fixture(scope="module")
+def readme() -> str:
+    return README.read_text()
 
 
 def test_the_pathway_table_lists_exactly_the_real_pathways(architecture):
@@ -142,3 +155,98 @@ def test_known_defects_are_still_open(architecture):
         f"issues {closed} are closed but still listed under Known defects in "
         f"architecture.md; remove them and update anything they invalidated"
     )
+
+
+# --- README ---------------------------------------------------------------
+
+
+def test_the_readme_import_list_is_the_public_api(readme):
+    """The README used to hand-copy a list of exports that fell three names behind.
+
+    Oracle: a differential against ``bridge.__all__``, which is the surface
+    ``tests/test_public_api.py`` pins. The README block is the claim; ``__all__`` is the
+    fact.
+    """
+    import bridge
+
+    block = readme.split("from bridge import (")[1].split(")")[0]
+    listed = set(re.findall(r"\b([A-Za-z_][A-Za-z0-9_]*)\b", block))
+    exported = set(bridge.__all__)
+    assert listed == exported, (
+        f"only in README: {sorted(listed - exported)}; "
+        f"only in bridge.__all__: {sorted(exported - listed)}"
+    )
+
+
+def test_the_readme_usage_example_matches_the_real_signature(readme):
+    """The one worked example in the file must be callable.
+
+    Oracle: ``inspect.signature``. The previous example passed ``dataset`` where
+    ``training_config`` goes and a ``wandb_wrapper=`` keyword that no longer existed, so a
+    reader following the README got ``TypeError`` on their first attempt.
+    """
+    import inspect
+
+    from bridge import TrainingPipeline
+
+    parameters = set(inspect.signature(TrainingPipeline.__init__).parameters) - {"self"}
+    call = readme.split("pipeline = TrainingPipeline(")[1].split("\n)")[0]
+    used = set(re.findall(r"^\s*(\w+)=", call, re.M))
+    assert used <= parameters, f"README passes {sorted(used - parameters)}, which do not exist"
+    required = {
+        name
+        for name, parameter in inspect.signature(TrainingPipeline.__init__).parameters.items()
+        if name != "self" and parameter.default is inspect.Parameter.empty
+    }
+    assert required <= used, f"README omits required arguments {sorted(required - used)}"
+
+
+def test_the_readme_pathway_list_is_complete(readme):
+    """A pathway missing from the README is a pathway nobody knows they can use.
+
+    Scoped to the sentence that enumerates them, so deleting a name from the list fails
+    even though that name still occurs elsewhere in the file.
+    """
+    sentence = flat(readme).split("pathways, listed in `bridge.PATHWAYS`")[1].split(". ")[0]
+    listed = set(re.findall(r"`(\w+)`", sentence)) - {"bridge.PATHWAYS"}
+    assert listed == set(PATHWAYS), (
+        f"README names {sorted(listed)}, model.PATHWAYS is {sorted(PATHWAYS)}"
+    )
+
+
+def test_the_readme_id_space_table_matches_the_phoneme_table(readme):
+    """Both ranges move together when phonreps.csv is edited."""
+    rows, cols = TABLE.multihot.shape
+    text = flat(readme)
+    assert f"0\u2013{rows - 1}" in text, f"row space upper bound is {rows - 1}"
+    assert f"0\u2013{cols - 1}" in text, f"feature space upper bound is {cols - 1}"
+
+
+def test_every_path_the_readme_links_to_exists(readme):
+    """A renamed or deleted file leaves the README linking to nothing.
+
+    Markdown link targets plus the unindented roots of the layout tree. The tree's nested
+    entries are relative to their parent and are left to
+    ``test_every_path_named_in_the_layout_exists``, which covers the same modules through
+    ``docs/architecture.md`` where they are written out in full.
+    """
+    links = set(re.findall(r"\]\((?!https?:|#)([\w./-]+)\)", readme))
+    tree = readme.split("## What's in here")[1].split("```")[1]
+    roots = {
+        m.group(1) for line in tree.splitlines() if (m := re.match(r"([a-z_]+/[\w./-]*)", line))
+    }
+    paths = links | roots
+    assert paths, "README parsed to no paths at all; the test, not the repo, is wrong"
+    missing = sorted(p for p in paths if not (ROOT / p).exists())
+    assert not missing, f"README names paths that do not exist: {missing}"
+
+
+def test_the_readme_dependency_claim_matches_pyproject(readme):
+    """The README tells a reader what gets installed. It has to be what gets installed."""
+    import tomllib
+
+    declared = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["dependencies"]
+    names = {re.match(r"[A-Za-z0-9_.-]+", d).group(0).lower() for d in declared}
+    sentence = flat(readme).split("Dependencies are ")[1].split(".")[0]
+    claimed = {w.strip().lower() for w in re.split(r",|\band\b", sentence) if w.strip()}
+    assert claimed == names, f"README claims {sorted(claimed)}, pyproject declares {sorted(names)}"

@@ -33,7 +33,7 @@ import torch
 
 from bridge.domain.datamodels import ModelConfig, VocabSpec
 from bridge.domain.model import Model
-from bridge.domain.model.model import ORTH_DECODING
+from bridge.domain.model.model import WRITES_ORTH
 from bridge.domain.tokenizer import BridgeTokenizer
 
 WORDS = ["long", "pencil", "hello world"]
@@ -57,7 +57,7 @@ def names(tokenizer, ids):
     return [tokenizer.char_tokenizer.idx_2_char[int(i)] for i in ids]
 
 
-@pytest.mark.parametrize("pathway", sorted(ORTH_DECODING))
+@pytest.mark.parametrize("pathway", sorted(WRITES_ORTH))
 def test_generation_opens_with_the_same_prefix_training_uses(tokenizer, model, pathway):
     """The claim, stated as the equality it is.
 
@@ -115,7 +115,7 @@ def test_a_phonology_only_encoding_still_supplies_a_usable_prefix(tokenizer, mod
     assert names(tokenizer, result.orth_tokens[0, :2]) == ["--", "[BOS]"]
 
 
-@pytest.mark.parametrize("pathway", sorted(ORTH_DECODING))
+@pytest.mark.parametrize("pathway", sorted(WRITES_ORTH))
 def test_the_probability_history_stays_aligned_with_the_tokens(tokenizer, model, pathway):
     """One distribution per emitted token, including the seeded ones.
 
@@ -152,7 +152,7 @@ def test_generation_never_exceeds_the_position_table(tokenizer, model):
     encoding = tokenizer.encode(WORDS)
     assert encoding is not None
 
-    for pathway in sorted(ORTH_DECODING):
+    for pathway in sorted(WRITES_ORTH):
         result = model.generate(encoding, pathway, deterministic=True)
         assert result.orth_tokens.shape[1] <= model.max_orth_seq_len
 

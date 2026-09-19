@@ -14,31 +14,23 @@ code by construction.
 
 import ast
 import inspect
+import pathlib
 
 import pytest
 import torch
+from pydantic import ValidationError
 
 from bridge.application.training.training_pipeline import TrainingPipeline
 from bridge.domain.data import BridgeDataset
 from bridge.domain.datamodels import (
     DatasetConfig,
-    MetricsConfig,
     ModelConfig,
     TrainingConfig,
     VocabSpec,
 )
 from bridge.domain.model import Model
-from bridge.infra.metrics.metrics_logger import STDOutMetricsLogger
 
 DATA_CSV = "tests/domain/model/data/data.csv"
-
-SILENT_METRICS = MetricsConfig(
-    batch_metrics=False,
-    training_metrics=False,
-    validation_metrics=False,
-    modes=[],
-    filename=None,
-)
 
 
 @pytest.fixture(scope="module")
@@ -51,14 +43,11 @@ def make_pipeline(dataset, artifacts_dir, **overrides):
     vocab = VocabSpec.from_tokenizer(dataset.tokenizer)
     return TrainingPipeline(
         model=Model(ModelConfig(vocab=vocab, d_model=16, nhead=2, seed=5)),
-        dataset=dataset,
         training_config=TrainingConfig(
-            num_epochs=1,
             training_pathway="o2p",
             model_artifacts_dir=str(artifacts_dir),
             **overrides,
         ),
-        metrics_logger=STDOutMetricsLogger(SILENT_METRICS),
     )
 
 
@@ -134,70 +123,85 @@ def test_the_bundle_round_trips(dataset, tmp_path):
         assert torch.equal(saved, before[key]), f"{key} did not survive the round trip"
     assert loaded["model_config"].d_model == 16
     assert "optimizer_state_dict" in loaded
-    assert loaded["dataset_config"].dataset_filepath == dataset.dataset_config.dataset_filepath
+    # Recorded only when the caller names the dataset. The pipeline no longer holds one,
+    # so it cannot stamp a bundle with data that did not train the weights.
+    assert "dataset_config" not in loaded
+
+    with_data = pipeline.save_checkpoint(tmp_path / "with_data.pth", epoch=7, dataset=dataset)
+    reloaded = torch.load(with_data, weights_only=False)
+    assert reloaded["dataset_config"].dataset_filepath == dataset.dataset_config.dataset_filepath
 
 
-def test_the_gcs_destination_is_named_after_the_file_written(dataset, tmp_path, monkeypatch):
-    """The upload follows the local name, so the two cannot disagree.
+def test_nothing_writes_a_checkpoint_except_save_checkpoint(words_dataset, make_pipeline, tmp_path):
+    """The library owns no save policy, which is now a structural fact rather than a
+    property of one loop: there is no loop left to check.
 
-    The oracle is the argument value the pipeline computes, not that a double was called at
-    all. A recorder that only proved a call happened would pass against any destination
-    string whatsoever, including the old epoch-only one.
+    Oracle: a search with a stated space, parsed rather than grepped, and the space is
+    the whole module rather than the bodies of plain functions. The first version of this
+    walked only `ast.FunctionDef` for a literal `torch.save` attribute, so a call at module
+    scope, a call inside an `async def`, and `from torch import save` all passed it while
+    claiming to have searched for "every torch.save call". Validated by planting each of
+    those three spellings plus the ordinary one and confirming all four are caught.
     """
-    monkeypatch.setenv("BUCKET_NAME", "a-bucket")
-    pipeline = make_pipeline(dataset, tmp_path, gcs_path="experiments/run17")
+    import ast
 
-    uploads = []
+    from tests.conftest import batch_slices
 
-    class Recorder:
-        def upload_file(self, bucket, local, remote):
-            uploads.append((bucket, local, remote))
+    def saving_functions(tree: ast.AST) -> list[str]:
+        """Names of the enclosing defs, or '<module>', for every call that saves a tensor."""
+        aliased = {
+            alias.asname or alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module == "torch"
+            for alias in node.names
+            if alias.name == "save"
+        }
+        enclosing: dict[ast.AST, str] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                for child in ast.walk(node):
+                    enclosing.setdefault(child, node.name)
+        found = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            saves = (
+                isinstance(func, ast.Attribute)
+                and func.attr == "save"
+                and isinstance(func.value, ast.Name)
+                and func.value.id == "torch"
+            ) or (isinstance(func, ast.Name) and func.id in aliased)
+            if saves:
+                found.append(enclosing.get(node, "<module>"))
+        return found
 
-    monkeypatch.setattr(pipeline.dataset, "gcs_client", Recorder())
-    destination = pipeline.save_checkpoint("run_a/model_epoch_4.pth", epoch=4)
+    callers = [
+        f"{path}:{name}"
+        for path in sorted(pathlib.Path("bridge").rglob("*.py"))
+        for name in saving_functions(ast.parse(path.read_text()))
+    ]
+    assert callers == ["bridge/application/training/training_pipeline.py:save_checkpoint"], callers
 
-    assert uploads == [("a-bucket", str(destination), "experiments/run17/models/model_epoch_4.pth")]
+    pipeline = make_pipeline(words_dataset, model_artifacts_dir=str(tmp_path))
+    list(pipeline.train_steps(words_dataset, batch_slices(words_dataset)[:2], epoch=0))
 
-
-def test_no_gcs_client_means_no_upload(dataset, tmp_path, monkeypatch):
-    """The control showing the recorder above can observe a call NOT happening."""
-    pipeline = make_pipeline(dataset, tmp_path, gcs_path="experiments/run17")
-    monkeypatch.setattr(pipeline.dataset, "gcs_client", None)
-
-    destination = pipeline.save_checkpoint("model_epoch_0.pth", epoch=0)
-
-    assert destination.exists(), "the local write still happens without a GCS client"
-
-
-def test_the_loop_writes_no_checkpoints_of_its_own(dataset, tmp_path):
-    """`run_train_val_loop` saves nothing. That is the whole change.
-
-    With `save_every` gone there is no cadence for the library to apply, so a run that the
-    caller never asks to checkpoint must leave the artifacts directory empty.
-    """
-    pipeline = make_pipeline(dataset, tmp_path)
-    pipeline.train_slices = pipeline.train_slices[:1]
-    pipeline.val_slices = pipeline.val_slices[:1]
-
-    events = list(pipeline.run_train_val_loop(num_epochs=1))
-
-    assert events, "the loop yielded nothing at all"
-    assert list(tmp_path.rglob("*.pth")) == [], "the loop wrote a checkpoint nobody asked for"
+    assert list(tmp_path.rglob("*.pth")) == [], "a step wrote a checkpoint nobody asked for"
 
 
 def test_save_every_is_gone(tmp_path):
     """A leftover cadence field would quietly reintroduce library-owned save policy.
 
-    Three checks, because one is not enough. The field is off the schema; a config that is
-    handed one anyway does not grow the attribute, since pydantic ignores extras by default
-    and a caller's old kwargs will keep arriving for a while; and no code reads it. The last
-    is the one that matters, and it is a search with a stated space: the two modules that
-    ever referred to it.
+    Three checks, because one is not enough. The field is off the schema; a config handed
+    one anyway is rejected rather than quietly ignored, so a stale `save_every=2` in
+    someone's experiment config is a loud failure instead of a run that silently saves
+    nothing; and no code reads it. The last is the one that matters, and it is a search
+    with a stated space: the two modules that ever referred to it.
     """
     assert "save_every" not in TrainingConfig.model_fields
 
-    config = TrainingConfig(model_artifacts_dir=str(tmp_path), save_every=2)
-    assert not hasattr(config, "save_every"), "an ignored kwarg still reached the model"
+    with pytest.raises(ValidationError, match="save_every"):
+        TrainingConfig(model_artifacts_dir=str(tmp_path), save_every=2)
 
     # The search space: every attribute access and every name bound in the two modules that
     # ever mentioned the field. Parsed rather than grepped, because a substring search over

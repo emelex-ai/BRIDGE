@@ -7,15 +7,25 @@ import logging
 import pickle
 import random
 from pathlib import Path
+from typing import Protocol
 
 import pandas as pd
 
 from bridge.domain.datamodels import BridgeEncoding, DatasetConfig
 from bridge.domain.tokenizer.bridge_tokenizer import BridgeTokenizer
-from bridge.infra.clients.gcp.gcs_client import GCSClient
 from bridge.utils import device_manager
 
 logger = logging.getLogger(__name__)
+
+
+class CSVReader(Protocol):
+    """What a ``gs://`` dataset path needs from a storage client.
+
+    Structural, not a base class: BRIDGE ships no cloud client, so a caller reading
+    from object storage passes their own object with this one method.
+    """
+
+    def read_csv(self, bucket_name: str, blob_name: str, **kwargs) -> pd.DataFrame: ...
 
 
 class BridgeDataset:
@@ -32,7 +42,7 @@ class BridgeDataset:
     def __init__(
         self,
         dataset_config: DatasetConfig,
-        gcs_client: GCSClient | None = None,
+        gcs_client: CSVReader | None = None,
         tokenizer: BridgeTokenizer | None = None,
     ):
         """
@@ -40,8 +50,9 @@ class BridgeDataset:
 
         Args:
             dataset_config: Configuration object containing dataset parameters
-            gcs_client: Optional GCS client for reading datasets from
-                ``gs://`` paths. Required only if ``dataset_filepath`` is a GCS URI.
+            gcs_client: Any object with a ``read_csv(bucket_name, blob_name, **kwargs)``
+                method, for reading datasets from ``gs://`` paths. Required only if
+                ``dataset_filepath`` is a GCS URI.
             tokenizer: An existing tokenizer to reuse. Constructing one parses the
                 pronunciation lexicons, costing ~1 s and ~81 MB retained, so paired
                 train/test datasets should share a single instance rather than
@@ -305,16 +316,24 @@ class BridgeDataset:
         """
         return self._get_encoding_unified(idx, language_map=language_map, strict_conflicts=False)
 
-    def shuffle(self, cutoff: int) -> None:
-        """
-        Shuffle the dataset up to ``cutoff`` (exclusive). Shuffling is performed
-        on indices so the parallel ``words`` / ``languages`` lists stay aligned.
+    def shuffle(self, cutoff: int, seed: int | None = None) -> None:
+        """Shuffle the dataset up to ``cutoff`` (exclusive), leaving the tail in place.
+
+        Shuffling is performed on indices so the parallel ``words`` / ``languages`` lists
+        stay aligned, and the tail stays put so a validation partition remains comparable
+        across epochs.
+
+        ``seed`` makes the order reproducible. Without it this draws from the global
+        ``random`` module, which is how data-order reproducibility used to depend on
+        ``ModelConfig.seed`` by accident: ``Model.__init__`` calls ``set_seed``, which
+        calls ``random.seed``, so constructing a model silently determined the shuffle.
+        A seed here uses its own ``random.Random`` and touches no global state.
         """
         if cutoff > len(self.words):
             raise ValueError(f"Cutoff {cutoff} exceeds dataset size {len(self.words)}")
 
         indices = list(range(cutoff))
-        random.shuffle(indices)
+        (random.Random(seed) if seed is not None else random).shuffle(indices)
 
         self.words = [self.words[i] for i in indices] + self.words[cutoff:]
         self.languages = [self.languages[i] for i in indices] + self.languages[cutoff:]

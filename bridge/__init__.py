@@ -6,13 +6,13 @@ orthographic and phonological representations of words.
 """
 
 from bridge.application.training import TrainingPipeline
+from bridge.core.phonreps import PhonemeTable, load_phoneme_table
 from bridge.domain.data import BridgeDataset
 from bridge.domain.datamodels import (
     BridgeEncoding,
     DatasetConfig,
     EncodingComponent,
     GenerationOutput,
-    MetricsConfig,
     ModelConfig,
     TrainingConfig,
     TrainingEvent,
@@ -20,25 +20,29 @@ from bridge.domain.datamodels import (
     VocabSpec,
 )
 from bridge.domain.model import Model
-from bridge.domain.tokenizer import BridgeTokenizer
-from bridge.infra.metrics.metrics_logger import metrics_logger_factory
+from bridge.domain.model.model import PATHWAYS, Pathway
+from bridge.domain.tokenizer import BridgeTokenizer, CharacterTokenizer, PhonemeTokenizer
 
 __version__ = "0.1.0"
 
 __all__ = [
+    "PATHWAYS",
     "BridgeDataset",
     "BridgeEncoding",
     "BridgeTokenizer",
+    "CharacterTokenizer",
     "DatasetConfig",
     "EncodingComponent",
     "GenerationOutput",
-    "MetricsConfig",
     "Model",
     "ModelConfig",
+    "Pathway",
+    "PhonemeTable",
+    "PhonemeTokenizer",
     "TrainingConfig",
     "TrainingEvent",
     "TrainingPhase",
     "TrainingPipeline",
     "VocabSpec",
-    "metrics_logger_factory",
+    "load_phoneme_table",
 ]

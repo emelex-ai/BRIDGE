@@ -1,39 +1,22 @@
 import os
 from pathlib import Path
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from bridge.utils import get_project_root
+from bridge.domain.datamodels.pathways import Pathway
 
 
 class TrainingConfig(BaseModel):
-    num_epochs: int = Field(default=2)
-    batch_size_train: int = Field(default=32)
-    batch_size_val: int = Field(default=32)
-    train_test_split: float = Field(default=0.8)
-    max_nb_steps: int | None = Field(default=None)
+    # An unknown key is a typo in someone's experiment config, and silently
+    # ignoring it means the run does something other than what the file says.
+    # Removing a field (gcs_path, max_nb_steps) made that reachable.
+    model_config = ConfigDict(extra="forbid")
+
     learning_rate: float = Field(default=0.001)
-    training_pathway: str = Field(default="o2p")
+    training_pathway: Pathway = Field(default="o2p")
     model_artifacts_dir: str = Field(default="model_artifacts")
     weight_decay: float = Field(default=0.0)
     checkpoint_path: str | None = Field(default=None)
-    test_data_path: str | None = Field(default=None)
-    num_chunks: int | None = Field(
-        default=1,
-        description="Number of chunks to split a batch into for accumulated gradients",
-    )
-    gcs_path: str | None = Field(default=None)
-    seed: int | None = Field(
-        default=None,
-        description="Seeds the per-epoch training-order shuffle. None leaves it unseeded.",
-    )
-    shuffle_each_epoch: bool = Field(
-        default=True,
-        description=(
-            "Reorder the training partition between epochs. Defaults to True: defaulting to "
-            "False would preserve the defect this was added to fix."
-        ),
-    )
 
     @model_validator(mode="before")
     def convert_paths(cls, values):
@@ -51,9 +34,7 @@ class TrainingConfig(BaseModel):
         reason to write to disk, and merely validating one in a test created directories.
         ``TrainingPipeline.save_checkpoint`` creates it at the point of first write instead.
 
-        ``test_data_path`` still resolves under ``<project root>/data``, unchanged.
         """
-        project_root = get_project_root()
         values.setdefault(
             "model_artifacts_dir", cls.model_fields["model_artifacts_dir"].get_default()
         )
@@ -61,22 +42,7 @@ class TrainingConfig(BaseModel):
         values["model_artifacts_dir"] = str(
             artifacts if artifacts.is_absolute() else Path.cwd() / artifacts
         )
-        if "test_data_path" in values and values["test_data_path"]:
-            values["test_data_path"] = os.path.join(project_root, "data", values["test_data_path"])
         return values
-
-    @field_validator("training_pathway")
-    def validate_pathway(cls, v: str) -> str:
-        allowed_training_pathways = ["o2p", "p2o", "op2op", "p2p"]
-        if v not in allowed_training_pathways:
-            raise ValueError(f"Invalid pathway: {v}. Allowed: {allowed_training_pathways}")
-        return v
-
-    @field_validator("train_test_split")
-    def validate_train_test_split(cls, v: float) -> float:
-        if not (0.0 <= v <= 1.0):
-            raise ValueError("train_test_split must be between 0.0 and 1.0")
-        return v
 
     @model_validator(mode="after")
     def validate_paths(self):

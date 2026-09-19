@@ -3,7 +3,6 @@ import os
 import platform
 
 import torch
-import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -78,47 +77,6 @@ class DeviceManager:
         """Returns the current compute device."""
         return self._device
 
-    @property
-    def is_gpu_available(self):
-        """Checks if any GPU (CUDA or MPS) is available."""
-        return self._device.type in ("cuda", "mps")
-
-    def synchronize(self):
-        """Synchronizes the current device if necessary."""
-        if self._device.type == "cuda":
-            torch.cuda.synchronize()
-        elif self._device.type == "mps":
-            torch.mps.synchronize()
-
-    def to_device(self, tensor_or_module):
-        """Moves a tensor or module to the current device."""
-        return tensor_or_module.to(self._device)
-
-    def create_tensor(self, *args, **kwargs):
-        """Creates a tensor on the current device."""
-        kwargs["device"] = self._device
-        return torch.tensor(*args, **kwargs)
-
-
-def load_config(config_path):
-    """
-    Loads a YAML configuration file and returns its content.
-
-    Args:
-        config_path (str): Path to the YAML configuration file.
-
-    Returns:
-        dict: Parsed configuration dictionary.
-    """
-    with open(config_path) as file:
-        return yaml.safe_load(file)
-
-
-# Example usage:
-# config_path = "app/config/training_config.yaml"
-# config = load_config(config_path)
-
-# device_key = config.get("device", None)
 
 # The process-wide device, selectable without editing code. There is no other supported
 # way to reach a GPU: before this, the only working override was assigning the private
