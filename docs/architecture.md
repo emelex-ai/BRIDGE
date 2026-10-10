@@ -25,6 +25,11 @@ loss terms exist, which tensors a training forward needs, which inputs the bound
 validates, is a query against it rather than its own list. All five train and all five
 generate. See `docs/decisions/0011`.
 
+`ModelConfig` (`bridge/domain/datamodels/model_config.py`) accepts only sizes for which
+that holds. The five layer counts, `d_model`, `nhead` and `d_embedding` are each at least
+one, and `nhead` divides `d_model`, so a mistake in a size fails when the config is built
+and names the field. See `docs/decisions/0014`.
+
 The scientific premise is that phonemes sharing phonetic features share embedding mass. A
 phoneme's embedding is the mean of its active feature embeddings, never a free parameter of
 its own. See `docs/decisions/0002-phoneme-row-ids-replace-ragged-feature-lists.md`.
@@ -179,3 +184,4 @@ Tracked as GitHub issues rather than restated here:
 | [0011](decisions/0011-one-table-says-what-each-pathway-reads-and-writes.md) | `PATHWAY_IO` is the single definition of what each pathway reads and writes; validation is uniform across pathways |
 | [0012](decisions/0012-the-pipeline-follows-the-model.md) | `TrainingPipeline.device` reads `model.device`; the pipeline never moves the model |
 | [0013](decisions/0013-the-caller-owns-the-loop-in-fact.md) | The library keeps the step and loses the loop; split, batching, shuffling, epochs and progress bars are the caller's |
+| [0014](decisions/0014-a-config-that-validates-runs-every-pathway.md) | Every size in `ModelConfig` is at least one and `nhead` divides `d_model`, so a config that validates builds a model that runs every pathway |

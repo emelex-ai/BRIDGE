@@ -122,9 +122,10 @@ uv run ruff check . && uv run ruff format --check .
 The suite runs in single-digit seconds because the pronunciation lexicon parse is memoised
 process-wide. A change that pushes it past about 10 seconds has probably reintroduced
 per-instance parsing, which cost 45 seconds before the memo (measured 2026-08-30).
-Currently ~8.6 s for 534 passed and 6 skipped (measured 2026-11-08 at `32b66a4` plus
-`tests/test_diagram.py`, three runs from 8.47 to 9.47 s under a load average of 5 to 7); it
-was 12.9 s before the pipeline stopped running `gc.collect()` every ten steps.
+Currently 565 passed and 6 skipped, in 9.5 to 9.7 s (measured 2026-11-08 at `9c0acdb`
+plus the ModelConfig size floors, three runs of 9.52, 9.66 and 14.78 s under a load average
+of 6 to 7; a near-identical suite ran in 8.16 to 8.44 s earlier that day on a quieter
+machine). It was 12.9 s before the pipeline stopped running `gc.collect()` every ten steps.
 
 `mypy` is clean over `bridge/`. CI enforces it rather than advising, as of 2026-09-16.
 
