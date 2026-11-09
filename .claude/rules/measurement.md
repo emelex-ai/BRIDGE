@@ -122,8 +122,9 @@ uv run ruff check . && uv run ruff format --check .
 The suite runs in single-digit seconds because the pronunciation lexicon parse is memoised
 process-wide. A change that pushes it past about 10 seconds has probably reintroduced
 per-instance parsing, which cost 45 seconds before the memo (measured 2026-08-30).
-Currently ~7 s for 557 tests (measured 2026-09-16); it was 12.9 s before the pipeline
-stopped running `gc.collect()` every ten steps.
+Currently ~8.6 s for 534 passed and 6 skipped (measured 2026-11-08 at `32b66a4` plus
+`tests/test_diagram.py`, three runs from 8.47 to 9.47 s under a load average of 5 to 7); it
+was 12.9 s before the pipeline stopped running `gc.collect()` every ten steps.
 
 `mypy` is clean over `bridge/`. CI enforces it rather than advising, as of 2026-09-16.
 
@@ -134,4 +135,9 @@ Promote one into the repo only when it will be re-run against a future change, a
 do, it belongs beside the harness it resembles rather than in a new directory:
 `tests/fixtures/capture_phon_baseline.py` and `tests/fixtures/bench_phon.py` are the two
 that earned it. Named `capture_`/`bench_` rather than `test_`, so pytest does not collect
-them.
+them. `tests/fixtures/sync_diagram_table.py` is a third, re-run whenever `phonreps.csv`
+changes. It was verified on 2026-11-08 on files in its own format and on files re-saved by draw.io:
+
+- It is a byte-identical no-op on a current file.
+- It restores a corrupted table, with no duplicate cells left behind.
+- It reshapes the table correctly under a simulated change to the targets.

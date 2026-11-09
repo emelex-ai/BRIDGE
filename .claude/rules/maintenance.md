@@ -19,6 +19,25 @@ README was outside the net until it had drifted four ways at once and its only w
 raised `TypeError`. Each of those four assertions was verified to fail against the defect it
 describes before being trusted.
 
+`tests/test_diagram.py` does the same for `BRIDGE-Models.drawio`, the public architecture
+figure, as of 2026-11-07. It checks one page per pathway; block opacity against which modules
+each pathway actually fires, measured by forward hooks; the label of the block fed to the
+mixer; the embedding cubes' axis labels against measured tensor shapes; every arrow attached
+at both ends and animated exactly when active; and every "+" wired, with none feeding a
+decoder, since the causal mask goes to self-attention rather than into a sum. As delivered,
+the figure failed five of those ways at once, and each check was verified to fail against
+that original.
+
+Since 2026-11-08 it also checks three more things:
+
+- Every block shared between pages sits at the same frame-relative position on each, within half a unit, so switching pages does not jump.
+- Every decoder on every page is fed by an "Autoregressive Mask" that fades with it, against a live measurement that every decoder call is causal.
+- Every page adds the global embedding back after the mixer, against a live bitwise measurement that the code does.
+
+Each was verified to fail on a planted defect: a block nudged 2 units, and the global embedding's arrow cut from its "+".
+
+The output box's feature table, the 0/1 values for "cat", is checked against the decoder's training targets, recomputed from the live tokenizer. An edit to `phonreps.csv` that changes those values fails the test. This was verified by flipping digits in a copy.
+
 Drift in any of those is a **failing test naming the file to edit**, not a document nobody
 notices has gone wrong. Each planted defect was verified to fail the suite before the tests
 were trusted.
@@ -37,6 +56,16 @@ general instruction to keep things updated.
 - a shape or dtype anywhere in the documented data flow changes
 - an issue in Known defects is closed, or a defect of comparable severity is found
 - a decision record is added, since the index lives here
+
+## Update `BRIDGE-Models.drawio` when
+
+- a module is added to or removed from any pathway's data path; the test catches a block drawn
+  in the wrong state, but not a module the figure never drew
+- an operation inside a drawn block changes, such as a residual, a norm or a mask
+- a label in `tests/test_diagram.py`'s block tables is renamed, in the same change
+- `bridge/core/phonreps.csv` changes. Run `uv run python tests/fixtures/sync_diagram_table.py`, which rewrites the output boxes' feature table from the live targets and leaves everything else untouched; on an up-to-date file it changes nothing.
+
+Render every page after editing and look at it; the test does not see layout.
 
 ## Update `.claude/rules/measurement.md` when
 

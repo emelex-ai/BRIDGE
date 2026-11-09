@@ -86,8 +86,16 @@ bridge/utils/device_manager.py        the process device, selected by BRIDGE_DEV
 tests/fixtures/phon_baseline.pt       golden master, immutable
 tests/fixtures/bench_phon.py          phonological hot-path benchmarks
 tests/test_documentation.py           asserts this document against the live system
+tests/test_diagram.py                 asserts BRIDGE-Models.drawio against the live model
+tests/fixtures/sync_diagram_table.py  rewrites the figure's feature table from phonreps.csv
 docs/decisions/                       architecture decision records
 ```
+
+`BRIDGE-Models.drawio`, at the repo root, draws the data flow of each pathway, one page per
+pathway, and is served on the model's website. Each page fades the blocks its pathway does
+not run. `tests/test_diagram.py` hooks every submodule, records which ones each pathway's
+training forward fires, and fails when a page draws a block opaque that its pathway does not
+run, or the reverse.
 
 The library performs no I/O of its own: no metrics sink, no cloud client, no logger. It
 reads the dataset path it is given and writes the checkpoint path it is given, and
