@@ -62,19 +62,19 @@ class VocabSpec(BaseModel):
     phon_pad_id: int = Field(
         description=(
             "Phonological [PAD] id, in *feature* space: a column of the phoneme feature "
-            "table, not one of its rows. Row ids are what encode() emits."
+            "table, not one of its rows. Row ids are what the tokenizer emits."
         )
     )
     phon_bos_id: int = Field(
         description=(
             "Phonological [BOS] id, in *feature* space: a column of the phoneme feature "
-            "table, not one of its rows. Row ids are what encode() emits."
+            "table, not one of its rows. Row ids are what the tokenizer emits."
         )
     )
     phon_eos_id: int = Field(
         description=(
             "Phonological [EOS] id, in *feature* space: a column of the phoneme feature "
-            "table, not one of its rows. Row ids are what encode() emits."
+            "table, not one of its rows. Row ids are what the tokenizer emits."
         )
     )
     phon_table_fingerprint: str | None = Field(

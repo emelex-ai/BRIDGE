@@ -3,16 +3,16 @@
 A mixed-language row carries a language token wherever the language changes, the switch,
 and the decoder is trained to emit it. ``letter_wise_accuracy`` and ``word_wise_accuracy``
 count the switch like any other scored token, so one missed switch costs a letter and
-fails its row. The ``_without_switches`` pair leaves out exactly the positions whose target
+fails its row. The ``_without_switches`` pair leaves out exactly the positions whose label
 is a language token, so it measures spelling alone.
 
 Oracle: analytic. The batch is small enough to count by hand, the predictor is built
-one-hot from the target so it is right everywhere, and each test then makes it predict a
+one-hot from the labels so it is right everywhere, and each test then makes it predict a
 chosen wrong token at one chosen position:
 
-    row 0  "no me"    ES EN   targets  [BOS] n o _ EN m e [EOS]      8 scored, 1 switch
-    row 1  "la casa"  ES      targets  [BOS] l a _ c a s a [EOS]     9 scored, 0 switches
-    row 2  "no me"    EN ES   targets  [BOS] n o _ ES m e [EOS]      8 scored, 1 switch
+    row 0  "no me"    ES EN   labels  [BOS] n o _ EN m e [EOS]      8 scored, 1 switch
+    row 1  "la casa"  ES      labels  [BOS] l a _ c a s a [EOS]     9 scored, 0 switches
+    row 2  "no me"    EN ES   labels  [BOS] n o _ ES m e [EOS]      8 scored, 1 switch
 
 25 scored positions, of which 2 are switches and 23 are not.
 """
@@ -27,13 +27,18 @@ from bridge.domain.model import Model
 
 TEXTS = ["no me", "la casa", "no me"]
 LANGUAGES = ["ES EN", "ES", "EN ES"]
-SWITCH_COLUMN = 4  # in the target: [BOS] n o _ <switch>
+SWITCH_COLUMN = 4  # in the labels: [BOS] n o _ <switch>
 LETTER_COLUMN = 5  # the "m" after it, and the "a" of "casa" in row 1
 
 
 @pytest.fixture(scope="module")
-def orthography(shared_tokenizer):
-    return shared_tokenizer.encode(TEXTS, languages=LANGUAGES).orthographic
+def target(shared_tokenizer):
+    return shared_tokenizer.encode_target(TEXTS, LANGUAGES)
+
+
+@pytest.fixture(scope="module")
+def labels(target):
+    return target.orth.labels
 
 
 def one_hot_logits(target: torch.Tensor, vocabulary_size: int) -> torch.Tensor:
@@ -56,11 +61,11 @@ def char_id(shared_tokenizer):
 
 
 @pytest.fixture(scope="module")
-def score(shared_tokenizer, orthography):
+def score(shared_tokenizer, labels):
     def run(logits: torch.Tensor) -> dict[str, float]:
         return calculate_orth_metrics(
             {"orth": logits},
-            orthography,
+            labels,
             orth_pad_id=shared_tokenizer.orth_pad_id,
             orth_language_ids=shared_tokenizer.orth_language_ids,
         )
@@ -69,18 +74,16 @@ def score(shared_tokenizer, orthography):
 
 
 @pytest.fixture(scope="module")
-def perfect(shared_tokenizer, orthography):
-    target = orthography.enc_input_ids[:, 1:]
-    return one_hot_logits(target, shared_tokenizer.char_tokenizer.get_vocabulary_size())
+def perfect(shared_tokenizer, labels):
+    return one_hot_logits(labels, shared_tokenizer.char_tokenizer.get_vocabulary_size())
 
 
-def test_the_batch_is_the_one_the_arithmetic_below_assumes(shared_tokenizer, orthography):
-    """The premise, checked: 25 scored targets, switches at column 4 of rows 0 and 2."""
-    target = orthography.enc_input_ids[:, 1:]
+def test_the_batch_is_the_one_the_arithmetic_below_assumes(shared_tokenizer, labels):
+    """The premise, checked: 25 scored labels, switches at column 4 of rows 0 and 2."""
     idx_2_char = shared_tokenizer.char_tokenizer.idx_2_char
-    assert int((target != shared_tokenizer.orth_pad_id).sum()) == 25
-    assert [idx_2_char[int(i)] for i in target[:, SWITCH_COLUMN]] == ["EN", "c", "ES"]
-    assert [idx_2_char[int(i)] for i in target[:, LETTER_COLUMN]] == ["m", "a", "m"]
+    assert int((labels != shared_tokenizer.orth_pad_id).sum()) == 25
+    assert [idx_2_char[int(i)] for i in labels[:, SWITCH_COLUMN]] == ["EN", "c", "ES"]
+    assert [idx_2_char[int(i)] for i in labels[:, LETTER_COLUMN]] == ["m", "a", "m"]
 
 
 def test_a_perfect_predictor_scores_one_on_all_four(score, perfect):
@@ -101,7 +104,7 @@ def test_a_missed_switch_costs_the_plain_figures_and_not_the_letters_only_ones(
     Counting every token: 24 of 25 positions, 2 of 3 rows. Letters only: the wrong
     position is not counted, so 23 of 23 and 3 of 3. What was predicted in its place does
     not matter, the other language, the next letter or the end of the row, because the
-    position is left out for what its target is, not for what the model said.
+    position is left out for what its label is, not for what the model said.
     """
     scores = score(wrong_at(perfect, 0, SWITCH_COLUMN, char_id[predicted]))
     assert scores["letter_wise_accuracy"] == pytest.approx(24 / 25)
@@ -133,17 +136,16 @@ def test_rows_with_no_switch_score_the_same_both_ways(shared_tokenizer, char_id)
     being language tokens the model had no call to emit, so the equality is not the
     trivial 1.0 == 1.0. The rows open with three different language tokens.
     """
-    orthography = shared_tokenizer.encode(
-        ["no me", "la casa", "long", "the word"], languages=["ES", "EN", None, "EN EN"]
-    ).orthographic
-    target = orthography.enc_input_ids[:, 1:]
-    logits = one_hot_logits(target, shared_tokenizer.char_tokenizer.get_vocabulary_size())
+    labels = shared_tokenizer.char_tokenizer.encode_target(
+        ["no me", "la casa", "long", "the word"], ["ES", "EN", None, "EN EN"]
+    ).labels
+    logits = one_hot_logits(labels, shared_tokenizer.char_tokenizer.get_vocabulary_size())
     for row, column, predicted in ((0, 1, "x"), (0, 3, "ES"), (2, 0, "EN"), (3, 5, "q")):
         logits = wrong_at(logits, row, column, char_id[predicted])
 
     scores = calculate_orth_metrics(
         {"orth": logits},
-        orthography,
+        labels,
         orth_pad_id=shared_tokenizer.orth_pad_id,
         orth_language_ids=shared_tokenizer.orth_language_ids,
     )
@@ -154,7 +156,7 @@ def test_rows_with_no_switch_score_the_same_both_ways(shared_tokenizer, char_id)
 
 
 def test_the_pipeline_scores_switches_with_the_vocabularys_language_ids(
-    shared_tokenizer, orthography, perfect, char_id, tmp_path
+    shared_tokenizer, target, perfect, char_id, tmp_path
 ):
     """The language ids reach the metric from ``VocabSpec``, not from a default.
 
@@ -171,7 +173,7 @@ def test_the_pipeline_scores_switches_with_the_vocabularys_language_ids(
         training_config=TrainingConfig(training_pathway="p2o", model_artifacts_dir=str(tmp_path)),
     )
     logits = {"orth": wrong_at(perfect, 0, SWITCH_COLUMN, char_id["m"])}
-    scores = pipeline.compute_metrics(logits, orthography, None)
+    scores = pipeline.compute_metrics(logits, target)
 
     assert scores["letter_wise_accuracy"] == pytest.approx(24 / 25)
     assert scores["word_wise_accuracy"] == pytest.approx(2 / 3)
@@ -180,13 +182,13 @@ def test_the_pipeline_scores_switches_with_the_vocabularys_language_ids(
 
 
 def test_a_vocabulary_with_no_language_tokens_scores_both_pairs_alike(
-    shared_tokenizer, orthography, perfect, char_id
+    shared_tokenizer, labels, perfect, char_id
 ):
     """Oracle: analytic. With no language ids nothing is a switch, so both pairs count all
     25 positions: 24 of 25 and 2 of 3, twice."""
     scores = calculate_orth_metrics(
         {"orth": wrong_at(perfect, 0, SWITCH_COLUMN, char_id["m"])},
-        orthography,
+        labels,
         orth_pad_id=shared_tokenizer.orth_pad_id,
         orth_language_ids=(),
     )
@@ -197,7 +199,7 @@ def test_a_vocabulary_with_no_language_tokens_scores_both_pairs_alike(
 
 
 def test_a_spec_that_does_not_name_its_language_tokens_reports_the_plain_pair_only(
-    shared_tokenizer, orthography, perfect, char_id, tmp_path
+    shared_tokenizer, target, perfect, char_id, tmp_path
 ):
     """A hand-written ``VocabSpec`` may leave ``orth_language_ids`` out, and then it is unknown.
 
@@ -212,14 +214,14 @@ def test_a_spec_that_does_not_name_its_language_tokens_reports_the_plain_pair_on
         training_config=TrainingConfig(training_pathway="p2o", model_artifacts_dir=str(tmp_path)),
     )
     logits = {"orth": wrong_at(perfect, 0, SWITCH_COLUMN, char_id["m"])}
-    assert pipeline.compute_metrics(logits, orthography, None) == {
+    assert pipeline.compute_metrics(logits, target) == {
         "letter_wise_accuracy": pytest.approx(24 / 25),
         "word_wise_accuracy": pytest.approx(2 / 3),
     }
 
 
 def test_a_pickled_spec_without_the_attribute_still_scores(
-    shared_tokenizer, orthography, perfect, char_id, tmp_path
+    shared_tokenizer, target, perfect, char_id, tmp_path
 ):
     """A model built from a checkpoint's own pickled config computes metrics.
 
@@ -243,7 +245,7 @@ def test_a_pickled_spec_without_the_attribute_still_scores(
         _ = vocab.orth_language_ids
 
     logits = {"orth": wrong_at(perfect, 0, SWITCH_COLUMN, char_id["m"])}
-    assert pipeline.compute_metrics(logits, orthography, None) == {
+    assert pipeline.compute_metrics(logits, target) == {
         "letter_wise_accuracy": pytest.approx(24 / 25),
         "word_wise_accuracy": pytest.approx(2 / 3),
     }

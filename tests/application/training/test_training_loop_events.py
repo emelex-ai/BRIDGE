@@ -7,6 +7,7 @@ is left to pin is narrow and should stay narrow: the stream is one event per sli
 order, carrying enough to act on, and abandoning it does no further work.
 """
 
+import json
 import math
 
 import pytest
@@ -44,12 +45,46 @@ def test_the_epoch_index_is_the_callers_to_set(pipeline, words_dataset, slices):
     assert [e.step for e in events] == list(range(SLICES))
 
 
-def test_events_carry_a_finite_loss_and_the_words_they_trained_on(pipeline, words_dataset, slices):
-    """A step event has to say enough to act on, or the caller cannot own the loop."""
-    for event in pipeline.train_steps(words_dataset, slices, epoch=0):
+def test_events_carry_a_finite_loss_and_the_rows_they_trained_on(pipeline, words_dataset, slices):
+    """A step event has to say enough to act on, or the caller cannot own the loop.
+
+    Oracle: the dataset's own rows for each slice. The event names what the model read
+    and what it was taught to write, as two JSON lists, and has no ``word`` key: a row is
+    not one string.
+    """
+    events = list(pipeline.train_steps(words_dataset, slices, epoch=0))
+    assert len(events) == SLICES
+    for event, batch_slice in zip(events, slices, strict=True):
         assert math.isfinite(float(event.metrics["loss"]))
-        assert isinstance(event.metrics["word"], str)
-        assert event.metrics["word"].startswith("[")
+        rows = words_dataset.examples[batch_slice]
+        assert json.loads(event.metrics["input"]) == [row.input for row in rows]
+        assert json.loads(event.metrics["target"]) == [row.target for row in rows]
+        assert "word" not in event.metrics
+
+
+REFUSED = [
+    (slice(0, 16, 2), "has step 2; a batch is contiguous rows"),
+    (slice(7296, 7301), "ends past the dataset, which has 7300 rows"),
+    (slice(8, 8), "is empty; there is nothing to step over"),
+    (slice(12, 4), "is empty; there is nothing to step over"),
+]
+
+
+def test_a_slice_the_pipeline_cannot_step_over_is_refused_by_name(pipeline, words_dataset):
+    """Oracle: the rule. The caller supplies the slices, so each kind the pipeline does
+    not take raises from ``single_step`` and from ``evaluate`` alike, naming the slice,
+    and no step is taken."""
+    import torch
+
+    before = [parameter.detach().clone() for parameter in pipeline.model.parameters()]
+    for batch_slice, message in REFUSED:
+        for run in (pipeline.single_step, pipeline.evaluate):
+            with pytest.raises(ValueError) as raised:
+                run(words_dataset, batch_slice)
+            assert f"batch_slice {batch_slice} {message}" in str(raised.value), run.__name__
+    after = pipeline.model.parameters()
+    assert all(torch.equal(a, b) for a, b in zip(before, after, strict=True))
+    assert len(json.loads(pipeline.evaluate(words_dataset, slice(7296, 7300))["input"])) == 4
 
 
 def test_the_reported_loss_carries_no_autograd_graph(pipeline, words_dataset, slices):

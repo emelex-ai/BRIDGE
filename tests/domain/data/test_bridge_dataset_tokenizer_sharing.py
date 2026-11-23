@@ -1,9 +1,8 @@
 """Paired datasets must be able to share one tokenizer (issue #221, related finding 6).
 
 Constructing a ``BridgeTokenizer`` parses the pronunciation lexicons: ~1 s and ~81 MB
-retained. ``TrainingPipeline`` builds a second ``BridgeDataset`` for the test split, so
-without injection that cost, and the memory the periodic ``gc.collect()`` then has to
-walk, was paid twice.
+retained. A run usually holds a second ``BridgeDataset`` for its test split, so without
+injection that cost is paid twice.
 """
 
 import torch
@@ -27,10 +26,11 @@ def test_injection_does_not_change_encodings():
     private = BridgeDataset(config)
     shared = BridgeDataset(config, tokenizer=BridgeTokenizer())
 
-    assert private.words[:8] == shared.words[:8]
+    assert private.examples[:8] == shared.examples[:8]
     a, b = private[slice(0, 8)], shared[slice(0, 8)]
 
-    assert torch.equal(a.orthographic.enc_input_ids, b.orthographic.enc_input_ids)
-    assert torch.equal(a.orthographic.dec_input_ids, b.orthographic.dec_input_ids)
-    assert torch.equal(a.phonological.enc_pad_mask, b.phonological.enc_pad_mask)
-    assert torch.equal(a.phonological.phon_targets, b.phonological.phon_targets)
+    assert torch.equal(a.input.orth.ids, b.input.orth.ids)
+    assert torch.equal(a.target.orth.ids, b.target.orth.ids)
+    assert torch.equal(a.target.orth.labels, b.target.orth.labels)
+    assert torch.equal(a.input.phon.pad_mask, b.input.phon.pad_mask)
+    assert torch.equal(a.target.phon.labels, b.target.phon.labels)

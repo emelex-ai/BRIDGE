@@ -14,8 +14,8 @@ from typing import Literal
 
 import torch
 
-# Per-step results carry the JSON-encoded `word` alongside loss tensors and scalars;
-# per-epoch aggregates carry tensors and floats only.
+# Per-step results carry the JSON-encoded `input` and `target` strings alongside loss
+# tensors and scalars; per-epoch aggregates carry tensors and floats only.
 type EventMetrics = dict[str, torch.Tensor | float | str]
 
 TrainingPhase = Literal["train", "validation", "test", "epoch"]

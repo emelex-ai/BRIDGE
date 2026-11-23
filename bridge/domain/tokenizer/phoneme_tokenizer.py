@@ -6,11 +6,11 @@ import os
 import torch
 
 from bridge.core.phonreps import SPECIAL_TOKENS, load_phoneme_table
-from bridge.domain.datamodels.encodings import EncodingComponent
+from bridge.domain.datamodels.encodings import Target, Tokens, pad_rows
 from bridge.domain.tokenizer.languages import (
     UNSPECIFIED,
     Languages,
-    rows_and_languages,
+    per_row_languages,
     split_words,
 )
 from bridge.utils import device_manager, get_project_root
@@ -33,12 +33,12 @@ class PhonemeTokenizer:
     pronunciation lexicons (shipped under ``bridge/core/pronunciation_lexicons/``) and
     the phonetic feature table at ``bridge/core/phonreps.csv``.
 
-    :meth:`encode` emits ``(batch, sequence)`` row ids, the same shape the character
-    tokenizer emits for orthography. Feature vectors appear in only two places: the loss
-    ``targets`` that ``encode`` also returns, and the output of :meth:`decode`.
+    :meth:`encode_input` and :meth:`encode_target` emit ``(batch, sequence)`` row ids, the
+    same shape the character tokenizer emits for orthography. Feature vectors appear in
+    only two places: the ``labels`` of a target, and the output of :meth:`decode`.
 
     The tokenizer is multilingual by default: supply ``lang_codes`` to control which
-    language lexicons are loaded, and pass ``languages`` to :meth:`encode` to say which
+    language lexicons are loaded, and pass ``languages`` to either encoder to say which
     language each word is in.
     """
 
@@ -94,10 +94,10 @@ class PhonemeTokenizer:
         }
         self.vocabulary_size = self.phoneme_table.vocab_size
 
-        # Per-phoneme loss targets, gathered by row id in `encode`.
+        # Per-phoneme loss labels, gathered by row id in `encode_target`.
         #
         # Two things make this table differ from `phoneme_table.multihot`:
-        #   * the [PAD] feature column is dropped (targets are one class per feature,
+        #   * the [PAD] feature column is dropped (labels are one class per feature,
         #     excluding [PAD] itself), and
         #   * the [PAD] *row* is then filled with `phon_pad_id`, which is the
         #     CrossEntropyLoss `ignore_index`, so a padded position contributes no loss.
@@ -174,87 +174,70 @@ class PhonemeTokenizer:
             result.extend(entry[lexicon][0])
         return result
 
-    def encode(
-        self,
-        words: str | list[str],
-        languages: Languages = None,
-    ) -> EncodingComponent | None:
-        """Encode words or phrases to phoneme row ids.
+    def encode_input(self, texts: list[str], languages: Languages = None) -> Tokens | None:
+        """Encode rows as what the phonological encoder reads.
 
-        Returns ``(B, L)`` tensors of *row-space* ids: indices into
-        :class:`~bridge.core.phonreps.PhonemeTable`, i.e. "which phoneme", not "which
-        feature". The model recovers the features by gathering from the same table; see
-        the ``PhonemeTable`` docstring for the two id spaces.
+        Each row is laid out as ``[BOS, ...phonemes, EOS, PAD, ...]`` in *row-space* ids:
+        indices into :class:`~bridge.core.phonreps.PhonemeTable`, i.e. "which phoneme", not
+        "which feature". The model recovers the features by gathering from the same table;
+        see the ``PhonemeTable`` docstring for the two id spaces.
 
-        ``languages`` says which language each word is in, in the forms
-        :func:`~bridge.domain.tokenizer.languages.rows_and_languages` accepts. Each word is
+        ``texts`` is a list of rows. ``languages`` says which language each word is in, one
+        entry per row, in the forms
+        :func:`~bridge.domain.tokenizer.languages.per_row_languages` accepts. Each word is
         looked up by its position in the row, so one spelling can be English in one place
         and Spanish in another. Returns ``None`` if any word is missing from its
         language's pronunciation lexicon.
         """
-        phrases, row_languages = rows_and_languages(words, languages)
+        rows = self._rows(texts, languages)
+        if rows is None:
+            return None
+        eos = self.phoneme_table.row_index["[EOS]"]
+        return Tokens(*self._padded([[*row, eos] for row in rows]))
 
-        word_phonemes = []
-        for phrase, word_langs in zip(phrases, row_languages, strict=True):
-            phonemes = self._get_phrase_phonemes(phrase, word_langs)
+    def encode_target(self, texts: list[str], languages: Languages = None) -> Target | None:
+        """Encode rows as what the phonological decoder is fed and scored against.
+
+        The ids are ``[BOS, ...phonemes, PAD, ...]`` in row space. The labels are the same
+        row one position on, ``[...phonemes, EOS, PAD, ...]``, as feature vectors: one class
+        per phonetic feature, in feature space. A padded position carries the ``[PAD]``
+        feature id throughout, which is the loss ``ignore_index``.
+
+        ``texts``, ``languages`` and the ``None`` return are as for :meth:`encode_input`.
+        """
+        rows = self._rows(texts, languages)
+        if rows is None:
+            return None
+        ids, pad_mask = self._padded(rows)
+        eos = self.phoneme_table.row_index["[EOS]"]
+        label_rows, _ = self._padded([[*row[1:], eos] for row in rows])
+        return Target(ids, pad_mask, self._target_table[label_rows])
+
+    def _rows(self, texts: list[str], languages: Languages) -> list[list[int]] | None:
+        """Each row as ``[BOS, ...phoneme row ids]``, unpadded, or ``None`` if a word has no
+        pronunciation in its language.
+
+        Every row's languages are resolved before any word is looked up, so an argument
+        error raises whatever the lexicon holds.
+        """
+        table = self.phoneme_table
+        rows = []
+        for text, word_langs in zip(texts, per_row_languages(texts, languages), strict=True):
+            phonemes = self._get_phrase_phonemes(text, word_langs)
             if phonemes is None:
                 return None
-            word_phonemes.append(phonemes)
+            rows.append([table.row_index["[BOS]"], *(table.row_of(p) for p in phonemes)])
+        return rows
 
-        max_length = max(len(p) for p in word_phonemes)
-        enc_length = max_length + 2  # BOS, EOS
-        dec_length = max_length + 1  # BOS
-
-        table = self.phoneme_table
-        bos = table.row_index["[BOS]"]
-        eos = table.row_index["[EOS]"]
-        pad = table.row_index["[PAD]"]
-
-        # Plain ints, so the whole batch becomes one tensor build rather than a
-        # per-position device write.
-        enc_rows: list[list[int]] = []
-        dec_rows: list[list[int]] = []
-        tgt_rows: list[list[int]] = []
-        for phoneme_seq in word_phonemes:
-            rows = [table.row_of(p) for p in phoneme_seq]
-            n = len(rows)
-            enc_rows.append([bos, *rows, eos, *[pad] * (enc_length - n - 2)])
-            dec_rows.append([bos, *rows, *[pad] * (dec_length - n - 1)])
-            # Targets are the decoder inputs shifted left by one: predict each phoneme,
-            # then EOS. Padded positions carry the [PAD] row, whose target row is the
-            # loss ignore_index.
-            tgt_rows.append([*rows, eos, *[pad] * (dec_length - n - 1)])
-
-        enc_input_ids = torch.tensor(enc_rows, dtype=torch.long, device=self.device)
-        dec_input_ids = torch.tensor(dec_rows, dtype=torch.long, device=self.device)
-        target_ids = torch.tensor(tgt_rows, dtype=torch.long, device=self.device)
-
-        return EncodingComponent(
-            enc_input_ids=enc_input_ids,
-            enc_pad_mask=enc_input_ids == pad,
-            dec_input_ids=dec_input_ids,
-            dec_pad_mask=dec_input_ids == pad,
-            targets=self._target_table[target_ids],
-        )
-
-    def padded_targets(self, batch_size: int, seq_len: int) -> torch.Tensor:
-        """Loss targets for positions that are entirely padding.
-
-        Every position carries the ``[PAD]`` row's target, which is the CrossEntropyLoss
-        ``ignore_index``, so these positions contribute no loss, and the width matches
-        what :meth:`encode` produces.
-        """
-        pad_row = self.phoneme_table.row_index["[PAD]"]
-        # repeat, not expand: an expanded view has zero strides into `_target_table`, so a
-        # caller writing to the result would rewrite the [PAD] row for every later encode.
-        return self._target_table[pad_row].repeat(batch_size, seq_len, 1)
+    def _padded(self, rows: list[list[int]]) -> tuple[torch.Tensor, torch.Tensor]:
+        return pad_rows(rows, self.phoneme_table.row_index["[PAD]"], self.device)
 
     def decode(self, indices_batch: list[list[int]]) -> torch.Tensor:
         """Convert *feature* indices to dense multi-hot vectors, one row per position.
 
         The input space is feature space: what ``GenerationOutput.phon_tokens`` holds.
-        It is deliberately not the inverse of :meth:`encode`, which emits phoneme *row*
-        ids; use ``phoneme_table.features_of`` to go from a row id to its features.
+        It is deliberately not the inverse of :meth:`encode_input`, which emits phoneme
+        *row* ids; use ``phoneme_table.features_of`` to go from a row id to its features.
         """
         batch_size = len(indices_batch)
 

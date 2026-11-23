@@ -1,202 +1,249 @@
-"""
-BridgeEncoding: A high-performance data structure for managing orthographic and phonological encodings.
-Uses slots and frozen dataclasses for optimal memory usage and access speed.
+"""The tensors of a training example, each named for its one reader.
+
+An example is an input and a target, two different things. An encoder reads the input:
+:class:`Tokens`, ids and a pad mask. A decoder is fed the target and scored against it:
+:class:`Target`, ids, a pad mask and one label per position. :class:`BridgeInput` and
+:class:`BridgeTarget` hold the two modalities of one side, and a :class:`BridgeBatch` is one
+of each. The two sides may hold the same strings, which is repetition, and nothing treats
+that case differently.
+
+Both modalities have the same shape: ``(batch, sequence)`` integer ids. Orthographic ids
+index the character vocabulary; phonological ids index
+:class:`~bridge.core.phonreps.PhonemeTable` rows (*which phoneme*, not which feature).
+
+Every class is frozen and validates when it is built, so a tensor of the wrong shape, or an
+input put where a target belongs, fails where it was assembled.
 """
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
+from typing import Any
 
 import torch
 
 
-@dataclass(frozen=True, slots=True)
-class EncodingComponent:
-    """A component of a BridgeEncoding, representing either orthographic or phonological data.
+def pad_rows(
+    rows: list[list[int]], pad: int, device: torch.device
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """``rows`` padded with ``pad`` to one width as a tensor, and its pad mask."""
+    width = max(len(row) for row in rows)
+    ids = torch.tensor(
+        [[*row, *[pad] * (width - len(row))] for row in rows], dtype=torch.long, device=device
+    )
+    return ids, ids == pad
 
-    Both modalities use the same shape: ``(batch, sequence)`` integer ids. Orthographic ids
-    index the character vocabulary; phonological ids index
-    :class:`~bridge.core.phonreps.PhonemeTable` rows (*which phoneme*, not which feature).
-    """
 
-    enc_input_ids: torch.Tensor
-    enc_pad_mask: torch.Tensor
-    dec_input_ids: torch.Tensor
-    dec_pad_mask: torch.Tensor
-    targets: torch.Tensor | None = None  # Only used for phonological data
-
-    @property
-    def phon_targets(self) -> torch.Tensor:
-        """Phonological targets tensor.
-
-        Raises:
-            AttributeError: if ``targets`` was not provided (i.e. for orthographic
-                components).
-        """
-        if self.targets is None:
-            raise AttributeError("Phonological targets are not available")
-        return self.targets
-
-    def to(self, device: torch.device) -> "EncodingComponent":
-        """Move every tensor in this component to ``device``."""
-        return EncodingComponent(
-            enc_input_ids=self.enc_input_ids.to(device),
-            enc_pad_mask=self.enc_pad_mask.to(device),
-            dec_input_ids=self.dec_input_ids.to(device),
-            dec_pad_mask=self.dec_pad_mask.to(device),
-            targets=self.targets.to(device) if self.targets is not None else None,
+def _check_ids_and_mask(owner: str, ids: torch.Tensor, pad_mask: torch.Tensor) -> None:
+    """``ids`` are non-negative ``(batch, sequence)`` integers and ``pad_mask`` is a boolean
+    tensor covering exactly those positions, on the same device."""
+    for name, tensor in (("ids", ids), ("pad_mask", pad_mask)):
+        if not isinstance(tensor, torch.Tensor):
+            raise ValueError(f"{owner} {name} must be a torch.Tensor, got {type(tensor).__name__}")
+        if tensor.dim() != 2:
+            raise ValueError(
+                f"{owner} {name} must be 2-dimensional (batch, sequence), got shape "
+                f"{tuple(tensor.shape)}"
+            )
+    if ids.dtype not in (torch.long, torch.int):
+        raise ValueError(f"{owner} ids must have dtype torch.long or torch.int, got {ids.dtype}")
+    if pad_mask.dtype != torch.bool:
+        raise ValueError(f"{owner} pad_mask must have dtype torch.bool, got {pad_mask.dtype}")
+    if ids.shape != pad_mask.shape:
+        raise ValueError(
+            f"Shape mismatch: {owner} ids are {tuple(ids.shape)} but pad_mask is "
+            f"{tuple(pad_mask.shape)}"
         )
+    # Placement before content: the range check below reads the data.
+    if pad_mask.device != ids.device:
+        raise ValueError(
+            f"Device mismatch: {owner} ids on {ids.device}, pad_mask on {pad_mask.device}"
+        )
+    if torch.any(ids < 0):
+        raise ValueError(f"{owner} ids cannot contain negative indices")
 
 
 @dataclass(frozen=True, slots=True)
-class BridgeEncoding:
-    """
-    Unified container for orthographic and phonological encodings.
+class Tokens:
+    """What an encoder reads: one modality of the input strings.
 
-    This class is immutable (frozen) and uses slots for better memory usage
-    and faster attribute access. All tensor operations maintain device consistency.
-
-    Both components are always populated. The tokenizer fills in placeholder
-    tensors for the modality that wasn't actually provided (see
-    ``BridgeTokenizer._create_placeholder_*``). Targets on the phonological
-    component may still be ``None`` for inference-only encodings; route through
-    ``phonological.phon_targets`` for a non-Optional accessor.
-
-    Attributes:
-        orthographic: EncodingComponent containing orthographic encodings
-        phonological: EncodingComponent containing phonological encodings
-        device: torch.device - Device all tensors reside on, read off the
-            orthographic tensors.
+    ``ids`` is ``(batch, sequence)`` int64 and ``pad_mask`` is the same shape, ``True``
+    where padding.
     """
 
-    orthographic: EncodingComponent
-    phonological: EncodingComponent
+    ids: torch.Tensor
+    pad_mask: torch.Tensor
+
+    def __post_init__(self) -> None:
+        _check_ids_and_mask("Tokens", self.ids, self.pad_mask)
+
+    def to(self, device: torch.device) -> "Tokens":
+        """These tokens on ``device``."""
+        return Tokens(self.ids.to(device), self.pad_mask.to(device))
+
+
+@dataclass(frozen=True, slots=True)
+class Target:
+    """What a decoder is fed and scored against: one modality of the target strings.
+
+    ``ids`` and ``pad_mask`` are what the decoder is fed. ``labels[:, i]`` is what it must
+    emit after reading ``ids[:, : i + 1]``, so there is one label per decoder position.
+    Orthographic labels are ``(batch, sequence)`` character ids. Phonological labels are
+    ``(batch, sequence, features)``, one class per phonetic feature, in feature space.
+    """
+
+    ids: torch.Tensor
+    pad_mask: torch.Tensor
+    labels: torch.Tensor
+
+    def __post_init__(self) -> None:
+        _check_ids_and_mask("Target", self.ids, self.pad_mask)
+        if not isinstance(self.labels, torch.Tensor):
+            raise ValueError(
+                f"Target labels must be a torch.Tensor, got {type(self.labels).__name__}"
+            )
+        # The loss takes int64 class indices and no other integer type.
+        if self.labels.dtype != torch.long:
+            raise ValueError(f"Target labels must have dtype torch.long, got {self.labels.dtype}")
+        if self.labels.shape[:2] != self.ids.shape:
+            raise ValueError(
+                f"Shape mismatch: Target labels are {tuple(self.labels.shape)}, which is not "
+                f"one label per decoder position; ids are {tuple(self.ids.shape)}"
+            )
+        if self.labels.device != self.ids.device:
+            raise ValueError(
+                f"Device mismatch: Target ids on {self.ids.device}, labels on {self.labels.device}"
+            )
+
+    def to(self, device: torch.device) -> "Target":
+        """This target on ``device``."""
+        return Target(self.ids.to(device), self.pad_mask.to(device), self.labels.to(device))
+
+
+def _check_modalities(owner: str, kind: type, parts: dict[str, Any]) -> None:
+    """Every modality in ``parts`` is a ``kind``, and they agree on batch size and device."""
+    for modality, part in parts.items():
+        if not isinstance(part, kind):
+            raise TypeError(
+                f"{owner}.{modality} must be a {kind.__name__}, got {type(part).__name__}"
+            )
+    sizes = {modality: part.ids.size(0) for modality, part in parts.items()}
+    if len(set(sizes.values())) > 1:
+        raise ValueError(f"Batch size mismatch in {owner}: {sizes}")
+    devices = {modality: str(part.ids.device) for modality, part in parts.items()}
+    if len(set(devices.values())) > 1:
+        raise ValueError(f"Device mismatch in {owner}: {devices}")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BridgeInput:
+    """What the encoders read: the input strings in each modality.
+
+    A modality the input does not carry is ``None``. A nonword has no phonology, and
+    phonemes given without a spelling have no orthography. A pathway reads only its own
+    modalities, and :meth:`read` is how it asks for one.
+
+    Each modality is passed by name, ``BridgeInput(phon=...)``: both are ``Tokens``, so
+    the name is all that says which one a tensor is.
+    """
+
+    orth: Tokens | None = None
+    phon: Tokens | None = None
+
+    def __post_init__(self) -> None:
+        if not self._carried():
+            raise ValueError("A BridgeInput carries at least one modality; both are None")
+        _check_modalities("BridgeInput", Tokens, self._carried())
+
+    def _carried(self) -> dict[str, Tokens]:
+        """The modalities this input carries."""
+        both = (("orth", self.orth), ("phon", self.phon))
+        return {modality: tokens for modality, tokens in both if tokens is not None}
+
+    def read(self, modality: str, pathway: str) -> Tokens:
+        """The ``modality`` of this input, for ``pathway`` to read. Raises when the input
+        does not carry it."""
+        tokens: Tokens | None = getattr(self, modality)
+        if tokens is None:
+            raise ValueError(
+                f"pathway {pathway!r} reads {modality}, which this input does not carry"
+            )
+        return tokens
 
     @property
     def device(self) -> torch.device:
-        """The device every tensor in this encoding lives on."""
-        return self.orthographic.enc_input_ids.device
+        """The device every tensor of this input lives on."""
+        return next(iter(self._carried().values())).ids.device
 
-    def __post_init__(self):
-        """Validate both components agree on batch size and device."""
-        self._validate_component(self.orthographic, "Orthographic")
-        self._validate_phonological_component(self.phonological)
-
-        device = self.device
-        orth_batch_size = self.orthographic.enc_input_ids.size(0)
-        phon_batch_size = self.phonological.enc_input_ids.size(0)
-        if orth_batch_size != phon_batch_size:
-            raise ValueError(
-                f"Batch size mismatch: orthographic component has {orth_batch_size} samples, "
-                f"phonological component has {phon_batch_size} samples"
-            )
-
-        if self.phonological.enc_input_ids.device != device:
-            raise ValueError(
-                f"Device mismatch: phonological tensor on "
-                f"{self.phonological.enc_input_ids.device}, expected {device}"
-            )
-
-    @staticmethod
-    def _validate_component(component: EncodingComponent, modality: str):
-        """Validate one component's tensors.
-
-        Both modalities carry ``(batch, sequence)`` integer ids, so one validator covers
-        them; ``modality`` ("Orthographic" / "Phonological") only selects the message
-        prefix. ``targets`` is phonological-only and checked by the caller.
-        """
-        lower = modality.lower()
-
-        for name, tensor in [
-            ("enc_input_ids", component.enc_input_ids),
-            ("dec_input_ids", component.dec_input_ids),
-        ]:
-            if not isinstance(tensor, torch.Tensor):
-                raise ValueError(f"{modality} {name} must be a torch.Tensor")
-            if tensor.dim() != 2:
-                raise ValueError(f"{modality} {name} must be 2-dimensional (batch × sequence)")
-            if tensor.dtype not in [torch.long, torch.int]:
-                raise ValueError(f"{modality} {name} must have dtype torch.long or torch.int")
-            if torch.any(tensor < 0):
-                raise ValueError(f"{modality} {name} cannot contain negative indices")
-
-        for name, tensor in [
-            ("enc_pad_mask", component.enc_pad_mask),
-            ("dec_pad_mask", component.dec_pad_mask),
-        ]:
-            if not isinstance(tensor, torch.Tensor):
-                raise ValueError(f"{modality} {name} must be a torch.Tensor")
-            if tensor.dim() != 2:
-                raise ValueError(f"{modality} {name} must be 2-dimensional")
-            if tensor.dtype != torch.bool:
-                raise ValueError(f"{modality} {name} must have dtype torch.bool")
-
-        batch_size = component.enc_input_ids.size(0)
-        for name, tensor in [
-            ("enc_pad_mask", component.enc_pad_mask),
-            ("dec_input_ids", component.dec_input_ids),
-            ("dec_pad_mask", component.dec_pad_mask),
-        ]:
-            if tensor.size(0) != batch_size:
-                raise ValueError(
-                    f"Batch size mismatch: {lower} {name} has size {tensor.size(0)}, "
-                    f"expected {batch_size}"
-                )
-
-        # A mask must cover exactly the ids it masks. Both tokenizers build masks as
-        # `ids == pad`, so this always holds in production; it is checkable here only
-        # because both modalities now carry the same rectangular shape.
-        for ids_name, ids, mask_name, mask in [
-            ("enc_input_ids", component.enc_input_ids, "enc_pad_mask", component.enc_pad_mask),
-            ("dec_input_ids", component.dec_input_ids, "dec_pad_mask", component.dec_pad_mask),
-        ]:
-            if ids.shape != mask.shape:
-                raise ValueError(
-                    f"Shape mismatch: {lower} {ids_name} is {tuple(ids.shape)} but "
-                    f"{mask_name} is {tuple(mask.shape)}"
-                )
-
-    @staticmethod
-    def _validate_phonological_component(component: EncodingComponent):
-        """Validate the phonological component, including its loss targets."""
-        BridgeEncoding._validate_component(component, "Phonological")
-
-        if component.targets is not None:
-            if not isinstance(component.targets, torch.Tensor):
-                raise ValueError("Phonological targets must be a torch.Tensor")
-            if component.targets.dim() != 3:
-                raise ValueError(
-                    "Phonological targets must be 3-dimensional (batch × sequence × features)"
-                )
-            if component.targets.size(0) != component.enc_input_ids.size(0):
-                raise ValueError(
-                    f"Batch size mismatch: phonological targets has size "
-                    f"{component.targets.size(0)}, expected {component.enc_input_ids.size(0)}"
-                )
-            # One target row per decoder position. A mismatch used to surface only as a
-            # shape error inside CrossEntropyLoss, several layers downstream.
-            if component.targets.size(1) != component.dec_input_ids.size(1):
-                raise ValueError(
-                    f"Sequence length mismatch: phonological targets has "
-                    f"{component.targets.size(1)} positions, but dec_input_ids has "
-                    f"{component.dec_input_ids.size(1)}"
-                )
-
-    def to(self, device: torch.device) -> "BridgeEncoding":
-        """Return a BridgeEncoding with all tensors on ``device``.
-
-        Returns ``self`` unchanged when the encoding is already on ``device``, which is safe
-        because the class is frozen and nothing in the codebase mutates the component
-        tensors. (Even before this short-circuit existed, ``Tensor.to(same_device)``
-        returned the identical tensor, so a same-device ``to()`` never produced an
-        isolated copy.)
-        """
-        if device == self.device:
-            return self
-        return replace(
-            self,
-            orthographic=self.orthographic.to(device),
-            phonological=self.phonological.to(device),
-        )
+    def to(self, device: torch.device) -> "BridgeInput":
+        """This input on ``device``."""
+        return BridgeInput(**{m: tokens.to(device) for m, tokens in self._carried().items()})
 
     def __len__(self) -> int:
-        """Return the batch size."""
-        return self.orthographic.enc_input_ids.size(0)
+        """The batch size."""
+        return next(iter(self._carried().values())).ids.size(0)
+
+
+@dataclass(frozen=True, slots=True)
+class BridgeTarget:
+    """What the decoders are fed and scored against: the target strings in each modality."""
+
+    orth: Target
+    phon: Target
+
+    def __post_init__(self) -> None:
+        _check_modalities("BridgeTarget", Target, {"orth": self.orth, "phon": self.phon})
+        # Also what tells the two modalities apart, so swapped ones cannot pass.
+        for modality, target, rank in (("orth", self.orth, 2), ("phon", self.phon, 3)):
+            if target.labels.dim() != rank:
+                raise ValueError(
+                    f"BridgeTarget.{modality} labels must be {rank}-dimensional, got shape "
+                    f"{tuple(target.labels.shape)}"
+                )
+
+    @property
+    def device(self) -> torch.device:
+        """The device every tensor of this target lives on."""
+        return self.orth.ids.device
+
+    def to(self, device: torch.device) -> "BridgeTarget":
+        """This target on ``device``."""
+        return BridgeTarget(orth=self.orth.to(device), phon=self.phon.to(device))
+
+    def __len__(self) -> int:
+        """The batch size."""
+        return self.orth.ids.size(0)
+
+
+@dataclass(frozen=True, slots=True)
+class BridgeBatch:
+    """Training examples: what the model reads, and what it is taught to write."""
+
+    input: BridgeInput
+    target: BridgeTarget
+
+    def __post_init__(self) -> None:
+        for name, side, kind in (
+            ("input", self.input, BridgeInput),
+            ("target", self.target, BridgeTarget),
+        ):
+            if not isinstance(side, kind):
+                raise TypeError(
+                    f"BridgeBatch.{name} must be a {kind.__name__}, got {type(side).__name__}"
+                )
+        if len(self.input) != len(self.target):
+            raise ValueError(
+                f"Batch size mismatch in BridgeBatch: {len(self.input)} inputs, "
+                f"{len(self.target)} targets"
+            )
+        if self.input.device != self.target.device:
+            raise ValueError(
+                f"Device mismatch in BridgeBatch: input on {self.input.device}, target on "
+                f"{self.target.device}"
+            )
+
+    def to(self, device: torch.device) -> "BridgeBatch":
+        """This batch on ``device``."""
+        return BridgeBatch(input=self.input.to(device), target=self.target.to(device))
+
+    def __len__(self) -> int:
+        """The batch size."""
+        return len(self.input)

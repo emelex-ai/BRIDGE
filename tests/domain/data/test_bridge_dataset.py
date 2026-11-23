@@ -1,17 +1,17 @@
 """
-Test suite for the BridgeDataset class, focusing on proper integration
-with BridgeEncoding dataclass and comprehensive functionality testing.
+Test suite for the BridgeDataset class: loading, indexing into a BridgeBatch, and the
+tokenizer it reads through.
 """
 
 import json
 import pickle
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 import torch
 
 from bridge.domain.data import BridgeDataset, CSVReader
-from bridge.domain.datamodels import BridgeEncoding, EncodingComponent
+from bridge.domain.datamodels import BridgeBatch, BridgeInput, BridgeTarget, Target, Tokens
 from bridge.domain.tokenizer import BridgeTokenizer
 
 
@@ -30,11 +30,13 @@ def mock_dataset_file(tmp_path):
     """Create a temporary dataset file with known test data.
 
     Uses the columnar pkl format expected by ``BridgeDataset._load_raw_dataframe``:
-    ``{"word_raw": [...], "language": [...]}``.
+    ``{"word_raw": [...], "language": [...], "target_raw": [...]}``. The target is the
+    input here, which is repetition.
     """
     test_data = {
         "word_raw": ["cat", "dog"],
         "language": ["EN", "EN"],
+        "target_raw": ["cat", "dog"],
     }
 
     file_path = tmp_path / "test_dataset.pkl"
@@ -82,29 +84,13 @@ def dataset_config(mock_dataset_file, mock_cmudict_file):
     )
 
 
-_TOKENIZER = BridgeTokenizer()
-
-
-def create_test_encoding(word: str, device: torch.device) -> BridgeEncoding:
-    """A real encoding for a lexicon word, moved to ``device``.
-
-    Hand-building this used to mean restating the tokenizer's output shape here, which
-    then had to be migrated in lockstep with it. Encoding for real costs one lexicon
-    parse for the module and cannot drift.
-    """
-    encoding = _TOKENIZER.encode(word)
-    assert encoding is not None, f"{word!r} is missing from the pronunciation lexicon"
-    return encoding.to(device)
-
-
 @pytest.fixture
 def mock_bridge_tokenizer(mock_cmudict_file):
     """A real tokenizer for the config's lexicon, wrapped so calls can be counted.
 
     ``wraps`` keeps real behaviour, since encoding is the thing under test in most of these
-    cases, while still recording ``encode.call_count``. A hand-written double has to
-    restate the tokenizer's batch contract, which is how this layer silently stopped
-    matching it.
+    cases, while still recording each encoder's ``call_count``. A hand-written double has
+    to restate the tokenizer's batch contract, and can drift from it unnoticed.
     """
     real = BridgeTokenizer(custom_cmudict_path=mock_cmudict_file)
     tokenizer = Mock(spec=BridgeTokenizer, wraps=real)
@@ -121,13 +107,16 @@ def bridge_dataset(dataset_config, mock_bridge_tokenizer, mock_gcs_client):
     return dataset
 
 
+def inputs_of(dataset) -> list[str]:
+    return [example.input for example in dataset.examples]
+
+
 def test_dataset_initialization(bridge_dataset, mock_dataset_file):
     """Test dataset initialization with proper configuration."""
     assert isinstance(bridge_dataset, BridgeDataset)
-    assert len(bridge_dataset.words) == 2
-    assert "cat" in bridge_dataset.words
-    assert "dog" in bridge_dataset.words
-    assert bridge_dataset.device == torch.device("cpu")
+    assert len(bridge_dataset.examples) == 2
+    assert inputs_of(bridge_dataset) == ["cat", "dog"]
+    assert [example.target for example in bridge_dataset.examples] == ["cat", "dog"]
 
 
 def test_dataset_length(bridge_dataset):
@@ -136,55 +125,45 @@ def test_dataset_length(bridge_dataset):
 
 
 def test_get_item_by_index(bridge_dataset):
-    """Test accessing items by numerical index."""
+    """A row is a batch of one: an input and a target, each in both modalities."""
     item = bridge_dataset[0]
-    assert isinstance(item, BridgeEncoding)
-    assert hasattr(item, "orthographic")
-    assert hasattr(item, "phonological")
-    assert isinstance(item.orthographic, EncodingComponent)
-    assert isinstance(item.phonological, EncodingComponent)
+    assert isinstance(item, BridgeBatch)
+    assert isinstance(item.input, BridgeInput)
+    assert isinstance(item.target, BridgeTarget)
+    assert isinstance(item.input.orth, Tokens)
+    assert isinstance(item.input.phon, Tokens)
+    assert isinstance(item.target.orth, Target)
+    assert isinstance(item.target.phon, Target)
 
-    # Verify tensor properties
-    orth = item.orthographic
-    assert torch.is_tensor(orth.enc_input_ids)
-    # Shape is (batch=1, seq_len=6): [LANG, BOS, c, a, t, EOS]
-    assert orth.enc_input_ids.shape == (1, 6)
-    assert orth.enc_input_ids.device == bridge_dataset.device
-
-    phon = item.phonological
+    # Input: (batch=1, seq_len=6), [LANG, BOS, c, a, t, EOS].
+    assert item.input.orth.ids.shape == (1, 6)
+    # Target: one position narrower, [LANG, BOS, c, a, t], with a label for each.
+    assert item.target.orth.ids.shape == (1, 5)
+    assert item.target.orth.labels.shape == (1, 5)
     # Phoneme row ids, the same (batch, sequence) shape as the orthographic side.
-    assert torch.is_tensor(phon.enc_input_ids)
-    assert phon.enc_input_ids.shape[0] == 1
-    assert phon.enc_input_ids.device == bridge_dataset.device
+    assert item.input.phon.ids.shape[0] == 1
+    assert item.input.device == item.target.device == torch.device("cpu")
 
 
 def test_get_item_has_the_expected_ids(bridge_dataset):
     """The row for "cat", id for id."""
-    item = bridge_dataset[bridge_dataset.words.index("cat")]
-    assert isinstance(item, BridgeEncoding)
-    assert hasattr(item, "orthographic")
-    assert hasattr(item, "phonological")
-    assert isinstance(item.orthographic, EncodingComponent)
-    assert isinstance(item.phonological, EncodingComponent)
+    item = bridge_dataset[inputs_of(bridge_dataset).index("cat")]
     # [LANG=7 ("EN"), BOS=0, c=21, a=19, t=38, EOS=1]. The fixture tags every word
     # as "EN", and EN sits at index 7 in the vocab (after 6 special tokens + "--").
-    assert torch.equal(
-        item.orthographic.enc_input_ids,
-        torch.tensor([[7, 0, 21, 19, 38, 1]], device=bridge_dataset.device),
-    )
+    assert item.input.orth.ids.tolist() == [[7, 0, 21, 19, 38, 1]]
+    assert item.target.orth.ids.tolist() == [[7, 0, 21, 19, 38]]
+    assert item.target.orth.labels.tolist() == [[0, 21, 19, 38, 1]]
 
 
 def test_get_item_by_slice(bridge_dataset):
     """Test accessing multiple items using slice notation."""
     items = bridge_dataset[0:2]
-    assert isinstance(items, BridgeEncoding)
-    assert hasattr(items, "orthographic")
-    assert hasattr(items, "phonological")
-    assert isinstance(items.orthographic, EncodingComponent)
-    assert isinstance(items.phonological, EncodingComponent)
-    # We should get both items in the batch
-    assert items.orthographic.enc_input_ids.shape[0] == 2
-    assert items.phonological.enc_pad_mask.shape[0] == 2
+    assert isinstance(items, BridgeBatch)
+    assert len(items) == 2
+    assert items.input.orth.ids.shape[0] == 2
+    assert items.input.phon.pad_mask.shape[0] == 2
+    assert items.target.orth.ids.shape[0] == 2
+    assert items.target.phon.labels.shape[0] == 2
 
 
 def test_invalid_index_access(bridge_dataset):
@@ -196,56 +175,55 @@ def test_invalid_index_access(bridge_dataset):
         _ = bridge_dataset["cat"]
 
 
-def test_encoding_cache(dataset_config, mock_bridge_tokenizer, mock_gcs_client):
-    """A repeated lookup must not re-encode."""
+def test_every_read_encodes_each_side_once(dataset_config, mock_bridge_tokenizer, mock_gcs_client):
+    """Oracle: call counts on the real tokenizer. Loading encodes nothing, and a read
+    encodes the input once and the target once, every time: nothing is kept between
+    reads, so a row cannot come back stale."""
     dataset = BridgeDataset(dataset_config, mock_gcs_client, tokenizer=mock_bridge_tokenizer)
+    assert mock_bridge_tokenizer.encode_input.call_count == 0
+    assert mock_bridge_tokenizer.encode_target.call_count == 0
 
-    _ = dataset[0]
-    assert mock_bridge_tokenizer.encode.call_count > 0, "nothing was encoded; the spy is inert"
-    first_call_count = mock_bridge_tokenizer.encode.call_count
+    first = dataset[0]
+    assert mock_bridge_tokenizer.encode_input.call_count == 1
+    assert mock_bridge_tokenizer.encode_target.call_count == 1
 
-    _ = dataset[0]
-    assert mock_bridge_tokenizer.encode.call_count == first_call_count
-
-
-def test_device_movement(dataset_config, mock_bridge_tokenizer, mock_gcs_client):
-    """Test moving dataset between devices."""
-    if not torch.cuda.is_available():
-        pytest.skip("CUDA not available")
-
-    dataset = BridgeDataset(dataset_config, mock_gcs_client, tokenizer=mock_bridge_tokenizer)
-    assert dataset.device.type == "cpu"
-
-    dataset.device = torch.device("cuda")
-    assert dataset.device.type == "cuda"
+    second = dataset[0]
+    assert mock_bridge_tokenizer.encode_input.call_count == 2
+    assert mock_bridge_tokenizer.encode_target.call_count == 2
+    assert first is not second
+    assert torch.equal(first.input.orth.ids, second.input.orth.ids)
 
 
 def test_batch_consistency(bridge_dataset):
-    """Test consistency of batch processing."""
+    """A row read by index equals the same row read as a slice of one, tensor for tensor."""
     single = bridge_dataset[0]
     batch = bridge_dataset[0:1]
 
-    # Verify batch is properly formatted version of single
-    assert torch.equal(
-        single.orthographic.enc_input_ids,
-        batch.orthographic.enc_input_ids,
-    )
-    assert torch.equal(single.phonological.enc_pad_mask, batch.phonological.enc_pad_mask)
+    for a, b in (
+        (single.input.orth, batch.input.orth),
+        (single.input.phon, batch.input.phon),
+        (single.target.orth, batch.target.orth),
+        (single.target.phon, batch.target.phon),
+    ):
+        assert torch.equal(a.ids, b.ids)
+        assert torch.equal(a.pad_mask, b.pad_mask)
+    assert torch.equal(single.target.orth.labels, batch.target.orth.labels)
+    assert torch.equal(single.target.phon.labels, batch.target.phon.labels)
 
 
 def test_shuffle_functionality(bridge_dataset):
     """Test dataset shuffling maintains data consistency."""
-    original_words = bridge_dataset.words.copy()
+    original = list(bridge_dataset.examples)
     bridge_dataset.shuffle(1)
 
-    assert len(bridge_dataset.words) == len(original_words)
-    assert set(bridge_dataset.words) == set(original_words)
-    assert bridge_dataset.words[1:] == original_words[1:]
+    assert len(bridge_dataset.examples) == len(original)
+    assert set(bridge_dataset.examples) == set(original)
+    assert bridge_dataset.examples[1:] == original[1:]
 
 
 def test_data_validation(tmp_path, dataset_config, mock_gcs_client):
     """Test data validation during loading."""
-    # Create invalid dataset file that's not a dictionary of dictionaries
+    # Create invalid dataset file that's not a dictionary of columns
     invalid_data = []  # Not a dictionary
     file_path = tmp_path / "invalid.pkl"
     with open(file_path, "wb") as f:
@@ -256,40 +234,45 @@ def test_data_validation(tmp_path, dataset_config, mock_gcs_client):
         _ = BridgeDataset(dataset_config, mock_gcs_client)
 
 
-def test_error_handling_invalid_encodings(dataset_config, mock_bridge_tokenizer, mock_gcs_client):
-    """Test handling of invalid encodings from tokenizer."""
-    dataset = BridgeDataset(dataset_config, mock_gcs_client, tokenizer=mock_bridge_tokenizer)
+def test_pkl_columns_must_have_equal_length(tmp_path, dataset_config, mock_gcs_client):
+    """Oracle: the rule. A short column would pair inputs with the wrong targets."""
+    file_path = tmp_path / "ragged.pkl"
+    with open(file_path, "wb") as f:
+        pickle.dump({"word_raw": ["cat", "dog"], "target_raw": ["cat"]}, f)
 
-    # Patch the per-word encoder rather than the tokenizer, to bypass the lru_cache.
-    with patch.object(dataset, "_encode_single_word", return_value=None):
-        with pytest.raises(RuntimeError, match="Failed to encode word"):
-            _ = dataset[0]
+    dataset_config.dataset_filepath = str(file_path)
+    with pytest.raises(ValueError, match="must have equal length, got .*'target_raw': 1"):
+        _ = BridgeDataset(dataset_config, mock_gcs_client)
+
+
+def test_a_side_the_tokenizer_cannot_pronounce_raises_naming_it(
+    dataset_config, mock_bridge_tokenizer, mock_gcs_client
+):
+    """Oracle: the rule. Either side without a pronunciation stops the read, and the
+    message says which row and which side. The tokenizer is stubbed, so each side fails
+    alone."""
+    dataset = BridgeDataset(dataset_config, mock_gcs_client, tokenizer=mock_bridge_tokenizer)
+    real = mock_bridge_tokenizer.encode_input(["cat"], ["EN"])
+
+    mock_bridge_tokenizer.encode_target.side_effect = lambda *args: None
+    with pytest.raises(RuntimeError, match="No pronunciation for a word of row 0's target 'cat'$"):
+        _ = dataset[0]
+
+    mock_bridge_tokenizer.encode_target.side_effect = None
+    mock_bridge_tokenizer.encode_input.side_effect = lambda *args: BridgeInput(orth=real.orth)
+    with pytest.raises(RuntimeError, match="No pronunciation for a word of row 0's input 'cat'$"):
+        _ = dataset[0]
 
 
 def test_integration_with_training_pipeline(bridge_dataset):
-    """Test compatibility with training pipeline requirements."""
+    """A batch carries every tensor a training step reads, under the names it reads."""
     batch = bridge_dataset[0:2]
 
-    # Verify batch format meets training pipeline requirements
-    assert isinstance(batch, BridgeEncoding)
-    assert hasattr(batch, "orthographic")
-    assert hasattr(batch, "phonological")
-    assert isinstance(batch.orthographic, EncodingComponent)
-    assert isinstance(batch.phonological, EncodingComponent)
-    assert all(
-        hasattr(batch.orthographic, key)
-        for key in ["enc_input_ids", "enc_pad_mask", "dec_input_ids", "dec_pad_mask"]
-    )
-    assert all(
-        hasattr(batch.phonological, key)
-        for key in [
-            "enc_input_ids",
-            "enc_pad_mask",
-            "dec_input_ids",
-            "dec_pad_mask",
-            "targets",
-        ]
-    )
+    assert isinstance(batch, BridgeBatch)
+    for part in (batch.input.orth, batch.input.phon):
+        assert all(torch.is_tensor(getattr(part, key)) for key in ("ids", "pad_mask"))
+    for part in (batch.target.orth, batch.target.phon):
+        assert all(torch.is_tensor(getattr(part, key)) for key in ("ids", "pad_mask", "labels"))
 
 
 def test_vocabulary_size_properties(dataset_config, mock_bridge_tokenizer, mock_gcs_client):

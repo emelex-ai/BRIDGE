@@ -7,7 +7,6 @@ they cannot disagree about where a word starts or which language it is in.
 
 import re
 from collections.abc import Sequence
-from typing import cast
 
 SUPPORTED_LANGUAGES = ("EN", "ES")
 # The code of a row whose language was never given. It covers a whole row or none of it.
@@ -16,8 +15,8 @@ UNSPECIFIED = "--"
 # One row's languages as a caller writes them: one code for every word (``"EN"``), one code
 # per word (``"EN EN ES"``, or a list or tuple of codes), or ``None`` for unspecified.
 type RowLanguages = str | Sequence[str | None] | None
-# The languages of one ``encode`` call: see :func:`rows_and_languages`.
-type Languages = RowLanguages | Sequence[RowLanguages]
+# The languages of one tokenizer call: one entry per row, or ``None`` for no language at all.
+type Languages = Sequence[RowLanguages] | None
 
 _WORD = re.compile(r"\S+")
 
@@ -74,32 +73,28 @@ def per_word_languages(text: str, languages: RowLanguages = None) -> tuple[str, 
     return tuple(codes)
 
 
-def rows_and_languages(
-    text: str | list[str], languages: Languages = None
-) -> tuple[list[str], list[tuple[str, ...]]]:
-    """The rows of one ``encode`` call and each row's per-word languages.
+def per_row_languages(texts: list[str], languages: Languages = None) -> list[tuple[str, ...]]:
+    """The per-word languages of every row of one tokenizer call.
 
-    ``text`` is one row or a list of rows. For one row, ``languages`` is that row's
-    languages. For a list, ``languages`` is ``None``, one string applied to every row, or a
-    list or tuple holding one entry per row. So a list of codes is read per word beside one
-    row and per row beside a list of rows::
+    ``texts`` is a list of rows. ``languages`` is a list or tuple holding one entry per row,
+    each in a form :func:`per_word_languages` accepts, or ``None`` to leave every row
+    unspecified::
 
-        "no me",              ["ES", "EN"]    one row: "no" in ES, "me" in EN
-        ["no me", "la con"],  ["ES", "EN"]    two rows: "no me" in ES, "la con" in EN
-        ["no me", "la con"],  "ES EN"         two rows, each ES then EN
+        ["no me", "la con"],  ["ES", "EN"]            "no me" in ES, "la con" in EN
+        ["no me", "la con"],  ["ES EN", None]         "no" in ES, "me" in EN; "la con" unspecified
+        ["no me", "la con"],  [("ES", "EN"), "EN"]    the same first row, "la con" in EN
+
+    One string is not read as a code for every row: it raises, since a row's own entry may
+    be a string of several codes.
     """
-    if isinstance(text, str):
-        return [text], [per_word_languages(text, cast(RowLanguages, languages))]
-    if not isinstance(text, list) or not all(isinstance(row, str) for row in text):
-        raise TypeError("Input must be a string or a list of strings")
-    if languages is None or isinstance(languages, str):
-        per_row: Sequence[RowLanguages] = [languages] * len(text)
+    if not isinstance(texts, list) or not all(isinstance(row, str) for row in texts):
+        raise TypeError("The rows to encode are a list of strings")
+    if languages is None:
+        languages = [None] * len(texts)
     elif not isinstance(languages, list | tuple):
         raise ValueError(
-            f"Languages for a list of rows are a string, a list or a tuple, got {languages!r}"
+            f"Languages are a list or a tuple with one entry per row, got {languages!r}"
         )
-    elif len(languages) != len(text):
-        raise ValueError(f"{len(languages)} language entries for {len(text)} rows")
-    else:
-        per_row = languages
-    return text, [per_word_languages(row, spec) for row, spec in zip(text, per_row, strict=True)]
+    elif len(languages) != len(texts):
+        raise ValueError(f"{len(languages)} language entries for {len(texts)} rows")
+    return [per_word_languages(row, entry) for row, entry in zip(texts, languages, strict=True)]

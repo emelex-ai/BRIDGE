@@ -110,14 +110,15 @@ def test_a_cuda_model_needs_no_explicit_to_from_the_caller():
     """
     device_manager.set_device("cuda")
     tokenizer = BridgeTokenizer()
-    encoding = tokenizer.encode(["cat", "dog"])
-    assert encoding is not None
+    inputs = tokenizer.encode_input(["cat", "dog"])
+    assert inputs.phon is not None
+    start = tokenizer.orth_start([None, None])
     model = build_from(tokenizer)
 
     assert placement(model) == [str(device_manager.device)]
 
     for pathway in ("o2p", "op2op", "p2o", "p2p", "o2o"):
-        output = model.generate(encoding, pathway, deterministic=True)
+        output = model.generate(inputs, pathway, orth_start=start, deterministic=True)
         assert output.global_encoding.device.type == "cuda"
 
 
