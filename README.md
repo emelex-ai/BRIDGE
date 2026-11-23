@@ -64,7 +64,7 @@ from bridge import (
 ```
 
 > [!NOTE]
-> `Model` and `BridgeTokenizer` are **sibling objects** — neither holds a reference to the other. The model needs vocab sizes and special-token IDs (to size embeddings and to know when to stop generating); these flow through `ModelConfig.vocab` (a `VocabSpec`). Use `VocabSpec.from_tokenizer(tokenizer)` to derive one in a single line.
+> `Model` and `BridgeTokenizer` are **sibling objects**: neither holds a reference to the other. The model needs vocab sizes and special-token IDs (to size embeddings and to know when to stop generating); these flow through `ModelConfig.vocab` (a `VocabSpec`). Use `VocabSpec.from_tokenizer(tokenizer)` to derive one in a single line.
 
 ---
 
@@ -110,21 +110,51 @@ table.features_of(row)        # row id -> its active feature columns
 
 ## Multilingual support
 
-The phoneme tokenizer loads per-language lexicons from `bridge/core/pronunciation_lexicons/` at construction. English and Spanish are shipped; additional languages can be supplied via the optional `custom_cmudict_path` argument using the same nested-by-language JSON shape.
+The phoneme tokenizer loads per-language lexicons from `bridge/core/pronunciation_lexicons/` at construction. English (`EN`) and Spanish (`ES`) are the supported languages. The optional `custom_cmudict_path` argument adds or replaces pronunciations in either, using the same nested-by-language JSON shape.
+
+Every word carries its own language. `languages` takes one code for a whole row or one code per word, and for a list of rows it takes one such entry per row.
 
 ```python
 from bridge import BridgeTokenizer
 
 tok = BridgeTokenizer()                                   # loads en + es by default
-out = tok.encode(
-    ["hola", "world"],
-    language_map={"hola": "ES", "world": "EN"},           # per-word language tags
-)
+
+# One entry per row: "hola" is Spanish, "world" is English.
+words = tok.encode(["hola", "world"], languages=["ES", "EN"])
+
+# One code per word, for a row that changes language.
+mixed = tok.encode("the word is gato", languages="EN EN EN ES")
+tok.decode_with_languages(mixed.orthographic.enc_input_ids.tolist())
+# [('the word is gato', ['EN', 'EN', 'EN', 'ES'])]
 ```
 
-The character tokenizer prepends a language token (`"--"`, `"EN"`, or `"ES"`) before `[BOS]` for every input, so each batch is laid out as `[LANG, BOS, …chars, EOS, PAD, …]`.
+Phonology looks each word up in its own language's lexicon, by its position in the row. A word missing from that lexicon has no pronunciation, whichever other lexicon holds it, and `encode` returns `None`.
 
-> Each `BridgeDataset` word carries its own language. The pkl input format is columnar: `{"word_raw": [...], "language": [...]}`. Omitting the `language` column defaults every word to `"EN"`.
+Orthography opens a row with its first word's language token (`"--"`, `"EN"`, or `"ES"`) and `[BOS]`. A language token appears again only where the language changes, directly before that word's first character:
+
+```text
+the word is gato        EN EN EN ES
+[EN] [BOS] t h e _ w o r d _ i s _ [ES] g a t o [EOS]
+```
+
+A row in one language is therefore laid out as `[LANG, BOS, …chars, EOS, PAD, …]`. A call with no `languages` leaves the row unspecified: the `"--"` token, and English pronunciations.
+
+### Dataset files
+
+A `BridgeDataset` file holds a `word_raw` column and a `language` column. A `language` cell is one code for the whole row, or one code per word, separated by spaces:
+
+```csv
+word_raw,language
+cat,EN
+gato,ES
+the word is gato,EN EN EN ES
+```
+
+The pkl format is columnar, `{"word_raw": [...], "language": [...]}`, and a cell may also be a list or tuple of codes. A file with no `language` column is English throughout.
+
+A bad `language` cell raises when the file loads, naming the row: a blank cell, `--`, an unsupported code, or a code count that is neither one nor the row's word count. A comma between codes stops the load too. Pronunciations are not checked at load. A word with no pronunciation in its language raises when its row is read, except in the first row, which is left out with a warning.
+
+Orthographic accuracy comes as two pairs. `letter_wise_accuracy` and `word_wise_accuracy` count every scored token, language switches included. The `_without_switches` pair leaves the switches out and measures spelling alone. See [decision 0015](docs/decisions/0015-language-belongs-to-each-word.md).
 
 ---
 
@@ -205,4 +235,4 @@ CI runs `lint`, `typecheck` and `test` on every push and PR. See [`.github/workf
 
 ## License
 
-MIT — see project metadata in [`pyproject.toml`](pyproject.toml).
+MIT. See project metadata in [`pyproject.toml`](pyproject.toml).

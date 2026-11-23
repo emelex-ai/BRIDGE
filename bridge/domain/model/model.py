@@ -952,7 +952,7 @@ class Model(nn.Module):
         # The orthographic decoder is seeded with the same two positions training puts in
         # front of every word, [LANG, BOS], taken straight off the encoding rather than
         # rebuilt here. The language is therefore whatever the caller asked for through
-        # `BridgeTokenizer.encode(..., language_map=...)`, and `p2o` can be steered to spell
+        # `BridgeTokenizer.encode(..., languages=...)`, and `p2o` can be steered to spell
         # the same phonemes differently per language. See docs/decisions/0008.
         orth_dec_prefix = (
             encodings.orthographic.dec_input_ids[:, :2] if pathway in WRITES_ORTH else None

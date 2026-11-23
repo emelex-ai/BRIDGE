@@ -1,10 +1,10 @@
 """The orthographic decoder generates from the prefix it was trained on (issue #228).
 
 ``CharacterTokenizer`` lays every decoder sequence out as ``[LANG, BOS, ...chars, PAD...]``,
-so during teacher forcing ``[BOS]`` sits at position 1 and the position-0 slot holds a
-language token. Generation used to seed a lone ``[BOS]`` at position 0, which asked the
-decoder to continue from a state it never saw in training and withheld the language token
-entirely.
+so during teacher forcing ``[BOS]`` sits at position 1 and the position-0 slot holds the
+language token of the row's first word. Generation is seeded with those same two
+positions. A lone ``[BOS]`` at position 0 would ask the decoder to continue from a state
+it never saw in training and would withhold the language token entirely.
 
 Phonology never had this problem, which is what made it visible: its decoder input is
 ``[BOS, ...phonemes, PAD...]`` with no language slot, so its ``[BOS]`` is at position 0 in
@@ -80,14 +80,15 @@ def test_generation_opens_with_the_same_prefix_training_uses(tokenizer, model, p
 def test_the_prefix_is_the_language_the_caller_asked_for(tokenizer, model):
     """Conditioning, at the level this test can see it: the seed carries the caller's choice.
 
-    Three languages over the same word, so a seed that ignored ``language_map`` and hardcoded
+    Three languages over the same word, so a seed that ignored ``languages`` and hardcoded
     one token would fail. Whether the trained model then *uses* the token is a question about
     training, measured in decision record 0008 rather than here, because it needs a trained
-    model and a multilingual corpus.
+    model and a multilingual corpus. The word is "no", which both lexicons pronounce, so it
+    encodes under either tag.
     """
     seen = {}
     for language in ("--", "EN", "ES"):
-        encoding = tokenizer.encode(["read"], language_map={"read": language})
+        encoding = tokenizer.encode(["no"], languages=language)
         assert encoding is not None
         result = model.generate(encoding, "p2o", deterministic=True)
         seen[language] = names(tokenizer, result.orth_tokens[0, :2])
@@ -97,6 +98,34 @@ def test_the_prefix_is_the_language_the_caller_asked_for(tokenizer, model):
         "EN": ["EN", "[BOS]"],
         "ES": ["ES", "[BOS]"],
     }, seen
+
+
+def test_a_mixed_row_is_seeded_with_its_first_words_language(tokenizer, model):
+    """The seed is two positions, so it names one language: the first word's.
+
+    Oracle: hand-written. "no me" tagged ``ES EN`` and ``EN ES`` differ only in which
+    language comes first, and each opens with that one. A later change of language is the
+    decoder's to emit; a seed built from the last word, or from the row's most common
+    language, would fail one of the two.
+    """
+    encoding = tokenizer.encode(["no me", "no me"], languages=["ES EN", "EN ES"])
+    assert encoding is not None
+
+    for pathway in sorted(WRITES_ORTH):
+        result = model.generate(encoding, pathway, deterministic=True)
+        assert [names(tokenizer, row[:2]) for row in result.orth_tokens] == [
+            ["ES", "[BOS]"],
+            ["EN", "[BOS]"],
+        ], pathway
+
+    phonology_only = tokenizer.encode(
+        ["no me", "no me"], modality_filter="phonology", languages=["ES EN", "EN ES"]
+    )
+    result = model.generate(phonology_only, "p2o", deterministic=True)
+    assert [names(tokenizer, row[:2]) for row in result.orth_tokens] == [
+        ["ES", "[BOS]"],
+        ["EN", "[BOS]"],
+    ]
 
 
 def test_a_phonology_only_encoding_still_supplies_a_usable_prefix(tokenizer, model):

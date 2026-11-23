@@ -19,6 +19,12 @@ README was outside the net until it had drifted four ways at once and its only w
 raised `TypeError`. Each of those four assertions was verified to fail against the defect it
 describes before being trusted.
 
+Since 2026-11-22 it also runs the README's multilingual example as written, and compares the
+result the example shows with what the call returns. While the per-word language change
+was in progress the suite stayed green as that example raised `TypeError`. The check was
+verified to fail on three planted defects: a keyword `encode` does not take, a wrong result
+shown, and a word tagged with a language whose lexicon lacks it.
+
 `tests/test_diagram.py` does the same for `BRIDGE-Models.drawio`, the public architecture
 figure, as of 2026-11-07. It checks one page per pathway; block opacity against which modules
 each pathway actually fires, measured by forward hooks; the label of the block fed to the

@@ -7,6 +7,12 @@ import torch
 
 from bridge.core.phonreps import SPECIAL_TOKENS, load_phoneme_table
 from bridge.domain.datamodels.encodings import EncodingComponent
+from bridge.domain.tokenizer.languages import (
+    UNSPECIFIED,
+    Languages,
+    rows_and_languages,
+    split_words,
+)
 from bridge.utils import device_manager, get_project_root
 
 logger = logging.getLogger(__name__)
@@ -32,8 +38,8 @@ class PhonemeTokenizer:
     ``targets`` that ``encode`` also returns, and the output of :meth:`decode`.
 
     The tokenizer is multilingual by default: supply ``lang_codes`` to control which
-    language lexicons are loaded, and pass a per-word ``language_map`` to
-    :meth:`encode` for code-switching.
+    language lexicons are loaded, and pass ``languages`` to :meth:`encode` to say which
+    language each word is in.
     """
 
     def __init__(
@@ -148,56 +154,30 @@ class PhonemeTokenizer:
 
         return vocab
 
-    def _get_word_phonemes(self, word: str, language: str = "en") -> list | None:
-        """Get the first pronunciation variant for ``word`` in ``language``.
+    def _get_phrase_phonemes(self, phrase: str, word_langs: tuple[str, ...]) -> list | None:
+        """The phonemes of a row, each word looked up in its own language's lexicon.
 
-        Falls back to English if the word exists in the lexicon but not in the requested
-        language. Returns ``None`` if the word is unknown.
+        Words are joined by ``[SPC]``, and each contributes its first pronunciation
+        variant. ``None`` if a word is missing from its language's lexicon, whichever other
+        lexicons hold it: a word tagged with one language is never pronounced in another.
+        An unspecified language reads the English lexicon.
         """
-        if not word:
-            return []
-
-        lookup_word = word.lower()
-        if lookup_word not in self.pronunciation_dict:
-            logger.debug(f"Word '{word}' not found in pronunciation lexicon")
-            return None
-
-        lang_code = language.lower()
-        word_entry = self.pronunciation_dict[lookup_word]
-        if lang_code in word_entry:
-            return word_entry[lang_code][0]
-        if "en" in word_entry:
-            logger.warning(f"Word '{word}' not found in {language}, falling back to English")
-            return word_entry["en"][0]
-        logger.warning(f"Word '{word}' exists but not in {language} or English")
-        return None
-
-    def _get_phrase_phonemes(
-        self, phrase: str, language_map: dict[str, str] | None = None
-    ) -> list | None:
-        """Convert a phrase into phonemes, with optional per-word language tags."""
-        words = phrase.strip().split()
-        if not words:
-            return []
-
-        if language_map is None:
-            language_map = {}
-
         result: list = []
-        for i, word in enumerate(words):
-            phonemes = self._get_word_phonemes(word, language_map.get(word, "en"))
-            if phonemes is None:
-                logger.warning(f"Word not found in phrase: {word}")
+        for i, word in enumerate(split_words(phrase)):
+            lexicon = "en" if word_langs[i] == UNSPECIFIED else word_langs[i].lower()
+            entry = self.pronunciation_dict.get(word.group().lower(), {})
+            if lexicon not in entry:
+                logger.debug(f"No {lexicon} pronunciation for '{word.group()}'")
                 return None
-            result.extend(phonemes)
-            if i < len(words) - 1:
+            if i:
                 result.append("[SPC]")
+            result.extend(entry[lexicon][0])
         return result
 
     def encode(
         self,
         words: str | list[str],
-        language_map: dict[str, str] | None = None,
+        languages: Languages = None,
     ) -> EncodingComponent | None:
         """Encode words or phrases to phoneme row ids.
 
@@ -206,16 +186,17 @@ class PhonemeTokenizer:
         feature". The model recovers the features by gathering from the same table; see
         the ``PhonemeTable`` docstring for the two id spaces.
 
-        ``language_map`` is an optional ``{word: language_code}`` mapping. Defaults to
-        treating every word as English. Returns ``None`` if any word is missing from the
-        pronunciation lexicon.
+        ``languages`` says which language each word is in, in the forms
+        :func:`~bridge.domain.tokenizer.languages.rows_and_languages` accepts. Each word is
+        looked up by its position in the row, so one spelling can be English in one place
+        and Spanish in another. Returns ``None`` if any word is missing from its
+        language's pronunciation lexicon.
         """
-        if isinstance(words, str):
-            words = [words]
+        phrases, row_languages = rows_and_languages(words, languages)
 
         word_phonemes = []
-        for phrase in words:
-            phonemes = self._get_phrase_phonemes(phrase, language_map)
+        for phrase, word_langs in zip(phrases, row_languages, strict=True):
+            phonemes = self._get_phrase_phonemes(phrase, word_langs)
             if phonemes is None:
                 return None
             word_phonemes.append(phonemes)

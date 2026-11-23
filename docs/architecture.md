@@ -52,6 +52,51 @@ targets         (batch, seq, 35)       phonological only, loss targets
 `targets` is the only asymmetry, and it is real: phonology carries explicit loss targets while
 orthography derives them from `enc_input_ids`.
 
+## Every word has a language
+
+A row is one string, and each of its words carries a language code: `EN`, `ES`, or `--`
+for a row whose language was never given. A tokenizer call with no `languages` gives `--`.
+`bridge/domain/tokenizer/languages.py` owns the rules, and both tokenizers and the dataset
+read a row through it. A word is a run of non-whitespace. One code covers every word;
+otherwise the code count must equal the word count. An unsupported code, a wrong count, or
+`--` beside a real code raises `ValueError`. An unsupported code gives the same message
+from every entry point, and so does a wrong count.
+
+The two modalities use the language differently.
+
+- **Phonology** looks each word up in its own language's lexicon, by its position in the
+  row. A word missing from that lexicon has no pronunciation, whichever other lexicon
+  holds it. `--` reads the English lexicon. Phonology carries no language token.
+- **Orthography** opens with the first word's language token and writes a language token
+  again only where the language changes, directly before that word's first character.
+
+```
+the word is gato        EN EN EN ES
+[EN] [BOS] t h e _ w o r d _ i s _ [ES] g a t o [EOS]
+```
+
+The language tokens are ordinary entries in the orthographic vocabulary, so a mid-row
+switch is a target the decoder is trained to emit, and the model needs nothing new to
+carry it. `decode_with_languages` reads a row back as its text and each word's language.
+
+`BridgeDataset` stores one tuple of codes per row and checks every `language` cell when
+the file loads: a blank cell, `--`, an unsupported code or a wrong count raises, naming
+the row. A file with no `language` column is English throughout. Pronunciations are not
+checked at load: a word with none raises when its row is read. The first row is the
+exception, encoded once at load and left out with a warning when it has none. Rows are
+read by position only, an `int` or a `slice`, since one spelling can sit under two
+languages.
+
+A local csv whose rows hold one more field than its header also raises at load. That is
+what a comma between two codes does, and pandas would otherwise read each row's first
+field as an index and load the codes as the words.
+
+Orthographic accuracy is reported as two pairs. `letter_wise_accuracy` and
+`word_wise_accuracy` count every scored token, switches included, which are the positions
+the loss trains. The `_without_switches` pair leaves out the positions whose target is a
+language token, so it measures spelling alone. It is absent when
+`VocabSpec.orth_language_ids` is not set. See `docs/decisions/0015`.
+
 ## Two integer id spaces
 
 Both are `torch.long`. Only naming separates them, and confusing them yields silently wrong
@@ -84,8 +129,9 @@ bridge/domain/datamodels/             EncodingComponent, BridgeEncoding, VocabSp
                                       ModelConfig, GenerationOutput, TrainingEvent
 bridge/domain/datamodels/pathways.py  PATHWAY_IO: what each pathway reads and writes
 bridge/domain/tokenizer/              CharacterTokenizer, PhonemeTokenizer, BridgeTokenizer
+bridge/domain/tokenizer/languages.py  what a word is, and which language each word is in
 bridge/domain/model/model.py          encoders, decoders, generation loops
-bridge/domain/data/bridge_dataset.py  dataset, language resolution, encoding memo
+bridge/domain/data/bridge_dataset.py  dataset, per-word languages checked at load, encoding memo
 bridge/application/training/          TrainingPipeline, loss, metrics
 bridge/utils/device_manager.py        the process device, selected by BRIDGE_DEVICE
 tests/fixtures/phon_baseline.pt       golden master, immutable
@@ -112,7 +158,7 @@ everything else reaches the caller through the `TrainingEvent` stream. See
 Training, `o2p` as the example:
 
 ```
-word strings
+row strings, one language code per word
   -> BridgeTokenizer.encode           -> BridgeEncoding (both modalities)
   -> BridgeDataset[slice]
   -> TrainingPipeline.forward         -> Model.forward(task="o2p", ...)
@@ -162,7 +208,7 @@ Tracked as GitHub issues rather than restated here:
   `atol=1e-5` is a float32 tolerance applied to a float16 sum. A phonology-only encoding
   still reaches the three pathways that read orthography and dies inside the encoder with
   `to_padded_tensor: at least one constituent tensor should have non-zero numel`, because
-  what arrives there is the `[--, BOS]` placeholder every `BridgeEncoding` carries, which is
+  what arrives there is the `[LANG, BOS]` placeholder every `BridgeEncoding` carries, which is
   indistinguishable from a real two-character encoding; closing it needs the encoding to
   record which modalities are real. The third shape, a zero-row batch that segfaulted the
   CUDA decoder, is rejected at the boundary (`docs/decisions/0011`)
@@ -185,3 +231,4 @@ Tracked as GitHub issues rather than restated here:
 | [0012](decisions/0012-the-pipeline-follows-the-model.md) | `TrainingPipeline.device` reads `model.device`; the pipeline never moves the model |
 | [0013](decisions/0013-the-caller-owns-the-loop-in-fact.md) | The library keeps the step and loses the loop; split, batching, shuffling, epochs and progress bars are the caller's |
 | [0014](decisions/0014-a-config-that-validates-runs-every-pathway.md) | Every size in `ModelConfig` is at least one and `nhead` divides `d_model`, so a config that validates builds a model that runs every pathway |
+| [0015](decisions/0015-language-belongs-to-each-word.md) | Language belongs to each word of a row, by position; phonology reads each word in its own lexicon and orthography marks each change |

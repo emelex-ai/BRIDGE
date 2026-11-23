@@ -119,18 +119,19 @@ class TestMultilingual:
 
     def test_spanish_word_encodes_with_spanish_lexicon(self, bridge_tokenizer):
         """A Spanish word should encode against the Spanish phoneme lexicon."""
-        encoding = bridge_tokenizer.encode(["hola"], language_map={"hola": "ES"})
+        encoding = bridge_tokenizer.encode(["hola"], languages="ES")
         assert encoding is not None
         # The orth language token at position 0 should be "ES" (vocab index 8:
         # 6 special tokens + "--" + "EN" + "ES").
         es_idx = bridge_tokenizer.char_tokenizer.char_2_idx["ES"]
         assert encoding.orthographic.enc_input_ids[0, 0].item() == es_idx
+        # "hola" is AO1 L AA0 in the Spanish lexicon and HH OW1 L AH0 in the English one,
+        # so the phoneme rows say which lexicon was read. 86 and 87 are [BOS] and [EOS].
+        assert encoding.phonological.enc_input_ids.tolist() == [[86, 22, 67, 0, 87]]
 
     def test_code_switching_in_one_batch(self, bridge_tokenizer):
         """Two words in one batch encoded against two different languages."""
-        encoding = bridge_tokenizer.encode(
-            ["hola", "world"], language_map={"hola": "ES", "world": "EN"}
-        )
+        encoding = bridge_tokenizer.encode(["hola", "world"], languages=["ES", "EN"])
         assert encoding is not None
         es_idx = bridge_tokenizer.char_tokenizer.char_2_idx["ES"]
         en_idx = bridge_tokenizer.char_tokenizer.char_2_idx["EN"]
@@ -138,7 +139,7 @@ class TestMultilingual:
         assert encoding.orthographic.enc_input_ids[1, 0].item() == en_idx
 
     def test_default_no_language_uses_placeholder(self, bridge_tokenizer):
-        """Encoding without a language_map prepends the '--' placeholder token."""
+        """Encoding without a language prepends the '--' placeholder token."""
         encoding = bridge_tokenizer.encode(["cat"])
         assert encoding is not None
         placeholder_idx = bridge_tokenizer.char_tokenizer.char_2_idx["--"]
@@ -153,9 +154,9 @@ class TestMultilingual:
         logged and thrown away.
         """
         with pytest.raises(ValueError, match="Invalid languages"):
-            bridge_tokenizer.encode(["bonjour"], language_map={"bonjour": "FR"})
+            bridge_tokenizer.encode(["bonjour"], languages="FR")
 
     def test_unknown_language_raises_at_char_tokenizer(self, bridge_tokenizer):
         """Direct call to the char tokenizer DOES raise ValueError on unknown language."""
         with pytest.raises(ValueError):
-            bridge_tokenizer.char_tokenizer.encode(["bonjour"], language_map={"bonjour": "FR"})
+            bridge_tokenizer.char_tokenizer.encode(["bonjour"], languages="FR")

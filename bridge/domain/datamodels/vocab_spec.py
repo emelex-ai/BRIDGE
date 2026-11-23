@@ -33,10 +33,11 @@ if TYPE_CHECKING:
 class VocabSpec(BaseModel):
     """The full vocab contract the `Model` needs at construction and generation.
 
-    All fields are required. Use `VocabSpec.from_tokenizer(...)` to derive an
-    instance from an existing `BridgeTokenizer`, or construct one manually
-    with hardcoded numbers (e.g. for testing or when loading a checkpoint
-    without instantiating the tokenizer).
+    The sizes and the pad, bos and eos ids are required. Use
+    `VocabSpec.from_tokenizer(...)` to derive an instance from an existing
+    `BridgeTokenizer`, or construct one manually with hardcoded numbers (e.g.
+    for testing or when loading a checkpoint without instantiating the
+    tokenizer).
     """
 
     # An unknown key is a typo in someone's experiment config, and silently
@@ -49,6 +50,15 @@ class VocabSpec(BaseModel):
     orth_pad_id: int = Field(description="Orthographic [PAD] token index.")
     orth_bos_id: int = Field(description="Orthographic [BOS] token index.")
     orth_eos_id: int = Field(description="Orthographic [EOS] token index.")
+    orth_language_ids: tuple[int, ...] | None = Field(
+        default=None,
+        description=(
+            "Orthographic language-token indices. A target holding one of these is a "
+            "change of language, not a letter, which is what the letters-only accuracy "
+            "figures leave out. None when the spec does not say which ids they are, and "
+            "those figures are then not reported."
+        ),
+    )
     phon_pad_id: int = Field(
         description=(
             "Phonological [PAD] id, in *feature* space: a column of the phoneme feature "
@@ -91,6 +101,7 @@ class VocabSpec(BaseModel):
             orth_pad_id=tokenizer.orth_pad_id,
             orth_bos_id=tokenizer.orth_bos_id,
             orth_eos_id=tokenizer.orth_eos_id,
+            orth_language_ids=tokenizer.orth_language_ids,
             phon_pad_id=tokenizer.phon_pad_id,
             phon_bos_id=tokenizer.phon_bos_id,
             phon_eos_id=tokenizer.phon_eos_id,

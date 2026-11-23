@@ -201,6 +201,24 @@ def test_the_readme_usage_example_matches_the_real_signature(readme):
     assert required <= used, f"README omits required arguments {sorted(required - used)}"
 
 
+def test_the_readme_multilingual_example_runs(readme):
+    """The tokenizer example under "Multilingual support" is run as written.
+
+    Oracle: the interpreter. A keyword ``encode`` does not take raises ``TypeError``, and a
+    word missing from the lexicon of the language the example gives it returns ``None``,
+    so every encoding the block assigns must exist.
+    """
+    block = readme.split("## Multilingual support")[1].split("```python")[1].split("```")[0]
+    assert "tok.encode(" in block, "README parsed to no example; the test is wrong"
+    namespace: dict = {}
+    exec(block, namespace)
+    assert namespace["words"] is not None and namespace["mixed"] is not None
+    # The comment under the last call shows what it returns.
+    shown = block.split("tok.decode_with_languages(")[1].split("# ")[1].strip()
+    ids = namespace["mixed"].orthographic.enc_input_ids.tolist()
+    assert shown == repr(namespace["tok"].decode_with_languages(ids))
+
+
 def test_the_readme_pathway_list_is_complete(readme):
     """A pathway missing from the README is a pathway nobody knows they can use.
 
