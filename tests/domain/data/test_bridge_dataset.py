@@ -158,9 +158,9 @@ def test_get_item_by_index(bridge_dataset):
     assert phon.enc_input_ids.device == bridge_dataset.device
 
 
-def test_get_item_by_word(bridge_dataset):
-    """Test accessing items by word string."""
-    item = bridge_dataset["cat"]
+def test_get_item_has_the_expected_ids(bridge_dataset):
+    """The row for "cat", id for id."""
+    item = bridge_dataset[bridge_dataset.words.index("cat")]
     assert isinstance(item, BridgeEncoding)
     assert hasattr(item, "orthographic")
     assert hasattr(item, "phonological")
@@ -192,8 +192,8 @@ def test_invalid_index_access(bridge_dataset):
     with pytest.raises(IndexError):
         _ = bridge_dataset[100]
 
-    with pytest.raises(KeyError):
-        _ = bridge_dataset["nonexistent"]
+    with pytest.raises(TypeError):
+        _ = bridge_dataset["cat"]
 
 
 def test_encoding_cache(dataset_config, mock_bridge_tokenizer, mock_gcs_client):
@@ -241,15 +241,6 @@ def test_shuffle_functionality(bridge_dataset):
     assert len(bridge_dataset.words) == len(original_words)
     assert set(bridge_dataset.words) == set(original_words)
     assert bridge_dataset.words[1:] == original_words[1:]
-
-
-def test_shuffle_preserves_language_alignment(bridge_dataset):
-    """Each word's language tag must follow the word through a shuffle."""
-    original_pairs = list(zip(bridge_dataset.words, bridge_dataset.languages, strict=True))
-    bridge_dataset.shuffle(len(bridge_dataset.words))
-    shuffled_pairs = list(zip(bridge_dataset.words, bridge_dataset.languages, strict=True))
-    # The set of (word, language) pairs must be identical pre- and post-shuffle.
-    assert set(original_pairs) == set(shuffled_pairs)
 
 
 def test_data_validation(tmp_path, dataset_config, mock_gcs_client):

@@ -157,6 +157,13 @@ class TrainingPipeline:
         orthography: EncodingComponent,
         phonology: EncodingComponent,
     ) -> dict[str, float]:
+        """The metrics of the modalities this pathway writes.
+
+        Orthographic accuracy comes as two pairs: every scored token, and the
+        ``_without_switches`` pair that leaves language tokens out. The second pair needs
+        ``VocabSpec.orth_language_ids``, which ``VocabSpec.from_tokenizer`` fills in. When
+        the spec does not name them the pair is absent from the result, not estimated.
+        """
         pathway = self.training_config.training_pathway
         metrics: dict[str, float] = {}
         if pathway in WRITES_PHON:
@@ -169,9 +176,16 @@ class TrainingPipeline:
                 )
             )
         if pathway in WRITES_ORTH:
+            vocab = self.model.model_config.vocab
             metrics.update(
                 calculate_orth_metrics(
-                    logits, orthography, orth_pad_id=self.model.model_config.vocab.orth_pad_id
+                    logits,
+                    orthography,
+                    orth_pad_id=vocab.orth_pad_id,
+                    # Pickle restores a VocabSpec without validating it, so one taken
+                    # from a checkpoint may lack the attribute altogether. It is read
+                    # with a default, as `phon_table_fingerprint` is in `load_model`.
+                    orth_language_ids=getattr(vocab, "orth_language_ids", None),
                 )
             )
         return metrics

@@ -1,6 +1,11 @@
 # 0004. Orthographic teacher forcing targets the encoder sequence shifted by one
 
-Status: Accepted
+Status: Accepted, amended by [0015](0015-language-belongs-to-each-word.md)
+
+> The alignment this record chose still holds. One sentence under Consequences is
+> amended: orthographic accuracy is reported twice, and the second pair leaves out the
+> positions whose target is a language token, so that pair scores fewer positions than
+> the loss trains. See 0015.
 Date: 2026-08-30
 
 ## Context

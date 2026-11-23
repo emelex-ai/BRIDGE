@@ -9,7 +9,9 @@ Sequence layout (see ``CharacterTokenizer.encode``):
     encoder input: ``[LANG, BOS, *chars, EOS, PAD...]``  -> width 3 + max_len
     decoder input: ``[LANG, BOS, *chars, PAD...]``       -> width 2 + max_len
 Downstream code slices ``[:, 2:]`` to skip LANG and BOS, so the two leading tokens are
-load-bearing.
+load-bearing. ``LANG`` is the first word's language. A row whose words change language
+holds one more language token per change, counted in ``max_len``; that layout is pinned in
+``test_per_word_languages.py``.
 """
 
 import string
@@ -93,7 +95,7 @@ def test_pad_mask_marks_exactly_the_pad_positions(tok):
 
 
 def test_no_row_is_left_unfilled(tok):
-    """Every position is a real vocabulary id — never an accidental zero."""
+    """Every position is a real vocabulary id, never an accidental zero."""
     out = tok.encode(["a", "bb", "ccc"])
     assert (out.enc_input_ids >= 0).all()
     assert (out.enc_input_ids < len(tok.vocab)).all()
@@ -115,30 +117,31 @@ def test_empty_string_beside_a_longer_one_is_padded(tok):
 
 
 def test_language_token_occupies_position_zero(tok):
-    out = tok.encode(["cat", "gato"], language_map={"cat": "EN", "gato": "ES"})
+    out = tok.encode(["cat", "gato"], languages=["EN", "ES"])
     assert out.enc_input_ids[0, 0].item() == tok.char_2_idx["EN"]
     assert out.enc_input_ids[1, 0].item() == tok.char_2_idx["ES"]
 
 
-def test_language_lookup_is_case_insensitive_on_the_word(tok):
-    out = tok.encode(["CAT"], language_map={"cat": "ES"})
-    assert out.enc_input_ids[0, 0].item() == tok.char_2_idx["ES"]
+def test_one_language_string_covers_every_row(tok):
+    out = tok.encode(["cat", "gato"], languages="ES")
+    assert out.enc_input_ids[:, 0].tolist() == [tok.char_2_idx["ES"]] * 2
 
 
-def test_words_absent_from_the_map_get_the_placeholder(tok):
-    out = tok.encode(["cat", "dog"], language_map={"cat": "ES"})
+def test_a_row_given_no_language_gets_the_placeholder(tok):
+    out = tok.encode(["cat", "dog"], languages=["ES", None])
     assert out.enc_input_ids[0, 0].item() == tok.char_2_idx["ES"]
     assert out.enc_input_ids[1, 0].item() == tok.char_2_idx["--"]
 
 
 def test_unsupported_language_raises(tok):
     with pytest.raises(ValueError, match="Invalid languages"):
-        tok.encode(["bonjour"], language_map={"bonjour": "FR"})
+        tok.encode(["bonjour"], languages="FR")
 
 
-def test_language_value_case_is_accepted_either_way(tok):
-    """Validation upper-cases before checking membership."""
-    tok.encode(["cat"], language_map={"cat": "es"})
+def test_language_code_case_is_accepted_either_way(tok):
+    """A lower-case code is the same language, and writes that language's token."""
+    out = tok.encode(["cat"], languages="es")
+    assert out.enc_input_ids[0, 0].item() == tok.char_2_idx["ES"]
 
 
 # --- unknown characters ----------------------------------------------------
@@ -169,7 +172,7 @@ def test_non_string_input_raises_type_error(tok, bad):
 
 
 def test_decode_strips_special_and_language_tokens(tok):
-    out = tok.encode(["cat"], language_map={"cat": "ES"})
+    out = tok.encode(["cat"], languages="ES")
     assert tok.decode(out.enc_input_ids.tolist()) == ["cat"]
 
 

@@ -63,6 +63,22 @@ ALIGNMENT_FOR_LONG = [
     ("g", "[EOS]"),
 ]
 
+# The same contract on a row that changes language. "is gato" tagged ``EN ES`` carries a
+# language token directly before "g", and it is trained like any other token: seeing the
+# space the model must produce ``ES``, and seeing ``ES`` it must produce 'g'.
+ALIGNMENT_FOR_IS_GATO = [
+    ("EN", "[BOS]"),
+    ("[BOS]", "i"),
+    ("i", "s"),
+    ("s", " "),
+    (" ", "ES"),
+    ("ES", "g"),
+    ("g", "a"),
+    ("a", "t"),
+    ("t", "o"),
+    ("o", "[EOS]"),
+]
+
 # Six batches whose decoder widths are 6, 4, 7, 8, 10 and 13. One batch could agree by
 # luck; a sweep that never varies the width cannot tell a correct slice from an off-by-one.
 BATCH_SLICES = [
@@ -203,6 +219,33 @@ def test_bos_is_trained_to_predict_the_first_character(make_pipeline, dataset, m
     )
 
 
+def test_a_language_switch_is_trained_as_the_token_after_the_space(
+    make_pipeline, dataset, monkeypatch
+):
+    """The alignment on a mixed-language row, written out as characters.
+
+    Oracle: hand-written, ALIGNMENT_FOR_IS_GATO above. The two load-bearing pairs are
+    ``(' ', 'ES')`` and ``('ES', 'g')``: the decoder is taught to emit the switch itself
+    after the space, and then to carry on with the word. The target comes from the real
+    ``compute_loss`` call, so a loss that dropped or shifted the switch fails here.
+    """
+    pipeline = make_pipeline("p2o")
+    batch = dataset.tokenizer.encode(["is gato"], languages=["EN ES"])
+    orthography, phonology = batch.orthographic, batch.phonological
+
+    logits = pipeline.forward(orthography, phonology)
+    calls = record_cross_entropy_calls(monkeypatch)
+    pipeline.compute_loss(logits, orthography, phonology)
+
+    assert len(calls) == 1, "p2o computes exactly one cross-entropy, the orthographic one"
+    _, target = calls[0]
+
+    idx_2_char = dataset.tokenizer.char_tokenizer.idx_2_char
+    decoder_tokens = [idx_2_char[i] for i in orthography.dec_input_ids[0].tolist()]
+    target_tokens = [idx_2_char[i] for i in target[0].tolist()]
+    assert list(zip(decoder_tokens, target_tokens, strict=True)) == ALIGNMENT_FOR_IS_GATO
+
+
 def test_target_width_matches_logits_width_across_batches(make_pipeline, dataset, monkeypatch):
     """One target position per predicted position, for batches of six different widths.
 
@@ -312,7 +355,10 @@ def test_a_perfect_predictor_scores_one_on_the_orth_metrics(dataset):
     perfect = perfect.permute(0, 2, 1).float()
 
     scores = calculate_orth_metrics(
-        {"orth": perfect}, orthography, orth_pad_id=tokenizer.orth_pad_id
+        {"orth": perfect},
+        orthography,
+        orth_pad_id=tokenizer.orth_pad_id,
+        orth_language_ids=tokenizer.orth_language_ids,
     )
     assert scores["letter_wise_accuracy"] == pytest.approx(1.0)
     assert scores["word_wise_accuracy"] == pytest.approx(1.0)
@@ -326,7 +372,10 @@ def test_a_perfect_predictor_scores_one_on_the_orth_metrics(dataset):
     corrupted[0, (first_character + 1) % vocabulary_size, 1] = 1.0
 
     scores = calculate_orth_metrics(
-        {"orth": corrupted}, orthography, orth_pad_id=tokenizer.orth_pad_id
+        {"orth": corrupted},
+        orthography,
+        orth_pad_id=tokenizer.orth_pad_id,
+        orth_language_ids=tokenizer.orth_language_ids,
     )
     assert scores["letter_wise_accuracy"] == pytest.approx(21 / 22)
     assert scores["word_wise_accuracy"] == pytest.approx(0.75)

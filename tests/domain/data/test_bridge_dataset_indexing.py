@@ -1,9 +1,11 @@
-"""Pins ``BridgeDataset`` indexing, language resolution, memoization and shuffling.
+"""Pins ``BridgeDataset`` indexing, memoization and shuffling.
 
-Three collapses happened here: the ``int`` indexer now shares the ``slice`` branch,
-``_get_encoding`` / ``_get_encoding_batch`` were inlined into ``_get_encoding_unified``,
-and the class-level ``@lru_cache`` became an instance dict. The dataset is the
-training loop's only entry point, so each collapsed behaviour is asserted directly.
+The ``int`` indexer shares the ``slice`` branch inside ``__getitem__``, and single-row
+encodings are memoized in an instance dict. The dataset is the training loop's only
+entry point, so each of those behaviours is asserted directly. Rows are indexed by
+position only. What a ``language`` cell may hold, what is stored for it, how it follows
+its row through a slice and a shuffle, and what happens to a bad one, is in
+``test_bridge_dataset_languages.py``.
 """
 
 import pytest
@@ -50,16 +52,6 @@ def test_strided_slice_is_supported(dataset):
     assert len(dataset[0:8:2]) == 4
 
 
-def test_string_index_looks_up_by_word(dataset):
-    word = dataset.words[0]
-    assert len(dataset[word]) == 1
-
-
-def test_list_of_strings_indexes_a_batch(dataset):
-    words = dataset.words[:3]
-    assert len(dataset[words]) == len(words)
-
-
 def test_len_matches_the_word_list(dataset):
     assert len(dataset) == len(dataset.words)
 
@@ -79,71 +71,25 @@ def test_out_of_range_int_is_rejected(dataset):
         dataset[len(dataset)]
 
 
-def test_unknown_word_raises_key_error(dataset):
-    with pytest.raises(KeyError, match="not found in dataset"):
-        dataset["zzzznotarealword"]
-
-
-def test_non_string_list_entries_are_rejected(dataset):
-    with pytest.raises(TypeError, match="List indices must be strings"):
-        dataset[[1, 2]]
-
-
-def test_unsupported_index_type_is_rejected(dataset):
+@pytest.mark.parametrize("index", [1.5, "long", ["long", "pencil"], [1, 2], None])
+def test_only_an_int_or_a_slice_indexes_a_row(dataset, index):
+    """A word is not an index, even one the dataset holds: "long" is row 0 here."""
+    assert dataset.words[0] == "long"
     with pytest.raises(TypeError, match="Invalid index type"):
-        dataset[1.5]
+        dataset[index]
+
+
+def test_a_row_is_reached_through_its_index_only(dataset):
+    """A lookup taking a word and a language would have to choose between rows that share
+    a spelling, so the dataset has none."""
+    assert not hasattr(dataset, "get_encoding")
 
 
 def test_batch_encode_failure_message(dataset, monkeypatch):
-    """One shared message now covers both the single-word and batch paths.
-
-    Before the dispatch layers were inlined, the batch path raised
-    "Batch encoding failed for words: ..." from ``_get_encoding_batch``. That helper
-    is gone; both paths now report through this guard.
-    """
+    """One shared message covers both the single-row and batch paths."""
     monkeypatch.setattr(dataset.tokenizer, "encode", lambda *a, **k: None)
     with pytest.raises(RuntimeError, match="Failed to encode word\\(s\\): "):
         dataset[0:3]
-
-
-# --- language resolution ---------------------------------------------------
-
-
-def test_positional_index_uses_the_stored_language(dataset):
-    """Positional indexers read the language off the parallel list, not the lookup map."""
-    enc = dataset[0]
-    lang_token = dataset.tokenizer.char_tokenizer.char_2_idx[dataset.languages[0].upper()]
-    assert enc.orthographic.enc_input_ids[0, 0].item() == lang_token
-
-
-def test_slice_assigns_each_word_its_own_language(dataset):
-    enc = dataset[0:4]
-    c2i = dataset.tokenizer.char_tokenizer.char_2_idx
-    for row, lang in enumerate(dataset.languages[0:4]):
-        assert enc.orthographic.enc_input_ids[row, 0].item() == c2i[lang.upper()]
-
-
-def test_get_encoding_accepts_an_explicit_language_override(dataset):
-    word = dataset.words[0]
-    enc = dataset.get_encoding(word, language_map={word.lower(): "ES"})
-    es = dataset.tokenizer.char_tokenizer.char_2_idx["ES"]
-    assert enc.orthographic.enc_input_ids[0, 0].item() == es
-
-
-def test_word_languages_index_covers_every_word(dataset):
-    assert set(dataset._word_languages) == set(dataset.words)
-    for langs in dataset._word_languages.values():
-        assert langs
-        assert langs <= set(dataset.languages)
-
-
-def test_word_languages_matches_a_brute_force_scan(dataset):
-    """The prebuilt index replaced an O(n) scan per word; it must agree with it."""
-    for word in dataset.words[:25]:
-        expected = {
-            lang for w, lang in zip(dataset.words, dataset.languages, strict=False) if w == word
-        }
-        assert dataset._word_languages[word] == expected
 
 
 # --- memoization -----------------------------------------------------------
@@ -174,8 +120,8 @@ def test_single_word_encodings_are_memoized(fresh):
 
 
 def test_cache_is_per_instance(fresh):
-    """The old ``@lru_cache`` lived on the class and keyed on ``self``, pinning every
-    dataset (and its lexicon) for the process lifetime. The cache is now instance state."""
+    """The cache is instance state. A class-level ``@lru_cache`` keyed on ``self`` would
+    pin every dataset, and its lexicon, for the process lifetime."""
     other = BridgeDataset(DatasetConfig(dataset_filepath=DATA))
     fresh[5]
     new_keys = set(fresh._encoding_cache) - set(other._encoding_cache)
@@ -189,29 +135,35 @@ def test_cache_is_bounded(fresh):
     assert len(fresh._encoding_cache) <= fresh._ENCODING_CACHE_SIZE
 
 
-def test_cache_key_includes_the_language(fresh):
-    word = fresh.words[0]
-    fresh.get_encoding(word, language_map={word.lower(): "EN"})
-    fresh.get_encoding(word, language_map={word.lower(): "ES"})
-    langs = {key[1] for key in fresh._encoding_cache}
-    assert {"EN", "ES"} <= langs
+def test_cache_key_includes_the_language(tmp_path):
+    """One spelling under two languages is two cache entries and two encodings.
+
+    "no" is N OW1 in English and N AO1 in Spanish. A cache keyed by the word alone would
+    hand the second row the first row's encoding.
+    """
+    path = tmp_path / "homographs.csv"
+    path.write_text("word_raw,language\nno,EN\nno,ES\nno me,ES EN\nno me,ES ES\n")
+    homographs = BridgeDataset(DatasetConfig(dataset_filepath=str(path)))
+
+    english, spanish = homographs[0], homographs[1]
+
+    assert {("no", ("EN",)), ("no", ("ES",))} <= set(homographs._encoding_cache)
+    assert english.phonological.enc_input_ids.tolist() == [[86, 69, 33, 87]]
+    assert spanish.phonological.enc_input_ids.tolist() == [[86, 69, 22, 87]]
+    # Every word's language is in the key, not the first word's alone: these two rows
+    # differ only in the second word, "me", M IY1 in English and M EH1 in Spanish.
+    assert homographs[2].phonological.enc_input_ids.tolist() == [[86, 69, 22, 89, 68, 32, 87]]
+    assert homographs[3].phonological.enc_input_ids.tolist() == [[86, 69, 22, 89, 68, 27, 87]]
 
 
 # --- shuffle ---------------------------------------------------------------
 
 
 def test_shuffle_is_a_permutation(fresh):
-    """The two removed trailing asserts were the only statement of this invariant."""
     before = list(fresh.words)
     fresh.shuffle(len(fresh))
     assert len(fresh.words) == len(before)
     assert sorted(fresh.words) == sorted(before)
-
-
-def test_shuffle_keeps_words_and_languages_aligned(fresh):
-    pairs_before = sorted(zip(fresh.words, fresh.languages, strict=True))
-    fresh.shuffle(len(fresh))
-    assert sorted(zip(fresh.words, fresh.languages, strict=True)) == pairs_before
 
 
 def test_shuffle_leaves_the_tail_untouched(fresh):
@@ -224,17 +176,6 @@ def test_shuffle_leaves_the_tail_untouched(fresh):
 def test_shuffle_rejects_a_cutoff_past_the_end(fresh):
     with pytest.raises(ValueError, match="exceeds dataset size"):
         fresh.shuffle(len(fresh) + 1)
-
-
-def test_word_languages_survives_shuffle(fresh):
-    """``_word_languages`` is built once in ``__init__`` on the assumption that
-    ``shuffle`` only permutes. If that ever stops holding, this is the tripwire."""
-    snapshot = {w: set(langs) for w, langs in fresh._word_languages.items()}
-    fresh.shuffle(len(fresh))
-    rebuilt: dict[str, set[str]] = {}
-    for word, lang in zip(fresh.words, fresh.languages, strict=False):
-        rebuilt.setdefault(word, set()).add(lang)
-    assert snapshot == rebuilt
 
 
 def test_indexing_still_works_after_shuffle(fresh):

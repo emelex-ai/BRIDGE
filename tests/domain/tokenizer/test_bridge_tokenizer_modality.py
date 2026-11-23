@@ -167,8 +167,8 @@ def test_the_placeholder_prefix_matches_what_a_real_encoding_puts_there(tok):
     assert real.dec_input_ids[:, 1].tolist() == placeholder.dec_input_ids[:, 1].tolist(), (
         "both must carry [BOS] at position 1"
     )
-    # Position 0 is a language token in both; the real one reflects the caller's map, the
-    # placeholder is unspecified.
+    # Position 0 is a language token in both: the first word's language, which is
+    # unspecified here because the caller gave none.
     language_ids = {tok.char_tokenizer.char_2_idx[t] for t in tok.char_tokenizer.language_tokens}
     assert int(real.dec_input_ids[0, 0]) in language_ids
     assert int(placeholder.dec_input_ids[0, 0]) in language_ids
@@ -213,7 +213,7 @@ def test_an_unsupported_language_code_raises(tok):
     ``None`` now means one thing; everything else propagates.
     """
     with pytest.raises(ValueError, match="Invalid languages"):
-        tok.encode(WORD, language_map={WORD: "FR"})
+        tok.encode(WORD, languages="FR")
 
 
 def test_a_word_absent_from_the_lexicon_still_returns_none(tok):
@@ -223,7 +223,7 @@ def test_a_word_absent_from_the_lexicon_still_returns_none(tok):
     an exception too then ``None`` would have stopped meaning anything; if the test above
     returned ``None`` then the two conditions would still be conflated.
     """
-    assert tok.encode("zzqxwv", language_map={"zzqxwv": "EN"}) is None
+    assert tok.encode("zzqxwv", languages="EN") is None
 
 
 def test_string_and_single_element_list_agree(tok):
