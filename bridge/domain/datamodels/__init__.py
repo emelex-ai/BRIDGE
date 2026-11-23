@@ -1,5 +1,11 @@
 from bridge.domain.datamodels.dataset_config import DatasetConfig
-from bridge.domain.datamodels.encodings import BridgeEncoding, EncodingComponent
+from bridge.domain.datamodels.encodings import (
+    BridgeBatch,
+    BridgeInput,
+    BridgeTarget,
+    Target,
+    Tokens,
+)
 from bridge.domain.datamodels.generate_models import GenerationOutput
 from bridge.domain.datamodels.model_config import ModelConfig
 from bridge.domain.datamodels.pathways import PATHWAY_IO, PATHWAYS, Pathway
@@ -11,11 +17,14 @@ __all__ = [
     "PATHWAYS",
     "PATHWAY_IO",
     "Pathway",
-    "BridgeEncoding",
+    "BridgeBatch",
+    "BridgeInput",
+    "BridgeTarget",
     "DatasetConfig",
-    "EncodingComponent",
     "GenerationOutput",
     "ModelConfig",
+    "Target",
+    "Tokens",
     "TrainingConfig",
     "TrainingEvent",
     "TrainingPhase",

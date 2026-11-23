@@ -13,35 +13,33 @@ vocabulary; phoneme ids index rows of the feature table in ``phonreps.csv`` (*wh
 phoneme*, not which phonetic feature).
 
 The PhonemeTokenizer reads the per-language pronunciation lexicons under
-``bridge/core/pronunciation_lexicons/`` together with ``phonreps.csv``. It requires words
-to exist in a lexicon to work properly.
+``bridge/core/pronunciation_lexicons/`` together with ``phonreps.csv``. A word has
+phonology only if a lexicon holds it.
 
-The BridgeTokenizer handles combining both encoding types into a unified format, with
-special handling for nonwords (words not in CMUDict).
+The BridgeTokenizer encodes the two sides of a training example separately:
+``encode_input`` gives what the encoders read and ``encode_target`` gives what the decoders
+are fed and scored against. A nonword, which no lexicon holds, encodes as an input with
+orthography alone.
 """
 
 import logging
-from typing import Literal
+from collections.abc import Sequence
 
 import torch
 
-from bridge.domain.datamodels.encodings import BridgeEncoding, EncodingComponent
+from bridge.domain.datamodels.encodings import BridgeInput, BridgeTarget
 from bridge.domain.tokenizer.character_tokenizer import CharacterTokenizer
-from bridge.domain.tokenizer.languages import Languages, rows_and_languages
+from bridge.domain.tokenizer.languages import Languages
 from bridge.domain.tokenizer.phoneme_tokenizer import PhonemeTokenizer
 from bridge.utils import device_manager
 
 logger = logging.getLogger(__name__)
-
-ModalityFilter = Literal["both", "orthography", "phonology"]
 
 
 class BridgeTokenizer:
     """
     A wrapper tokenizer that combines orthographic (character-based) and
     phonological (phoneme-based) tokenization.
-
-    Supports filtering by modality to handle nonwords that only exist in one modality.
     """
 
     def __init__(
@@ -57,7 +55,7 @@ class BridgeTokenizer:
         self.phon_table_fingerprint = self.phoneme_tokenizer.phoneme_table.fingerprint
         self.phon_bos_id = self.phoneme_tokenizer.special_token_dims["[BOS]"]
         self.phon_pad_id = self.phoneme_tokenizer.special_token_dims["[PAD]"]
-        # Feature space, unlike the row ids `encode` emits. See VocabSpec.phon_pad_id.
+        # Feature space, unlike the row ids the encoders emit. See VocabSpec.phon_pad_id.
         self.phon_spc_id = self.phoneme_tokenizer.special_token_dims["[SPC]"]
         self.phon_eos_id = self.phoneme_tokenizer.special_token_dims["[EOS]"]
         self.orth_bos_id = self.char_tokenizer.char_2_idx["[BOS]"]
@@ -74,125 +72,60 @@ class BridgeTokenizer:
             f"Phonological: {self.phoneme_tokenizer.get_vocabulary_size()}"
         )
 
-    def encode(
-        self,
-        text: str | list[str],
-        modality_filter: ModalityFilter = "both",
-        languages: Languages = None,
-    ) -> BridgeEncoding | None:
-        """
-        Encode text using tokenizers based on the specified modality filter.
+    def encode_input(self, texts: list[str], languages: Languages = None) -> BridgeInput:
+        """Encode rows as what the model reads.
 
         Args:
-            text: Single string or list of strings to encode
-            modality_filter: Which modality to encode:
-                - "both": Encode both orthography and phonology (default)
-                - "orthography": Encode only orthography, create placeholder phonology
-                - "phonology": Encode only phonology, create placeholder orthography
-            languages: The language of every word. For a single string: one code for the
-                whole row (``"ES"``), or one code per word (``"EN EN ES"``, or a list or
-                tuple of codes). For a list of strings: one string applied to every row,
-                or a list or tuple with one such entry per row. So ``["ES", "EN"]`` is one
-                code per word beside a single string and one code per row beside a list of
-                two strings. ``None`` leaves a row unspecified: the ``"--"`` token
-                orthographically and the English lexicon phonologically. Orthography marks
-                each change of language inside a row; phonology looks each word up in its
-                own language.
+            texts: The rows to encode, a list of strings.
+            languages: The language of every word: a list or tuple with one entry per row.
+                An entry is one code for the whole row (``"ES"``), one code per word
+                (``"EN EN ES"``, or a list or tuple of codes), or ``None``, which leaves
+                the row unspecified: the ``"--"`` token orthographically and the English
+                lexicon phonologically. Omitting ``languages`` leaves every row
+                unspecified. Orthography marks each change of language inside a row;
+                phonology looks each word up in its own language.
 
         Returns:
-            BridgeEncoding containing encodings according to the modality filter,
-            or None if a word has no pronunciation in its language's lexicon
+            A :class:`BridgeInput` carrying orthography, and phonology when every word has
+            a pronunciation in its language's lexicon. When one does not, ``phon`` is
+            ``None``: a nonword is read through its spelling alone, and a pathway that
+            reads phonology refuses the input by name.
+
+        Raises:
+            TypeError, ValueError: for rows or languages in the wrong form. An argument
+                error raises and a missing pronunciation does not: "this word is not in
+                the lexicon" is an ordinary data condition a caller must be able to
+                handle, and "this language code does not exist" is a mistake to fix.
+                Reporting both the same way leaves a caller unable to tell them apart.
         """
-        if modality_filter not in ("both", "orthography", "phonology"):
-            raise ValueError(
-                f"Invalid modality_filter: {modality_filter}. "
-                f"Must be one of ['both', 'orthography', 'phonology']"
-            )
+        phon = self.phoneme_tokenizer.encode_input(texts, languages)
+        if phon is None:
+            logger.info("No pronunciation for %r in the lexicon; the input has no phon", texts)
+        return BridgeInput(orth=self.char_tokenizer.encode_input(texts, languages), phon=phon)
 
-        # Resolved here so an argument error is raised whichever modality is asked for.
-        # Each child tokenizer resolves the result again, which returns it unchanged.
-        rows, row_languages = rows_and_languages(text, languages)
+    def encode_target(self, texts: list[str], languages: Languages = None) -> BridgeTarget | None:
+        """Encode rows as what the model is taught to write.
 
-        # No blanket `except Exception: return None` here. `None` means one thing, "this
-        # word is not in the pronunciation lexicon", which is an ordinary data condition a
-        # caller must handle. Catching everything made it mean that *and* "the caller
-        # passed a language code that does not exist" *and* "something in here is broken",
-        # and a caller cannot tell those apart from a `None`. A TypeError raised inside
-        # BridgeEncoding surfaced 150 lines away as
-        # `RuntimeError: Failed to encode word(s): long, pencil, ...`, with the real
-        # message logged and discarded. Argument errors and defects propagate; a missing
-        # pronunciation returns None.
-        if modality_filter in ("both", "orthography"):
-            orthographic = self.char_tokenizer.encode(rows, row_languages)
-        else:
-            orthographic = self._create_placeholder_orthographic(
-                [word_langs[0] for word_langs in row_languages]
-            )
-
-        if modality_filter in ("both", "phonology"):
-            phonological = self.phoneme_tokenizer.encode(rows, row_languages)
-            if phonological is None:
-                logger.info(
-                    "No pronunciation for %r in the lexicon (modality_filter=%r)",
-                    text,
-                    modality_filter,
-                )
-                return None
-        else:
-            phonological = self._create_placeholder_phonological(len(rows))
-
-        return BridgeEncoding(orthographic=orthographic, phonological=phonological)
-
-    def _placeholder_pad_masks(self, batch_size: int) -> tuple[torch.Tensor, torch.Tensor]:
-        """Encoder/decoder pad masks for a single all-padding placeholder position."""
-        mask = torch.ones((batch_size, 1), dtype=torch.bool, device=self.device)
-        return mask, mask.clone()
-
-    def _create_placeholder_phonological(self, batch_size: int) -> EncodingComponent:
-        """Create a minimal phonological component for orthography-only encoding."""
-        # Row space, not feature space: this indexes the phoneme table, so it is
-        # `[PAD]`'s row rather than `self.phon_pad_id` (its feature index).
-        pad_row = self.phoneme_tokenizer.phoneme_table.row_index["[PAD]"]
-        pad_ids = torch.full((batch_size, 1), pad_row, dtype=torch.long, device=self.device)
-        enc_pad_mask, dec_pad_mask = self._placeholder_pad_masks(batch_size)
-
-        return EncodingComponent(
-            enc_input_ids=pad_ids,
-            enc_pad_mask=enc_pad_mask,
-            dec_input_ids=pad_ids.clone(),
-            dec_pad_mask=dec_pad_mask,
-            targets=self.phoneme_tokenizer.padded_targets(batch_size, 1),
-        )
-
-    def _create_placeholder_orthographic(self, first_languages: list[str]) -> EncodingComponent:
-        """A minimal but *valid* orthographic component, for phonology-only encoding.
-
-        Two positions per row, holding ``[LANG, BOS]``, which is the shortest prefix
-        ``CharacterTokenizer.encode`` can produce. ``LANG`` is the language of the row's
-        first word, ``--`` when the caller gave none. A single column of zeros would not
-        do: zero is ``[BOS]``, so the placeholder would look like a sequence that had
-        already started.
-
-        The width matters because :meth:`Model.generate` seeds the orthographic decoder with
-        ``dec_input_ids[:, :2]``, the same prefix training puts at positions 0 and 1. A
-        placeholder that cannot supply that prefix would force a special case into the model
-        for the one pathway, `p2o`, that emits orthography without consuming any. The seed
-        names only the first word's language; any later change is the decoder's to emit.
+        ``texts`` and ``languages`` are as for :meth:`encode_input`, and so are the
+        argument errors. A target is scored in both modalities, so one without a
+        pronunciation is not a target: the return is ``None`` if a word is missing from
+        its language's lexicon.
         """
-        bos = self.char_tokenizer.char_2_idx["[BOS]"]
-        prefix = torch.tensor(
-            [[self.char_tokenizer.char_2_idx[language], bos] for language in first_languages],
-            dtype=torch.long,
-            device=self.device,
-        )
-        mask = torch.ones_like(prefix, dtype=torch.bool)
+        phon = self.phoneme_tokenizer.encode_target(texts, languages)
+        if phon is None:
+            logger.info("No pronunciation for %r in the lexicon; there is no target", texts)
+            return None
+        return BridgeTarget(orth=self.char_tokenizer.encode_target(texts, languages), phon=phon)
 
-        return EncodingComponent(
-            enc_input_ids=prefix,
-            enc_pad_mask=mask,
-            dec_input_ids=prefix.clone(),
-            dec_pad_mask=mask.clone(),
-        )
+    def orth_start(self, languages: Sequence[str | None]) -> torch.Tensor:
+        """The ``(batch, 2)`` ``[LANG, BOS]`` rows that start orthographic generation.
+
+        ``languages`` holds one code per row, the language of the first word the decoder
+        is to write, or ``None`` for ``"--"``. Any later change of language is the
+        decoder's to emit. This is what training feeds the orthographic decoder at
+        positions 0 and 1: the ids of an empty target in that language.
+        """
+        return self.char_tokenizer.encode_target([""] * len(languages), languages).ids
 
     def decode(
         self,
@@ -205,7 +138,7 @@ class BridgeTokenizer:
         Args:
             ortho_indices: Optional List of lists of character indices
             phono_indices: Optional list of lists of phoneme *feature* indices, as held by
-                ``GenerationOutput.phon_tokens``. Not the row ids ``encode`` returns.
+                ``GenerationOutput.phon_tokens``. Not the row ids ``encode_input`` returns.
 
         Returns:
             Dictionary containing decoded strings and tensors or None if no input

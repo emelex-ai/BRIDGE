@@ -1,21 +1,21 @@
-"""Pins ``BridgeTokenizer.encode``'s modality routing and placeholder components.
+"""Pins a missing modality, the start of orthographic generation, and the tokenizer's ids.
 
-``encode`` was three ~90-line branches, each wrapping every statement in its own
-``try/except ... return None``. It is now one path. Two properties that the branch
-structure enforced implicitly, and which nothing else asserts, are pinned here:
+Three properties nothing else asserts:
 
-* **short-circuit**: a filter that excludes a modality must not invoke that
-  tokenizer at all. This is what lets ``"orthography"`` encode a nonword that has no
-  entry in the pronunciation lexicon.
-* **placeholder shape**: the excluded modality is filled with a stub so
-  ``BridgeEncoding`` (which requires both components) still validates. The stub
-  builder's signature changed from ``(batch_size, seq_len)`` to ``(batch_size)``.
+* **a missing modality is ``None``**: a nonword has no phonology, and the input says so by
+  carrying ``None`` where the phonemes would be. No tensor stands in for it.
+* **a data condition is not an argument error**: a word with no pronunciation gives
+  ``None``; a language code that does not exist, or rows in the wrong form, raises.
+* **``orth_start`` is what training feeds the decoder first**: ``[LANG, BOS]``, the first
+  two ids of any target whose first word is in that language.
+
+Oracles: hand-written ids, the lexicon, and the target encoding itself for the start.
 """
 
 import pytest
 import torch
 
-from bridge.domain.datamodels import BridgeEncoding
+from bridge.domain.datamodels import BridgeInput
 from bridge.domain.tokenizer import BridgeTokenizer
 
 # A nonword: orthographically fine, absent from the pronunciation lexicon.
@@ -28,208 +28,134 @@ def tok():
     return BridgeTokenizer()
 
 
-class Spy:
-    """Wraps a bound method, recording whether it was called."""
-
-    def __init__(self, fn):
-        self.fn = fn
-        self.calls = 0
-
-    def __call__(self, *args, **kwargs):
-        self.calls += 1
-        return self.fn(*args, **kwargs)
-
-
-# --- modality short-circuit ------------------------------------------------
-
-
-def test_orthography_filter_never_calls_the_phoneme_tokenizer(tok, monkeypatch):
-    spy = Spy(tok.phoneme_tokenizer.encode)
-    monkeypatch.setattr(tok.phoneme_tokenizer, "encode", spy)
-    assert tok.encode(WORD, modality_filter="orthography") is not None
-    assert spy.calls == 0
-
-
-def test_phonology_filter_never_calls_the_character_tokenizer(tok, monkeypatch):
-    spy = Spy(tok.char_tokenizer.encode)
-    monkeypatch.setattr(tok.char_tokenizer, "encode", spy)
-    assert tok.encode(WORD, modality_filter="phonology") is not None
-    assert spy.calls == 0
-
-
-def test_both_filter_calls_each_tokenizer_once(tok, monkeypatch):
-    char_spy = Spy(tok.char_tokenizer.encode)
-    phon_spy = Spy(tok.phoneme_tokenizer.encode)
-    monkeypatch.setattr(tok.char_tokenizer, "encode", char_spy)
-    monkeypatch.setattr(tok.phoneme_tokenizer, "encode", phon_spy)
-    assert tok.encode(WORD, modality_filter="both") is not None
-    assert (char_spy.calls, phon_spy.calls) == (1, 1)
-
-
 # --- nonwords --------------------------------------------------------------
 
 
-def test_nonword_encodes_under_the_orthography_filter(tok):
-    """The whole point of the filter: o2p generation from a pronounceable nonword."""
-    enc = tok.encode(NONWORD, modality_filter="orthography")
-    assert isinstance(enc, BridgeEncoding)
-    assert enc.orthographic.enc_input_ids.shape[0] == 1
+def test_the_nonword_is_in_no_lexicon(tok):
+    """The premise of this module, checked against the lexicon itself."""
+    assert NONWORD not in tok.phoneme_tokenizer.pronunciation_dict
+    assert "en" in tok.phoneme_tokenizer.pronunciation_dict[WORD]
 
 
-def test_nonword_returns_none_under_both(tok):
-    assert tok.encode(NONWORD, modality_filter="both") is None
+def test_a_nonword_input_carries_orthography_and_no_phonology(tok):
+    """The reason an input may lack a modality: o2p generation from a pronounceable
+    nonword."""
+    inputs = tok.encode_input([NONWORD])
+    assert isinstance(inputs, BridgeInput)
+    assert inputs.phon is None
+    assert len(inputs) == 1
 
 
-def test_nonword_returns_none_under_phonology(tok):
-    assert tok.encode(NONWORD, modality_filter="phonology") is None
+def test_the_orthography_of_a_nonword_is_what_a_word_would_get(tok):
+    """Oracle: the character tokenizer. Missing phonology changes nothing else."""
+    inputs = tok.encode_input([WORD, NONWORD], ["EN", "ES"])
+    want = tok.char_tokenizer.encode_input([WORD, NONWORD], ["EN", "ES"])
+    assert inputs.phon is None
+    assert torch.equal(inputs.orth.ids, want.ids)
+    assert torch.equal(inputs.orth.pad_mask, want.pad_mask)
 
 
-def test_a_batch_containing_a_nonword_fails_under_both(tok):
-    assert tok.encode([WORD, NONWORD], modality_filter="both") is None
+def test_a_nonword_gives_no_target(tok):
+    assert tok.encode_target([NONWORD]) is None
+    assert tok.encode_target([WORD, NONWORD]) is None
 
 
-def test_a_batch_containing_a_nonword_succeeds_under_orthography(tok):
-    enc = tok.encode([WORD, NONWORD], modality_filter="orthography")
-    assert enc is not None
-    assert len(enc) == 2
+def test_the_phoneme_tokenizer_returns_none_for_a_nonword(tok):
+    assert tok.phoneme_tokenizer.encode_input([WORD, NONWORD]) is None
+    assert tok.phoneme_tokenizer.encode_target([WORD, NONWORD]) is None
 
 
-# --- placeholder components ------------------------------------------------
+def test_a_word_carries_both_modalities(tok):
+    """The control for the tests above: ``None`` is not what every input carries."""
+    inputs = tok.encode_input([WORD])
+    assert inputs.orth is not None
+    assert inputs.phon is not None
 
 
-def test_placeholder_phonological_shape_and_values(tok):
-    enc = tok.encode([WORD, NONWORD], modality_filter="orthography")
-    phon = enc.phonological
-
-    # Phoneme *row* ids: one all-[PAD] position per batch item.
-    pad_row = tok.phoneme_tokenizer.phoneme_table.row_index["[PAD]"]
-    assert phon.enc_input_ids.shape == (2, 1)
-    assert torch.equal(phon.enc_input_ids, torch.full((2, 1), pad_row))
-    assert torch.equal(phon.dec_input_ids, torch.full((2, 1), pad_row))
-    assert phon.enc_pad_mask.shape == (2, 1)
-    assert phon.dec_pad_mask.shape == (2, 1)
-    assert phon.enc_pad_mask.dtype == torch.bool
-    assert bool(phon.enc_pad_mask.all()), "placeholder positions are entirely padding"
-
-
-def test_placeholder_phonological_targets_match_the_real_ones(tok):
-    """A placeholder must be usable anywhere a real phonological component is.
-
-    That means the same width as ``encode`` produces, one narrower than the feature
-    vocabulary since [PAD] is not a predicted class, and filled with the loss
-    ignore_index so the position contributes nothing rather than being scored as
-    "every feature off".
-    """
-    targets = tok.encode([WORD, NONWORD], modality_filter="orthography").phonological.targets
-    real = tok.encode([WORD, "dog"]).phonological.targets
-    assert targets is not None
-    assert targets.shape == (2, 1, tok.phoneme_tokenizer.get_vocabulary_size() - 1)
-    assert targets.shape[-1] == real.shape[-1]
-    assert targets.dtype == torch.long
-    assert bool((targets == tok.phon_pad_id).all())
-
-
-def test_placeholder_orthographic_is_a_valid_minimal_prefix(tok):
-    """Two positions holding ``[--, BOS]``, not a column of zeros.
-
-    Zero is ``[BOS]``, so the old placeholder read as a sequence that had already started,
-    and it was too narrow to supply the ``[LANG, BOS]`` prefix ``Model.generate`` seeds the
-    orthographic decoder with. ``p2o`` runs on exactly this component, so a placeholder that
-    could not supply the prefix would put a special case in the model for one pathway.
-    ``--`` is the unspecified-language token: a phonology-only encoding does not say what
-    language to spell in, and saying so is better than defaulting to one. See issue #228.
-    """
-    enc = tok.encode(WORD, modality_filter="phonology")
-    orth = enc.orthographic
-    char_2_idx = tok.char_tokenizer.char_2_idx
-
-    assert orth.enc_input_ids.shape == (1, 2)
-    assert orth.dec_input_ids.shape == (1, 2)
-    assert orth.enc_input_ids.dtype == torch.long
-    assert orth.dec_input_ids[0].tolist() == [char_2_idx["--"], char_2_idx["[BOS]"]]
-    assert torch.equal(orth.enc_input_ids, orth.dec_input_ids)
-    assert orth.enc_pad_mask.shape == (1, 2)
-    assert bool(orth.enc_pad_mask.all()), "the placeholder is entirely padding"
-    assert orth.targets is None
-
-
-def test_the_placeholder_prefix_matches_what_a_real_encoding_puts_there(tok):
-    """The placeholder and a real encoding must agree on what the first two positions are.
-
-    This is the property that lets generation seed from ``dec_input_ids[:, :2]`` with no
-    branch for the placeholder. Comparing against the real tokenizer output rather than
-    against hardcoded ids means the two cannot drift apart.
-    """
-    placeholder = tok.encode(WORD, modality_filter="phonology").orthographic
-    real = tok.encode(WORD).orthographic
-
-    assert placeholder.dec_input_ids.shape[1] == 2
-    assert real.dec_input_ids[:, 1].tolist() == placeholder.dec_input_ids[:, 1].tolist(), (
-        "both must carry [BOS] at position 1"
-    )
-    # Position 0 is a language token in both: the first word's language, which is
-    # unspecified here because the caller gave none.
-    language_ids = {tok.char_tokenizer.char_2_idx[t] for t in tok.char_tokenizer.language_tokens}
-    assert int(real.dec_input_ids[0, 0]) in language_ids
-    assert int(placeholder.dec_input_ids[0, 0]) in language_ids
-
-
-def test_placeholder_batch_size_follows_the_input(tok):
-    enc = tok.encode([WORD, "dog", "hat"], modality_filter="phonology")
-    assert enc.orthographic.enc_input_ids.shape == (3, 2)
-    # Real phonology here, so only the batch dimension is fixed; the width follows the words.
-    assert enc.phonological.enc_input_ids.shape[0] == 3
-
-
-def test_placeholder_encoder_and_decoder_masks_are_distinct_objects(tok):
-    """They are separate fields; sharing one tensor would couple two independent masks."""
-    enc = tok.encode(WORD, modality_filter="phonology")
-    assert enc.orthographic.enc_pad_mask is not enc.orthographic.dec_pad_mask
-
-
-# --- contract --------------------------------------------------------------
-
-
-def test_both_components_are_always_populated(tok):
-    """``BridgeEncoding`` requires both; every filter must therefore fill both."""
-    for mf in ("both", "orthography", "phonology"):
-        enc = tok.encode(WORD, modality_filter=mf)
-        assert enc is not None, mf
-        assert enc.orthographic is not None, mf
-        assert enc.phonological is not None, mf
-
-
-def test_invalid_modality_filter_raises(tok):
-    with pytest.raises(ValueError, match="Invalid modality_filter"):
-        tok.encode(WORD, modality_filter="nope")
+# --- a data condition is not an argument error -------------------------------
 
 
 def test_an_unsupported_language_code_raises(tok):
     """A language BRIDGE does not have is the caller's mistake, not a data condition.
 
-    ``encode`` used to convert every failure into ``None``, so a typo in a language code
-    and a word genuinely absent from the pronunciation lexicon were the same return value
-    and a caller could not tell them apart. The real message was logged and discarded.
-    ``None`` now means one thing; everything else propagates.
+    A typo in a language code and a word absent from the pronunciation lexicon must not
+    be the same return value, or a caller cannot tell them apart.
     """
     with pytest.raises(ValueError, match="Invalid languages"):
-        tok.encode(WORD, languages="FR")
+        tok.encode_input([WORD], ["FR"])
+    with pytest.raises(ValueError, match="Invalid languages"):
+        tok.encode_target([WORD], ["FR"])
 
 
-def test_a_word_absent_from_the_lexicon_still_returns_none(tok):
+def test_a_word_absent_from_the_lexicon_is_not_an_error(tok):
     """The control for the test above, and the reason its failure means what it claims.
 
-    Same call shape, a supported language, a word with no pronunciation. If this returned
-    an exception too then ``None`` would have stopped meaning anything; if the test above
-    returned ``None`` then the two conditions would still be conflated.
+    Same call shape, a supported language, a word with no pronunciation. If this raised
+    too then ``None`` would mean nothing; if the test above returned ``None`` the two
+    conditions would be conflated.
     """
-    assert tok.encode("zzqxwv", languages="EN") is None
+    assert tok.encode_input(["zzqxwv"], ["EN"]).phon is None
+    assert tok.encode_target(["zzqxwv"], ["EN"]) is None
 
 
-def test_string_and_single_element_list_agree(tok):
-    single = tok.encode(WORD)
-    listed = tok.encode([WORD])
-    assert torch.equal(single.orthographic.enc_input_ids, listed.orthographic.enc_input_ids)
+def test_an_argument_error_is_raised_for_a_nonword_too(tok):
+    """The argument is checked before the lexicon is read, so a nonword does not hide a
+    bad language code behind a ``None``."""
+    with pytest.raises(ValueError, match="Invalid languages"):
+        tok.encode_input(["zzqxwv"], ["FR"])
+    with pytest.raises(ValueError, match="Invalid languages"):
+        tok.encode_target(["zzqxwv"], ["FR"])
+
+
+@pytest.mark.parametrize("encoder", ["encode_input", "encode_target"])
+def test_rows_are_a_list_of_strings(tok, encoder):
+    """One form only: a bare string is not a one-row list."""
+    with pytest.raises(TypeError, match="The rows to encode are a list of strings"):
+        getattr(tok, encoder)(WORD)
+
+
+@pytest.mark.parametrize("encoder", ["encode_input", "encode_target"])
+def test_languages_are_one_entry_per_row(tok, encoder):
+    """One form only: a list or tuple with an entry for each row. A lone code is not
+    spread over the rows, and a wrong count raises."""
+    encode = getattr(tok, encoder)
+    with pytest.raises(ValueError, match="one entry per row, got 'EN'"):
+        encode([WORD, "dog"], "EN")
+    with pytest.raises(ValueError, match="1 language entries for 2 rows"):
+        encode([WORD, "dog"], ["EN"])
+    assert encode([WORD, "dog"], ("EN", None)) is not None
+
+
+# --- the start of orthographic generation ------------------------------------
+
+
+def test_orth_start_is_lang_then_bos_for_each_row(tok):
+    """Oracle: hand-written ids. 6, 7 and 8 are ``--``, ``EN`` and ``ES``; 0 is ``[BOS]``."""
+    start = tok.orth_start(["ES", "EN", None, "es"])
+    assert start.tolist() == [[8, 0], [7, 0], [6, 0], [8, 0]]
+    assert start.dtype == torch.long
+
+
+def test_orth_start_is_what_training_feeds_the_decoder_first(tok):
+    """Oracle: the target encoding. Whatever follows, a target whose first word is in a
+    language opens with that language's start, so generation continues from a state
+    training produced. The third row changes language after its first word."""
+    texts, languages = ["cat", "no me", "the gato"], ["EN", "ES", "EN ES"]
+    target = tok.encode_target(texts, languages)
+    assert torch.equal(tok.orth_start(["EN", "ES", "EN"]), target.orth.ids[:, :2])
+
+
+def test_orth_start_takes_one_code_per_row(tok):
+    """It names the first word's language. Later words are the decoder's to write."""
+    with pytest.raises(ValueError, match="2 language codes"):
+        tok.orth_start(["EN ES"])
+    with pytest.raises(ValueError, match="Invalid languages"):
+        tok.orth_start(["FR"])
+    with pytest.raises(ValueError, match="one entry per row"):
+        tok.orth_start("EN")
+
+
+# --- contract --------------------------------------------------------------
 
 
 def test_vocabulary_sizes_come_from_the_child_tokenizers(tok):
@@ -264,30 +190,49 @@ def test_unrecognised_dim_maps_to_unk(tok):
 
 
 def test_non_integral_dim_maps_to_unk(tok):
-    """The lookup is a float-keyed dict; a fractional value must miss, exactly as the
-    old linear ``==`` scan did."""
+    """The lookup is a float-keyed dict; a fractional value must miss, exactly as a
+    linear ``==`` scan would."""
     pt = tok.phoneme_tokenizer
     assert pt.phoneme_vectors_to_word([torch.tensor(pt.base_dim + 0.5)]) == ["[UNK]"]
 
 
-def test_placeholder_targets_do_not_alias_the_shared_target_table():
-    """The placeholder must own its storage.
+# --- phonological labels ---------------------------------------------------
 
-    ``padded_targets`` builds every placeholder position from the one [PAD] row of the
-    tokenizer's target table. Returning an expanded view of that row would give the
-    caller zero-stride aliases, so a single write would rewrite [PAD] for every later
-    ``encode``. ``TrainingPipeline`` now shares one tokenizer between the train and test
-    datasets, so that write would poison both splits.
+
+def test_phonological_labels_are_the_fed_phonemes_one_position_on(tok):
+    """Oracle: the phoneme table. The decoder is fed ``[BOS], K, AE1, T`` and scored
+    against the features of ``K, AE1, T, [EOS]``, without the ``[PAD]`` column."""
+    table = tok.phoneme_tokenizer.phoneme_table
+    target = tok.encode_target([WORD], ["EN"]).phon
+    fed = [table.row_index["[BOS]"], *(table.row_of(p) for p in ("K", "AE1", "T"))]
+    scored = [*fed[1:], table.row_index["[EOS]"]]
+
+    assert target.ids.tolist() == [fed]
+    assert torch.equal(target.labels[0], table.multihot[scored][:, :-1].long())
+
+
+def test_padded_label_positions_carry_the_loss_ignore_index(tok):
+    """Oracle: the rule. A padded position is ``phon_pad_id`` in every feature, so the
+    loss skips it; it is never "every feature off", which would be scored."""
+    target = tok.encode_target(["a", "elephant"], ["EN", "EN"]).phon
+    assert bool(target.pad_mask[0].any()), "the short row must be padded"
+    assert bool((target.labels[0][target.pad_mask[0]] == tok.phon_pad_id).all())
+    assert bool((target.labels[1] != tok.phon_pad_id).all())
+    assert target.labels.shape[-1] == tok.phoneme_tokenizer.get_vocabulary_size() - 1
+
+
+def test_labels_do_not_alias_the_shared_target_table():
+    """A target owns its labels.
+
+    They are gathered from one table the tokenizer keeps for its lifetime. A view into
+    it would let a single write rewrite a phoneme's label for every later target, and one
+    tokenizer is shared between a run's datasets.
     """
     tokenizer = BridgeTokenizer()
     phoneme_tokenizer = tokenizer.phoneme_tokenizer
-    pad_row = phoneme_tokenizer.phoneme_table.row_index["[PAD]"]
-    before = phoneme_tokenizer._target_table[pad_row].clone()
+    before = phoneme_tokenizer._target_table.clone()
 
-    encoding = tokenizer.encode([WORD], modality_filter="orthography")
-    assert encoding is not None
-    targets = encoding.phonological.phon_targets
-    assert torch.equal(targets[0, 0], before)
-
-    targets[0, 0, 0] = 999
-    assert torch.equal(phoneme_tokenizer._target_table[pad_row], before)
+    target = tokenizer.encode_target(["a", "elephant"], ["EN", "EN"])
+    assert target is not None
+    target.phon.labels[:] = 999
+    assert torch.equal(phoneme_tokenizer._target_table, before)

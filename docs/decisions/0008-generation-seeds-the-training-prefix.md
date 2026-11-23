@@ -1,11 +1,16 @@
 # 0008. Orthographic generation is seeded with the prefix training uses
 
-Status: Accepted, amended by [0015](0015-language-belongs-to-each-word.md)
+Status: Accepted, amended by [0015](0015-language-belongs-to-each-word.md) and
+[0016](0016-a-training-example-is-an-input-and-a-target.md)
 
 > The seed this record chose still holds. Two details are amended: the language is asked
 > for through `languages=`, one code per word, and there is no `language_map`; and the
 > placeholder of a phonology-only encoding opens with the first word's language, where
 > this record has `--`. See 0015.
+>
+> Where the seed comes from is amended. The caller passes it as `orth_start`, built by
+> `BridgeTokenizer.orth_start`, and a pathway that writes orthography raises without it.
+> Nothing is taken off the input, and there is no placeholder. See 0016.
 Date: 2026-09-14
 
 ## Context

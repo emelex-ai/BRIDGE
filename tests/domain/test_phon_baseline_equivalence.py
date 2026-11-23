@@ -30,12 +30,25 @@ throughout, ``(9, 30)`` and ``(9, 30, 109)``. The orthographic equality assertio
 reduced to shape, and the new behaviour is pinned against analytic oracles in
 ``tests/domain/model/test_orth_generation_prefix.py`` rather than against a re-recording.
 
+A second value is superseded the same way. The fixture records ``placeholder_phon``, the
+stand-in phonology an orthography-only encoding carried: one position per row, all of it
+padding. An input that has no phonology carries ``None`` there and no stand-in exists, so
+there is no tensor to compare. What the stand-in was for still holds and is what the
+reduced assertion checks: an input with orthography alone generates, on a pathway that
+reads orthography alone, exactly what the fixture records for that pathway. Measured
+against the commit before the change, generation from such an input is bitwise equal to
+generation from the stand-in encoding on ``o2p`` and ``o2o``, 729 of 729 recorded values.
+The behaviour of a missing modality is pinned against ``PATHWAY_IO`` in
+``tests/domain/model/test_generate.py``.
+
 **The plumbing is not.** The refactor changes the phonological representation from a ragged
 ``list[list[Tensor]]`` to a ``(batch, sequence)`` tensor of row ids, and the adapters in the
 ADAPTERS block below absorb that; everything under ASSERTIONS compares recorded numbers and
-should not need to change. Two signature changes the spec sketched were not made:
-``phon_targets`` stayed a property on ``EncodingComponent`` rather than moving onto ``Model``,
-and ``forward`` still takes loose tensor kwargs rather than a ``BridgeEncoding``.
+should not need to change. The fixture names its tensors by the encoder and decoder that
+read them. The encoder's are the ids and mask of the input, the decoder's are the ids and
+mask of the target, and the recorded targets are the target's labels; ``FIELD_OF`` below
+is that mapping. The words are encoded once as an input and once as a target, which is
+repetition, the task the fixture recorded.
 
 Runs on CPU: ``device_manager`` defaults to CPU, and CUDA reduction order differs.
 """
@@ -47,7 +60,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from bridge.domain.datamodels import ModelConfig, VocabSpec
+from bridge.domain.datamodels import BridgeInput, ModelConfig, VocabSpec
 from bridge.domain.model import Model
 from bridge.domain.tokenizer.bridge_tokenizer import BridgeTokenizer
 
@@ -75,31 +88,36 @@ def canon_features(ids, tokenizer) -> list[list[tuple[int, ...]]]:
     return [[tuple(sorted(int(v) for v in t.reshape(-1).tolist())) for t in row] for row in ids]
 
 
-def phon_targets_of(model: Model, phon):
+# How a recorded tensor name maps onto an example: the encoder reads the input, the decoder
+# is fed the target.
+FIELD_OF = {
+    "enc_input_ids": ("input", "ids"),
+    "enc_pad_mask": ("input", "pad_mask"),
+    "dec_input_ids": ("target", "ids"),
+    "dec_pad_mask": ("target", "pad_mask"),
+}
+
+
+def recorded_field(example: dict, modality: str, field: str) -> torch.Tensor:
+    """The tensor the fixture calls ``<modality>_<field>``, from an input and a target."""
+    side, name = FIELD_OF[field]
+    return getattr(getattr(example[side], modality), name)
+
+
+def phon_targets_of(example: dict) -> torch.Tensor:
     """Phonological loss targets."""
-    return phon.phon_targets
+    return example["target"].phon.labels
 
 
-def run_forward(model: Model, encoding, pathway: str) -> dict[str, torch.Tensor]:
+def run_forward(model: Model, example: dict, pathway: str) -> dict[str, torch.Tensor]:
     """Forward pass, whichever calling convention the model currently exposes."""
-    orth, phon = encoding.orthographic, encoding.phonological
     parts = {
-        "orth_enc": {
-            "orth_enc_input": orth.enc_input_ids,
-            "orth_enc_pad_mask": orth.enc_pad_mask,
-        },
-        "orth_dec": {
-            "orth_dec_input": orth.dec_input_ids,
-            "orth_dec_pad_mask": orth.dec_pad_mask,
-        },
-        "phon_enc": {
-            "phon_enc_input": phon.enc_input_ids,
-            "phon_enc_pad_mask": phon.enc_pad_mask,
-        },
-        "phon_dec": {
-            "phon_dec_input": phon.dec_input_ids,
-            "phon_dec_pad_mask": phon.dec_pad_mask,
-        },
+        f"{modality}_{side}": {
+            f"{modality}_{side}_input": recorded_field(example, modality, f"{side}_input_ids"),
+            f"{modality}_{side}_pad_mask": recorded_field(example, modality, f"{side}_pad_mask"),
+        }
+        for modality in ("orth", "phon")
+        for side in ("enc", "dec")
     }
     needed = {
         "o2p": ("orth_enc", "phon_dec"),
@@ -131,8 +149,12 @@ def baseline() -> dict:
 @pytest.fixture(scope="module")
 def rebuilt(baseline):
     tokenizer = BridgeTokenizer()
-    encoding = tokenizer.encode(baseline["words"])
-    assert encoding is not None, "baseline words no longer encode"
+    example = {
+        "input": tokenizer.encode_input(baseline["words"]),
+        "target": tokenizer.encode_target(baseline["words"]),
+    }
+    assert example["input"].phon is not None, "baseline words no longer encode"
+    assert example["target"] is not None, "baseline words no longer encode"
     model = Model(
         ModelConfig(
             vocab=VocabSpec(
@@ -144,7 +166,7 @@ def rebuilt(baseline):
         )
     )
     model.eval()
-    return tokenizer, encoding, model
+    return tokenizer, example, model
 
 
 # --------------------------------------------------------------------------- ASSERTIONS
@@ -170,68 +192,70 @@ def test_vocab_spec_unchanged(baseline, rebuilt):
     ["orth_enc_input_ids", "orth_dec_input_ids", "orth_enc_pad_mask", "orth_dec_pad_mask"],
 )
 def test_orthographic_encoding_unchanged(baseline, rebuilt, field):
-    _, encoding, _ = rebuilt
-    actual = getattr(encoding.orthographic, field.removeprefix("orth_"))
+    _, example, _ = rebuilt
+    actual = recorded_field(example, "orth", field.removeprefix("orth_"))
     assert torch.equal(actual, baseline["tok"][field])
 
 
 @pytest.mark.parametrize("field", ["phon_enc_pad_mask", "phon_dec_pad_mask"])
 def test_phonological_pad_masks_unchanged(baseline, rebuilt, field):
-    _, encoding, _ = rebuilt
-    actual = getattr(encoding.phonological, field.removeprefix("phon_"))
+    _, example, _ = rebuilt
+    actual = recorded_field(example, "phon", field.removeprefix("phon_"))
     assert torch.equal(actual, baseline["tok"][field])
 
 
 @pytest.mark.parametrize("side", ["enc", "dec"])
 def test_phonological_feature_sets_unchanged(baseline, rebuilt, side):
     """The load-bearing one: same features per position, whatever the storage."""
-    tokenizer, encoding, _ = rebuilt
-    actual = canon_features(getattr(encoding.phonological, f"{side}_input_ids"), tokenizer)
+    tokenizer, example, _ = rebuilt
+    actual = canon_features(recorded_field(example, "phon", f"{side}_input_ids"), tokenizer)
     assert actual == baseline["tok"][f"phon_{side}_features"]
 
 
 def test_phon_targets_unchanged(baseline, rebuilt):
-    _, encoding, model = rebuilt
-    actual = phon_targets_of(model, encoding.phonological)
-    assert torch.equal(actual, baseline["tok"]["phon_targets"])
+    _, example, _ = rebuilt
+    assert torch.equal(phon_targets_of(example), baseline["tok"]["phon_targets"])
 
 
-def test_placeholder_phonological_unchanged(baseline, rebuilt):
-    tokenizer, _, model = rebuilt
-    placeholder = tokenizer.encode(baseline["words"], modality_filter="orthography")
-    assert placeholder is not None
-    ph = placeholder.phonological
-    expected = baseline["placeholder_phon"]
-    assert canon_features(ph.enc_input_ids, tokenizer) == expected["enc_features"]
-    assert canon_features(ph.dec_input_ids, tokenizer) == expected["dec_features"]
-    assert torch.equal(ph.enc_pad_mask, expected["enc_pad_mask"])
-    assert torch.equal(ph.dec_pad_mask, expected["dec_pad_mask"])
+def test_an_input_without_phonology_generates_what_the_recorded_stand_in_did(baseline, rebuilt):
+    """Superseded in part; see this module's docstring.
 
-    # Deliberate divergence from the baseline. The recorded targets are (B, 1, 36) of
-    # zeros, one column wider than the (B, L, 35) every real encoding produces and filled
-    # with a scored value rather than the loss ignore_index, so a placeholder could not be
-    # used where a real component could. Both defects predate the refactor; the fixture
-    # simply recorded them. The placeholder is now the [PAD] row of the same target table.
-    targets = phon_targets_of(model, ph)
-    assert targets.shape[-1] == expected["targets"].shape[-1] - 1
-    real = tokenizer.encode(baseline["words"]).phonological
-    assert targets.shape[-1] == real.targets.shape[-1]
-    assert bool((targets == tokenizer.phon_pad_id).all())
+    The recorded stand-in is checked to be what the docstring says it was, all padding,
+    so nothing it held is being dropped. Then the reason it existed is asserted against
+    the recorded generation: ``o2p`` from an input carrying orthography alone.
+    """
+    tokenizer, example, model = rebuilt
+    recorded = baseline["placeholder_phon"]
+    rows = len(baseline["words"])
+    pad_feature = (tokenizer.phon_pad_id,)
+    for side in ("enc", "dec"):
+        assert recorded[f"{side}_features"] == [[pad_feature]] * rows
+        assert recorded[f"{side}_pad_mask"].shape == (rows, 1)
+        assert bool(recorded[f"{side}_pad_mask"].all())
+
+    orthography_only = BridgeInput(orth=example["input"].orth)
+    assert orthography_only.phon is None
+
+    result = model.generate(orthography_only, "o2p", deterministic=True)
+    expected = baseline["generate"]["o2p"]
+    assert torch.allclose(result.global_encoding, expected["global_encoding"], atol=FORWARD_ATOL)
+    assert canon_features(result.phon_tokens, tokenizer) == expected["phon_tokens"]
+    assert torch.equal(stack_nested(result.phon_vecs), expected["phon_vecs"])
 
 
 @pytest.mark.parametrize("side", ["enc", "dec"])
 def test_embed_phon_tokens_unchanged(baseline, rebuilt, side):
-    _, encoding, model = rebuilt
-    ids = getattr(encoding.phonological, f"{side}_input_ids")
+    _, example, model = rebuilt
+    ids = recorded_field(example, "phon", f"{side}_input_ids")
     actual = model.embed_phon_tokens(ids)
     assert torch.allclose(actual, baseline["embed"][side], atol=FORWARD_ATOL)
 
 
 @pytest.mark.parametrize("table", ["phonology_embedding", "phon_position_embedding"])
 def test_gradients_unchanged(baseline, rebuilt, table):
-    _, encoding, model = rebuilt
+    _, example, model = rebuilt
     model.zero_grad(set_to_none=True)
-    model.embed_phon_tokens(encoding.phonological.dec_input_ids).sum().backward()
+    model.embed_phon_tokens(example["target"].phon.ids).sum().backward()
     actual = getattr(model, table).weight.grad
     model.zero_grad(set_to_none=True)
     assert torch.allclose(actual, baseline["grads"][table], atol=GRAD_ATOL, rtol=GRAD_RTOL)
@@ -239,9 +263,9 @@ def test_gradients_unchanged(baseline, rebuilt, table):
 
 @pytest.mark.parametrize("pathway", ["o2p", "p2o", "p2p", "op2op"])
 def test_forward_logits_unchanged(baseline, rebuilt, pathway):
-    _, encoding, model = rebuilt
+    _, example, model = rebuilt
     with torch.no_grad():
-        actual = run_forward(model, encoding, pathway)
+        actual = run_forward(model, example, pathway)
     expected = baseline["logits"][pathway]
     assert set(actual) == set(expected), f"{pathway} output keys changed"
     for key, want in expected.items():
@@ -250,8 +274,11 @@ def test_forward_logits_unchanged(baseline, rebuilt, pathway):
 
 @pytest.mark.parametrize("pathway", ["o2p", "p2o", "p2p", "op2op", "o2o"])
 def test_generation_unchanged(baseline, rebuilt, pathway):
-    tokenizer, encoding, model = rebuilt
-    result = model.generate(encoding, pathway, deterministic=True)
+    tokenizer, example, model = rebuilt
+    # The words carry no language, so orthography starts unspecified, which is the prefix
+    # the recorded run's encoding supplied.
+    start = tokenizer.orth_start([None] * len(baseline["words"]))
+    result = model.generate(example["input"], pathway, orth_start=start, deterministic=True)
     expected = baseline["generate"][pathway]
 
     assert torch.allclose(result.global_encoding, expected["global_encoding"], atol=FORWARD_ATOL), (

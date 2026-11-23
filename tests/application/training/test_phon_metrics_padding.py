@@ -6,8 +6,8 @@ values are 0, 1 and 35, so the comparison is a tautology: it keeps every positio
 padded rows are scored as though they were real phonemes.
 
 The two id spaces are the trap. Row space (0 to 90) says which phoneme; feature space
-(0 to 35) says which phonetic feature, and ``phon_targets`` lives in feature space where
-[PAD] is 35. A literal that belongs to neither space silently disables the mask instead
+(0 to 35) says which phonetic feature, and the target's labels live in feature space
+where [PAD] is 35. A literal that belongs to neither space silently disables the mask instead
 of raising, which is why nothing has caught it.
 
 These tests assert the fixed contract: ``calculate_phon_metrics`` takes a required
@@ -84,14 +84,13 @@ def perfect_batch(tokenizer, words, corrupt=None):
     ``corrupt`` is an index whose predicted row is inverted, to make a batch that is
     imperfect on real positions too.
     """
-    phonology = tokenizer.encode(words).phonological
-    targets = phonology.phon_targets
+    targets = tokenizer.encode_target(words).phon.labels
     prediction = (targets == 1).long()
     if corrupt is not None:
         prediction[corrupt] = 1 - prediction[corrupt]
     logits = {"phon": torch.stack([1 - prediction, prediction], dim=1).float()}
     assert torch.equal(torch.argmax(logits["phon"], dim=1), prediction)
-    return logits, phonology
+    return logits, targets
 
 
 def test_padding_exists_and_the_orthographic_pad_id_cannot_see_it(tokenizer):
@@ -102,7 +101,7 @@ def test_padding_exists_and_the_orthographic_pad_id_cannot_see_it(tokenizer):
     anywhere in the targets, so the mask in use could not have found that padding under
     any batch, and its passing today says nothing.
     """
-    targets = tokenizer.encode(PADDED_WORDS).phonological.phon_targets
+    targets = tokenizer.encode_target(PADDED_WORDS).phon.labels
 
     assert TEST_VOCAB.phon_pad_id == PHON_PAD_ID
     assert TEST_VOCAB.orth_pad_id == ORTH_PAD_ID
@@ -130,14 +129,14 @@ def test_calculate_phon_metrics_requires_a_phon_pad_id(tokenizer, phon_reps):
     a call that omits the pad id has not said which id space its targets are in, and
     guessing is exactly how the literal 2 got there.
     """
-    logits, phonology = perfect_batch(tokenizer, PADDED_WORDS)
+    logits, targets = perfect_batch(tokenizer, PADDED_WORDS)
 
     parameters = inspect.signature(calculate_phon_metrics).parameters
     assert "phon_pad_id" in parameters
     assert parameters["phon_pad_id"].default is inspect.Parameter.empty
 
     with pytest.raises(TypeError):
-        calculate_phon_metrics(logits, phonology, phon_reps)
+        calculate_phon_metrics(logits, targets, phon_reps)
 
 
 def test_every_phon_metric_moves_when_the_mask_uses_the_real_pad_id(tokenizer, phon_reps):
@@ -152,10 +151,10 @@ def test_every_phon_metric_moves_when_the_mask_uses_the_real_pad_id(tokenizer, p
     the euclidean distance becomes ten rows of ||35 - 0|| over 35 columns, averaged over
     all 24 rows.
     """
-    logits, phonology = perfect_batch(tokenizer, PADDED_WORDS)
+    logits, targets = perfect_batch(tokenizer, PADDED_WORDS)
 
-    fixed = calculate_phon_metrics(logits, phonology, phon_reps, phon_pad_id=PHON_PAD_ID)
-    current = calculate_phon_metrics(logits, phonology, phon_reps, phon_pad_id=ORTH_PAD_ID)
+    fixed = calculate_phon_metrics(logits, targets, phon_reps, phon_pad_id=PHON_PAD_ID)
+    current = calculate_phon_metrics(logits, targets, phon_reps, phon_pad_id=ORTH_PAD_ID)
 
     assert set(fixed) == set(METRIC_NAMES)
     for name in METRIC_NAMES:
@@ -205,12 +204,11 @@ def test_control_a_batch_with_no_padding_is_blind_to_the_pad_id(tokenizer, phon_
     in the padded case would be evidence of some other disagreement rather than of
     padding being scored.
     """
-    logits, phonology = perfect_batch(tokenizer, EVEN_WORDS)
-    targets = phonology.phon_targets
+    logits, targets = perfect_batch(tokenizer, EVEN_WORDS)
     assert not bool((targets == PHON_PAD_ID).any()), "control batch must carry no padding"
 
-    fixed = calculate_phon_metrics(logits, phonology, phon_reps, phon_pad_id=PHON_PAD_ID)
-    current = calculate_phon_metrics(logits, phonology, phon_reps, phon_pad_id=ORTH_PAD_ID)
+    fixed = calculate_phon_metrics(logits, targets, phon_reps, phon_pad_id=PHON_PAD_ID)
+    current = calculate_phon_metrics(logits, targets, phon_reps, phon_pad_id=ORTH_PAD_ID)
 
     for name in METRIC_NAMES:
         assert float(fixed[name]) == float(current[name]), f"{name} moved without padding"
@@ -228,15 +226,15 @@ def test_scoring_padded_positions_biases_feature_accuracy_downward(tokenizer, ph
     The batch here is deliberately imperfect on real positions too, one whole row of the
     prediction inverted, so the corrected figure is 13/14 rather than a trivial 1.0.
     """
-    logits, phonology = perfect_batch(tokenizer, PADDED_WORDS, corrupt=(1, 0))
+    logits, targets = perfect_batch(tokenizer, PADDED_WORDS, corrupt=(1, 0))
 
     over_real = float(
-        calculate_phon_metrics(logits, phonology, phon_reps, phon_pad_id=PHON_PAD_ID)[
+        calculate_phon_metrics(logits, targets, phon_reps, phon_pad_id=PHON_PAD_ID)[
             "phon_feature_accuracy"
         ]
     )
     over_all = float(
-        calculate_phon_metrics(logits, phonology, phon_reps, phon_pad_id=ORTH_PAD_ID)[
+        calculate_phon_metrics(logits, targets, phon_reps, phon_pad_id=ORTH_PAD_ID)[
             "phon_feature_accuracy"
         ]
     )
@@ -260,8 +258,9 @@ def test_compute_metrics_passes_the_vocabularys_phon_pad_id(phon_reps, monkeypat
     """
     seen = {}
 
-    def recorder(logits, phonology, phon_reps, phon_pad_id):
+    def recorder(logits, labels, phon_reps, phon_pad_id):
         seen["phon_pad_id"] = phon_pad_id
+        seen["labels"] = labels
         return {}
 
     monkeypatch.setattr(pipeline_module, "calculate_phon_metrics", recorder)
@@ -272,7 +271,10 @@ def test_compute_metrics_passes_the_vocabularys_phon_pad_id(phon_reps, monkeypat
         phon_reps=phon_reps,
     )
     stub.compute_metrics = TrainingPipeline.compute_metrics.__get__(stub)
-    stub.compute_metrics({}, None, None)
+    labels = object()
+    stub.compute_metrics({}, SimpleNamespace(phon=SimpleNamespace(labels=labels)))
 
     assert seen["phon_pad_id"] == TEST_VOCAB.phon_pad_id == PHON_PAD_ID
     assert seen["phon_pad_id"] != TEST_VOCAB.orth_pad_id
+    # And it is the phonological target's labels that are scored, nothing else of it.
+    assert seen["labels"] is labels

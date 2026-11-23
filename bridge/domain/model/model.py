@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from bridge.core.phonreps import load_phoneme_table, row_normalize
-from bridge.domain.datamodels import BridgeEncoding, GenerationOutput, ModelConfig
+from bridge.domain.datamodels import BridgeInput, GenerationOutput, ModelConfig
 from bridge.domain.datamodels.pathways import (
     MODALITIES,
     PATHWAY_INPUTS,
@@ -785,16 +785,16 @@ class Model(nn.Module):
         orth_enc_pad_mask: torch.Tensor | None = None,
         phon_enc_input: torch.Tensor | None = None,
         phon_enc_pad_mask: torch.Tensor | None = None,
-        orth_dec_prefix: torch.Tensor | None = None,
+        orth_start: torch.Tensor | None = None,
         deterministic: bool = False,
     ) -> GenerationDict:
         """
         Generates either orthographic tokens or phonological features (or both),
         depending on the chosen pathway.
 
-        Encode the inputs with ``BridgeTokenizer.encode`` (or the individual character /
-        phoneme tokenizers) before calling this; :meth:`generate` is the friendlier
-        entry point that unpacks a :class:`BridgeEncoding` for you.
+        Encode the inputs with ``BridgeTokenizer.encode_input`` (or the individual
+        character / phoneme tokenizers) before calling this; :meth:`generate` is the
+        friendlier entry point that unpacks a :class:`BridgeInput` for you.
 
         Args:
             pathway: One of ``PATHWAYS``.
@@ -802,6 +802,8 @@ class Model(nn.Module):
             orth_enc_pad_mask: (batch_size, max_seq_len) Boolean mask indicating PAD tokens.
             phon_enc_input: (batch_size, max_seq_len) input IDs (from a phon encoder).
             phon_enc_pad_mask: (batch_size, max_seq_len) Boolean mask indicating PAD tokens.
+            orth_start: (batch_size, 2) the ``[LANG, BOS]`` rows the orthographic decoder
+                starts from. Required by a pathway that writes orthography.
             deterministic: Whether sampling is greedy (True) or stochastic (False).
 
         Returns:
@@ -822,6 +824,7 @@ class Model(nn.Module):
             orth_enc_pad_mask,
             phon_enc_input,
             phon_enc_pad_mask,
+            orth_start,
         )
 
         # Restored on the way out. Leaving the model in `eval` is a side effect on
@@ -891,20 +894,14 @@ class Model(nn.Module):
 
             # All these pathways have "2o" meaning we need to run the orthography decoder loop
             if pathway in WRITES_ORTH:
-                if orth_dec_prefix is None:
-                    raise ValueError(
-                        f"pathway {pathway!r} runs the orthographic decoder, which must be "
-                        "seeded with the [LANG, BOS] prefix training uses. Pass "
-                        "orth_dec_prefix, or call `generate`, which takes it off the "
-                        "encoding."
-                    )
+                assert orth_start is not None
                 mask = self.generate_triangular_mask(self.max_orth_seq_len)
                 # Seeded with the prefix training uses, [LANG, BOS], rather than a lone
                 # [BOS]. Training puts [BOS] at decoder position 1, so a lone [BOS] at
-                # position 0 asked the decoder to continue from a state it never saw, and
-                # the language token it conditions on was absent entirely. See
+                # position 0 asks the decoder to continue from a state it never saw, with
+                # the language token it conditions on absent entirely. See
                 # docs/decisions/0008.
-                generated_orth_tokens = orth_dec_prefix
+                generated_orth_tokens = orth_start
                 generated_orth_embeddings = self.embed_orth_tokens(generated_orth_tokens)
                 orth_probs, orth_tokens = self.orthography_decoder_loop(
                     mask,
@@ -921,21 +918,28 @@ class Model(nn.Module):
 
     def generate(
         self,
-        encodings: BridgeEncoding,
+        inputs: BridgeInput,
         pathway: Pathway,
+        *,
+        orth_start: torch.Tensor | None = None,
         deterministic: bool = False,
     ) -> GenerationOutput:
         """
-        High-level generation interface that works with unified encoding objects.
+        Generate from an input, along one pathway.
 
-        Unpacks the encoder-side tensors that ``pathway`` consumes out of ``encodings``
-        and hands them to :meth:`_generate`, then wraps the result in a validated
-        :class:`GenerationOutput`.
+        Reads the modalities of ``inputs`` that ``pathway`` reads and hands them to
+        :meth:`_generate`, then wraps the result in a validated :class:`GenerationOutput`.
+        Nothing about the output comes from anywhere else: there is no target here, and
+        the language orthography starts in is the caller's to name.
 
         Args:
-            encodings: A BridgeEncoding object containing orthographic and
-                    phonological representations.
+            inputs: What the encoders read, from ``BridgeTokenizer.encode_input``.
             pathway: The generation pathway to use.
+            orth_start: The ``(batch, 2)`` ``[LANG, BOS]`` rows the orthographic decoder
+                starts from, from ``BridgeTokenizer.orth_start``. It names the language
+                of the first word written; any later change of language is the decoder's
+                to emit. Required by a pathway that writes orthography, and not read by
+                one that does not.
             deterministic: Whether to use deterministic (greedy) or stochastic sampling.
                         Defaults to False (stochastic).
 
@@ -944,28 +948,28 @@ class Model(nn.Module):
             probability distributions.
 
         Raises:
-            ValueError: If the selected pathway is incompatible with the provided encodings.
+            TypeError: If ``inputs`` is not a :class:`BridgeInput`.
+            ValueError: If ``pathway`` reads a modality ``inputs`` does not carry, or
+                writes orthography and ``orth_start`` is missing.
         """
-        uses_orth = pathway in READS_ORTH
-        uses_phon = pathway in READS_PHON
+        if not isinstance(inputs, BridgeInput):
+            raise TypeError(
+                f"generate reads a BridgeInput, got {type(inputs).__name__}. A target is "
+                "what the model is taught to write, and generation has none."
+            )
 
-        # The orthographic decoder is seeded with the same two positions training puts in
-        # front of every word, [LANG, BOS], taken straight off the encoding rather than
-        # rebuilt here. The language is therefore whatever the caller asked for through
-        # `BridgeTokenizer.encode(..., languages=...)`, and `p2o` can be steered to spell
-        # the same phonemes differently per language. See docs/decisions/0008.
-        orth_dec_prefix = (
-            encodings.orthographic.dec_input_ids[:, :2] if pathway in WRITES_ORTH else None
-        )
+        tensors: dict[str, torch.Tensor] = {}
+        for modality, readers in (("orth", READS_ORTH), ("phon", READS_PHON)):
+            if pathway in readers:
+                tokens = inputs.read(modality, pathway)
+                tensors[f"{modality}_enc_input"] = tokens.ids
+                tensors[f"{modality}_enc_pad_mask"] = tokens.pad_mask
 
         generation_results = self._generate(
             pathway=pathway,
-            orth_enc_input=encodings.orthographic.enc_input_ids if uses_orth else None,
-            orth_enc_pad_mask=encodings.orthographic.enc_pad_mask if uses_orth else None,
-            phon_enc_input=encodings.phonological.enc_input_ids if uses_phon else None,
-            phon_enc_pad_mask=encodings.phonological.enc_pad_mask if uses_phon else None,
-            orth_dec_prefix=orth_dec_prefix,
+            orth_start=orth_start if pathway in WRITES_ORTH else None,
             deterministic=deterministic,
+            **tensors,
         )
 
         # GenerationDict's keys are exactly GenerationOutput's fields; the pydantic
@@ -975,45 +979,17 @@ class Model(nn.Module):
     MODALITY_NAMES = {"orth": "orthographic", "phon": "phonological"}
 
     def _validate_encoder_inputs(
-        self,
-        modality: str,
-        ids: torch.Tensor | None,
-        mask: torch.Tensor | None,
+        self, modality: str, ids: torch.Tensor, mask: torch.Tensor
     ) -> None:
-        """Every structural, range and placement check for one modality's encoder input.
+        """What only the model can check of one modality's encoder input: that it has rows,
+        fits the position table, sits on the model's device and indexes its id space.
 
-        Both modalities carry ``(batch, sequence)`` integer ids plus a boolean mask of the
-        same shape, so one function serves them; ``modality`` selects the message prefix,
-        the length bound and which id space the ids must index.
-
-        This used to run a *subset* of the checks, with each pathway choosing its own
-        subset: ``o2p`` ran neither the range check nor the device check while ``o2o`` ran
-        both, ``op2op`` alone reported a non-tensor as ``TypeError``, and nothing recorded
-        why. Those gaps are what issue #233 reported. There is one set of checks now and
-        every pathway runs it on whatever it reads.
+        The ids and mask come out of a :class:`Tokens`, which has checked their type, rank,
+        dtype and agreement. Both modalities carry the same shape, so one function serves
+        them; ``modality`` selects the message prefix, the length bound and the id space.
+        Every pathway runs it on whatever it reads.
         """
         name = self.MODALITY_NAMES[modality]
-        if not isinstance(ids, torch.Tensor):
-            raise ValueError(f"{modality}_enc_input must be a torch.Tensor, got {type(ids)}")
-        if not isinstance(mask, torch.Tensor):
-            raise ValueError(f"{modality}_enc_pad_mask must be a torch.Tensor, got {type(mask)}")
-        if ids.dim() != 2:
-            raise ValueError(
-                f"Expected 2D input tensor for {modality}_enc_input, got shape: {tuple(ids.shape)}"
-            )
-        if ids.dtype not in (torch.long, torch.int):
-            raise ValueError(
-                f"{modality}_enc_input must have dtype torch.long or torch.int, got {ids.dtype}"
-            )
-        if mask.dtype != torch.bool:
-            raise ValueError(
-                f"{modality}_enc_pad_mask must have dtype torch.bool, got {mask.dtype}"
-            )
-        if ids.shape != mask.shape:
-            raise ValueError(
-                f"Shape mismatch: {modality}_enc_input is {tuple(ids.shape)} but "
-                f"{modality}_enc_pad_mask is {tuple(mask.shape)}"
-            )
         # A zero-row batch has nothing to generate and segfaults the CUDA decoder rather
         # than failing; reject it at the boundary where the shape is still readable.
         if ids.size(0) == 0:
@@ -1054,8 +1030,10 @@ class Model(nn.Module):
         orth_enc_pad_mask: torch.Tensor | None,
         phon_enc_input: torch.Tensor | None,
         phon_enc_pad_mask: torch.Tensor | None,
+        orth_start: torch.Tensor | None,
     ) -> None:
-        """Check the encoder inputs against what ``pathway`` reads.
+        """Check the encoder inputs against what ``pathway`` reads, and the orthographic
+        start against what it writes.
 
         Driven by :data:`PATHWAY_IO`, not by a branch per pathway. The five branches this
         replaces applied four different subsets of the available checks to four groups of
@@ -1089,10 +1067,37 @@ class Model(nn.Module):
                 )
             self._validate_encoder_inputs(modality, ids, mask)
 
-        if len(reads) > 1:
-            assert orth_enc_input is not None and phon_enc_input is not None
-            if orth_enc_input.size(0) != phon_enc_input.size(0):
-                raise ValueError(
-                    f"Batch size mismatch: orthographic input has {orth_enc_input.size(0)} "
-                    f"items but phonological input has {phon_enc_input.size(0)} items"
-                )
+        if "orth" in PATHWAY_IO[pathway][1]:
+            ids = orth_enc_input if orth_enc_input is not None else phon_enc_input
+            assert ids is not None
+            self._validate_orth_start(pathway, orth_start, ids.size(0))
+
+    def _validate_orth_start(
+        self, pathway: str, orth_start: torch.Tensor | None, batch_size: int
+    ) -> None:
+        """The orthographic decoder's start is ``[LANG, BOS]`` for every row of the batch.
+
+        The caller builds it, so it is checked like any other input. Only its shape, type,
+        placement and range are: which language it names is the caller's choice.
+        """
+        if orth_start is None:
+            raise ValueError(
+                f"pathway {pathway!r} writes orthography, so it needs orth_start, the "
+                "[LANG, BOS] rows naming the language the output starts in. Build it with "
+                "BridgeTokenizer.orth_start([...]), one language code per row."
+            )
+        if not isinstance(orth_start, torch.Tensor):
+            raise ValueError(f"orth_start must be a torch.Tensor, got {type(orth_start)}")
+        if orth_start.dtype not in (torch.long, torch.int):
+            raise ValueError(
+                f"orth_start must have dtype torch.long or torch.int, got {orth_start.dtype}"
+            )
+        if orth_start.shape != (batch_size, 2):
+            raise ValueError(
+                f"orth_start must be ({batch_size}, 2), one [LANG, BOS] row per input row, "
+                f"got {tuple(orth_start.shape)}"
+            )
+        if orth_start.device != self.device:
+            raise ValueError(f"orth_start must be on device {self.device}, got {orth_start.device}")
+        if torch.any(orth_start < 0) or torch.any(orth_start >= self.orthographic_vocabulary_size):
+            raise ValueError(f"orth_start ids must lie in [0, {self.orthographic_vocabulary_size})")

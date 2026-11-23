@@ -25,8 +25,22 @@ pathways and every phonological value unchanged including `op2op`'s, which gener
 modalities from one encoding; only the three orthographic pathways moved, at identical
 shapes. See `docs/decisions/0008`.
 
-Everything phonological in the fixture, which is what it was recorded for, is still asserted
-exactly.
+**A second value is superseded the same way.** The fixture records `placeholder_phon`, the
+stand-in phonology an orthography-only encoding carried. An input with no phonology carries
+`None`, so there is no tensor to compare. The test asserts what the stand-in was for: an
+input carrying orthography alone generates what the fixture records for `o2p`. Measured
+2026-11-23 against `7386f8e`, generation from such an input is bitwise equal to generation
+from the stand-in on `o2p` and `o2o`, 729 of 729 values. See `docs/decisions/0016`.
+
+Every other phonological value in the fixture, which is what it was recorded for, is still
+asserted exactly.
+
+The fixture names its tensors as the code did when it was recorded: `enc_input_ids`,
+`dec_input_ids`, `targets`. The test maps each to the tensor that holds it. The encoder's
+are the ids and mask of the input (`BridgeInput`, what the encoders read). The decoder's
+are the ids and mask of the target (`BridgeTarget`, what the decoders are fed and scored
+against). The recorded targets are the target's `labels`. The fixture's words are encoded
+once as an input and once as a target, which is repetition, the task it recorded.
 
 ## The baseline for a differential
 
@@ -83,6 +97,7 @@ both were caught.
 order and kernel selection, so the noise floor above does not transfer to the RTX 5080 until
 re-measured there, and any claim of GPU equivalence is currently unsupported. Every number
 in `docs/decisions/0015`, the per-word language record, is CPU only too, as of 2026-11-22.
+So is every number in `docs/decisions/0016`, the input and target record, as of 2026-11-23.
 
 CUDA *behaviour* has been measured, on an RTX 5080 with torch 2.12.0+cu130: device
 resolution and comparison, that a constructed model is entirely on one device, and that all
@@ -106,8 +121,8 @@ wrong output rather than an error.
 
 | space | range | what it indexes | where it appears |
 |---|---|---|---|
-| row | 0 to 90 | phoneme table rows (91 phonemes plus specials) | `EncodingComponent.enc_input_ids` / `dec_input_ids`, `Model.embed_phon_tokens` |
-| feature | 0 to 35 | phonetic feature columns (31 base plus 5 specials) | `GenerationOutput.phon_tokens`, `PhonemeTokenizer.decode`, `VocabSpec.phon_*_id`, loss targets |
+| row | 0 to 90 | phoneme table rows (91 phonemes plus specials) | the phonological `ids` of `BridgeInput.phon` and `BridgeTarget.phon`, `Model.embed_phon_tokens` |
+| feature | 0 to 35 | phonetic feature columns (31 base plus 5 specials) | `GenerationOutput.phon_tokens`, `PhonemeTokenizer.decode`, `VocabSpec.phon_*_id`, the phonological `labels` of `BridgeTarget.phon` |
 
 Current table fingerprint: `4c4a9c388f46bc35`. A checkpoint recording a different one was
 trained against a different `phonreps.csv` and its phoneme ids may not mean the same things.
@@ -120,15 +135,18 @@ uv run mypy bridge
 uv run ruff check . && uv run ruff format --check .
 ```
 
-The suite runs in single-digit seconds because the pronunciation lexicon parse is memoised
-process-wide. A change that pushes it past about 10 seconds has probably reintroduced
+The suite runs in about ten seconds because the pronunciation lexicon parse is memoised
+process-wide. A change that takes it well past that has probably reintroduced
 per-instance parsing, which cost 45 seconds before the memo (measured 2026-08-30).
-Currently 711 passed and 6 skipped, in 7.1 to 7.6 s by pytest's own count and 9.9 to
-10.6 s of wall clock, which includes interpreter start. Measured 2026-11-22 on the per-word
-language change: three runs of `uv run --no-sync pytest -q -p no:cacheprovider` with
-`OMP_NUM_THREADS=1` and `MKL_NUM_THREADS=1`, load average 2.3. The 565 tests of `9e7d9f2`
-took 6.95 to 7.01 s by pytest's count in the same session. The suite took 12.9 s before the pipeline
-stopped running `gc.collect()` every ten steps.
+Currently 873 passed and 6 skipped, in 10.11 to 10.46 s by pytest's own count, median
+10.22, and 12.91 to 13.37 s of wall clock, which includes interpreter start. Measured
+2026-11-23 on the input and target change: six runs of
+`uv run --no-sync pytest -q -p no:cacheprovider` with `OMP_NUM_THREADS=1` and
+`MKL_NUM_THREADS=1`, load average 1.65 to 2.76. The 711 tests of `7386f8e` took 7.04 to
+7.48 s by pytest's count, median 7.24, in the same sessions, the two suites run
+alternately. That is 162 more tests and about 3 s more than `7386f8e`. Record 0016 names
+the script. The suite took 12.9 s before the pipeline stopped running `gc.collect()` every
+ten steps.
 
 `mypy` is clean over `bridge/`. CI enforces it rather than advising, as of 2026-09-16.
 

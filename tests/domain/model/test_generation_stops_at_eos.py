@@ -107,14 +107,22 @@ class ScriptedOrthoSampler:
         return torch.tensor(column, dtype=torch.long, device=self.device).unsqueeze(-1)
 
 
+def generate(model, tokenizer, words, pathway, deterministic=True):
+    """Generate from ``words``, which carry no language, starting orthography unspecified."""
+    return model.generate(
+        tokenizer.encode_input(words),
+        pathway,
+        orth_start=tokenizer.orth_start([None] * len(words)),
+        deterministic=deterministic,
+    )
+
+
 def run_scripted_orth(model, tokenizer, plan, words):
     """Run the real orthographic loop with a scripted sampler, returning the token rows."""
-    encoding = tokenizer.encode(words)
-    assert encoding is not None
     real = model.ortho_sample
     model.ortho_sample = ScriptedOrthoSampler(plan, model.device)
     try:
-        result = model.generate(encoding, "p2o", deterministic=True)
+        result = generate(model, tokenizer, words, "p2o")
     finally:
         model.ortho_sample = real
     return orth_rows(result), result
@@ -139,7 +147,7 @@ def test_the_loop_pads_every_row_from_its_own_eos(tokenizer, model, vocab):
     rows, _ = run_scripted_orth(model, tokenizer, plan, ["cat", "dog", "hat"])
 
     width = len(rows[0])
-    prefix = [int(v) for v in tokenizer.encode(["cat"]).orthographic.dec_input_ids[0, :2]]
+    prefix = [int(v) for v in tokenizer.orth_start([None])[0]]
     # The loop stops when every row has finished, so item 2 is what sets the width.
     assert width == model.max_orth_seq_len, width
 
@@ -190,10 +198,8 @@ def test_nothing_but_padding_follows_the_orthographic_eos(tokenizer, model, voca
     Only `p2o` ends early on this word list. The scripted tests above cover the pathways and
     shapes that an untrained model does not happen to produce.
     """
-    encoding = tokenizer.encode(MIXED)
-    assert encoding is not None
 
-    rows = orth_rows(model.generate(encoding, "p2o", deterministic=True))
+    rows = orth_rows(generate(model, tokenizer, MIXED, "p2o"))
 
     terminated = 0
     for item, row in enumerate(rows):
@@ -214,10 +220,8 @@ def test_nothing_but_padding_follows_the_orthographic_eos(tokenizer, model, voca
 
 def test_the_orthographic_eos_itself_survives(tokenizer, model, vocab):
     """One terminator per row, through the public path."""
-    encoding = tokenizer.encode(MIXED)
-    assert encoding is not None
 
-    rows = orth_rows(model.generate(encoding, "p2o", deterministic=True))
+    rows = orth_rows(generate(model, tokenizer, MIXED, "p2o"))
 
     assert any(vocab.orth_eos_id in row for row in rows), "no [EOS] survived anywhere"
     for item, row in enumerate(rows):
@@ -238,10 +242,10 @@ def test_orthographic_content_does_not_depend_on_the_rest_of_the_batch(
     suppressing post-termination output did not disturb the output that precedes it. It runs
     on all three orthographic pathways because it needs no row to terminate.
     """
-    batched = orth_rows(model.generate(tokenizer.encode(MIXED), pathway, deterministic=True))
+    batched = orth_rows(generate(model, tokenizer, MIXED, pathway))
 
     for item, word in enumerate(MIXED):
-        alone = orth_rows(model.generate(tokenizer.encode([word]), pathway, deterministic=True))[0]
+        alone = orth_rows(generate(model, tokenizer, [word], pathway))[0]
         cut_alone = alone[: (first_index(alone, vocab.orth_eos_id) or len(alone) - 1) + 1]
         row = batched[item]
         cut_batch = row[: (first_index(row, vocab.orth_eos_id) or len(row) - 1) + 1]
@@ -258,9 +262,7 @@ def test_decoding_a_batch_returns_what_the_model_generated(tokenizer, model, voc
     row decodes to the right string. The comparison is against an independent truncation
     computed here, not against ``decode`` called a second way.
     """
-    encoding = tokenizer.encode(MIXED)
-    assert encoding is not None
-    rows = orth_rows(model.generate(encoding, "p2o", deterministic=True))
+    rows = orth_rows(generate(model, tokenizer, MIXED, "p2o"))
 
     def upto_eos(row):
         eos = first_index(row, vocab.orth_eos_id)
@@ -277,12 +279,10 @@ def test_a_word_decodes_the_same_alone_as_in_a_batch(tokenizer, model):
     Before the fix a word decoded correctly alone and incorrectly beside a longer word, which
     is the worst shape a defect can take: correct in the small case someone debugs with.
     """
-    batched = tokenizer.char_tokenizer.decode(
-        orth_rows(model.generate(tokenizer.encode(MIXED), "p2o", deterministic=True))
-    )
+    batched = tokenizer.char_tokenizer.decode(orth_rows(generate(model, tokenizer, MIXED, "p2o")))
     for item, word in enumerate(MIXED):
         alone = tokenizer.char_tokenizer.decode(
-            orth_rows(model.generate(tokenizer.encode([word]), "p2o", deterministic=True))
+            orth_rows(generate(model, tokenizer, [word], "p2o"))
         )[0]
         assert batched[item] == alone, (
             f"{word!r} decoded {batched[item]!r} batched, {alone!r} alone"
@@ -295,9 +295,7 @@ def test_the_probability_history_still_marks_where_content_ends(tokenizer, model
     Before the fix these disagreed: the probabilities stopped at `[EOS]` and the tokens ran
     on. Their agreeing is what makes the returned object internally consistent.
     """
-    encoding = tokenizer.encode(MIXED)
-    assert encoding is not None
-    result = model.generate(encoding, "p2o", deterministic=True)
+    result = generate(model, tokenizer, MIXED, "p2o")
     rows = orth_rows(result)
 
     for item, row in enumerate(rows):
@@ -320,11 +318,8 @@ def test_nothing_but_padding_follows_the_phonological_eos(tokenizer, model, voca
     phonological position is the one-hot at ``phon_pad_id``, which is the encoding
     ``phono_sample`` already uses for an all-off vector rather than a new convention.
     """
-    encoding = tokenizer.encode(MIXED * 3)
-    assert encoding is not None
-
     torch.manual_seed(3)
-    result = model.generate(encoding, "o2p", deterministic=False)
+    result = generate(model, tokenizer, MIXED * 3, "o2p", deterministic=False)
 
     terminated = 0
     for item in range(len(result.phon_tokens)):
@@ -343,10 +338,10 @@ def test_nothing_but_padding_follows_the_phonological_eos(tokenizer, model, voca
 
 def test_phonological_content_does_not_depend_on_the_rest_of_the_batch(tokenizer, model, vocab):
     """Batch invariance for phonology, up to and including each item's `[EOS]`."""
-    batched = model.generate(tokenizer.encode(MIXED), "o2p", deterministic=True)
+    batched = generate(model, tokenizer, MIXED, "o2p")
 
     for item, word in enumerate(MIXED):
-        alone = model.generate(tokenizer.encode([word]), "o2p", deterministic=True)
+        alone = generate(model, tokenizer, [word], "o2p")
         alone_sets = phon_feature_sets(alone, 0)
         batch_sets = phon_feature_sets(batched, item)
         cut = phon_first_eos(alone_sets, vocab.phon_eos_id)
@@ -363,10 +358,8 @@ def test_phonological_padding_uses_the_existing_all_off_encoding(tokenizer, mode
     suppressed position is indistinguishable in form from a legitimately empty one. Anything
     else would need every downstream consumer to learn a second way of saying "nothing here".
     """
-    encoding = tokenizer.encode(MIXED * 3)
-    assert encoding is not None
     torch.manual_seed(3)
-    result = model.generate(encoding, "o2p", deterministic=False)
+    result = generate(model, tokenizer, MIXED * 3, "o2p", deterministic=False)
 
     padded = [
         features

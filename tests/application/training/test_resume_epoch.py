@@ -51,11 +51,8 @@ def dataset(tmp_path_factory):
     """Eight common words. The dataset is only here so a real pipeline can be built;
     nothing in this file trains, and constructing the tokenizer is the slow part."""
     csv = tmp_path_factory.mktemp("data") / "words.csv"
-    csv.write_text(
-        "word_raw\n"
-        + "\n".join(["long", "pencil", "cat", "dog", "read", "write", "sun", "moon"])
-        + "\n"
-    )
+    words = ["long", "pencil", "cat", "dog", "read", "write", "sun", "moon"]
+    csv.write_text("word_raw,target_raw\n" + "".join(f"{word},{word}\n" for word in words))
     return BridgeDataset(dataset_config=DatasetConfig(dataset_filepath=str(csv)))
 
 

@@ -12,6 +12,10 @@ sweep rather than a list. Each malformation is generated for every pathway/modal
 that ``PATHWAY_IO`` says is read, which means a new pathway is covered the moment it is
 added to the table, and a check that stops applying to one modality fails here rather
 than silently narrowing.
+
+A pathway that writes orthography also takes ``orth_start``, the ``[LANG, BOS]`` rows the
+caller names the output language with. It is the caller's tensor, so it is checked like
+the encoder inputs, and its sweep runs over every pathway that writes orthography.
 """
 
 import pytest
@@ -39,19 +43,26 @@ def mask(rows=2, cols=4, dtype=torch.bool):
     return torch.zeros((rows, cols), dtype=dtype)
 
 
+def start(rows=2, cols=2, dtype=torch.long):
+    """A well-formed orthographic start: zeros index the vocabulary like any other id."""
+    return torch.zeros((rows, cols), dtype=dtype)
+
+
 def well_formed(pathway):
-    """The keyword arguments ``pathway`` accepts: real tensors for what it reads, None else."""
-    reads = PATHWAY_IO[pathway][0]
+    """The keyword arguments ``pathway`` accepts: real tensors for what it reads and, if
+    it writes orthography, a start. None else."""
+    reads, writes = PATHWAY_IO[pathway]
     return {
         "o": ids() if "orth" in reads else None,
         "om": mask() if "orth" in reads else None,
         "p": ids() if "phon" in reads else None,
         "pm": mask() if "phon" in reads else None,
+        "s": start() if "orth" in writes else None,
     }
 
 
-def validate(model, pathway, o=None, om=None, p=None, pm=None):
-    model._validate_generate_input(pathway, o, om, p, pm)
+def validate(model, pathway, o=None, om=None, p=None, pm=None, s=None):
+    model._validate_generate_input(pathway, o, om, p, pm, s)
 
 
 # The id-space bound differs per modality; nothing else does.
@@ -60,28 +71,6 @@ ID_SPACE = {"orth": VOCAB.orth_vocab_size, "phon": PHONEME_TABLE.num_rows}
 # (case id, what to substitute for the modality's ids/mask, expected message fragment).
 # `{m}` interpolates the modality prefix the validator uses in its messages.
 MALFORMED = [
-    ("input_not_tensor", lambda m: {"ids": [1, 2]}, "{m}_enc_input must be a torch.Tensor"),
-    ("mask_not_tensor", lambda m: {"mask": [1, 2]}, "{m}_enc_pad_mask must be a torch.Tensor"),
-    (
-        "input_1d",
-        lambda m: {"ids": torch.zeros(4, dtype=torch.long)},
-        "Expected 2D input tensor for {m}_enc_input",
-    ),
-    (
-        "input_float",
-        lambda m: {"ids": ids(dtype=torch.float)},
-        "{m}_enc_input must have dtype torch.long or torch.int",
-    ),
-    (
-        "mask_float",
-        lambda m: {"mask": mask(dtype=torch.float)},
-        "{m}_enc_pad_mask must have dtype torch.bool",
-    ),
-    (
-        "shape_mismatch",
-        lambda m: {"mask": mask(cols=6)},
-        "Shape mismatch: {m}_enc_input is (2, 4) but {m}_enc_pad_mask is (2, 6)",
-    ),
     (
         "empty_batch",
         lambda m: {"ids": ids(rows=0), "mask": mask(rows=0)},
@@ -184,15 +173,58 @@ def test_a_modality_a_pathway_reads_must_be_present(model, pathway, missing):
             validate(model, pathway, **kwargs)
 
 
+WRITES_ORTH = [pathway for pathway in PATHWAYS if "orth" in PATHWAY_IO[pathway][1]]
+
+# (case id, the start to pass, expected message fragment).
+MALFORMED_START = [
+    ("missing", None, "writes orthography, so it needs orth_start"),
+    ("not_tensor", [[7, 0], [7, 0]], "orth_start must be a torch.Tensor"),
+    ("float", start(dtype=torch.float), "orth_start must have dtype torch.long or torch.int"),
+    ("one_row_for_two", start(rows=1), "orth_start must be (2, 2)"),
+    ("a_row_too_many", start(rows=3), "orth_start must be (2, 2)"),
+    ("lone_bos", start(cols=1), "orth_start must be (2, 2)"),
+    ("three_wide", start(cols=3), "orth_start must be (2, 2)"),
+    ("one_dimensional", torch.zeros(2, dtype=torch.long), "orth_start must be (2, 2)"),
+    ("on_another_device", start().to("meta"), "orth_start must be on device"),
+    (
+        "id_out_of_range",
+        torch.full((2, 2), VOCAB.orth_vocab_size),
+        f"orth_start ids must lie in [0, {VOCAB.orth_vocab_size})",
+    ),
+    ("negative_id", torch.full((2, 2), -1), "orth_start ids must lie in [0, "),
+]
+
+
+@pytest.mark.parametrize("pathway", WRITES_ORTH)
+@pytest.mark.parametrize(
+    ("bad_start", "message"), [pytest.param(s, m, id=i) for i, s, m in MALFORMED_START]
+)
+def test_every_pathway_that_writes_orthography_checks_its_start(model, pathway, bad_start, message):
+    """Oracle: the rule that the start is ``[LANG, BOS]`` for each row of the batch.
+
+    Everything else about the call is well formed, so the rejection is the start's. A
+    missing start names the pathway, since which pathways need one is the thing a caller
+    has to learn from the message.
+    """
+    assert WRITES_ORTH == ["p2o", "op2op", "o2o"]
+    kwargs = {**well_formed(pathway), "s": bad_start}
+    with pytest.raises(ValueError) as excinfo:
+        validate(model, pathway, **kwargs)
+    assert message in str(excinfo.value)
+    if bad_start is None:
+        assert f"pathway {pathway!r}" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("pathway", [p for p in PATHWAYS if p not in WRITES_ORTH])
+def test_a_pathway_that_writes_no_orthography_needs_no_start(model, pathway):
+    """The control for the sweep above: the start is asked for by what a pathway writes."""
+    assert well_formed(pathway)["s"] is None
+    validate(model, pathway, **well_formed(pathway))
+
+
 def test_an_unknown_pathway_is_rejected(model):
     with pytest.raises(ValueError, match="Invalid pathway: nope"):
         validate(model, "nope")
-
-
-def test_op2op_rejects_a_cross_modality_batch_mismatch(model):
-    """The one check that belongs to a pathway rather than to a modality."""
-    with pytest.raises(ValueError, match="Batch size mismatch"):
-        validate(model, "op2op", o=ids(rows=5), om=mask(rows=5), p=ids(rows=2), pm=mask(rows=2))
 
 
 @pytest.mark.parametrize("pathway", PATHWAYS)

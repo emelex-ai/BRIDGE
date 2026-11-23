@@ -9,11 +9,11 @@ from bridge.application.training.ortho_metrics import calculate_orth_metrics
 from bridge.application.training.phon_metrics import calculate_phon_metrics
 from bridge.core.phonreps import load_phoneme_table
 from bridge.domain.data import BridgeDataset
-from bridge.domain.datamodels import EncodingComponent, TrainingConfig, TrainingEvent
+from bridge.domain.datamodels import BridgeBatch, BridgeTarget, TrainingConfig, TrainingEvent
 from bridge.domain.model import Model
 from bridge.domain.model.model import PATHWAY_INPUTS, WRITES_ORTH, WRITES_PHON
 
-# Per-step results: loss tensors + scalar metrics + the JSON-encoded `word`.
+# Per-step results: loss tensors, scalar metrics and the JSON-encoded `input` and `target`.
 type MetricsDict = dict[str, torch.Tensor | float | str]
 
 
@@ -76,88 +76,56 @@ class TrainingPipeline:
         """
         return load_phoneme_table(device=self.device).phonetic_features
 
-    def forward(
-        self, orthography: EncodingComponent, phonology: EncodingComponent
-    ) -> dict[str, torch.Tensor]:
+    def forward(self, batch: BridgeBatch) -> dict[str, torch.Tensor]:
         """Run the configured pathway over one batch.
 
-        Which tensors a pathway consumes comes from ``PATHWAY_INPUTS`` rather than being
-        written out per pathway. Four hand-written branches spelled the same mapping four
-        times, and the baseline-capture harness spells it a fifth, so renaming one keyword
-        meant finding every copy or the golden master would keep recording the old
-        convention.
+        The encoders read ``batch.input`` and the decoders are fed ``batch.target``. Which
+        modalities of each a pathway takes comes from ``PATHWAY_INPUTS``, the one table,
+        and is not written out per pathway here.
         """
         pathway = self.training_config.training_pathway
-        component = {"orth": orthography, "phon": phonology}
         kwargs: dict[str, torch.Tensor] = {}
         for modality, side in PATHWAY_INPUTS[pathway]:
-            part = component[modality]
-            kwargs[f"{modality}_{side}_input"] = getattr(part, f"{side}_input_ids")
-            kwargs[f"{modality}_{side}_pad_mask"] = getattr(part, f"{side}_pad_mask")
+            part = (
+                batch.input.read(modality, pathway)
+                if side == "enc"
+                else getattr(batch.target, modality)
+            )
+            kwargs[f"{modality}_{side}_input"] = part.ids
+            kwargs[f"{modality}_{side}_pad_mask"] = part.pad_mask
         return self.model(task=pathway, **kwargs)
 
     def compute_loss(
-        self,
-        logits: dict[str, torch.Tensor],
-        orthography: EncodingComponent,
-        phonology: EncodingComponent,
+        self, logits: dict[str, torch.Tensor], target: BridgeTarget
     ) -> dict[str, torch.Tensor]:
+        """Score the logits against the target's labels, for the modalities this pathway
+        writes.
+
+        Decoder position ``i`` is scored against ``labels[:, i]``. The tokenizer builds
+        the labels beside the decoder ids, and that is where the alignment is defined.
+        """
         pathway = self.training_config.training_pathway
         vocab = self.model.model_config.vocab
         losses: dict[str, torch.Tensor] = {}
 
         if pathway in WRITES_PHON:
             losses["phon_loss"] = torch.nn.functional.cross_entropy(
-                logits["phon"], phonology.phon_targets, ignore_index=vocab.phon_pad_id
+                logits["phon"], target.phon.labels, ignore_index=vocab.phon_pad_id
             )
 
         if pathway in WRITES_ORTH:
-            # Teacher forcing: decoder position i is scored against the token at i+1. The
-            # character tokenizer lays each sequence out as
-            #     enc = [LANG, BOS, ...chars, EOS, PAD...]
-            #     dec = [LANG, BOS, ...chars,      PAD...]
-            # so the encoder ids shifted left by one give the next token for every decoder
-            # position, at the same width. The `[BOS] -> first character` pair this creates
-            # is what generation needs: `orthography_decoder_loop` seeds the same prefix and
-            # the token it samples next must be the word's first character. See
-            # docs/decisions/0004-orthographic-teacher-forcing-alignment.md.
-            orth_target = orthography.enc_input_ids[:, 1:]
-            self._check_orth_target_width(logits["orth"], orth_target)
             losses["orth_loss"] = torch.nn.functional.cross_entropy(
-                logits["orth"], orth_target, ignore_index=vocab.orth_pad_id
+                logits["orth"], target.orth.labels, ignore_index=vocab.orth_pad_id
             )
-
-        if not losses:
-            raise ValueError(f"No loss configured for training_pathway={pathway!r}")
 
         # The pathway decides how many terms there are; summing the ones present replaces
         # a four-branch cascade over (orth_loss, phon_loss) presence.
         return {"loss": torch.stack(list(losses.values())).sum(), **losses}
 
-    @staticmethod
-    def _check_orth_target_width(orth_logits: torch.Tensor, orth_target: torch.Tensor) -> None:
-        """Fail with both shapes named when the target and the logits disagree.
-
-        Left to ``cross_entropy`` this reads ``Expected target size [8, 8], got [8, 7]``,
-        which names neither tensor nor where either came from. That message is what issue
-        #225 presented as, and it cost more to diagnose than it should have.
-        """
-        if orth_target.shape[1] != orth_logits.shape[-1]:
-            raise ValueError(
-                "Orthographic loss target and logits disagree on how many positions the "
-                f"decoder scored: target {tuple(orth_target.shape)} covers "
-                f"{orth_target.shape[1]} positions, logits {tuple(orth_logits.shape)} cover "
-                f"{orth_logits.shape[-1]}. The target must be enc_input_ids shifted left by "
-                "one, giving exactly one target per decoder input position."
-            )
-
     def compute_metrics(
-        self,
-        logits: dict[str, torch.Tensor],
-        orthography: EncodingComponent,
-        phonology: EncodingComponent,
+        self, logits: dict[str, torch.Tensor], target: BridgeTarget
     ) -> dict[str, float]:
-        """The metrics of the modalities this pathway writes.
+        """The metrics of the modalities this pathway writes, against the target's labels.
 
         Orthographic accuracy comes as two pairs: every scored token, and the
         ``_without_switches`` pair that leaves language tokens out. The second pair needs
@@ -165,22 +133,19 @@ class TrainingPipeline:
         the spec does not name them the pair is absent from the result, not estimated.
         """
         pathway = self.training_config.training_pathway
+        vocab = self.model.model_config.vocab
         metrics: dict[str, float] = {}
         if pathway in WRITES_PHON:
             metrics.update(
                 calculate_phon_metrics(
-                    logits,
-                    phonology,
-                    self.phon_reps,
-                    phon_pad_id=self.model.model_config.vocab.phon_pad_id,
+                    logits, target.phon.labels, self.phon_reps, phon_pad_id=vocab.phon_pad_id
                 )
             )
         if pathway in WRITES_ORTH:
-            vocab = self.model.model_config.vocab
             metrics.update(
                 calculate_orth_metrics(
                     logits,
-                    orthography,
+                    target.orth.labels,
                     orth_pad_id=vocab.orth_pad_id,
                     # Pickle restores a VocabSpec without validating it, so one taken
                     # from a checkpoint may lack the attribute altogether. It is read
@@ -193,28 +158,24 @@ class TrainingPipeline:
     def _resolve(self, dataset: BridgeDataset, batch_slice: slice) -> slice:
         """Check a caller-supplied slice against the dataset before anything indexes it.
 
-        The library used to build every slice itself and could assume they were sound.
-        The caller supplies the partition now (decision 0013), so the assumptions have to
-        become checks. Each of these was reachable and silent or opaque:
+        The caller supplies the partition (decision 0013), so nothing about a slice is
+        assumed. Three kinds are refused, each by name:
 
-        * a ``step`` was dropped on the floor. ``_create_sub_slices`` rebuilt the slice
-          from ``.start`` and ``.stop`` only, so ``slice(0, 16, 2)`` trained on 16 rows
-          while the event's ``word`` field named the 8 the caller asked for.
-        * a ``stop`` past the end either trained a short batch in silence or raised
-          ``max() iterable argument is empty`` from inside the tokenizer, naming neither
-          the slice nor the dataset.
-        * an empty slice reached the model and failed somewhere below here.
+        * one with a ``step``. A batch is contiguous rows, and the slice returned here
+          carries no step, so the rows trained would not be the rows named.
+        * one whose ``stop`` is past the end, which would train a short batch in
+          silence.
+        * an empty one, which has nothing to step over.
         """
         start, stop, step = batch_slice.indices(len(dataset))
         if step != 1:
             raise ValueError(
-                f"batch_slice {batch_slice} has step {step}; a step is silently dropped when "
-                f"the batch is indexed, so the rows trained would not be the rows named. "
+                f"batch_slice {batch_slice} has step {step}; a batch is contiguous rows. "
                 f"Pass an explicit list of contiguous slices instead."
             )
         if batch_slice.stop is not None and batch_slice.stop > len(dataset):
             raise ValueError(
-                f"batch_slice {batch_slice} ends past the dataset, which has {len(dataset)} words."
+                f"batch_slice {batch_slice} ends past the dataset, which has {len(dataset)} rows."
             )
         if start >= stop:
             raise ValueError(f"batch_slice {batch_slice} is empty; there is nothing to step over.")
@@ -240,24 +201,20 @@ class TrainingPipeline:
         self.model.train()
         self.optimizer.zero_grad()
 
-        # Placed at the point of use, not at construction. The dataset builds its encodings
+        # Placed at the point of use, not at construction. The dataset builds its batches
         # on the process device and the model goes wherever the caller put it, so something
         # has to reconcile the two; doing it here rather than by moving the model in
         # `__init__` keeps the caller's placement authoritative (decision 0012) and still
-        # holds when the model moves mid-run. `BridgeEncoding.to` returns self when the
-        # device already matches.
+        # holds when the model moves mid-run.
         batch = dataset[batch_slice].to(self.device)
-        orthography, phonology = batch.orthographic, batch.phonological
-        logits = self.forward(orthography, phonology)
-        losses = self.compute_loss(logits, orthography, phonology)
+        logits = self.forward(batch)
+        losses = self.compute_loss(logits, batch.target)
 
         losses["loss"].backward()
         self.optimizer.step()
         self.optimizer.zero_grad()
 
-        return self._report(
-            losses, logits, orthography, phonology, dataset, batch_slice, calculate_metrics
-        )
+        return self._report(losses, logits, batch.target, dataset, batch_slice, calculate_metrics)
 
     @torch.no_grad()
     def evaluate(
@@ -274,17 +231,15 @@ class TrainingPipeline:
         """
         self.model.eval()
         batch = dataset[self._resolve(dataset, batch_slice)].to(self.device)
-        orthography, phonology = batch.orthographic, batch.phonological
-        logits = self.forward(orthography, phonology)
-        losses = self.compute_loss(logits, orthography, phonology)
-        return self._report(
-            losses, logits, orthography, phonology, dataset, batch_slice, calculate_metrics
-        )
+        logits = self.forward(batch)
+        losses = self.compute_loss(logits, batch.target)
+        return self._report(losses, logits, batch.target, dataset, batch_slice, calculate_metrics)
 
     def _report(
-        self, losses, logits, orthography, phonology, dataset, batch_slice, calculate_metrics
+        self, losses, logits, target, dataset, batch_slice, calculate_metrics
     ) -> MetricsDict:
-        """Package one batch's losses and optional metrics for the caller.
+        """Package one batch's losses and optional metrics for the caller, with the input
+        and target strings of the rows it covered.
 
         Losses are detached before they leave. These are the tensors ``backward()`` just
         ran on, so handing them out live means every ``TrainingEvent`` a caller keeps pins
@@ -295,8 +250,10 @@ class TrainingPipeline:
         """
         metrics: MetricsDict = {key: value.detach() for key, value in losses.items()}
         if calculate_metrics:
-            metrics.update(self.compute_metrics(logits, orthography, phonology))
-        metrics["word"] = json.dumps(dataset.words[batch_slice])
+            metrics.update(self.compute_metrics(logits, target))
+        examples = dataset.examples[batch_slice]
+        metrics["input"] = json.dumps([example.input for example in examples])
+        metrics["target"] = json.dumps([example.target for example in examples])
         return metrics
 
     def train_steps(

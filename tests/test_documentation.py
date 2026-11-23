@@ -101,6 +101,77 @@ def test_documented_target_width_matches_the_vocabulary(architecture):
     )
 
 
+def test_the_documented_tensors_are_the_tensors_of_a_live_batch(architecture):
+    """The map lists every tensor of a batch with its rank and dtype, and no other.
+
+    Oracle: a batch built by the live tokenizer. A field that is renamed, added or
+    removed, or whose rank or dtype moves, leaves the listing naming something a batch
+    does not hold.
+    """
+    import dataclasses
+
+    from bridge import BridgeBatch
+
+    listed = re.findall(
+        r"^(input|target)\.(orth|phon)\.(\w+)\s+\(([^)]*)\)\s+(int64|bool)\b", architecture, re.M
+    )
+    assert listed, "architecture.md parsed to no tensor listing; the test is wrong"
+    documented = {}
+    for side, modality, field, shape, dtype in listed:
+        axes = [axis.strip() for axis in shape.split(",")]
+        documented[f"{side}.{modality}.{field}"] = (
+            len(axes),
+            dtype,
+            int(axes[-1]) if len(axes) == 3 else None,
+        )
+
+    tokenizer = BridgeTokenizer()
+    batch = BridgeBatch(
+        input=tokenizer.encode_input(["cat", "no me"], ["EN", "ES"]),
+        target=tokenizer.encode_target(["el gato", "dog"], ["ES", "EN"]),
+    )
+    live = {}
+    for side in ("input", "target"):
+        for modality in ("orth", "phon"):
+            part = getattr(getattr(batch, side), modality)
+            for field in dataclasses.fields(part):
+                tensor = getattr(part, field.name)
+                live[f"{side}.{modality}.{field.name}"] = (
+                    tensor.dim(),
+                    str(tensor.dtype).removeprefix("torch."),
+                    tensor.shape[-1] if tensor.dim() == 3 else None,
+                )
+    assert documented == live, (
+        f"only documented: {sorted(set(documented) - set(live))}; "
+        f"only on a live batch: {sorted(set(live) - set(documented))}; "
+        f"differing: {sorted(k for k in set(live) & set(documented) if live[k] != documented[k])}"
+    )
+
+
+def test_the_type_tables_name_every_field_of_every_type(architecture, readme):
+    """Both documents tabulate the five types of an example, and each row names the
+    fields its type really has.
+
+    Oracle: ``dataclasses.fields`` of the exported classes.
+    """
+    import dataclasses
+
+    import bridge
+
+    for name, document in (("docs/architecture.md", architecture), ("README.md", readme)):
+        table = document.split("| type | holds | read by |")[1].split("\n\n")[0]
+        rows = dict(re.findall(r"^\| `(\w+)` \| ([^|]*) \|", table, re.M))
+        assert set(rows) == {"Tokens", "Target", "BridgeInput", "BridgeTarget", "BridgeBatch"}, (
+            f"{name} tabulates {sorted(rows)}"
+        )
+        for type_name, holds in rows.items():
+            fields = {field.name for field in dataclasses.fields(getattr(bridge, type_name))}
+            named = set(re.findall(r"`(\w+)`", holds))
+            assert fields <= named, (
+                f"{name}: the {type_name} row names {sorted(named)}, the class has {sorted(fields)}"
+            )
+
+
 def test_every_path_named_in_the_layout_exists(architecture):
     """A renamed or deleted module leaves the map pointing at nothing."""
     block = architecture.split("## Layout")[1].split("```")[1]
@@ -204,19 +275,62 @@ def test_the_readme_usage_example_matches_the_real_signature(readme):
 def test_the_readme_multilingual_example_runs(readme):
     """The tokenizer example under "Multilingual support" is run as written.
 
-    Oracle: the interpreter. A keyword ``encode`` does not take raises ``TypeError``, and a
-    word missing from the lexicon of the language the example gives it returns ``None``,
-    so every encoding the block assigns must exist.
+    Oracle: the interpreter. An argument ``encode_input`` does not take raises, and a
+    word missing from the lexicon of the language the example gives it leaves the input
+    without phonology, so every input the block assigns must carry both modalities.
     """
     block = readme.split("## Multilingual support")[1].split("```python")[1].split("```")[0]
-    assert "tok.encode(" in block, "README parsed to no example; the test is wrong"
+    assert "tok.encode_input(" in block, "README parsed to no example; the test is wrong"
     namespace: dict = {}
     exec(block, namespace)
-    assert namespace["words"] is not None and namespace["mixed"] is not None
+    assert namespace["words"].phon is not None and namespace["mixed"].phon is not None
     # The comment under the last call shows what it returns.
     shown = block.split("tok.decode_with_languages(")[1].split("# ")[1].strip()
-    ids = namespace["mixed"].orthographic.enc_input_ids.tolist()
+    ids = namespace["mixed"].orth.ids.tolist()
     assert shown == repr(namespace["tok"].decode_with_languages(ids))
+
+
+def test_every_readme_python_example_runs_as_written(readme, tmp_path, monkeypatch):
+    """Each python block of the README runs alone, top to bottom, as a reader pastes it.
+
+    Oracle: the interpreter, and the results the README itself shows. A bare expression
+    followed directly by a comment line is a claim that the comment is its ``repr``, so
+    each one is evaluated and compared.
+
+    The usage example reads ``my_pairs.csv``, which is the csv block under "Dataset
+    files", so that block is checked as a file that loads and trains. CUDA is hidden, so
+    the example's placement line takes its CPU branch whichever machine runs the suite.
+    """
+    import ast
+
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    blocks = re.findall(r"^```python\n(.*?)^```", readme, re.M | re.S)
+    data_file = readme.split("### Dataset files")[1].split("```csv\n")[1].split("```")[0]
+    assert len(blocks) >= 6, f"README parsed to {len(blocks)} python blocks; the test is wrong"
+
+    shown_results = 0
+    for number, block in enumerate(blocks):
+        workdir = tmp_path / str(number)
+        workdir.mkdir()
+        (workdir / "my_pairs.csv").write_text(data_file)
+        monkeypatch.chdir(workdir)
+        lines = block.splitlines()
+        namespace: dict = {}
+        for node in ast.parse(block).body:
+            source = ast.get_source_segment(block, node)
+            if not isinstance(node, ast.Expr):
+                exec(compile(ast.Module([node], []), "README.md", "exec"), namespace)
+                continue
+            value = eval(compile(ast.Expression(node.value), "README.md", "eval"), namespace)
+            following = lines[node.end_lineno] if node.end_lineno < len(lines) else ""
+            if following.startswith("# "):
+                shown_results += 1
+                assert following[2:].strip() == repr(value), (
+                    f"README shows `{source}` as {following[2:].strip()}, it returns {value!r}"
+                )
+    assert shown_results >= 7, f"README parsed to {shown_results} shown results; the test is wrong"
 
 
 def test_the_readme_pathway_list_is_complete(readme):

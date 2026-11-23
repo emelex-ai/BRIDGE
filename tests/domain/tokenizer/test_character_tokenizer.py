@@ -1,17 +1,18 @@
-"""Pins ``CharacterTokenizer`` encode/decode output.
+"""Pins ``CharacterTokenizer`` output: what the encoder reads and what the decoder is taught.
 
-``encode`` was rewritten from an element-by-element tensor fill into building Python
-rows and one ``torch.tensor(rows)`` call, and its return type changed from a dict
-subclass to ``EncodingComponent``. Every orthographic tensor the model ever sees comes
-out of here, so the layout is pinned exactly.
+Every orthographic tensor the model ever sees comes out of here, so the layout is pinned
+exactly.
 
-Sequence layout (see ``CharacterTokenizer.encode``):
-    encoder input: ``[LANG, BOS, *chars, EOS, PAD...]``  -> width 3 + max_len
-    decoder input: ``[LANG, BOS, *chars, PAD...]``       -> width 2 + max_len
-Downstream code slices ``[:, 2:]`` to skip LANG and BOS, so the two leading tokens are
-load-bearing. ``LANG`` is the first word's language. A row whose words change language
-holds one more language token per change, counted in ``max_len``; that layout is pinned in
-``test_per_word_languages.py``.
+Sequence layout:
+    input ids:     ``[LANG, BOS, *chars, EOS, PAD...]``  -> width 3 + max_len
+    target ids:    ``[LANG, BOS, *chars, PAD...]``       -> width 2 + max_len
+    target labels: ``[BOS, *chars, EOS, PAD...]``        -> width 2 + max_len
+The label at a position is the token one position on, so ``[BOS]`` predicts the first
+character (``docs/decisions/0004``). ``LANG`` is the first word's language. A row whose
+words change language holds one more language token per change, counted in ``max_len``;
+that layout is pinned in ``test_per_word_languages.py``.
+
+Oracle: rows written out by hand from the layout above.
 """
 
 import string
@@ -19,7 +20,7 @@ import string
 import pytest
 import torch
 
-from bridge.domain.datamodels import EncodingComponent
+from bridge.domain.datamodels import Target, Tokens
 from bridge.domain.tokenizer import CharacterTokenizer
 
 
@@ -35,155 +36,183 @@ def ids(tok, chars):
 # --- structure -------------------------------------------------------------
 
 
-def test_encode_returns_an_encoding_component(tok):
-    assert isinstance(tok.encode("cat"), EncodingComponent)
+def test_each_encoder_returns_its_own_type(tok):
+    assert isinstance(tok.encode_input(["cat"]), Tokens)
+    assert isinstance(tok.encode_target(["cat"]), Target)
 
 
-def test_encoder_row_layout(tok):
-    out = tok.encode("cat")
+def test_input_row_layout(tok):
+    out = tok.encode_input(["cat"])
     expected = ids(tok, ["--", "[BOS]", "c", "a", "t", "[EOS]"])
-    assert out.enc_input_ids.tolist() == [expected]
+    assert out.ids.tolist() == [expected]
 
 
-def test_decoder_row_layout_has_no_eos(tok):
-    out = tok.encode("cat")
+def test_target_row_layout_has_no_eos_in_the_ids(tok):
+    out = tok.encode_target(["cat"])
     expected = ids(tok, ["--", "[BOS]", "c", "a", "t"])
-    assert out.dec_input_ids.tolist() == [expected]
+    assert out.ids.tolist() == [expected]
+
+
+def test_target_labels_are_the_ids_one_position_on_ending_in_eos(tok):
+    """Oracle: hand-written. ``[BOS]`` is paired with the first character and the last
+    character with ``[EOS]``; the opening language token is never a label."""
+    out = tok.encode_target(["cat"])
+    assert out.labels.tolist() == [ids(tok, ["[BOS]", "c", "a", "t", "[EOS]"])]
+    pairs = list(zip(out.ids[0].tolist(), out.labels[0].tolist(), strict=True))
+    assert pairs == list(
+        zip(
+            ids(tok, ["--", "[BOS]", "c", "a", "t"]),
+            ids(tok, ["[BOS]", "c", "a", "t", "[EOS]"]),
+            strict=True,
+        )
+    )
+
+
+def test_labels_of_padded_rows_are_padded_after_eos(tok):
+    """Oracle: hand-written. A short row's labels end ``[EOS], [PAD]...``, so the loss,
+    which ignores ``[PAD]``, scores every real position and no padding."""
+    out = tok.encode_target(["ab", "abcde"])
+    pad = tok.char_2_idx["[PAD]"]
+    assert out.ids[0].tolist() == ids(tok, ["--", "[BOS]", "a", "b"]) + [pad] * 3
+    assert out.labels[0].tolist() == ids(tok, ["[BOS]", "a", "b", "[EOS]"]) + [pad] * 3
+    assert out.labels[1].tolist() == ids(tok, ["[BOS]", "a", "b", "c", "d", "e", "[EOS]"])
 
 
 def test_widths_are_three_and_two_plus_max_length(tok):
-    out = tok.encode(["a", "abcde"])
-    assert out.enc_input_ids.shape == (2, 3 + 5)
-    assert out.dec_input_ids.shape == (2, 2 + 5)
+    assert tok.encode_input(["a", "abcde"]).ids.shape == (2, 3 + 5)
+    target = tok.encode_target(["a", "abcde"])
+    assert target.ids.shape == (2, 2 + 5)
+    assert target.labels.shape == (2, 2 + 5)
 
 
 def test_dtypes_are_long_and_bool(tok):
-    out = tok.encode("cat")
-    assert out.enc_input_ids.dtype == torch.long
-    assert out.dec_input_ids.dtype == torch.long
-    assert out.enc_pad_mask.dtype == torch.bool
-    assert out.dec_pad_mask.dtype == torch.bool
+    source, target = tok.encode_input(["cat"]), tok.encode_target(["cat"])
+    assert source.ids.dtype == torch.long
+    assert target.ids.dtype == torch.long
+    assert target.labels.dtype == torch.long
+    assert source.pad_mask.dtype == torch.bool
+    assert target.pad_mask.dtype == torch.bool
 
 
-def test_string_and_single_element_list_agree(tok):
-    a, b = tok.encode("cat"), tok.encode(["cat"])
-    assert torch.equal(a.enc_input_ids, b.enc_input_ids)
-    assert torch.equal(a.dec_input_ids, b.dec_input_ids)
+def test_input_and_target_of_one_string_share_everything_but_the_eos(tok):
+    """Oracle: the layout. The target ids are the input ids without ``[EOS]``, and the
+    labels are the input ids without the opening language token."""
+    source, target = tok.encode_input(["cat", "a b"]), tok.encode_target(["cat", "a b"])
+    assert torch.equal(target.labels, source.ids[:, 1:])
+    eos = tok.char_2_idx["[EOS]"]
+    for source_row, target_row in zip(source.ids.tolist(), target.ids.tolist(), strict=True):
+        assert [i for i in source_row if i != eos][: len(target_row)] == target_row
 
 
 # --- padding ---------------------------------------------------------------
 
 
 def test_shorter_rows_are_right_padded(tok):
-    """The rewrite builds each row in Python; a row shorter than the tensor width
-    would silently become trailing zeros (which is [BOS], not [PAD])."""
-    out = tok.encode(["ab", "abcde"])
+    """Each row is built in Python; a row shorter than the tensor width must not
+    become trailing zeros (which is [BOS], not [PAD])."""
+    out = tok.encode_input(["ab", "abcde"])
     pad = tok.char_2_idx["[PAD]"]
 
-    short = out.enc_input_ids[0].tolist()
+    short = out.ids[0].tolist()
     assert short == ids(tok, ["--", "[BOS]", "a", "b", "[EOS]"]) + [pad] * 3
-    assert out.enc_input_ids[1].tolist() == ids(
-        tok, ["--", "[BOS]", "a", "b", "c", "d", "e", "[EOS]"]
-    )
+    assert out.ids[1].tolist() == ids(tok, ["--", "[BOS]", "a", "b", "c", "d", "e", "[EOS]"])
 
 
 def test_pad_mask_marks_exactly_the_pad_positions(tok):
-    out = tok.encode(["ab", "abcde"])
     pad = tok.char_2_idx["[PAD]"]
-    assert torch.equal(out.enc_pad_mask, out.enc_input_ids == pad)
-    assert torch.equal(out.dec_pad_mask, out.dec_input_ids == pad)
+    source, target = tok.encode_input(["ab", "abcde"]), tok.encode_target(["ab", "abcde"])
+    assert torch.equal(source.pad_mask, source.ids == pad)
+    assert torch.equal(target.pad_mask, target.ids == pad)
+    assert bool(source.pad_mask.any()) and bool(target.pad_mask.any())
 
 
 def test_no_row_is_left_unfilled(tok):
     """Every position is a real vocabulary id, never an accidental zero."""
-    out = tok.encode(["a", "bb", "ccc"])
-    assert (out.enc_input_ids >= 0).all()
-    assert (out.enc_input_ids < len(tok.vocab)).all()
+    out = tok.encode_input(["a", "bb", "ccc"])
+    assert (out.ids >= 0).all()
+    assert (out.ids < len(tok.vocab)).all()
 
 
 def test_empty_string_encodes_to_lang_bos_eos(tok):
-    out = tok.encode([""])
-    assert out.enc_input_ids.tolist() == [ids(tok, ["--", "[BOS]", "[EOS]"])]
-    assert out.dec_input_ids.tolist() == [ids(tok, ["--", "[BOS]"])]
+    assert tok.encode_input([""]).ids.tolist() == [ids(tok, ["--", "[BOS]", "[EOS]"])]
+    target = tok.encode_target([""])
+    assert target.ids.tolist() == [ids(tok, ["--", "[BOS]"])]
+    assert target.labels.tolist() == [ids(tok, ["[BOS]", "[EOS]"])]
 
 
 def test_empty_string_beside_a_longer_one_is_padded(tok):
-    out = tok.encode(["", "abc"])
+    out = tok.encode_input(["", "abc"])
     pad = tok.char_2_idx["[PAD]"]
-    assert out.enc_input_ids[0].tolist() == ids(tok, ["--", "[BOS]", "[EOS]"]) + [pad] * 3
+    assert out.ids[0].tolist() == ids(tok, ["--", "[BOS]", "[EOS]"]) + [pad] * 3
 
 
 # --- language tokens -------------------------------------------------------
 
 
 def test_language_token_occupies_position_zero(tok):
-    out = tok.encode(["cat", "gato"], languages=["EN", "ES"])
-    assert out.enc_input_ids[0, 0].item() == tok.char_2_idx["EN"]
-    assert out.enc_input_ids[1, 0].item() == tok.char_2_idx["ES"]
-
-
-def test_one_language_string_covers_every_row(tok):
-    out = tok.encode(["cat", "gato"], languages="ES")
-    assert out.enc_input_ids[:, 0].tolist() == [tok.char_2_idx["ES"]] * 2
+    for out in (
+        tok.encode_input(["cat", "gato"], ["EN", "ES"]),
+        tok.encode_target(["cat", "gato"], ["EN", "ES"]),
+    ):
+        assert out.ids[0, 0].item() == tok.char_2_idx["EN"]
+        assert out.ids[1, 0].item() == tok.char_2_idx["ES"]
 
 
 def test_a_row_given_no_language_gets_the_placeholder(tok):
-    out = tok.encode(["cat", "dog"], languages=["ES", None])
-    assert out.enc_input_ids[0, 0].item() == tok.char_2_idx["ES"]
-    assert out.enc_input_ids[1, 0].item() == tok.char_2_idx["--"]
-
-
-def test_unsupported_language_raises(tok):
-    with pytest.raises(ValueError, match="Invalid languages"):
-        tok.encode(["bonjour"], languages="FR")
+    out = tok.encode_input(["cat", "dog"], ["ES", None])
+    assert out.ids[0, 0].item() == tok.char_2_idx["ES"]
+    assert out.ids[1, 0].item() == tok.char_2_idx["--"]
 
 
 def test_language_code_case_is_accepted_either_way(tok):
     """A lower-case code is the same language, and writes that language's token."""
-    out = tok.encode(["cat"], languages="es")
-    assert out.enc_input_ids[0, 0].item() == tok.char_2_idx["ES"]
+    out = tok.encode_input(["cat"], ["es"])
+    assert out.ids[0, 0].item() == tok.char_2_idx["ES"]
 
 
 # --- unknown characters ----------------------------------------------------
 
 
 def test_characters_outside_the_vocabulary_become_unk(tok):
-    out = tok.encode(["caté"])
+    out = tok.encode_input(["caté"])
     unk = tok.char_2_idx["[UNK]"]
-    assert out.enc_input_ids[0].tolist()[5] == unk
+    assert out.ids[0].tolist()[5] == unk
 
 
 def test_every_printable_character_round_trips(tok):
     printable = "".join(c for c in string.printable if c not in "\x0b\x0c")
-    out = tok.encode([printable])
-    assert tok.decode(out.enc_input_ids.tolist()) == [printable]
+    out = tok.encode_input([printable])
+    assert tok.decode(out.ids.tolist()) == [printable]
 
 
 # --- input validation ------------------------------------------------------
 
 
-@pytest.mark.parametrize("bad", [123, ["ok", 1], [None], {"a": 1}])
-def test_non_string_input_raises_type_error(tok, bad):
-    with pytest.raises(TypeError, match="Input must be a string or a list of strings"):
-        tok.encode(bad)
+@pytest.mark.parametrize("bad", [123, "cat", ("cat",), ["ok", 1], [None], {"a": 1}])
+def test_rows_are_a_list_of_strings(tok, bad):
+    """One form only. A bare string is not a one-row list: it raises like any other."""
+    with pytest.raises(TypeError, match="The rows to encode are a list of strings"):
+        tok.encode_input(bad)
+    with pytest.raises(TypeError, match="The rows to encode are a list of strings"):
+        tok.encode_target(bad)
 
 
 # --- decode ----------------------------------------------------------------
 
 
 def test_decode_strips_special_and_language_tokens(tok):
-    out = tok.encode(["cat"], languages="ES")
-    assert tok.decode(out.enc_input_ids.tolist()) == ["cat"]
+    out = tok.encode_input(["cat"], ["ES"])
+    assert tok.decode(out.ids.tolist()) == ["cat"]
 
 
 def test_decode_strips_padding(tok):
-    out = tok.encode(["ab", "abcde"])
-    assert tok.decode(out.enc_input_ids.tolist()) == ["ab", "abcde"]
+    out = tok.encode_input(["ab", "abcde"])
+    assert tok.decode(out.ids.tolist()) == ["ab", "abcde"]
 
 
 def test_decode_handles_multiple_rows(tok):
-    out = tok.encode(["cat", "dog"])
-    assert tok.decode(out.enc_input_ids.tolist()) == ["cat", "dog"]
+    out = tok.encode_input(["cat", "dog"])
+    assert tok.decode(out.ids.tolist()) == ["cat", "dog"]
 
 
 def test_decode_of_empty_row_is_empty_string(tok):
@@ -197,8 +226,8 @@ def test_decode_rejects_out_of_range_indices(tok):
 
 def test_decode_preserves_spaces(tok):
     """A space is an ordinary printable character, not a special token."""
-    out = tok.encode(["a b"])
-    assert tok.decode(out.enc_input_ids.tolist()) == ["a b"]
+    out = tok.encode_input(["a b"])
+    assert tok.decode(out.ids.tolist()) == ["a b"]
 
 
 # --- vocabulary ------------------------------------------------------------

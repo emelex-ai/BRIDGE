@@ -175,7 +175,7 @@ def test_feature_order_within_a_phoneme_does_not_matter(model):
 
 
 def test_padding_row_is_embedded_like_any_other(model):
-    """[PAD] is a real vocabulary row here, and placeholder components rely on it."""
+    """[PAD] is a real vocabulary row here, and every padded position relies on it."""
     pad_row = TABLE.row_index["[PAD]"]
     out = model.embed_phon_tokens(torch.tensor([[pad_row]]))
     expected = (

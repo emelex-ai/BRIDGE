@@ -1,10 +1,11 @@
 """The orthographic decoder generates from the prefix it was trained on (issue #228).
 
-``CharacterTokenizer`` lays every decoder sequence out as ``[LANG, BOS, ...chars, PAD...]``,
-so during teacher forcing ``[BOS]`` sits at position 1 and the position-0 slot holds the
+``CharacterTokenizer`` lays every target out as ``[LANG, BOS, ...chars, PAD...]``, so
+during teacher forcing ``[BOS]`` sits at position 1 and the position-0 slot holds the
 language token of the row's first word. Generation is seeded with those same two
-positions. A lone ``[BOS]`` at position 0 would ask the decoder to continue from a state
-it never saw in training and would withhold the language token entirely.
+positions, which the caller builds with ``BridgeTokenizer.orth_start`` and passes as
+``orth_start``. A lone ``[BOS]`` at position 0 would ask the decoder to continue from a
+state it never saw in training and would withhold the language token entirely.
 
 Phonology never had this problem, which is what made it visible: its decoder input is
 ``[BOS, ...phonemes, PAD...]`` with no language slot, so its ``[BOS]`` is at position 0 in
@@ -31,7 +32,7 @@ Full numbers in ``docs/decisions/0008-generation-seeds-the-training-prefix.md``.
 import pytest
 import torch
 
-from bridge.domain.datamodels import ModelConfig, VocabSpec
+from bridge.domain.datamodels import BridgeInput, ModelConfig, VocabSpec
 from bridge.domain.model import Model
 from bridge.domain.model.model import WRITES_ORTH
 from bridge.domain.tokenizer import BridgeTokenizer
@@ -57,20 +58,35 @@ def names(tokenizer, ids):
     return [tokenizer.char_tokenizer.idx_2_char[int(i)] for i in ids]
 
 
+@pytest.fixture(scope="module")
+def inputs(tokenizer):
+    return tokenizer.encode_input(WORDS)
+
+
+@pytest.fixture(scope="module")
+def start(tokenizer):
+    """The start for rows with no language given, like ``WORDS``."""
+    return tokenizer.orth_start([None] * len(WORDS))
+
+
 @pytest.mark.parametrize("pathway", sorted(WRITES_ORTH))
-def test_generation_opens_with_the_same_prefix_training_uses(tokenizer, model, pathway):
+def test_generation_opens_with_the_same_prefix_training_uses(
+    tokenizer, model, inputs, start, pathway
+):
     """The claim, stated as the equality it is.
 
     Not "starts with a language token then BOS", which a hand-built seed would also satisfy
-    while drifting from the tokenizer. The generated prefix must equal the tokenizer's own
-    ``dec_input_ids[:, :2]`` for these words, so the two cannot diverge.
+    while drifting from the tokenizer. The generated prefix must equal the first two ids
+    the tokenizer's own target for these words feeds the decoder, so the two cannot
+    diverge.
     """
-    encoding = tokenizer.encode(WORDS)
-    assert encoding is not None
+    target = tokenizer.encode_target(WORDS)
+    assert target is not None
+    expected_prefix = target.orth.ids[:, :2]
+    assert torch.equal(start, expected_prefix), "orth_start must be the training prefix"
 
-    result = model.generate(encoding, pathway, deterministic=True)
+    result = model.generate(inputs, pathway, orth_start=start, deterministic=True)
 
-    expected_prefix = encoding.orthographic.dec_input_ids[:, :2]
     assert torch.equal(result.orth_tokens[:, :2], expected_prefix), (
         f"{pathway} opened with {result.orth_tokens[:, :2].tolist()}, "
         f"training uses {expected_prefix.tolist()}"
@@ -80,21 +96,22 @@ def test_generation_opens_with_the_same_prefix_training_uses(tokenizer, model, p
 def test_the_prefix_is_the_language_the_caller_asked_for(tokenizer, model):
     """Conditioning, at the level this test can see it: the seed carries the caller's choice.
 
-    Three languages over the same word, so a seed that ignored ``languages`` and hardcoded
-    one token would fail. Whether the trained model then *uses* the token is a question about
-    training, measured in decision record 0008 rather than here, because it needs a trained
-    model and a multilingual corpus. The word is "no", which both lexicons pronounce, so it
-    encodes under either tag.
+    Three languages over one input, so a seed that ignored the caller and hardcoded one
+    token, or took the input's language, would fail: the input is English every time.
+    Whether the trained model then *uses* the token is a question about training, measured
+    in decision record 0008 rather than here, because it needs a trained model and a
+    multilingual corpus.
     """
+    english = tokenizer.encode_input(["no"], ["EN"])
     seen = {}
-    for language in ("--", "EN", "ES"):
-        encoding = tokenizer.encode(["no"], languages=language)
-        assert encoding is not None
-        result = model.generate(encoding, "p2o", deterministic=True)
+    for language in (None, "EN", "ES"):
+        result = model.generate(
+            english, "p2o", orth_start=tokenizer.orth_start([language]), deterministic=True
+        )
         seen[language] = names(tokenizer, result.orth_tokens[0, :2])
 
     assert seen == {
-        "--": ["--", "[BOS]"],
+        None: ["--", "[BOS]"],
         "EN": ["EN", "[BOS]"],
         "ES": ["ES", "[BOS]"],
     }, seen
@@ -103,60 +120,55 @@ def test_the_prefix_is_the_language_the_caller_asked_for(tokenizer, model):
 def test_a_mixed_row_is_seeded_with_its_first_words_language(tokenizer, model):
     """The seed is two positions, so it names one language: the first word's.
 
-    Oracle: hand-written. "no me" tagged ``ES EN`` and ``EN ES`` differ only in which
-    language comes first, and each opens with that one. A later change of language is the
-    decoder's to emit; a seed built from the last word, or from the row's most common
-    language, would fail one of the two.
+    Oracle: hand-written, and the target encoding. "no me" tagged ``ES EN`` and ``EN ES``
+    differ only in which language comes first, and the decoder is fed that one first. A
+    later change of language is the decoder's to emit; a seed naming the last word's
+    language, or the row's most common one, would differ from what training feeds.
     """
-    encoding = tokenizer.encode(["no me", "no me"], languages=["ES EN", "EN ES"])
-    assert encoding is not None
+    texts, languages = ["no me", "no me"], ["ES EN", "EN ES"]
+    inputs = tokenizer.encode_input(texts, languages)
+    orth_start = tokenizer.orth_start(["ES", "EN"])
+    assert torch.equal(orth_start, tokenizer.encode_target(texts, languages).orth.ids[:, :2])
 
     for pathway in sorted(WRITES_ORTH):
-        result = model.generate(encoding, pathway, deterministic=True)
+        result = model.generate(inputs, pathway, orth_start=orth_start, deterministic=True)
         assert [names(tokenizer, row[:2]) for row in result.orth_tokens] == [
             ["ES", "[BOS]"],
             ["EN", "[BOS]"],
         ], pathway
 
-    phonology_only = tokenizer.encode(
-        ["no me", "no me"], modality_filter="phonology", languages=["ES EN", "EN ES"]
-    )
-    result = model.generate(phonology_only, "p2o", deterministic=True)
+
+def test_an_input_with_no_orthography_is_spelled_from_the_start_it_is_given(tokenizer, model):
+    """``p2o`` is the one pathway that writes orthography without reading any.
+
+    Its input can carry phonology alone, and then nothing orthographic comes from the
+    input at all: the first two tokens are the start the caller passed, for each row.
+    """
+    phonology_only = BridgeInput(phon=tokenizer.encode_input(WORDS).phon)
+    assert phonology_only.orth is None
+
+    orth_start = tokenizer.orth_start([None, "ES", "EN"])
+    result = model.generate(phonology_only, "p2o", orth_start=orth_start, deterministic=True)
+
     assert [names(tokenizer, row[:2]) for row in result.orth_tokens] == [
+        ["--", "[BOS]"],
         ["ES", "[BOS]"],
         ["EN", "[BOS]"],
     ]
 
 
-def test_a_phonology_only_encoding_still_supplies_a_usable_prefix(tokenizer, model):
-    """``p2o`` is the one pathway that emits orthography without consuming any.
-
-    Its encoding carries a placeholder orthographic component, and a placeholder that could
-    not supply a prefix would force a special case into the model for exactly this case. The
-    placeholder is ``[--, BOS]``: unspecified language, which is the honest default when the
-    caller never said.
-    """
-    encoding = tokenizer.encode(WORDS, modality_filter="phonology")
-    assert encoding is not None
-
-    result = model.generate(encoding, "p2o", deterministic=True)
-
-    assert names(tokenizer, result.orth_tokens[0, :2]) == ["--", "[BOS]"]
-
-
 @pytest.mark.parametrize("pathway", sorted(WRITES_ORTH))
-def test_the_probability_history_stays_aligned_with_the_tokens(tokenizer, model, pathway):
+def test_the_probability_history_stays_aligned_with_the_tokens(
+    tokenizer, model, inputs, start, pathway
+):
     """One distribution per emitted token, including the seeded ones.
 
-    The seed placeholders used to be a single hardcoded row certain of BOS. With a two-token
-    prefix that would leave the histories off by one, which is invisible unless something
-    counts them. Each seeded row must be certain of the token actually seeded there, so this
-    also catches a placeholder built for the wrong token.
+    A single row certain of BOS, under a two-token prefix, would leave the histories off
+    by one, which is invisible unless something counts them. Each seeded row must be
+    certain of the token actually seeded there, so this also catches a row built for the
+    wrong token.
     """
-    encoding = tokenizer.encode(WORDS)
-    assert encoding is not None
-
-    result = model.generate(encoding, pathway, deterministic=True)
+    result = model.generate(inputs, pathway, orth_start=start, deterministic=True)
 
     for item, (tokens, history) in enumerate(
         zip(result.orth_tokens, result.orth_probs, strict=True)
@@ -171,35 +183,28 @@ def test_the_probability_history_stays_aligned_with_the_tokens(tokenizer, model,
             assert row.sum().item() == pytest.approx(1.0)
 
 
-def test_generation_never_exceeds_the_position_table(tokenizer, model):
-    """The step budget shrank by one when the seed grew by one, and must stay bounded.
+def test_generation_never_exceeds_the_position_table(model, inputs, start):
+    """The step budget is the table less the two seeded positions, and must stay bounded.
 
-    ``_positions`` raises when a sequence outruns the position table, so a loop that still
+    ``_positions`` raises when a sequence outruns the position table, so a loop that
     budgeted ``max_orth_seq_len - 1`` steps on top of a two-token seed would raise here
     rather than silently truncate.
     """
-    encoding = tokenizer.encode(WORDS)
-    assert encoding is not None
-
     for pathway in sorted(WRITES_ORTH):
-        result = model.generate(encoding, pathway, deterministic=True)
+        result = model.generate(inputs, pathway, orth_start=start, deterministic=True)
         assert result.orth_tokens.shape[1] <= model.max_orth_seq_len
 
 
-def test_seeding_the_decoder_directly_without_a_prefix_is_refused(model, tokenizer):
-    """``_generate`` is reachable on its own, and a missing prefix must say so.
+def test_seeding_the_decoder_directly_without_a_start_is_refused(model, inputs):
+    """``_generate`` is reachable on its own, and a missing start must say so.
 
-    Silently falling back to a lone ``[BOS]`` would reintroduce the defect for any caller
-    that bypasses ``generate``.
+    Silently falling back to a lone ``[BOS]`` would give any caller that bypasses
+    ``generate`` a decoder started from a state it was never trained on.
     """
-    encoding = tokenizer.encode(WORDS)
-    assert encoding is not None
-    phonological = encoding.phonological
-
-    with pytest.raises(ValueError, match="orth_dec_prefix"):
+    with pytest.raises(ValueError, match="needs orth_start"):
         model._generate(
             pathway="p2o",
-            phon_enc_input=phonological.enc_input_ids,
-            phon_enc_pad_mask=phonological.enc_pad_mask,
+            phon_enc_input=inputs.phon.ids,
+            phon_enc_pad_mask=inputs.phon.pad_mask,
             deterministic=True,
         )

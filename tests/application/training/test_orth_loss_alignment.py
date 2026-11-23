@@ -1,33 +1,34 @@
 """The orthographic loss must score the positions the decoder actually predicts.
 
-The character tokenizer lays each word out as ``[LANG, BOS, ...chars, EOS, PAD...]`` for
-the encoder and ``[LANG, BOS, ...chars, PAD...]`` for the decoder, so the decoder input is
-exactly one position shorter than the encoder input. The decoder emits one distribution per
-decoder-input position, which means the training target has to be the encoder ids shifted by
-a single position: ``enc_input_ids[:, 1:]``.
+The character tokenizer lays a target out as ``[LANG, BOS, ...chars, PAD...]`` for the ids
+the decoder is fed and ``[BOS, ...chars, EOS, PAD...]`` for the labels it is scored against.
+The decoder emits one distribution per position it is fed, so the label at a position has
+to be the token one position on, and there has to be exactly one label per position.
 
 That alignment is decidable rather than a matter of taste. At inference
-``orthography_decoder_loop`` seeds the decoder with a lone ``[BOS]`` and the first token it
+``orthography_decoder_loop`` seeds the decoder with ``[LANG, BOS]`` and the first token it
 samples has to be the first character of the word. Training the ``[BOS]`` position against
 anything else teaches the model to skip a character, so the pair at that position is the
 whole argument, and ``test_bos_is_trained_to_predict_the_first_character`` pins it.
 
-Dropping two positions instead of one leaves the target a position short of the logits, and
-``CrossEntropyLoss`` refuses the batch outright. That is issue #225: ``p2o`` and ``op2op``
-raise on every batch and cannot train at all, while ``o2p`` and ``p2p`` are untouched. The
-untouched pathways appear here as a control, so a failure in this file can be read as a
-statement about the orthographic target rather than about the harness.
+Labels a position short of the logits make ``CrossEntropyLoss`` refuse the batch outright.
+That is issue #225: ``p2o`` and ``op2op`` raise on every batch and cannot train at all,
+while ``o2p`` and ``p2p`` are untouched. The untouched pathways appear here as a control,
+so a failure in this file can be read as a statement about the orthographic labels rather
+than about the harness.
 
-Two of these tests carry the alignment claim and the rest do not. Against a wrong but
-shape-compatible target such as ``enc_input_ids[:, :-1]``, the pathway test, the width sweep
-and the descent test all pass; only ``test_bos_is_trained_to_predict_the_first_character``
-and ``test_a_perfect_predictor_scores_one_on_the_orth_metrics`` go red. Read a failure in
+Two of these tests carry the alignment claim and the rest do not. Against labels that are
+wrong but shape-compatible, such as the decoder ids themselves, the pathway test, the
+width sweep and the descent test all pass; only
+``test_bos_is_trained_to_predict_the_first_character`` and
+``test_a_perfect_predictor_scores_one_on_the_orth_metrics`` go red. Read a failure in
 either of those as a statement about the alignment, and a failure elsewhere as a statement
 that something coarser is wrong.
 
-``test_mismatched_shapes_raise_a_valueerror_naming_both`` is not about #225 at all. It pins
-the diagnostic added alongside the fix, and it stays red under a fix that corrects the slice
-without adding the check.
+``test_labels_of_the_wrong_width_raise_a_valueerror_naming_both`` is not about the
+alignment. It pins the diagnostic: labels of another width than the decoder ids they
+score are reported where the target is built, with both shapes, so no target carries
+them to the loss.
 """
 
 import contextlib
@@ -39,8 +40,10 @@ from bridge.application.training.ortho_metrics import calculate_orth_metrics
 from bridge.application.training.training_pipeline import TrainingPipeline
 from bridge.domain.data import BridgeDataset
 from bridge.domain.datamodels import (
+    BridgeBatch,
     DatasetConfig,
     ModelConfig,
+    Target,
     TrainingConfig,
     VocabSpec,
 )
@@ -49,11 +52,11 @@ from bridge.domain.model import Model
 DATA_CSV = "tests/domain/model/data/data.csv"
 
 
-# Hand-computed from the tokenizer layout for "long". Encoder ids are
-# ['--', '[BOS]', 'l', 'o', 'n', 'g', '[EOS]'] and decoder ids are
+# Hand-computed from the tokenizer layout for "long". The decoder is fed
 # ['--', '[BOS]', 'l', 'o', 'n', 'g'], where '--' is the unspecified-language token that
-# opens every sequence. Reading the pairs down the column gives the teacher-forcing
-# contract: seeing [BOS] the model must produce 'l'.
+# opens every sequence, and is scored against ['[BOS]', 'l', 'o', 'n', 'g', '[EOS]'].
+# Reading the pairs down the column gives the teacher-forcing contract: seeing [BOS] the
+# model must produce 'l'.
 ALIGNMENT_FOR_LONG = [
     ("--", "[BOS]"),
     ("[BOS]", "l"),
@@ -80,7 +83,7 @@ ALIGNMENT_FOR_IS_GATO = [
 ]
 
 # Six batches whose decoder widths are 6, 4, 7, 8, 10 and 13. One batch could agree by
-# luck; a sweep that never varies the width cannot tell a correct slice from an off-by-one.
+# luck; a sweep that never varies the width cannot tell correct labels from an off-by-one.
 BATCH_SLICES = [
     slice(0, 1),
     slice(2, 6),
@@ -120,12 +123,20 @@ def make_pipeline(dataset, artifacts_dir):
     return build
 
 
+def pair(tokenizer, texts, languages=None) -> BridgeBatch:
+    """A batch whose target is its input, encoded straight from the tokenizer."""
+    return BridgeBatch(
+        input=tokenizer.encode_input(texts, languages),
+        target=tokenizer.encode_target(texts, languages),
+    )
+
+
 def record_cross_entropy_calls(monkeypatch) -> list[tuple[torch.Tensor, torch.Tensor]]:
     """Capture the (logits, target) pairs ``compute_loss`` hands ``cross_entropy``.
 
-    Instruments the real path instead of re-deriving the slice in the test. Whatever
-    ``compute_loss`` chose as the target is what gets inspected, so a test that passes
-    here cannot pass by agreeing with itself.
+    Instruments the real path instead of reading the labels off the batch in the test.
+    Whatever ``compute_loss`` scored against is what gets inspected, so a test that
+    passes here cannot pass by agreeing with itself.
 
     Patched on the module ``compute_loss`` reads the name from, not on
     ``torch.nn.functional``, since the pipeline imports ``torch`` and calls through it.
@@ -162,9 +173,9 @@ def step_loss(pipeline, dataset, batch_slice) -> float:
 def test_every_pathway_completes_a_training_step(make_pipeline, dataset, pathway):
     """A pathway that raises on every batch cannot train, whatever else is true of it.
 
-    ``o2p`` and ``p2p`` are the control: they never touched the orthographic target and
-    pass today. If they fail too, the fixtures are wrong and the other failures here say
-    nothing about the alignment.
+    ``o2p`` and ``p2p`` are the control: they never read the orthographic labels. If they
+    fail too, the fixtures are wrong and the other failures here say nothing about the
+    alignment.
     """
     pipeline = make_pipeline(pathway)
     metrics = pipeline.single_step(dataset, slice(0, 8), calculate_metrics=True)
@@ -174,18 +185,18 @@ def test_every_pathway_completes_a_training_step(make_pipeline, dataset, pathway
     assert loss.detach().ndim == 0, f"{pathway} loss must be a scalar, got shape {loss.shape}"
 
     if pathway in ("p2o", "op2op"):
-        # The orthographic metric slices the same positions as the loss, so it breaks in
+        # The orthographic metric reads the same labels as the loss, so it breaks in
         # the same way, and only appears once calculate_metrics is on.
         assert "orth_loss" in metrics
         assert "letter_wise_accuracy" in metrics
 
 
 def test_bos_is_trained_to_predict_the_first_character(make_pipeline, dataset, monkeypatch):
-    """The alignment itself, written out as characters rather than as a slice bound.
+    """The alignment itself, written out as characters rather than as tensor shapes.
 
     The word is "long" and the expected pairs are hand-computed in ALIGNMENT_FOR_LONG
     above, independently of anything the code does. The load-bearing entry is
-    ``('[BOS]', 'l')``: generation starts from a bare ``[BOS]``, so this is the pair that
+    ``('[BOS]', 'l')``: generation starts from ``[LANG, BOS]``, so this is the pair that
     decides whether the model's first sampled token is the first letter of the word. The
     rejected alternative trains ``('[BOS]', 'o')`` and skips a letter.
     """
@@ -193,21 +204,20 @@ def test_bos_is_trained_to_predict_the_first_character(make_pipeline, dataset, m
     # Encoded straight from the tokenizer rather than read out of the dataset, which
     # resolves a language token of "EN" for this word. The language token occupies
     # position 0 either way; which one it is has nothing to do with the alignment.
-    batch = dataset.tokenizer.encode(["long"])
-    orthography, phonology = batch.orthographic, batch.phonological
+    batch = pair(dataset.tokenizer, ["long"])
 
-    logits = pipeline.forward(orthography, phonology)
+    logits = pipeline.forward(batch)
     calls = record_cross_entropy_calls(monkeypatch)
-    # Before the fix the widths disagree and CrossEntropyLoss raises, but the target was
-    # already recorded by then, and the alignment it encodes is what this test is about.
+    # If the widths disagree CrossEntropyLoss raises, but the target was already
+    # recorded by then, and the alignment it encodes is what this test is about.
     with contextlib.suppress(RuntimeError):
-        pipeline.compute_loss(logits, orthography, phonology)
+        pipeline.compute_loss(logits, batch.target)
 
     assert len(calls) == 1, "p2o computes exactly one cross-entropy, the orthographic one"
     _, target = calls[0]
 
     idx_2_char = dataset.tokenizer.char_tokenizer.idx_2_char
-    decoder_tokens = [idx_2_char[i] for i in orthography.dec_input_ids[0].tolist()]
+    decoder_tokens = [idx_2_char[i] for i in batch.target.orth.ids[0].tolist()]
     target_tokens = [idx_2_char[i] for i in target[0].tolist()]
 
     # strict=False on purpose: when the widths disagree the pairing must still be
@@ -230,18 +240,17 @@ def test_a_language_switch_is_trained_as_the_token_after_the_space(
     ``compute_loss`` call, so a loss that dropped or shifted the switch fails here.
     """
     pipeline = make_pipeline("p2o")
-    batch = dataset.tokenizer.encode(["is gato"], languages=["EN ES"])
-    orthography, phonology = batch.orthographic, batch.phonological
+    batch = pair(dataset.tokenizer, ["is gato"], ["EN ES"])
 
-    logits = pipeline.forward(orthography, phonology)
+    logits = pipeline.forward(batch)
     calls = record_cross_entropy_calls(monkeypatch)
-    pipeline.compute_loss(logits, orthography, phonology)
+    pipeline.compute_loss(logits, batch.target)
 
     assert len(calls) == 1, "p2o computes exactly one cross-entropy, the orthographic one"
     _, target = calls[0]
 
     idx_2_char = dataset.tokenizer.char_tokenizer.idx_2_char
-    decoder_tokens = [idx_2_char[i] for i in orthography.dec_input_ids[0].tolist()]
+    decoder_tokens = [idx_2_char[i] for i in batch.target.orth.ids[0].tolist()]
     target_tokens = [idx_2_char[i] for i in target[0].tolist()]
     assert list(zip(decoder_tokens, target_tokens, strict=True)) == ALIGNMENT_FOR_IS_GATO
 
@@ -255,20 +264,19 @@ def test_target_width_matches_logits_width_across_batches(make_pipeline, dataset
     """
     pipeline = make_pipeline("p2o")
     batches = [dataset[s] for s in BATCH_SLICES]
-    widths = [b.orthographic.dec_input_ids.shape[1] for b in batches]
+    widths = [b.target.orth.ids.shape[1] for b in batches]
     assert len(set(widths)) >= 3, f"the sweep must vary the decoder width, got {widths}"
 
     calls = record_cross_entropy_calls(monkeypatch)
     for batch_slice, batch, width in zip(BATCH_SLICES, batches, widths, strict=True):
-        orthography, phonology = batch.orthographic, batch.phonological
-        logits = pipeline.forward(orthography, phonology)
+        logits = pipeline.forward(batch)
         calls.clear()
         with contextlib.suppress(RuntimeError):
-            pipeline.compute_loss(logits, orthography, phonology)
+            pipeline.compute_loss(logits, batch.target)
 
         assert len(calls) == 1
         loss_logits, target = calls[0]
-        batch_size = orthography.dec_input_ids.shape[0]
+        batch_size = len(batch)
         assert tuple(target.shape) == (batch_size, width), (
             f"{batch_slice}: target {tuple(target.shape)} should be "
             f"{(batch_size, width)}, one position per decoder input"
@@ -281,9 +289,9 @@ def test_p2o_loss_descends_over_twelve_steps(make_pipeline, dataset):
     """Training moves the loss down, and it is the optimizer steps that move it.
 
     An aligned loss is only useful if it is learnable, so this runs the real optimizer on
-    a fixed batch. The control comes first: in eval mode ``single_step`` takes no step, so
-    repeating it on the same batch must return the same number bit for bit. Any descent in
-    the second phase is therefore attributable to the twelve updates and not to sampling.
+    a fixed batch. The control comes first: ``evaluate`` takes no step, so repeating it on
+    the same batch must return the same number bit for bit. Any descent in the second
+    phase is therefore attributable to the twelve updates and not to sampling.
     """
     # No seeding here: `Model.__init__` calls `set_seed(5)`, which reseeds torch globally
     # after any seed set at this point, so a call here would be dead code that reads as if
@@ -307,56 +315,54 @@ def test_p2o_loss_descends_over_twelve_steps(make_pipeline, dataset):
     )
 
 
-def test_mismatched_shapes_raise_a_valueerror_naming_both(make_pipeline, dataset):
-    """A width disagreement should be reported by name, not by CrossEntropyLoss.
+def test_labels_of_the_wrong_width_raise_a_valueerror_naming_both(dataset):
+    """Labels that do not fit their decoder ids are reported by name, not by
+    CrossEntropyLoss.
 
     Issue #225 surfaced as ``RuntimeError: Expected target size [8, 8], got [8, 7]``,
-    which says nothing about which tensor is wrong or where it came from. Handing
-    ``compute_loss`` logits that are deliberately two positions short is the same class of
-    error, and the pipeline should name both shapes itself rather than let the loss
-    function speak for it.
+    which says nothing about which tensor is wrong or where it came from. Labels are
+    stored beside the decoder ids they score, so the two are compared when the target is
+    built: labels a position short cannot become a target at all, and the error names
+    both shapes.
     """
-    pipeline = make_pipeline("p2o")
-    batch = dataset[slice(0, 8)]
-    orthography, phonology = batch.orthographic, batch.phonological
-    logits = pipeline.forward(orthography, phonology)
-
-    truncated = logits["orth"][:, :, :-2]
-    expected_target_shape = orthography.enc_input_ids[:, 1:].shape
+    target = dataset[slice(0, 8)].target.orth
+    short = target.labels[:, :-1]
 
     with pytest.raises(ValueError) as excinfo:
-        pipeline.compute_loss({"orth": truncated}, orthography, phonology)
+        Target(ids=target.ids, pad_mask=target.pad_mask, labels=short)
 
     message = str(excinfo.value)
-    assert message_names_shape(message, expected_target_shape), (
-        f"the error should name the target shape {tuple(expected_target_shape)}: {message}"
+    assert message_names_shape(message, short.shape), (
+        f"the error should name the labels shape {tuple(short.shape)}: {message}"
     )
-    assert message_names_shape(message, truncated.shape), (
-        f"the error should name the logits shape {tuple(truncated.shape)}: {message}"
+    assert message_names_shape(message, target.ids.shape), (
+        f"the error should name the decoder ids shape {tuple(target.ids.shape)}: {message}"
     )
 
 
 def test_a_perfect_predictor_scores_one_on_the_orth_metrics(dataset):
     """The metric has to score the positions the loss trains, or it reports on nothing.
 
-    Logits built as one-hot over ``enc_input_ids[:, 1:]`` are a predictor that is right at
-    every position under the alignment above, so letter and word accuracy are analytically
-    1.0. Corrupting the first character of one word out of four is the control: with 22
-    non-padding positions in this batch, letter accuracy must fall to exactly 21/22 and
-    word accuracy to exactly 3/4. A metric reading a different set of positions cannot
-    produce both numbers.
+    Logits built as one-hot over the input ids without their opening language token are
+    a predictor that is right at every position under the alignment above, so letter and
+    word accuracy are analytically 1.0. The rows are repetition, so the input says what
+    the right answer is without the labels being consulted. Corrupting the first character
+    of one word out of four is the control: with 22 non-padding positions in this batch,
+    letter accuracy must fall to exactly 21/22 and word accuracy to exactly 3/4. A metric
+    reading a different set of positions cannot produce both numbers.
     """
     tokenizer = dataset.tokenizer
-    orthography = dataset[slice(0, 4)].orthographic
+    batch = dataset[slice(0, 4)]
+    labels = batch.target.orth.labels
     vocabulary_size = tokenizer.char_tokenizer.get_vocabulary_size()
-    target = orthography.enc_input_ids[:, 1:]
+    target = batch.input.orth.ids[:, 1:]
 
     perfect = torch.nn.functional.one_hot(target, num_classes=vocabulary_size)
     perfect = perfect.permute(0, 2, 1).float()
 
     scores = calculate_orth_metrics(
         {"orth": perfect},
-        orthography,
+        labels,
         orth_pad_id=tokenizer.orth_pad_id,
         orth_language_ids=tokenizer.orth_language_ids,
     )
@@ -373,7 +379,7 @@ def test_a_perfect_predictor_scores_one_on_the_orth_metrics(dataset):
 
     scores = calculate_orth_metrics(
         {"orth": corrupted},
-        orthography,
+        labels,
         orth_pad_id=tokenizer.orth_pad_id,
         orth_language_ids=tokenizer.orth_language_ids,
     )

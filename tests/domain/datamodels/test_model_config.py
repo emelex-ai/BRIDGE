@@ -216,7 +216,8 @@ def test_a_model_with_every_size_at_its_floor_runs_every_pathway(
         assert math.isfinite(float(loss)), f"{pathway}: loss is not finite"
 
     model.eval()
-    encoding = shared_tokenizer.encode(["cat", "dog"])
+    inputs = shared_tokenizer.encode_input(["cat", "dog"])
+    start = shared_tokenizer.orth_start([None, None])
     with torch.no_grad():
         for pathway in PATHWAYS:
-            model.generate(encoding, pathway, deterministic=True)
+            model.generate(inputs, pathway, orth_start=start, deterministic=True)
