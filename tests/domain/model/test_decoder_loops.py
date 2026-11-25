@@ -11,9 +11,12 @@ elsewhere:
 * ``orth_probs`` is *genuinely ragged*: a sequence stops collecting distributions at its
   own EOS. Every other generation test drives identical batch items, where a misaligned
   split is invisible because all the lengths coincide.
-* the phonological loop must embed one position per step at the right position offset.
-  Getting the offset wrong still produces plausible output, just from the wrong slot of
-  the position table.
+* the phonological loop embeds one position per step and appends it, so the decoder must
+  be fed exactly what embedding the whole prefix in one call gives. A row appended twice,
+  or out of order, still produces plausible output.
+
+Both loops take ``max_new_tokens``, the most steps they may take after the seed. The tests
+here pass ``CAP`` and a row that never finishes runs for exactly that many steps.
 """
 
 import pytest
@@ -25,6 +28,7 @@ from tests.vocab import TEST_VOCAB
 
 D_MODEL = 16
 BATCH = 4
+CAP = 29  # the most steps a loop may take after its seed
 NON_EOS_TOKEN = 7  # any orthographic id that is not [EOS]
 
 
@@ -65,29 +69,26 @@ def run_orth_loop(model, prompt, finish_at):
     model.ortho_sample = forced_sample
     tokens = torch.full((BATCH, 1), TEST_VOCAB.orth_bos_id, dtype=torch.long)
     with torch.no_grad():
-        probs, out_tokens = model.orthography_decoder_loop(
-            model.generate_triangular_mask(model.max_orth_seq_len),
-            model.embed_orth_tokens(tokens),
-            tokens,
-            prompt,
-            deterministic=True,
-        )
+        probs, out_tokens = model.orthography_decoder_loop(tokens, prompt, CAP, deterministic=True)
     return probs, out_tokens, steps["n"]
 
 
 @pytest.mark.parametrize(
     ("finish_at", "expected_lengths"),
     [
-        ({0: 0, 1: 2, 2: 5}, [2, 4, 7, 30]),  # mixed, one item never finishing
-        ({}, [30, 30, 30, 30]),  # nobody finishes: one row per step, plus BOS
+        ({0: 0, 1: 2, 2: 5}, [2, 4, 7, 1 + CAP]),  # mixed, one item never finishing
+        ({}, [1 + CAP] * 4),  # nobody finishes: one row per step, plus BOS
         ({0: 0, 1: 0, 2: 0, 3: 0}, [2, 2, 2, 2]),  # all finish at once, loop breaks early
-        ({0: 3, 1: 3, 2: 3, 3: 28}, [5, 5, 5, 30]),  # three wait on a straggler
+        # Three wait on a straggler, which finishes on the last step the cap allows.
+        ({0: 3, 1: 3, 2: 3, 3: CAP - 1}, [5, 5, 5, 1 + CAP]),
     ],
 )
 def test_orth_probs_stop_at_each_sequences_own_eos(model, prompt, finish_at, expected_lengths):
-    """An item finishing first at step ``k`` keeps ``k + 2`` rows: BOS, then steps 0..k."""
-    probs, _, _ = run_orth_loop(model, prompt, finish_at)
+    """An item finishing first at step ``k`` keeps ``k + 2`` rows: BOS, then steps 0..k.
+    One that never finishes keeps ``1 + CAP``: BOS, then every step the cap allows."""
+    probs, _, steps = run_orth_loop(model, prompt, finish_at)
     assert [len(p) for p in probs] == expected_lengths
+    assert steps == max(expected_lengths) - 1, "the loop ran a step past the last row's end"
 
 
 def test_orth_probs_rows_stay_aligned_to_their_step(model, prompt):
@@ -133,9 +134,9 @@ def fixed_schedule(model):
 def test_incremental_embedding_equals_embedding_the_whole_prefix(model, prompt):
     """The invariant behind embedding one position at a time instead of the whole prefix.
 
-    A wrong position offset still produces plausible output, drawn from the wrong slot of
-    the position table, so the only assertion that catches it is comparing the decoder
-    input the loop actually built against embedding the same prefix in one call.
+    A row appended twice or in the wrong order still produces plausible output, so the
+    only assertion that catches it is comparing the decoder input the loop actually built
+    against embedding the same prefix in one call.
     """
     multihot = seed_multihot(model)
     model.phono_sample = fixed_schedule(model)
@@ -144,13 +145,7 @@ def test_incremental_embedding_equals_embedding_the_whole_prefix(model, prompt):
     model.phonology_decoder.register_forward_pre_hook(lambda _, args: fed.append(args[0]))
 
     with torch.no_grad():
-        _, _, phon_tokens = model.phonology_decoder_loop(
-            model.generate_triangular_mask(model.max_phon_seq_len),
-            model.embed_phon_vectors(multihot),
-            multihot,
-            prompt,
-            deterministic=True,
-        )
+        _, _, phon_tokens = model.phonology_decoder_loop(multihot, prompt, CAP, deterministic=True)
 
     built = fed[-1]
     assert built.shape[1] > 1, "the loop must actually have appended rows to embed"
@@ -179,20 +174,13 @@ def test_the_loop_embeds_a_linear_number_of_positions(model, prompt):
 
     embedded_rows = []
     embed = model.embed_phon_vectors
-    model.embed_phon_vectors = lambda v, position_offset=0: (
-        embedded_rows.append(v.shape[1]) or embed(v, position_offset)
-    )
+    model.embed_phon_vectors = lambda v: embedded_rows.append(v.shape[1]) or embed(v)
 
     with torch.no_grad():
-        _, _, phon_tokens = model.phonology_decoder_loop(
-            model.generate_triangular_mask(model.max_phon_seq_len),
-            embed(multihot),
-            multihot,
-            prompt,
-            deterministic=True,
-        )
+        _, _, phon_tokens = model.phonology_decoder_loop(multihot, prompt, CAP, deterministic=True)
 
     steps = len(phon_tokens[0]) - 1  # the seed row is not a step
+    assert steps == CAP, "a row that never emits [EOS] runs for exactly the cap"
     quadratic = steps * (steps + 1) // 2
     assert steps > 5, "need enough steps for the two growth rates to differ"
     assert sum(embedded_rows) <= 2 * steps, (

@@ -16,8 +16,13 @@ than silently narrowing.
 A pathway that writes orthography also takes ``orth_start``, the ``[LANG, BOS]`` rows the
 caller names the output language with. It is the caller's tensor, so it is checked like
 the encoder inputs, and its sweep runs over every pathway that writes orthography.
+
+Every pathway takes ``max_new_tokens``, the cap on what it writes. It is a positive int
+and is checked on every pathway. The length of what a pathway reads is not checked: any
+length runs.
 """
 
+import numpy as np
 import pytest
 import torch
 
@@ -61,8 +66,8 @@ def well_formed(pathway):
     }
 
 
-def validate(model, pathway, o=None, om=None, p=None, pm=None, s=None):
-    model._validate_generate_input(pathway, o, om, p, pm, s)
+def validate(model, pathway, o=None, om=None, p=None, pm=None, s=None, cap=5):
+    model._validate_generate_input(pathway, o, om, p, pm, s, cap)
 
 
 # The id-space bound differs per modality; nothing else does.
@@ -75,11 +80,6 @@ MALFORMED = [
         "empty_batch",
         lambda m: {"ids": ids(rows=0), "mask": mask(rows=0)},
         "{m}_enc_input has no rows",
-    ),
-    (
-        "sequence_too_long",
-        lambda m: {"ids": ids(cols=31), "mask": mask(cols=31)},
-        "{m}_enc_input sequence length 31 exceeds maximum allowed length 30",
     ),
     (
         "id_out_of_range",
@@ -220,6 +220,66 @@ def test_a_pathway_that_writes_no_orthography_needs_no_start(model, pathway):
     """The control for the sweep above: the start is asked for by what a pathway writes."""
     assert well_formed(pathway)["s"] is None
     validate(model, pathway, **well_formed(pathway))
+
+
+# (case id, the cap to pass). Each is something other than a positive int.
+MALFORMED_CAP = [
+    ("zero", 0),
+    ("negative", -1),
+    ("float", 2.5),
+    ("whole_float", 3.0),
+    ("string", "3"),
+    ("none", None),
+    ("true", True),
+    ("tensor", torch.tensor(3)),
+    ("numpy_int", np.int64(3)),
+]
+
+
+@pytest.mark.parametrize("pathway", PATHWAYS)
+@pytest.mark.parametrize("bad_cap", [pytest.param(cap, id=i) for i, cap in MALFORMED_CAP])
+def test_every_pathway_rejects_a_cap_that_is_not_a_positive_int(model, pathway, bad_cap):
+    """Oracle: the rule that ``max_new_tokens`` is a positive int, on every pathway.
+
+    Everything else about the call is well formed, so the rejection is the cap's. The
+    message shows the value that was passed and its type, since an integer of numpy's
+    prints like an int: ``got 3`` alone would read as a contradiction. ``True`` is in the
+    list because Python counts it as the int 1.
+    """
+    with pytest.raises(ValueError) as excinfo:
+        validate(model, pathway, **well_formed(pathway), cap=bad_cap)
+    assert "max_new_tokens must be a positive int" in str(excinfo.value)
+    assert str(excinfo.value).endswith(f"got {bad_cap!r} ({type(bad_cap).__name__})")
+
+
+@pytest.mark.parametrize("pathway", PATHWAYS)
+@pytest.mark.parametrize("cap", [1, 2, 30, 10_000])
+def test_every_positive_int_is_a_cap(model, pathway, cap):
+    """The control for the sweep above, at the boundary and far from it: one is the
+    smallest cap there is, and no cap is too large."""
+    validate(model, pathway, **well_formed(pathway), cap=cap)
+
+
+@pytest.mark.parametrize("pathway", WRITES_ORTH)
+def test_a_missing_start_is_reported_before_a_bad_cap(model, pathway):
+    """A call wrong in two ways reports the start. Which check fires is part of the
+    contract, and the start is the one a caller cannot guess a value for."""
+    with pytest.raises(ValueError, match="needs orth_start"):
+        validate(model, pathway, **{**well_formed(pathway), "s": None}, cap=0)
+
+
+@pytest.mark.parametrize("pathway", PATHWAYS)
+@pytest.mark.parametrize("cols", [31, 60, 500])
+def test_an_input_of_any_length_is_accepted(model, pathway, cols):
+    """Oracle: the design. Position is a rotation computed for whatever length arrives,
+    so no length is refused at the boundary."""
+    reads = PATHWAY_IO[pathway][0]
+    kwargs = well_formed(pathway)
+    if "orth" in reads:
+        kwargs["o"], kwargs["om"] = ids(cols=cols), mask(cols=cols)
+    if "phon" in reads:
+        kwargs["p"], kwargs["pm"] = ids(cols=cols), mask(cols=cols)
+    validate(model, pathway, **kwargs)
 
 
 def test_an_unknown_pathway_is_rejected(model):

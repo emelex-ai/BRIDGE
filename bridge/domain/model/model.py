@@ -74,17 +74,10 @@ class Model(nn.Module):
         self.orthographic_vocabulary_size = vocab.orth_vocab_size
         self.phonological_vocabulary_size = vocab.phon_vocab_size
 
-        # Hardcoded sequence lengths - will be replaced with dynamic position encoding in the future
-        self.max_orth_seq_len = 30
-        self.max_phon_seq_len = 30
-
-        # Initialize embeddings and position embeddings
+        # Token embeddings. Neither carries position: that enters inside self-attention,
+        # as a rotation, so a sequence may be any length. See `layers.py`.
         self.orthography_embedding = nn.Embedding(
             self.orthographic_vocabulary_size, self.model_config.d_model
-        )
-        # Fixed position embeddings - will be replaced with dynamic position encoding (e.g., RoPE)
-        self.orth_position_embedding = nn.Embedding(
-            self.max_orth_seq_len, self.model_config.d_model
         )
         self.phonology_embedding = nn.Embedding(
             self.phonological_vocabulary_size, self.model_config.d_model
@@ -92,8 +85,7 @@ class Model(nn.Module):
         # Row-normalized phoneme -> feature matrix. `phon_feature_matrix @ phonology_embedding
         # .weight` is every phoneme's mean-of-features embedding in one small matmul, which
         # turns embedding a batch into a table lookup. Not a parameter and not persistent:
-        # it is derived from phonreps.csv, so it stays out of state_dict and existing
-        # checkpoints keep loading with strict=True.
+        # it is derived from phonreps.csv, so it stays out of state_dict.
         # Annotated before register_buffer so the attribute types as Tensor, not
         # `Tensor | Module` (nn.Module.__getattr__'s union).
         self.phon_feature_matrix: torch.Tensor
@@ -129,14 +121,10 @@ class Model(nn.Module):
         )
         # Recorded so a checkpoint can be compared against the table it was trained on.
         self.phon_table_fingerprint = phoneme_table.fingerprint
-        # Fixed position embeddings - will be replaced with dynamic position encoding (e.g., RoPE)
-        self.phon_position_embedding = nn.Embedding(
-            self.max_phon_seq_len, self.model_config.d_model
-        )
 
         # No `device=`: every other parameter here is built on torch's default device, and
-        # placing just this one is what left a model reporting a device 168 of its 169
-        # parameters were not on. Initialising on the default device also makes the weights
+        # placing just this one leaves a model reporting a device that every other
+        # parameter of it is not on. Initialising on the default device also makes the weights
         # for a given seed independent of where the model will run.
         self.global_embedding = nn.Parameter(
             torch.randn((1, self.model_config.d_embedding, self.model_config.d_model))
@@ -170,9 +158,15 @@ class Model(nn.Module):
         )
         self.pg_layer_norm = nn.LayerNorm(self.model_config.d_model)
 
-        self.transformer_mixer = Encoder(
-            d_model=self.model_config.d_model,
-            nhead=self.model_config.nhead,
+        # The mixer is torch's stock encoder and is given no position. It writes the global
+        # memory, whose rows have no order, from tokens the encoders have already placed.
+        self.transformer_mixer = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(
+                d_model=self.model_config.d_model,
+                nhead=self.model_config.nhead,
+                dim_feedforward=4 * self.model_config.d_model,
+                batch_first=True,
+            ),
             num_layers=self.model_config.num_mixing_enc_layers,
         )
 
@@ -200,8 +194,8 @@ class Model(nn.Module):
         )
 
         # Placed once, at the end, rather than per submodule. A submodule added later cannot
-        # be forgotten here, which is how 168 of 169 parameters came to be somewhere the
-        # model did not claim to be. Buffers move too, including the non-persistent feature
+        # be forgotten here, and a forgotten one is a parameter somewhere the model does
+        # not claim to be. Buffers move too, including the non-persistent feature
         # matrix.
         self.to(target_device)
 
@@ -222,27 +216,15 @@ class Model(nn.Module):
         return self.global_embedding.device
 
     # Helper functions
-    @staticmethod
-    def _positions(table: nn.Embedding, seq_len: int, offset: int) -> torch.Tensor:
-        """``seq_len`` position embeddings from ``table``, starting at ``offset``.
+    def embed_orth_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Embed ``(batch, seq)`` character ids as ``(batch, seq, d_model)``.
 
-        Every embedder takes an ``offset`` so it can embed a slice of a sequence rather
-        than only a whole one, which is what lets the generation loops append a single
-        row per step instead of re-embedding their whole prefix.
+        A token embeds to the same vector wherever it sits, here and in the two
+        phonological embedders. Where it sits is read inside self-attention.
         """
-        if offset + seq_len > table.num_embeddings:
-            raise ValueError(
-                f"Positions {offset}..{offset + seq_len} exceed the {table.num_embeddings}-slot "
-                f"position table; the sequence is longer than this model supports."
-            )
-        return table.weight[offset : offset + seq_len][None]
+        return self.orthography_embedding(tokens)
 
-    def embed_orth_tokens(self, tokens: torch.Tensor, position_offset: int = 0) -> torch.Tensor:
-        return self.orthography_embedding(tokens) + self._positions(
-            self.orth_position_embedding, tokens.shape[1], position_offset
-        )
-
-    def embed_phon_tokens(self, rows: torch.Tensor, position_offset: int = 0) -> torch.Tensor:
+    def embed_phon_tokens(self, rows: torch.Tensor) -> torch.Tensor:
         """Embed ``(batch, seq)`` phoneme row ids as ``(batch, seq, d_model)``.
 
         A phoneme's embedding is the mean of its active features' embeddings. That is linear
@@ -254,11 +236,9 @@ class Model(nn.Module):
         vector rather than NaN.
         """
         phoneme_embeddings = self.phon_feature_matrix @ self.phonology_embedding.weight
-        return F.embedding(rows, phoneme_embeddings) + self._positions(
-            self.phon_position_embedding, rows.shape[1], position_offset
-        )
+        return F.embedding(rows, phoneme_embeddings)
 
-    def embed_phon_vectors(self, multihot: torch.Tensor, position_offset: int = 0) -> torch.Tensor:
+    def embed_phon_vectors(self, multihot: torch.Tensor) -> torch.Tensor:
         """Embed ``(batch, seq, features)`` binary feature vectors as ``(batch, seq, d_model)``.
 
         The generation counterpart of :meth:`embed_phon_tokens`: sampled feature vectors need
@@ -266,13 +246,7 @@ class Model(nn.Module):
         to be taken over the vector itself.
         """
         normalized = row_normalize(multihot.to(self.phonology_embedding.weight.dtype))
-        averaged = normalized @ self.phonology_embedding.weight
-        return averaged + self._positions(
-            self.phon_position_embedding, multihot.shape[1], position_offset
-        )
-
-    def generate_triangular_mask(self, size: int) -> torch.Tensor:
-        return torch.triu(torch.ones((size, size), dtype=torch.bool, device=self.device), 1)
+        return normalized @ self.phonology_embedding.weight
 
     def forward(self, task: str, **kwargs) -> dict[str, torch.Tensor]:
         pathways: dict[str, Callable[..., dict[str, torch.Tensor]]] = {
@@ -316,10 +290,8 @@ class Model(nn.Module):
         embeds = self.embed_orth_tokens(orth_dec_input)
         output = self.orthography_decoder(
             tgt=embeds,
-            tgt_mask=self.generate_triangular_mask(embeds.shape[1]),
             tgt_key_padding_mask=orth_dec_pad_mask,
             memory=memory,
-            tgt_is_causal=True,
         )
         return self.linear_orthography_decoder(output).transpose(1, 2)
 
@@ -333,10 +305,8 @@ class Model(nn.Module):
         embeds = self.embed_phon_tokens(phon_dec_input)
         output = self.phonology_decoder(
             tgt=embeds,
-            tgt_mask=self.generate_triangular_mask(embeds.shape[1]),
             tgt_key_padding_mask=phon_dec_pad_mask,
             memory=memory,
-            tgt_is_causal=True,
         )
         batch_size, seq_len, _ = output.shape
         return (
@@ -532,10 +502,9 @@ class Model(nn.Module):
     @torch.no_grad()
     def orthography_decoder_loop(
         self,
-        mask: torch.Tensor,
-        generated_orth_embeddings: torch.Tensor,
         generated_orth_tokens: torch.Tensor,
         prompt_encoding: torch.Tensor,
+        max_new_tokens: int,
         deterministic: bool,
     ) -> tuple[list[list[torch.Tensor]], torch.Tensor]:
         """
@@ -544,28 +513,30 @@ class Model(nn.Module):
         The orthographic twin of :meth:`phonology_decoder_loop`: the batch stays dense
         inside the loop and the ragged ``orth_probs`` lists are cut once at the end.
 
+        A row stops at ``[EOS]`` or after ``max_new_tokens`` tokens, whichever comes first.
+        One that reaches the cap ends without ``[EOS]``, which is how a caller sees that
+        it was cut.
+
         Args:
-            mask: (max_seq_len, max_seq_len) Triangular causal mask for decoder attention
-            generated_orth_embeddings: (batch_size, current_seq_len, d_model) Current token embeddings
-            generated_orth_tokens: (batch_size, current_seq_len) Tokens generated so far
+            generated_orth_tokens: (batch_size, 2) The ``[LANG, BOS]`` start of every row
             prompt_encoding: (batch_size, d_embedding, d_model) Encoder context
+            max_new_tokens: The most tokens to write after the start
             deterministic: Whether to use greedy (True) or stochastic (False) sampling
 
         Returns:
             A tuple of:
                 - orth_probs: List of size batch_size, each containing probability distributions
                             for each generation step for that sequence
-                - orth_tokens: (batch_size, seq_len) Tensor of generated token sequences
+                - orth_tokens: (batch_size, seq_len) Tensor of generated token sequences,
+                            the start included
         """
         batch_size = prompt_encoding.size(0)
         eos_id = self.model_config.vocab.orth_eos_id
         prefix_len = generated_orth_tokens.shape[1]
 
         # One placeholder distribution per seeded position, each certain of the token that
-        # was seeded there. The seed used to be a lone [BOS] and this was a single row; it is
-        # now the [LANG, BOS] prefix training uses, so the count follows the prefix rather
-        # than being fixed at one. Built from the tokens themselves, so a different prefix
-        # cannot silently desynchronise the probability history from the token history.
+        # was seeded there, so the count follows the [LANG, BOS] start. Built from the
+        # tokens themselves, so the probability history cannot drift from the token history.
         seed_probs = torch.zeros(
             (batch_size, prefix_len, self.orthographic_vocabulary_size),
             device=self.device,
@@ -586,23 +557,16 @@ class Model(nn.Module):
             device=self.device,
         )
 
-        for _step in range(self.max_orth_seq_len - prefix_len):
+        for _step in range(max_new_tokens):
             # `sequence_finished` already holds what rescanning the whole generated history
             # for EOS would find, at one reduction instead of O(batch x length) per step.
             if bool(sequence_finished.all()):
                 break
 
-            # Sized from the prefix actually decoded so far, not from the step index. The
-            # step index only equalled the prefix length while the seed was one token, and
-            # a two-token seed then asked a 1x1 mask to cover two positions.
-            attended = generated_orth_embeddings.shape[1]
-            step_mask = mask[:attended, :attended]
-
+            # The whole prefix is decoded each step, the start and every token since, so
+            # each token keeps the position it will have in the finished sequence.
             orth_output = self.orthography_decoder(
-                generated_orth_embeddings,
-                memory=prompt_encoding,
-                tgt_mask=step_mask,
-                tgt_is_causal=True,
+                self.embed_orth_tokens(generated_orth_tokens), memory=prompt_encoding
             )
 
             # Only the last position is sampled, so project only that one: over a run the
@@ -633,17 +597,6 @@ class Model(nn.Module):
                 sequence_finished.unsqueeze(-1), orth_pad, new_orthography_tokens
             )
 
-            # Append the one position just generated, at the slot it occupies: the
-            # orthographic twin of the phonological loop's incremental embedding.
-            generated_orth_embeddings = torch.cat(
-                (
-                    generated_orth_embeddings,
-                    self.embed_orth_tokens(
-                        new_orthography_tokens, position_offset=generated_orth_tokens.shape[1]
-                    ),
-                ),
-                dim=1,
-            )
             generated_orth_tokens = torch.cat(
                 (generated_orth_tokens, new_orthography_tokens), dim=-1
             )
@@ -663,29 +616,31 @@ class Model(nn.Module):
     @torch.no_grad()
     def phonology_decoder_loop(
         self,
-        mask: torch.Tensor,
-        generated_phon_embeddings: torch.Tensor,
         generated_phon_multihot: torch.Tensor,
         prompt_encoding: torch.Tensor,
+        max_new_tokens: int,
         deterministic: bool,
     ) -> tuple[list[list[torch.Tensor]], list[list[torch.Tensor]], list[list[torch.Tensor]]]:
         """Autoregressive generation of phonological features.
 
         The batch stays dense inside the loop; the ragged ``list[list[Tensor]]`` shapes
         :class:`GenerationOutput` requires are cut once at the end. Each step embeds only
-        the position it just generated, so the loop is linear in sequence length.
+        the position it just generated, so the embedding work is linear in sequence length.
+
+        The loop ends when every row has emitted ``[EOS]`` or after ``max_new_tokens``
+        positions, whichever comes first. A row that reaches the cap ends without
+        ``[EOS]``, which is how a caller sees that it was cut.
 
         Args:
-            mask: Causal mask for decoder attention
-            generated_phon_embeddings: (batch, 1, d_model) embedding of the seed prefix.
-                Never recomputed; each step appends one row to it.
-            generated_phon_multihot: (batch, 1, phon_vocab_size) seed feature vectors
-                ([BOS]). Read once, after the loop, to prefix the generated history.
+            generated_phon_multihot: (batch, 1, phon_vocab_size) the ``[BOS]`` feature
+                vector that starts every row
             prompt_encoding: Encoder context, (batch_size, d_embedding, d_model)
+            max_new_tokens: The most positions to write after the start
             deterministic: Sampling strategy flag
         """
         batch_size = prompt_encoding.size(0)
         phon_eos_id = self.model_config.vocab.phon_eos_id
+        generated_phon_embeddings = self.embed_phon_vectors(generated_phon_multihot)
 
         step_probs: list[torch.Tensor] = []
         step_vecs: list[torch.Tensor] = []
@@ -699,20 +654,14 @@ class Model(nn.Module):
         )
         phon_pad[:, self.model_config.vocab.phon_pad_id] = 1
 
-        for step in range(self.max_phon_seq_len - 1):
-            step_mask = mask[: step + 1, : step + 1]
-            phon_output = self.phonology_decoder(
-                generated_phon_embeddings,
-                memory=prompt_encoding,
-                tgt_mask=step_mask,
-                tgt_is_causal=True,
-            )
+        for _step in range(max_new_tokens):
+            # The whole prefix is decoded each step, as in the orthographic loop.
+            phon_output = self.phonology_decoder(generated_phon_embeddings, memory=prompt_encoding)
 
-            batch, seq_len, _ = phon_output.shape
             # Only the last position is sampled; the width is spelled out rather than
             # inferred with -1, which is ambiguous for an empty batch.
             last_token_logits = self.linear_phonology_decoder(phon_output[:, -1]).view(
-                batch, 2, self.phonological_vocabulary_size - 1
+                batch_size, 2, self.phonological_vocabulary_size - 1
             )
             last_token_probs = torch.softmax(last_token_logits, dim=1)
 
@@ -747,15 +696,10 @@ class Model(nn.Module):
             if bool(finished.all()):
                 break
 
-            # Embed only the position just generated and append it. `seq_len` is the length
-            # of the prefix just decoded, so it is also the index of the row being appended:
-            # the one position embedding still owed. Placed after the break so the final,
-            # never-read embedding is skipped.
+            # Embed only the position just generated and append it. Placed after the break
+            # so the final, never-read embedding is skipped.
             generated_phon_embeddings = torch.cat(
-                (
-                    generated_phon_embeddings,
-                    self.embed_phon_vectors(embedding_input.unsqueeze(1), position_offset=seq_len),
-                ),
+                (generated_phon_embeddings, self.embed_phon_vectors(embedding_input.unsqueeze(1))),
                 dim=1,
             )
 
@@ -786,6 +730,8 @@ class Model(nn.Module):
         phon_enc_input: torch.Tensor | None = None,
         phon_enc_pad_mask: torch.Tensor | None = None,
         orth_start: torch.Tensor | None = None,
+        *,
+        max_new_tokens: int,
         deterministic: bool = False,
     ) -> GenerationDict:
         """
@@ -798,12 +744,14 @@ class Model(nn.Module):
 
         Args:
             pathway: One of ``PATHWAYS``.
-            orth_enc_input: (batch_size, max_seq_len) input IDs (from an orth encoder).
-            orth_enc_pad_mask: (batch_size, max_seq_len) Boolean mask indicating PAD tokens.
-            phon_enc_input: (batch_size, max_seq_len) input IDs (from a phon encoder).
-            phon_enc_pad_mask: (batch_size, max_seq_len) Boolean mask indicating PAD tokens.
+            orth_enc_input: (batch_size, seq) input IDs (from an orth encoder).
+            orth_enc_pad_mask: (batch_size, seq) Boolean mask indicating PAD tokens.
+            phon_enc_input: (batch_size, seq) input IDs (from a phon encoder).
+            phon_enc_pad_mask: (batch_size, seq) Boolean mask indicating PAD tokens.
             orth_start: (batch_size, 2) the ``[LANG, BOS]`` rows the orthographic decoder
                 starts from. Required by a pathway that writes orthography.
+            max_new_tokens: The most tokens to write after the start of each sequence.
+                See :meth:`generate`.
             deterministic: Whether sampling is greedy (True) or stochastic (False).
 
         Returns:
@@ -825,13 +773,12 @@ class Model(nn.Module):
             phon_enc_input,
             phon_enc_pad_mask,
             orth_start,
+            max_new_tokens,
         )
 
         # Restored on the way out. Leaving the model in `eval` is a side effect on
-        # something else's state: a `generate()` call from inside a training loop set it
-        # and never put it back, and every optimizer step afterwards moved 0 of 169
-        # parameters while the loss went on falling, because each step scores a different
-        # batch. Nothing raised and nothing logged.
+        # something else's state: a caller generating from inside a training loop would get
+        # its model back in a mode it did not choose, with nothing raised and nothing logged.
         was_training = self.training
         self.eval()
 
@@ -868,8 +815,6 @@ class Model(nn.Module):
 
             # All these pathways have "2p" meaning we need to run the phonological decoder loop
             if pathway in WRITES_PHON:
-                mask = self.generate_triangular_mask(self.max_phon_seq_len)
-
                 # Generation works in feature space, not phoneme-row space: the decoder
                 # samples features independently, so a generated vector need not be any
                 # real phoneme.
@@ -880,13 +825,8 @@ class Model(nn.Module):
                 )
                 generated_phon_multihot[:, 0, self.model_config.vocab.phon_bos_id] = 1
 
-                generated_phon_embeddings = self.embed_phon_vectors(generated_phon_multihot)
                 phon_probs, phon_vecs, phon_tokens = self.phonology_decoder_loop(
-                    mask,
-                    generated_phon_embeddings,
-                    generated_phon_multihot,
-                    global_encoding,
-                    deterministic,
+                    generated_phon_multihot, global_encoding, max_new_tokens, deterministic
                 )
                 output["phon_probs"] = phon_probs
                 output["phon_vecs"] = phon_vecs
@@ -895,20 +835,13 @@ class Model(nn.Module):
             # All these pathways have "2o" meaning we need to run the orthography decoder loop
             if pathway in WRITES_ORTH:
                 assert orth_start is not None
-                mask = self.generate_triangular_mask(self.max_orth_seq_len)
                 # Seeded with the prefix training uses, [LANG, BOS], rather than a lone
                 # [BOS]. Training puts [BOS] at decoder position 1, so a lone [BOS] at
                 # position 0 asks the decoder to continue from a state it never saw, with
                 # the language token it conditions on absent entirely. See
                 # docs/decisions/0008.
-                generated_orth_tokens = orth_start
-                generated_orth_embeddings = self.embed_orth_tokens(generated_orth_tokens)
                 orth_probs, orth_tokens = self.orthography_decoder_loop(
-                    mask,
-                    generated_orth_embeddings,
-                    generated_orth_tokens,
-                    global_encoding,
-                    deterministic,
+                    orth_start, global_encoding, max_new_tokens, deterministic
                 )
                 output["orth_probs"] = orth_probs
                 output["orth_tokens"] = orth_tokens
@@ -921,6 +854,7 @@ class Model(nn.Module):
         inputs: BridgeInput,
         pathway: Pathway,
         *,
+        max_new_tokens: int,
         orth_start: torch.Tensor | None = None,
         deterministic: bool = False,
     ) -> GenerationOutput:
@@ -935,6 +869,26 @@ class Model(nn.Module):
         Args:
             inputs: What the encoders read, from ``BridgeTokenizer.encode_input``.
             pathway: The generation pathway to use.
+            max_new_tokens: The most tokens to write after the start of each sequence,
+                which is ``[LANG, BOS]`` for orthography and ``[BOS]`` for phonology. A
+                positive int, and required: no length is built into the model, so there
+                is none to fall back on. A sequence stops at ``[EOS]`` or at this cap,
+                whichever comes first. One that reaches the cap ends without ``[EOS]``,
+                which is how to tell it was cut. On ``op2op`` the one cap applies to each
+                modality written.
+
+                Sizing it: orthography of ``n`` characters, spaces included, takes
+                ``n + 1`` tokens, the last being ``[EOS]``, and one more for each change
+                of language. Phonology takes one for each phoneme and each gap between
+                words, and one for ``[EOS]``. The cap bounds cost as well as length: the
+                batch is dense and every step decodes the whole prefix, so one row that
+                never ends runs every row to the cap.
+
+                Telling a cut row: an orthographic row is finished when it holds
+                ``orth_eos_id``. A phonological row is finished when ``phon_eos_id`` is
+                among the features of one of its positions, alone or beside others. A
+                cut row can decode to the same string as a finished shorter one, so the
+                test is on the ids.
             orth_start: The ``(batch, 2)`` ``[LANG, BOS]`` rows the orthographic decoder
                 starts from, from ``BridgeTokenizer.orth_start``. It names the language
                 of the first word written; any later change of language is the decoder's
@@ -950,7 +904,8 @@ class Model(nn.Module):
         Raises:
             TypeError: If ``inputs`` is not a :class:`BridgeInput`.
             ValueError: If ``pathway`` reads a modality ``inputs`` does not carry, or
-                writes orthography and ``orth_start`` is missing.
+                writes orthography and ``orth_start`` is missing, or ``max_new_tokens``
+                is not a positive int.
         """
         if not isinstance(inputs, BridgeInput):
             raise TypeError(
@@ -968,6 +923,7 @@ class Model(nn.Module):
         generation_results = self._generate(
             pathway=pathway,
             orth_start=orth_start if pathway in WRITES_ORTH else None,
+            max_new_tokens=max_new_tokens,
             deterministic=deterministic,
             **tensors,
         )
@@ -982,12 +938,13 @@ class Model(nn.Module):
         self, modality: str, ids: torch.Tensor, mask: torch.Tensor
     ) -> None:
         """What only the model can check of one modality's encoder input: that it has rows,
-        fits the position table, sits on the model's device and indexes its id space.
+        sits on the model's device and indexes its id space. Its length is not checked,
+        since any length runs.
 
         The ids and mask come out of a :class:`Tokens`, which has checked their type, rank,
         dtype and agreement. Both modalities carry the same shape, so one function serves
-        them; ``modality`` selects the message prefix, the length bound and the id space.
-        Every pathway runs it on whatever it reads.
+        them; ``modality`` selects the message prefix and the id space. Every pathway runs
+        it on whatever it reads.
         """
         name = self.MODALITY_NAMES[modality]
         # A zero-row batch has nothing to generate and segfaults the CUDA decoder rather
@@ -996,17 +953,12 @@ class Model(nn.Module):
             raise ValueError(f"{modality}_enc_input has no rows; there is nothing to generate.")
 
         if modality == "orth":
-            max_seq_len, id_space = self.max_orth_seq_len, self.orthographic_vocabulary_size
+            id_space = self.orthographic_vocabulary_size
         else:
             # Row space, not feature space: phoneme ids index table rows (~91), not the
             # phonological feature vocabulary (~36).
-            max_seq_len, id_space = self.max_phon_seq_len, self.phon_feature_matrix.shape[0]
+            id_space = self.phon_feature_matrix.shape[0]
 
-        if ids.size(1) > max_seq_len:
-            raise ValueError(
-                f"{modality}_enc_input sequence length {ids.size(1)} exceeds maximum "
-                f"allowed length {max_seq_len}"
-            )
         # Placement before content, and the order is load-bearing. Everything above reads
         # only metadata; the range check below reads the data. A tensor on the wrong device
         # therefore has to be rejected here or the range check dereferences it first and
@@ -1031,14 +983,13 @@ class Model(nn.Module):
         phon_enc_input: torch.Tensor | None,
         phon_enc_pad_mask: torch.Tensor | None,
         orth_start: torch.Tensor | None,
+        max_new_tokens: int,
     ) -> None:
-        """Check the encoder inputs against what ``pathway`` reads, and the orthographic
-        start against what it writes.
+        """Check the encoder inputs against what ``pathway`` reads, the orthographic start
+        against what it writes, and the cap on how much it may write.
 
-        Driven by :data:`PATHWAY_IO`, not by a branch per pathway. The five branches this
-        replaces applied four different subsets of the available checks to four groups of
-        pathways, and the differences were accidents of a partial refactor that a
-        404-line test had since pinned in place.
+        Driven by :data:`PATHWAY_IO`, not by a branch per pathway, so every pathway gets
+        the same checks on whatever it reads and writes.
         """
         if pathway not in PATHWAYS:
             raise ValueError(f"Invalid pathway: {pathway}")
@@ -1071,6 +1022,15 @@ class Model(nn.Module):
             ids = orth_enc_input if orth_enc_input is not None else phon_enc_input
             assert ids is not None
             self._validate_orth_start(pathway, orth_start, ids.size(0))
+
+        # The type itself, not `isinstance`: `True` is an int to Python and would cap every
+        # sequence at one token.
+        if type(max_new_tokens) is not int or max_new_tokens < 1:
+            raise ValueError(
+                f"max_new_tokens must be a positive int, the most tokens to write after the "
+                f"start of each sequence, got {max_new_tokens!r} "
+                f"({type(max_new_tokens).__name__})"
+            )
 
     def _validate_orth_start(
         self, pathway: str, orth_start: torch.Tensor | None, batch_size: int

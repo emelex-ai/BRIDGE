@@ -55,13 +55,13 @@ class TrainingPipeline:
     def device(self) -> torch.device:
         """Where the model is, asked rather than told.
 
-        A stored snapshot of ``device_manager.device`` plus a ``model.to(...)`` in
-        ``__init__`` silently undid the caller's own placement: a model explicitly moved to
-        CUDA came back on CPU, all 169 parameters, and the run trained an order of
-        magnitude slower with nothing but an INFO line to say so. That is the failure
-        ``docs/decisions/0007`` fixed inside :class:`Model`, reintroduced one layer up. The
-        pipeline follows the model now. A caller who wants the process device writes
-        ``model.to(device_manager.device)``, which is one visible line.
+        The pipeline follows the model and never moves it. A stored snapshot of
+        ``device_manager.device`` plus a ``model.to(...)`` in ``__init__`` would silently
+        undo the caller's own placement: a model explicitly moved to CUDA comes back on
+        CPU, every parameter of it, and the run trains an order of magnitude slower with
+        nothing but an INFO line to say so. See ``docs/decisions/0012``. A caller who
+        wants the process device writes ``model.to(device_manager.device)``, which is one
+        visible line.
         """
         return self.model.device
 
@@ -128,9 +128,8 @@ class TrainingPipeline:
         """The metrics of the modalities this pathway writes, against the target's labels.
 
         Orthographic accuracy comes as two pairs: every scored token, and the
-        ``_without_switches`` pair that leaves language tokens out. The second pair needs
-        ``VocabSpec.orth_language_ids``, which ``VocabSpec.from_tokenizer`` fills in. When
-        the spec does not name them the pair is absent from the result, not estimated.
+        ``_without_switches`` pair that leaves language tokens out, which
+        ``VocabSpec.orth_language_ids`` names.
         """
         pathway = self.training_config.training_pathway
         vocab = self.model.model_config.vocab
@@ -147,10 +146,7 @@ class TrainingPipeline:
                     logits,
                     target.orth.labels,
                     orth_pad_id=vocab.orth_pad_id,
-                    # Pickle restores a VocabSpec without validating it, so one taken
-                    # from a checkpoint may lack the attribute altogether. It is read
-                    # with a default, as `phon_table_fingerprint` is in `load_model`.
-                    orth_language_ids=getattr(vocab, "orth_language_ids", None),
+                    orth_language_ids=vocab.orth_language_ids,
                 )
             )
         return metrics
@@ -189,13 +185,12 @@ class TrainingPipeline:
     ) -> MetricsDict:
         """Run one optimizer step over one slice.
 
-        Always steps, and puts the model in train mode to do it. It used to gate every
-        part of itself on ``self.model.training``, which meant a model left in ``eval``
-        turned the step into a silent no-op: one ``model.generate(...)`` call from inside
-        a caller's loop set ``eval`` and never restored it, and the remaining steps moved
-        0 of 169 parameters while the reported loss went on falling, because each step
-        scores a different batch. Inferring intent from a mutable flag was the mistake.
-        :meth:`evaluate` is the no-grad counterpart, and it says so in its name.
+        Always steps, and puts the model in train mode to do it. Nothing here is gated on
+        ``self.model.training``. A step that read that flag would be a silent no-op on a
+        model left in ``eval``: no parameter moves while the reported loss goes on
+        falling, because each step scores a different batch. Intent is not inferred from
+        a mutable flag. :meth:`evaluate` is the no-grad counterpart, and it says so in
+        its name.
         """
         batch_slice = self._resolve(dataset, batch_slice)
         self.model.train()
@@ -330,10 +325,49 @@ class TrainingPipeline:
         wants best-effort resume writes the ``try`` themselves.
         """
         checkpoint = torch.load(model_path, weights_only=False)
+        self._refuse_weights_of_another_model(checkpoint["model_state_dict"], model_path)
         self._warn_on_phoneme_table_drift(checkpoint, model_path)
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self._set_start_epoch(checkpoint, model_path)
+
+    def _refuse_weights_of_another_model(self, state: dict, model_path: str) -> None:
+        """Raise unless ``state`` holds exactly the tensors the model has, name for name
+        and shape for shape.
+
+        ``load_state_dict`` refuses such a checkpoint too, but only after copying in every
+        tensor that does fit, and by listing every name on both sides, which for another
+        architecture is hundreds. Checked here first, the model is left as it was, and
+        the error says how many tensors differ and names the first of each kind.
+        """
+        expected = self.model.state_dict()
+        unknown = [name for name in state if name not in expected]
+        absent = [name for name in expected if name not in state]
+        reshaped = [
+            name for name in expected if name in state and state[name].shape != expected[name].shape
+        ]
+        found = []
+        if unknown:
+            found.append(
+                f"Tensors in it with no place in the model: {len(unknown)} of {len(state)}, "
+                f"the first {unknown[0]!r}."
+            )
+        if absent:
+            found.append(
+                f"Tensors of the model missing from it: {len(absent)} of {len(expected)}, "
+                f"the first {absent[0]!r}."
+            )
+        if reshaped:
+            first = reshaped[0]
+            found.append(
+                f"Tensors of another shape: {len(reshaped)} of {len(expected)}, the first "
+                f"{first!r}, {tuple(state[first].shape)} where the model has "
+                f"{tuple(expected[first].shape)}."
+            )
+        if found:
+            raise RuntimeError(
+                f"{model_path} does not hold this model's weights. {' '.join(found)}"
+            )
 
     def _set_start_epoch(self, checkpoint: dict, model_path: str) -> None:
         """Decide which epoch a resumed run counts from.
@@ -380,9 +414,7 @@ class TrainingPipeline:
         no longer mean what they did, and that is the caller's judgement to make.
         """
         saved = getattr(checkpoint.get("model_config"), "vocab", None)
-        # Specs written before the field carry no fingerprint; pickle restores __dict__
-        # verbatim, so the attribute can be absent rather than None.
-        recorded = getattr(saved, "phon_table_fingerprint", None)
+        recorded = saved.phon_table_fingerprint if saved is not None else None
         current = self.model.phon_table_fingerprint
         if recorded is not None and recorded != current:
             self.logger.warning(

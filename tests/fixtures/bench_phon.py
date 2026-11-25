@@ -46,6 +46,8 @@ from bridge.domain.model import Model  # noqa: E402
 
 DATA = "tests/domain/model/data/data.csv"
 SIZES = [int(s) for s in os.environ.get("BENCH_SIZES", "32,256,1024").split(",")]
+# The most phonemes one timed generate call may write after [BOS].
+GENERATE_CAP = 29
 
 
 def sync() -> None:
@@ -84,7 +86,7 @@ def reference_embed(model: Model, ragged) -> torch.Tensor:
     for b, row in enumerate(ragged):
         for i, feats in enumerate(row):
             out[b, i, :] = model.phonology_embedding(feats).mean(axis=0)
-    return out + model.phon_position_embedding.weight[None, :seq_len]
+    return out
 
 
 def measure(dataset, tokenizer, model, optimizer, vocab, size: int) -> dict[str, float]:
@@ -126,7 +128,11 @@ def measure(dataset, tokenizer, model, optimizer, vocab, size: int) -> dict[str,
         "now": bench(lambda: model.embed_phon_tokens(phon.ids)),
         "encode": bench(encode, n=10, warm=2),
         "step": bench(train_step, n=10, warm=3),
-        "generate": bench(lambda: model.generate(inputs, "o2p", deterministic=True), n=5, warm=2),
+        "generate": bench(
+            lambda: model.generate(inputs, "o2p", max_new_tokens=GENERATE_CAP, deterministic=True),
+            n=5,
+            warm=2,
+        ),
     }
 
 

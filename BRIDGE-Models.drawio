@@ -43,8 +43,8 @@
                 <mxCell id="C2sFSsTzSgza25Mss8TV-503" connectable="0" parent="zM4A_xHIITlxkO45P-GO-1" style="group;fontFamily=Times New Roman;" value="" vertex="1">
                     <mxGeometry height="224" width="164" x="582" y="225" as="geometry"/>
                 </mxCell>
-                <mxCell id="C2sFSsTzSgza25Mss8TV-351" parent="C2sFSsTzSgza25Mss8TV-503" style="rounded=1;whiteSpace=wrap;html=1;spacingBottom=168;arcSize=8;labelBackgroundColor=none;fillColor=#DDA0DD;fontStyle=1;fontFamily=Times New Roman;fontSize=14;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Multihead Self-Attention&amp;nbsp;&lt;div&gt;Encoders&lt;/div&gt;" vertex="1">
-                    <mxGeometry height="224" width="164" as="geometry"/>
+                <mxCell id="C2sFSsTzSgza25Mss8TV-351" parent="C2sFSsTzSgza25Mss8TV-503" style="rounded=1;whiteSpace=wrap;html=1;spacingBottom=170;arcSize=8;labelBackgroundColor=none;fillColor=#DDA0DD;fontStyle=1;fontFamily=Times New Roman;fontSize=14;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Multihead Self-Attention&amp;nbsp;&lt;div&gt;(rotary position)&lt;/div&gt;&lt;div&gt;Encoders&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="240" width="164" y="-16" as="geometry"/>
                 </mxCell>
                 <mxCell id="C2sFSsTzSgza25Mss8TV-352" parent="C2sFSsTzSgza25Mss8TV-503" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;labelBackgroundColor=none;fillColor=#C8A2C8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="&lt;div&gt;&lt;div&gt;Orthography&lt;/div&gt;&lt;div&gt;Encoder&lt;/div&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="60" width="120" x="22" y="69" as="geometry"/>
@@ -70,7 +70,7 @@
                 <mxCell id="C2sFSsTzSgza25Mss8TV-507" connectable="0" parent="zM4A_xHIITlxkO45P-GO-1" style="group;fillColor=none;strokeColor=none;fontFamily=Times New Roman;" value="" vertex="1">
                     <mxGeometry height="537" width="272" x="280" y="73" as="geometry"/>
                 </mxCell>
-                <mxCell id="C2sFSsTzSgza25Mss8TV-469" parent="C2sFSsTzSgza25Mss8TV-507" style="rounded=1;whiteSpace=wrap;html=1;container=0;spacingBottom=450;arcSize=6;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="&lt;span style=&quot;text-wrap-mode: nowrap;&quot;&gt;Embedding + Position&lt;br&gt;(phoneme = mean of its&lt;br&gt;feature embeddings)&lt;/span&gt;" vertex="1">
+                <mxCell id="C2sFSsTzSgza25Mss8TV-469" parent="C2sFSsTzSgza25Mss8TV-507" style="rounded=1;whiteSpace=wrap;html=1;container=0;spacingBottom=450;arcSize=6;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="&lt;span style=&quot;text-wrap-mode: nowrap;&quot;&gt;Embedding&lt;br&gt;(phoneme = mean of its&lt;br&gt;feature embeddings)&lt;/span&gt;" vertex="1">
                     <mxGeometry height="537" width="272" as="geometry"/>
                 </mxCell>
                 <mxCell id="C2sFSsTzSgza25Mss8TV-512" connectable="0" parent="C2sFSsTzSgza25Mss8TV-507" style="group;fontFamily=Times New Roman;" value="" vertex="1">
@@ -123,8 +123,8 @@
                 <mxCell id="C2sFSsTzSgza25Mss8TV-464" connectable="0" parent="zM4A_xHIITlxkO45P-GO-1" style="group;fontFamily=Times New Roman;" value="" vertex="1">
                     <mxGeometry height="258" width="180" x="1780" y="208" as="geometry"/>
                 </mxCell>
-                <mxCell id="C2sFSsTzSgza25Mss8TV-358" parent="C2sFSsTzSgza25Mss8TV-464" style="rounded=1;whiteSpace=wrap;html=1;spacingBottom=210;arcSize=8;labelBackgroundColor=none;fontStyle=1;fontFamily=Times New Roman;fontSize=14;fillColor=#F0F0F0;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Masked Self-Attention + Cross-Attention Decoders" vertex="1">
-                    <mxGeometry height="258" width="180" as="geometry"/>
+                <mxCell id="C2sFSsTzSgza25Mss8TV-358" parent="C2sFSsTzSgza25Mss8TV-464" style="rounded=1;whiteSpace=wrap;html=1;spacingBottom=208;arcSize=8;labelBackgroundColor=none;fontStyle=1;fontFamily=Times New Roman;fontSize=14;fillColor=#F0F0F0;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Masked Self-Attention&lt;br&gt;(rotary position) +&lt;br&gt;Cross-Attention Decoders" vertex="1">
+                    <mxGeometry height="274" width="180" y="-16" as="geometry"/>
                 </mxCell>
                 <mxCell id="C2sFSsTzSgza25Mss8TV-359" parent="C2sFSsTzSgza25Mss8TV-464" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;labelBackgroundColor=none;fontStyle=1;fontFamily=Times New Roman;fontSize=14;fillColor=#ADD8E6;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="&lt;div&gt;Orthography&lt;/div&gt;&lt;div&gt;Decoder&lt;/div&gt;" vertex="1">
                     <mxGeometry height="61.92" width="120" x="30" y="72.24000000000001" as="geometry"/>
@@ -555,7 +555,7 @@
                 <mxCell id="zM4A_xHIITlxkO45P-GO-target-header" parent="zM4A_xHIITlxkO45P-GO-1" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontFamily=Times New Roman;fontSize=16;fontStyle=1" value="Target" vertex="1">
                     <mxGeometry height="24" width="90" x="2000" y="74" as="geometry"/>
                 </mxCell>
-                <mxCell id="zM4A_xHIITlxkO45P-GO-target-orth-embed" parent="zM4A_xHIITlxkO45P-GO-1" style="rounded=1;whiteSpace=wrap;html=1;horizontal=0;arcSize=8;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;" value="Tokenization,&lt;br&gt;Embedding +&lt;br&gt;Position" vertex="1">
+                <mxCell id="zM4A_xHIITlxkO45P-GO-target-orth-embed" parent="zM4A_xHIITlxkO45P-GO-1" style="rounded=1;whiteSpace=wrap;html=1;horizontal=0;arcSize=8;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;" value="Tokenization +&lt;br&gt;Embedding" vertex="1">
                     <mxGeometry height="100" width="60" x="1673" y="147" as="geometry"/>
                 </mxCell>
                 <mxCell id="zM4A_xHIITlxkO45P-GO-target-orth-feed" edge="1" parent="zM4A_xHIITlxkO45P-GO-1" source="C2sFSsTzSgza25Mss8TV-361" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.08;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;flowAnimation=1;fontFamily=Times New Roman;fontSize=10;fontStyle=1;labelBackgroundColor=default;" target="zM4A_xHIITlxkO45P-GO-target-orth-embed" value="Training: target spelling, shifted right&lt;br&gt;Generation: [LANG, BOS], then own samples">
@@ -567,7 +567,7 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="zM4A_xHIITlxkO45P-GO-target-phon-embed" parent="zM4A_xHIITlxkO45P-GO-1" style="rounded=1;whiteSpace=wrap;html=1;horizontal=0;arcSize=8;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;" value="Tokenization,&lt;br&gt;Embedding +&lt;br&gt;Position" vertex="1">
+                <mxCell id="zM4A_xHIITlxkO45P-GO-target-phon-embed" parent="zM4A_xHIITlxkO45P-GO-1" style="rounded=1;whiteSpace=wrap;html=1;horizontal=0;arcSize=8;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;" value="Tokenization +&lt;br&gt;Embedding" vertex="1">
                     <mxGeometry height="100" width="60" x="1674" y="461" as="geometry"/>
                 </mxCell>
                 <mxCell id="zM4A_xHIITlxkO45P-GO-target-phon-feed" edge="1" parent="zM4A_xHIITlxkO45P-GO-1" source="C2sFSsTzSgza25Mss8TV-365" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.92;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;flowAnimation=1;fontFamily=Times New Roman;fontSize=10;fontStyle=1;labelBackgroundColor=default;" target="zM4A_xHIITlxkO45P-GO-target-phon-embed" value="Training: target phonemes, shifted right&lt;br&gt;Generation: [BOS], then own samples">
@@ -626,8 +626,8 @@
                 <mxCell id="WASe3CfFitl5XrVU046r-13" connectable="0" parent="WASe3CfFitl5XrVU046r-1" style="group;fontFamily=Times New Roman;" value="" vertex="1">
                     <mxGeometry height="224" width="164" x="582" y="225" as="geometry"/>
                 </mxCell>
-                <mxCell id="WASe3CfFitl5XrVU046r-14" parent="WASe3CfFitl5XrVU046r-13" style="rounded=1;whiteSpace=wrap;html=1;spacingBottom=168;arcSize=8;labelBackgroundColor=none;fillColor=#DDA0DD;fontStyle=1;fontFamily=Times New Roman;fontSize=14;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Multihead Self-Attention&amp;nbsp;&lt;div&gt;Encoders&lt;/div&gt;" vertex="1">
-                    <mxGeometry height="224" width="164" as="geometry"/>
+                <mxCell id="WASe3CfFitl5XrVU046r-14" parent="WASe3CfFitl5XrVU046r-13" style="rounded=1;whiteSpace=wrap;html=1;spacingBottom=170;arcSize=8;labelBackgroundColor=none;fillColor=#DDA0DD;fontStyle=1;fontFamily=Times New Roman;fontSize=14;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Multihead Self-Attention&amp;nbsp;&lt;div&gt;(rotary position)&lt;/div&gt;&lt;div&gt;Encoders&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="240" width="164" y="-16" as="geometry"/>
                 </mxCell>
                 <mxCell id="WASe3CfFitl5XrVU046r-15" parent="WASe3CfFitl5XrVU046r-13" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;labelBackgroundColor=none;fillColor=#C8A2C8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="&lt;div&gt;&lt;div&gt;Orthography&lt;/div&gt;&lt;div&gt;Encoder&lt;/div&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="60" width="120" x="22" y="69" as="geometry"/>
@@ -653,7 +653,7 @@
                 <mxCell id="WASe3CfFitl5XrVU046r-22" connectable="0" parent="WASe3CfFitl5XrVU046r-1" style="group;fillColor=none;strokeColor=none;fontFamily=Times New Roman;" value="" vertex="1">
                     <mxGeometry height="537" width="272" x="280" y="73" as="geometry"/>
                 </mxCell>
-                <mxCell id="WASe3CfFitl5XrVU046r-23" parent="WASe3CfFitl5XrVU046r-22" style="rounded=1;whiteSpace=wrap;html=1;container=0;spacingBottom=450;arcSize=6;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="&lt;span style=&quot;text-wrap-mode: nowrap;&quot;&gt;Embedding + Position&lt;br&gt;(phoneme = mean of its&lt;br&gt;feature embeddings)&lt;/span&gt;" vertex="1">
+                <mxCell id="WASe3CfFitl5XrVU046r-23" parent="WASe3CfFitl5XrVU046r-22" style="rounded=1;whiteSpace=wrap;html=1;container=0;spacingBottom=450;arcSize=6;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="&lt;span style=&quot;text-wrap-mode: nowrap;&quot;&gt;Embedding&lt;br&gt;(phoneme = mean of its&lt;br&gt;feature embeddings)&lt;/span&gt;" vertex="1">
                     <mxGeometry y="0" x="0" height="537" width="272" as="geometry"/>
                 </mxCell>
                 <mxCell id="WASe3CfFitl5XrVU046r-24" connectable="0" parent="WASe3CfFitl5XrVU046r-22" style="group;fontFamily=Times New Roman;" value="" vertex="1">
@@ -704,8 +704,8 @@
                 <mxCell id="WASe3CfFitl5XrVU046r-37" connectable="0" parent="WASe3CfFitl5XrVU046r-1" style="group;fontFamily=Times New Roman;" value="" vertex="1">
                     <mxGeometry height="258" width="180" x="1780" y="208" as="geometry"/>
                 </mxCell>
-                <mxCell id="WASe3CfFitl5XrVU046r-38" parent="WASe3CfFitl5XrVU046r-37" style="rounded=1;whiteSpace=wrap;html=1;spacingBottom=210;arcSize=8;labelBackgroundColor=none;fontStyle=1;fontFamily=Times New Roman;fontSize=14;fillColor=#F0F0F0;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Masked Self-Attention + Cross-Attention Decoders" vertex="1">
-                    <mxGeometry height="258" width="180" as="geometry"/>
+                <mxCell id="WASe3CfFitl5XrVU046r-38" parent="WASe3CfFitl5XrVU046r-37" style="rounded=1;whiteSpace=wrap;html=1;spacingBottom=208;arcSize=8;labelBackgroundColor=none;fontStyle=1;fontFamily=Times New Roman;fontSize=14;fillColor=#F0F0F0;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Masked Self-Attention&lt;br&gt;(rotary position) +&lt;br&gt;Cross-Attention Decoders" vertex="1">
+                    <mxGeometry height="274" width="180" y="-16" as="geometry"/>
                 </mxCell>
                 <mxCell id="WASe3CfFitl5XrVU046r-39" parent="WASe3CfFitl5XrVU046r-37" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;labelBackgroundColor=none;fontStyle=1;fontFamily=Times New Roman;fontSize=14;fillColor=#ADD8E6;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;opacity=20;textOpacity=20;" value="&lt;div&gt;Orthography&lt;/div&gt;&lt;div&gt;Decoder&lt;/div&gt;" vertex="1">
                     <mxGeometry height="61.92" width="120" x="30" y="72.24" as="geometry"/>
@@ -1151,7 +1151,7 @@
                 <mxCell id="WASe3CfFitl5XrVU046r-target-header" parent="WASe3CfFitl5XrVU046r-1" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontFamily=Times New Roman;fontSize=16;fontStyle=1" value="Target" vertex="1">
                     <mxGeometry height="24" width="90" x="2000" y="74" as="geometry"/>
                 </mxCell>
-                <mxCell id="WASe3CfFitl5XrVU046r-target-orth-embed" parent="WASe3CfFitl5XrVU046r-1" style="rounded=1;whiteSpace=wrap;html=1;horizontal=0;arcSize=8;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;opacity=20;textOpacity=20;" value="Tokenization,&lt;br&gt;Embedding +&lt;br&gt;Position" vertex="1">
+                <mxCell id="WASe3CfFitl5XrVU046r-target-orth-embed" parent="WASe3CfFitl5XrVU046r-1" style="rounded=1;whiteSpace=wrap;html=1;horizontal=0;arcSize=8;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;opacity=20;textOpacity=20;" value="Tokenization +&lt;br&gt;Embedding" vertex="1">
                     <mxGeometry height="100" width="60" x="1673" y="147" as="geometry"/>
                 </mxCell>
                 <mxCell id="WASe3CfFitl5XrVU046r-target-orth-feed" edge="1" parent="WASe3CfFitl5XrVU046r-1" source="WASe3CfFitl5XrVU046r-42" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.08;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;flowAnimation=0;fontFamily=Times New Roman;fontSize=10;fontStyle=1;labelBackgroundColor=default;opacity=20;textOpacity=20;" target="WASe3CfFitl5XrVU046r-target-orth-embed" value="Training: target spelling, shifted right&lt;br&gt;Generation: [LANG, BOS], then own samples">
@@ -1163,7 +1163,7 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="WASe3CfFitl5XrVU046r-target-phon-embed" parent="WASe3CfFitl5XrVU046r-1" style="rounded=1;whiteSpace=wrap;html=1;horizontal=0;arcSize=8;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;" value="Tokenization,&lt;br&gt;Embedding +&lt;br&gt;Position" vertex="1">
+                <mxCell id="WASe3CfFitl5XrVU046r-target-phon-embed" parent="WASe3CfFitl5XrVU046r-1" style="rounded=1;whiteSpace=wrap;html=1;horizontal=0;arcSize=8;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;" value="Tokenization +&lt;br&gt;Embedding" vertex="1">
                     <mxGeometry height="100" width="60" x="1674" y="461" as="geometry"/>
                 </mxCell>
                 <mxCell id="WASe3CfFitl5XrVU046r-target-phon-feed" edge="1" parent="WASe3CfFitl5XrVU046r-1" source="WASe3CfFitl5XrVU046r-48" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.92;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;flowAnimation=1;fontFamily=Times New Roman;fontSize=10;fontStyle=1;labelBackgroundColor=default;" target="WASe3CfFitl5XrVU046r-target-phon-embed" value="Training: target phonemes, shifted right&lt;br&gt;Generation: [BOS], then own samples">
@@ -1222,8 +1222,8 @@
                 <mxCell id="g8unKQJUbwVm6oYZJdN_-13" connectable="0" parent="g8unKQJUbwVm6oYZJdN_-1" style="group;fontFamily=Times New Roman;" value="" vertex="1">
                     <mxGeometry height="224" width="164" x="582" y="225" as="geometry"/>
                 </mxCell>
-                <mxCell id="g8unKQJUbwVm6oYZJdN_-14" parent="g8unKQJUbwVm6oYZJdN_-13" style="rounded=1;whiteSpace=wrap;html=1;spacingBottom=168;arcSize=8;labelBackgroundColor=none;fillColor=#DDA0DD;fontStyle=1;fontFamily=Times New Roman;fontSize=14;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Multihead Self-Attention&amp;nbsp;&lt;div&gt;Encoders&lt;/div&gt;" vertex="1">
-                    <mxGeometry height="224" width="164" as="geometry"/>
+                <mxCell id="g8unKQJUbwVm6oYZJdN_-14" parent="g8unKQJUbwVm6oYZJdN_-13" style="rounded=1;whiteSpace=wrap;html=1;spacingBottom=170;arcSize=8;labelBackgroundColor=none;fillColor=#DDA0DD;fontStyle=1;fontFamily=Times New Roman;fontSize=14;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Multihead Self-Attention&amp;nbsp;&lt;div&gt;(rotary position)&lt;/div&gt;&lt;div&gt;Encoders&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="240" width="164" y="-16" as="geometry"/>
                 </mxCell>
                 <mxCell id="g8unKQJUbwVm6oYZJdN_-15" parent="g8unKQJUbwVm6oYZJdN_-13" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;labelBackgroundColor=none;fillColor=#C8A2C8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="&lt;div&gt;&lt;div&gt;Orthography&lt;/div&gt;&lt;div&gt;Encoder&lt;/div&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="60" width="120" x="22" y="69" as="geometry"/>
@@ -1249,7 +1249,7 @@
                 <mxCell id="g8unKQJUbwVm6oYZJdN_-22" connectable="0" parent="g8unKQJUbwVm6oYZJdN_-1" style="group;fillColor=none;strokeColor=none;fontFamily=Times New Roman;" value="" vertex="1">
                     <mxGeometry height="537" width="272" x="280" y="73" as="geometry"/>
                 </mxCell>
-                <mxCell id="g8unKQJUbwVm6oYZJdN_-23" parent="g8unKQJUbwVm6oYZJdN_-22" style="rounded=1;whiteSpace=wrap;html=1;container=0;spacingBottom=450;arcSize=6;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="&lt;span style=&quot;text-wrap-mode: nowrap;&quot;&gt;Embedding + Position&lt;br&gt;(phoneme = mean of its&lt;br&gt;feature embeddings)&lt;/span&gt;" vertex="1">
+                <mxCell id="g8unKQJUbwVm6oYZJdN_-23" parent="g8unKQJUbwVm6oYZJdN_-22" style="rounded=1;whiteSpace=wrap;html=1;container=0;spacingBottom=450;arcSize=6;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="&lt;span style=&quot;text-wrap-mode: nowrap;&quot;&gt;Embedding&lt;br&gt;(phoneme = mean of its&lt;br&gt;feature embeddings)&lt;/span&gt;" vertex="1">
                     <mxGeometry y="0" x="0" height="537" width="272" as="geometry"/>
                 </mxCell>
                 <mxCell id="g8unKQJUbwVm6oYZJdN_-24" connectable="0" parent="g8unKQJUbwVm6oYZJdN_-22" style="group;fontFamily=Times New Roman;" value="" vertex="1">
@@ -1300,8 +1300,8 @@
                 <mxCell id="g8unKQJUbwVm6oYZJdN_-37" connectable="0" parent="g8unKQJUbwVm6oYZJdN_-1" style="group;fontFamily=Times New Roman;" value="" vertex="1">
                     <mxGeometry height="258" width="180" x="1780" y="208" as="geometry"/>
                 </mxCell>
-                <mxCell id="g8unKQJUbwVm6oYZJdN_-38" parent="g8unKQJUbwVm6oYZJdN_-37" style="rounded=1;whiteSpace=wrap;html=1;spacingBottom=210;arcSize=8;labelBackgroundColor=none;fontStyle=1;fontFamily=Times New Roman;fontSize=14;fillColor=#F0F0F0;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Masked Self-Attention + Cross-Attention Decoders" vertex="1">
-                    <mxGeometry height="258" width="180" as="geometry"/>
+                <mxCell id="g8unKQJUbwVm6oYZJdN_-38" parent="g8unKQJUbwVm6oYZJdN_-37" style="rounded=1;whiteSpace=wrap;html=1;spacingBottom=208;arcSize=8;labelBackgroundColor=none;fontStyle=1;fontFamily=Times New Roman;fontSize=14;fillColor=#F0F0F0;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Masked Self-Attention&lt;br&gt;(rotary position) +&lt;br&gt;Cross-Attention Decoders" vertex="1">
+                    <mxGeometry height="274" width="180" y="-16" as="geometry"/>
                 </mxCell>
                 <mxCell id="g8unKQJUbwVm6oYZJdN_-39" parent="g8unKQJUbwVm6oYZJdN_-37" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;labelBackgroundColor=none;fontStyle=1;fontFamily=Times New Roman;fontSize=14;fillColor=#ADD8E6;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="&lt;div&gt;Orthography&lt;/div&gt;&lt;div&gt;Decoder&lt;/div&gt;" vertex="1">
                     <mxGeometry height="61.92" width="120" x="30" y="72.24" as="geometry"/>
@@ -1747,7 +1747,7 @@
                 <mxCell id="g8unKQJUbwVm6oYZJdN_-target-header" parent="g8unKQJUbwVm6oYZJdN_-1" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontFamily=Times New Roman;fontSize=16;fontStyle=1" value="Target" vertex="1">
                     <mxGeometry height="24" width="90" x="2000" y="74" as="geometry"/>
                 </mxCell>
-                <mxCell id="g8unKQJUbwVm6oYZJdN_-target-orth-embed" parent="g8unKQJUbwVm6oYZJdN_-1" style="rounded=1;whiteSpace=wrap;html=1;horizontal=0;arcSize=8;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;" value="Tokenization,&lt;br&gt;Embedding +&lt;br&gt;Position" vertex="1">
+                <mxCell id="g8unKQJUbwVm6oYZJdN_-target-orth-embed" parent="g8unKQJUbwVm6oYZJdN_-1" style="rounded=1;whiteSpace=wrap;html=1;horizontal=0;arcSize=8;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;" value="Tokenization +&lt;br&gt;Embedding" vertex="1">
                     <mxGeometry height="100" width="60" x="1673" y="147" as="geometry"/>
                 </mxCell>
                 <mxCell id="g8unKQJUbwVm6oYZJdN_-target-orth-feed" edge="1" parent="g8unKQJUbwVm6oYZJdN_-1" source="g8unKQJUbwVm6oYZJdN_-42" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.08;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;flowAnimation=1;fontFamily=Times New Roman;fontSize=10;fontStyle=1;labelBackgroundColor=default;" target="g8unKQJUbwVm6oYZJdN_-target-orth-embed" value="Training: target spelling, shifted right&lt;br&gt;Generation: [LANG, BOS], then own samples">
@@ -1759,7 +1759,7 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="g8unKQJUbwVm6oYZJdN_-target-phon-embed" parent="g8unKQJUbwVm6oYZJdN_-1" style="rounded=1;whiteSpace=wrap;html=1;horizontal=0;arcSize=8;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;opacity=20;textOpacity=20;" value="Tokenization,&lt;br&gt;Embedding +&lt;br&gt;Position" vertex="1">
+                <mxCell id="g8unKQJUbwVm6oYZJdN_-target-phon-embed" parent="g8unKQJUbwVm6oYZJdN_-1" style="rounded=1;whiteSpace=wrap;html=1;horizontal=0;arcSize=8;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;opacity=20;textOpacity=20;" value="Tokenization +&lt;br&gt;Embedding" vertex="1">
                     <mxGeometry height="100" width="60" x="1674" y="461" as="geometry"/>
                 </mxCell>
                 <mxCell id="g8unKQJUbwVm6oYZJdN_-target-phon-feed" edge="1" parent="g8unKQJUbwVm6oYZJdN_-1" source="g8unKQJUbwVm6oYZJdN_-48" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.92;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;flowAnimation=0;fontFamily=Times New Roman;fontSize=10;fontStyle=1;labelBackgroundColor=default;opacity=20;textOpacity=20;" target="g8unKQJUbwVm6oYZJdN_-target-phon-embed" value="Training: target phonemes, shifted right&lt;br&gt;Generation: [BOS], then own samples">
@@ -1818,8 +1818,8 @@
                 <mxCell id="LHrwed4Xa7_nSw0amx-C-13" connectable="0" parent="LHrwed4Xa7_nSw0amx-C-1" style="group;fontFamily=Times New Roman;" value="" vertex="1">
                     <mxGeometry height="224" width="164" x="582" y="225" as="geometry"/>
                 </mxCell>
-                <mxCell id="LHrwed4Xa7_nSw0amx-C-14" parent="LHrwed4Xa7_nSw0amx-C-13" style="rounded=1;whiteSpace=wrap;html=1;spacingBottom=168;arcSize=8;labelBackgroundColor=none;fillColor=#DDA0DD;fontStyle=1;fontFamily=Times New Roman;fontSize=14;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Multihead Self-Attention&amp;nbsp;&lt;div&gt;Encoders&lt;/div&gt;" vertex="1">
-                    <mxGeometry height="224" width="164" as="geometry"/>
+                <mxCell id="LHrwed4Xa7_nSw0amx-C-14" parent="LHrwed4Xa7_nSw0amx-C-13" style="rounded=1;whiteSpace=wrap;html=1;spacingBottom=170;arcSize=8;labelBackgroundColor=none;fillColor=#DDA0DD;fontStyle=1;fontFamily=Times New Roman;fontSize=14;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Multihead Self-Attention&amp;nbsp;&lt;div&gt;(rotary position)&lt;/div&gt;&lt;div&gt;Encoders&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="240" width="164" y="-16" as="geometry"/>
                 </mxCell>
                 <mxCell id="LHrwed4Xa7_nSw0amx-C-15" parent="LHrwed4Xa7_nSw0amx-C-13" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;labelBackgroundColor=none;fillColor=#C8A2C8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;opacity=20;textOpacity=20;" value="&lt;div&gt;&lt;div&gt;Orthography&lt;/div&gt;&lt;div&gt;Encoder&lt;/div&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="60" width="120" x="22" y="69" as="geometry"/>
@@ -1845,7 +1845,7 @@
                 <mxCell id="LHrwed4Xa7_nSw0amx-C-22" connectable="0" parent="LHrwed4Xa7_nSw0amx-C-1" style="group;fillColor=none;strokeColor=none;fontFamily=Times New Roman;" value="" vertex="1">
                     <mxGeometry height="537" width="272" x="280" y="73" as="geometry"/>
                 </mxCell>
-                <mxCell id="LHrwed4Xa7_nSw0amx-C-23" parent="LHrwed4Xa7_nSw0amx-C-22" style="rounded=1;whiteSpace=wrap;html=1;container=0;spacingBottom=450;arcSize=6;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="&lt;span style=&quot;text-wrap-mode: nowrap;&quot;&gt;Embedding + Position&lt;br&gt;(phoneme = mean of its&lt;br&gt;feature embeddings)&lt;/span&gt;" vertex="1">
+                <mxCell id="LHrwed4Xa7_nSw0amx-C-23" parent="LHrwed4Xa7_nSw0amx-C-22" style="rounded=1;whiteSpace=wrap;html=1;container=0;spacingBottom=450;arcSize=6;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="&lt;span style=&quot;text-wrap-mode: nowrap;&quot;&gt;Embedding&lt;br&gt;(phoneme = mean of its&lt;br&gt;feature embeddings)&lt;/span&gt;" vertex="1">
                     <mxGeometry y="0" x="0" height="537" width="272" as="geometry"/>
                 </mxCell>
                 <mxCell id="LHrwed4Xa7_nSw0amx-C-24" connectable="0" parent="LHrwed4Xa7_nSw0amx-C-22" style="group;fontFamily=Times New Roman;" value="" vertex="1">
@@ -1896,8 +1896,8 @@
                 <mxCell id="LHrwed4Xa7_nSw0amx-C-37" connectable="0" parent="LHrwed4Xa7_nSw0amx-C-1" style="group;fontFamily=Times New Roman;" value="" vertex="1">
                     <mxGeometry height="258" width="180" x="1780" y="208" as="geometry"/>
                 </mxCell>
-                <mxCell id="LHrwed4Xa7_nSw0amx-C-38" parent="LHrwed4Xa7_nSw0amx-C-37" style="rounded=1;whiteSpace=wrap;html=1;spacingBottom=210;arcSize=8;labelBackgroundColor=none;fontStyle=1;fontFamily=Times New Roman;fontSize=14;fillColor=#F0F0F0;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Masked Self-Attention + Cross-Attention Decoders" vertex="1">
-                    <mxGeometry height="258" width="180" as="geometry"/>
+                <mxCell id="LHrwed4Xa7_nSw0amx-C-38" parent="LHrwed4Xa7_nSw0amx-C-37" style="rounded=1;whiteSpace=wrap;html=1;spacingBottom=208;arcSize=8;labelBackgroundColor=none;fontStyle=1;fontFamily=Times New Roman;fontSize=14;fillColor=#F0F0F0;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Masked Self-Attention&lt;br&gt;(rotary position) +&lt;br&gt;Cross-Attention Decoders" vertex="1">
+                    <mxGeometry height="274" width="180" y="-16" as="geometry"/>
                 </mxCell>
                 <mxCell id="LHrwed4Xa7_nSw0amx-C-39" parent="LHrwed4Xa7_nSw0amx-C-37" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;labelBackgroundColor=none;fontStyle=1;fontFamily=Times New Roman;fontSize=14;fillColor=#ADD8E6;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="&lt;div&gt;Orthography&lt;/div&gt;&lt;div&gt;Decoder&lt;/div&gt;" vertex="1">
                     <mxGeometry height="61.92" width="120" x="30" y="72.24" as="geometry"/>
@@ -2345,7 +2345,7 @@
                 <mxCell id="LHrwed4Xa7_nSw0amx-C-target-header" parent="LHrwed4Xa7_nSw0amx-C-1" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontFamily=Times New Roman;fontSize=16;fontStyle=1" value="Target" vertex="1">
                     <mxGeometry height="24" width="90" x="2000" y="74" as="geometry"/>
                 </mxCell>
-                <mxCell id="LHrwed4Xa7_nSw0amx-C-target-orth-embed" parent="LHrwed4Xa7_nSw0amx-C-1" style="rounded=1;whiteSpace=wrap;html=1;horizontal=0;arcSize=8;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;" value="Tokenization,&lt;br&gt;Embedding +&lt;br&gt;Position" vertex="1">
+                <mxCell id="LHrwed4Xa7_nSw0amx-C-target-orth-embed" parent="LHrwed4Xa7_nSw0amx-C-1" style="rounded=1;whiteSpace=wrap;html=1;horizontal=0;arcSize=8;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;" value="Tokenization +&lt;br&gt;Embedding" vertex="1">
                     <mxGeometry height="100" width="60" x="1673" y="147" as="geometry"/>
                 </mxCell>
                 <mxCell id="LHrwed4Xa7_nSw0amx-C-target-orth-feed" edge="1" parent="LHrwed4Xa7_nSw0amx-C-1" source="LHrwed4Xa7_nSw0amx-C-42" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.08;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;flowAnimation=1;fontFamily=Times New Roman;fontSize=10;fontStyle=1;labelBackgroundColor=default;" target="LHrwed4Xa7_nSw0amx-C-target-orth-embed" value="Training: target spelling, shifted right&lt;br&gt;Generation: [LANG, BOS], then own samples">
@@ -2357,7 +2357,7 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="LHrwed4Xa7_nSw0amx-C-target-phon-embed" parent="LHrwed4Xa7_nSw0amx-C-1" style="rounded=1;whiteSpace=wrap;html=1;horizontal=0;arcSize=8;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;opacity=20;textOpacity=20;" value="Tokenization,&lt;br&gt;Embedding +&lt;br&gt;Position" vertex="1">
+                <mxCell id="LHrwed4Xa7_nSw0amx-C-target-phon-embed" parent="LHrwed4Xa7_nSw0amx-C-1" style="rounded=1;whiteSpace=wrap;html=1;horizontal=0;arcSize=8;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;opacity=20;textOpacity=20;" value="Tokenization +&lt;br&gt;Embedding" vertex="1">
                     <mxGeometry height="100" width="60" x="1674" y="461" as="geometry"/>
                 </mxCell>
                 <mxCell id="LHrwed4Xa7_nSw0amx-C-target-phon-feed" edge="1" parent="LHrwed4Xa7_nSw0amx-C-1" source="LHrwed4Xa7_nSw0amx-C-48" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.92;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;flowAnimation=0;fontFamily=Times New Roman;fontSize=10;fontStyle=1;labelBackgroundColor=default;opacity=20;textOpacity=20;" target="LHrwed4Xa7_nSw0amx-C-target-phon-embed" value="Training: target phonemes, shifted right&lt;br&gt;Generation: [BOS], then own samples">
@@ -2416,8 +2416,8 @@
                 <mxCell id="bgxozwPB41UyYeDnsI1t-13" connectable="0" parent="bgxozwPB41UyYeDnsI1t-1" style="group;fontFamily=Times New Roman;" value="" vertex="1">
                     <mxGeometry height="224" width="164" x="582" y="225" as="geometry"/>
                 </mxCell>
-                <mxCell id="bgxozwPB41UyYeDnsI1t-14" parent="bgxozwPB41UyYeDnsI1t-13" style="rounded=1;whiteSpace=wrap;html=1;spacingBottom=168;arcSize=8;labelBackgroundColor=none;fillColor=#DDA0DD;fontStyle=1;fontFamily=Times New Roman;fontSize=14;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Multihead Self-Attention&amp;nbsp;&lt;div&gt;Encoders&lt;/div&gt;" vertex="1">
-                    <mxGeometry height="224" width="164" as="geometry"/>
+                <mxCell id="bgxozwPB41UyYeDnsI1t-14" parent="bgxozwPB41UyYeDnsI1t-13" style="rounded=1;whiteSpace=wrap;html=1;spacingBottom=170;arcSize=8;labelBackgroundColor=none;fillColor=#DDA0DD;fontStyle=1;fontFamily=Times New Roman;fontSize=14;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Multihead Self-Attention&amp;nbsp;&lt;div&gt;(rotary position)&lt;/div&gt;&lt;div&gt;Encoders&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="240" width="164" y="-16" as="geometry"/>
                 </mxCell>
                 <mxCell id="bgxozwPB41UyYeDnsI1t-15" parent="bgxozwPB41UyYeDnsI1t-13" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;labelBackgroundColor=none;fillColor=#C8A2C8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;opacity=20;textOpacity=20;" value="&lt;div&gt;&lt;div&gt;Orthography&lt;/div&gt;&lt;div&gt;Encoder&lt;/div&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="60" width="120" x="22" y="69" as="geometry"/>
@@ -2443,7 +2443,7 @@
                 <mxCell id="bgxozwPB41UyYeDnsI1t-22" connectable="0" parent="bgxozwPB41UyYeDnsI1t-1" style="group;fillColor=none;strokeColor=none;fontFamily=Times New Roman;" value="" vertex="1">
                     <mxGeometry height="537" width="272" x="280" y="73" as="geometry"/>
                 </mxCell>
-                <mxCell id="bgxozwPB41UyYeDnsI1t-23" parent="bgxozwPB41UyYeDnsI1t-22" style="rounded=1;whiteSpace=wrap;html=1;container=0;spacingBottom=450;arcSize=6;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="&lt;span style=&quot;text-wrap-mode: nowrap;&quot;&gt;Embedding + Position&lt;br&gt;(phoneme = mean of its&lt;br&gt;feature embeddings)&lt;/span&gt;" vertex="1">
+                <mxCell id="bgxozwPB41UyYeDnsI1t-23" parent="bgxozwPB41UyYeDnsI1t-22" style="rounded=1;whiteSpace=wrap;html=1;container=0;spacingBottom=450;arcSize=6;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="&lt;span style=&quot;text-wrap-mode: nowrap;&quot;&gt;Embedding&lt;br&gt;(phoneme = mean of its&lt;br&gt;feature embeddings)&lt;/span&gt;" vertex="1">
                     <mxGeometry y="0" x="0" height="537" width="272" as="geometry"/>
                 </mxCell>
                 <mxCell id="bgxozwPB41UyYeDnsI1t-24" connectable="0" parent="bgxozwPB41UyYeDnsI1t-22" style="group;fontFamily=Times New Roman;" value="" vertex="1">
@@ -2494,8 +2494,8 @@
                 <mxCell id="bgxozwPB41UyYeDnsI1t-37" connectable="0" parent="bgxozwPB41UyYeDnsI1t-1" style="group;fontFamily=Times New Roman;" value="" vertex="1">
                     <mxGeometry height="258" width="180" x="1780" y="208" as="geometry"/>
                 </mxCell>
-                <mxCell id="bgxozwPB41UyYeDnsI1t-38" parent="bgxozwPB41UyYeDnsI1t-37" style="rounded=1;whiteSpace=wrap;html=1;spacingBottom=210;arcSize=8;labelBackgroundColor=none;fontStyle=1;fontFamily=Times New Roman;fontSize=14;fillColor=#F0F0F0;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Masked Self-Attention + Cross-Attention Decoders" vertex="1">
-                    <mxGeometry height="258" width="180" as="geometry"/>
+                <mxCell id="bgxozwPB41UyYeDnsI1t-38" parent="bgxozwPB41UyYeDnsI1t-37" style="rounded=1;whiteSpace=wrap;html=1;spacingBottom=208;arcSize=8;labelBackgroundColor=none;fontStyle=1;fontFamily=Times New Roman;fontSize=14;fillColor=#F0F0F0;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;" value="Masked Self-Attention&lt;br&gt;(rotary position) +&lt;br&gt;Cross-Attention Decoders" vertex="1">
+                    <mxGeometry height="274" width="180" y="-16" as="geometry"/>
                 </mxCell>
                 <mxCell id="bgxozwPB41UyYeDnsI1t-39" parent="bgxozwPB41UyYeDnsI1t-37" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;labelBackgroundColor=none;fontStyle=1;fontFamily=Times New Roman;fontSize=14;fillColor=#ADD8E6;container=0;movable=1;resizable=1;rotatable=1;deletable=1;editable=1;locked=0;connectable=1;opacity=20;textOpacity=20;" value="&lt;div&gt;Orthography&lt;/div&gt;&lt;div&gt;Decoder&lt;/div&gt;" vertex="1">
                     <mxGeometry height="61.92" width="120" x="30" y="72.24" as="geometry"/>
@@ -2943,7 +2943,7 @@
                 <mxCell id="bgxozwPB41UyYeDnsI1t-target-header" parent="bgxozwPB41UyYeDnsI1t-1" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontFamily=Times New Roman;fontSize=16;fontStyle=1" value="Target" vertex="1">
                     <mxGeometry height="24" width="90" x="2000" y="74" as="geometry"/>
                 </mxCell>
-                <mxCell id="bgxozwPB41UyYeDnsI1t-target-orth-embed" parent="bgxozwPB41UyYeDnsI1t-1" style="rounded=1;whiteSpace=wrap;html=1;horizontal=0;arcSize=8;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;opacity=20;textOpacity=20;" value="Tokenization,&lt;br&gt;Embedding +&lt;br&gt;Position" vertex="1">
+                <mxCell id="bgxozwPB41UyYeDnsI1t-target-orth-embed" parent="bgxozwPB41UyYeDnsI1t-1" style="rounded=1;whiteSpace=wrap;html=1;horizontal=0;arcSize=8;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;opacity=20;textOpacity=20;" value="Tokenization +&lt;br&gt;Embedding" vertex="1">
                     <mxGeometry height="100" width="60" x="1673" y="147" as="geometry"/>
                 </mxCell>
                 <mxCell id="bgxozwPB41UyYeDnsI1t-target-orth-feed" edge="1" parent="bgxozwPB41UyYeDnsI1t-1" source="bgxozwPB41UyYeDnsI1t-42" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.08;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;flowAnimation=0;fontFamily=Times New Roman;fontSize=10;fontStyle=1;labelBackgroundColor=default;opacity=20;textOpacity=20;" target="bgxozwPB41UyYeDnsI1t-target-orth-embed" value="Training: target spelling, shifted right&lt;br&gt;Generation: [LANG, BOS], then own samples">
@@ -2955,7 +2955,7 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="bgxozwPB41UyYeDnsI1t-target-phon-embed" parent="bgxozwPB41UyYeDnsI1t-1" style="rounded=1;whiteSpace=wrap;html=1;horizontal=0;arcSize=8;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;" value="Tokenization,&lt;br&gt;Embedding +&lt;br&gt;Position" vertex="1">
+                <mxCell id="bgxozwPB41UyYeDnsI1t-target-phon-embed" parent="bgxozwPB41UyYeDnsI1t-1" style="rounded=1;whiteSpace=wrap;html=1;horizontal=0;arcSize=8;labelBackgroundColor=none;fillColor=#D8BFD8;fontStyle=1;fontFamily=Times New Roman;fontSize=14;" value="Tokenization +&lt;br&gt;Embedding" vertex="1">
                     <mxGeometry height="100" width="60" x="1674" y="461" as="geometry"/>
                 </mxCell>
                 <mxCell id="bgxozwPB41UyYeDnsI1t-target-phon-feed" edge="1" parent="bgxozwPB41UyYeDnsI1t-1" source="bgxozwPB41UyYeDnsI1t-48" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.92;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;flowAnimation=1;fontFamily=Times New Roman;fontSize=10;fontStyle=1;labelBackgroundColor=default;" target="bgxozwPB41UyYeDnsI1t-target-phon-embed" value="Training: target phonemes, shifted right&lt;br&gt;Generation: [BOS], then own samples">

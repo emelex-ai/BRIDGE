@@ -19,6 +19,7 @@ chosen wrong token at one chosen position:
 
 import pytest
 import torch
+from pydantic import ValidationError
 
 from bridge.application.training.ortho_metrics import calculate_orth_metrics
 from bridge.application.training.training_pipeline import TrainingPipeline
@@ -198,54 +199,20 @@ def test_a_vocabulary_with_no_language_tokens_scores_both_pairs_alike(
     assert scores["word_wise_accuracy_without_switches"] == scores["word_wise_accuracy"]
 
 
-def test_a_spec_that_does_not_name_its_language_tokens_reports_the_plain_pair_only(
-    shared_tokenizer, target, perfect, char_id, tmp_path
-):
-    """A hand-written ``VocabSpec`` may leave ``orth_language_ids`` out, and then it is unknown.
+def test_a_spec_must_name_its_language_tokens(shared_tokenizer):
+    """Oracle: the rule. The language ids are part of a vocabulary, like its pad id, so a
+    ``VocabSpec`` written by hand without them does not validate, and the error is located
+    at that field. An empty tuple is how a vocabulary with no language tokens says so.
 
-    Oracle: analytic, 24 of 25 and 2 of 3 for the plain pair. Unknown is not the same as
-    empty: an empty default would report a letters-only pair equal to the plain one on
-    these rows, which hold two switches.
+    Left optional, a spec without them would report the letters-only pair as equal to the
+    plain one on these rows, which hold two switches.
     """
     fields = VocabSpec.from_tokenizer(shared_tokenizer).model_dump()
     del fields["orth_language_ids"]
-    pipeline = TrainingPipeline(
-        model=Model(ModelConfig(vocab=VocabSpec(**fields), d_model=32, nhead=2, seed=5)),
-        training_config=TrainingConfig(training_pathway="p2o", model_artifacts_dir=str(tmp_path)),
-    )
-    logits = {"orth": wrong_at(perfect, 0, SWITCH_COLUMN, char_id["m"])}
-    assert pipeline.compute_metrics(logits, target) == {
-        "letter_wise_accuracy": pytest.approx(24 / 25),
-        "word_wise_accuracy": pytest.approx(2 / 3),
-    }
 
-
-def test_a_pickled_spec_without_the_attribute_still_scores(
-    shared_tokenizer, target, perfect, char_id, tmp_path
-):
-    """A model built from a checkpoint's own pickled config computes metrics.
-
-    Pickle restores a ``VocabSpec``'s ``__dict__`` verbatim and validates nothing, so a
-    spec whose pickle does not hold ``orth_language_ids`` has no such attribute, default
-    or not. That state is reproduced here by deleting the entry, and the first assertion
-    checks the premise: reading the field raises. The pipeline must then report the plain
-    pair, 24 of 25 and 2 of 3, and leave the letters-only pair out.
-    """
-    pipeline = TrainingPipeline(
-        model=Model(
-            ModelConfig(
-                vocab=VocabSpec.from_tokenizer(shared_tokenizer), d_model=32, nhead=2, seed=5
-            )
-        ),
-        training_config=TrainingConfig(training_pathway="p2o", model_artifacts_dir=str(tmp_path)),
-    )
-    vocab = pipeline.model.model_config.vocab
-    del vocab.__dict__["orth_language_ids"]
-    with pytest.raises(AttributeError):
-        _ = vocab.orth_language_ids
-
-    logits = {"orth": wrong_at(perfect, 0, SWITCH_COLUMN, char_id["m"])}
-    assert pipeline.compute_metrics(logits, target) == {
-        "letter_wise_accuracy": pytest.approx(24 / 25),
-        "word_wise_accuracy": pytest.approx(2 / 3),
-    }
+    with pytest.raises(ValidationError) as raised:
+        VocabSpec(**fields)
+    assert [(error["loc"], error["type"]) for error in raised.value.errors()] == [
+        (("orth_language_ids",), "missing")
+    ]
+    assert VocabSpec(**fields, orth_language_ids=()).orth_language_ids == ()

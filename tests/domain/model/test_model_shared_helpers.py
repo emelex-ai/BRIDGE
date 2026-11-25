@@ -285,31 +285,35 @@ def test_phono_sample_embedding_input_is_one_column_wider_than_presence(model):
 # --- checkpoint compatibility ---------------------------------------------
 
 
-def test_parameter_names_are_stable_across_the_layers_module_merge():
-    """``encoder.py`` and ``decoder.py`` were merged into ``layers.py``.
+def test_parameter_names_are_pinned():
+    """A checkpoint is a ``state_dict``, so a parameter's name is part of what a saved file
+    means. One key per kind of module is pinned here.
 
-    Class and attribute names were kept identical precisely so that existing
-    checkpoints keep loading. Renaming ``Encoder.transformer_encoder`` or the module
-    attributes on ``Model`` would silently break ``TrainingPipeline.load_model``.
+    Renaming a stack's ``layers`` or a module attribute on ``Model`` would stop every
+    saved checkpoint loading through ``TrainingPipeline.load_model``. The stacks name
+    their parameters as torch's ``nn.TransformerEncoder`` and ``nn.TransformerDecoder``
+    do. No key names a position: nothing learned is indexed by one.
     """
     keys = set(build().state_dict().keys())
     for expected in [
         "global_embedding",
         "orthography_embedding.weight",
         "phonology_embedding.weight",
-        "orth_position_embedding.weight",
-        "phon_position_embedding.weight",
-        "orthography_encoder.transformer_encoder.layers.0.self_attn.in_proj_weight",
-        "phonology_encoder.transformer_encoder.layers.0.self_attn.in_proj_weight",
-        "transformer_mixer.transformer_encoder.layers.0.self_attn.in_proj_weight",
-        "orthography_decoder.transformer_decoder.layers.0.self_attn.in_proj_weight",
-        "phonology_decoder.transformer_decoder.layers.0.self_attn.in_proj_weight",
+        "orthography_encoder.layers.0.self_attn.in_proj_weight",
+        "phonology_encoder.layers.0.self_attn.in_proj_weight",
+        "transformer_mixer.layers.0.self_attn.in_proj_weight",
+        "orthography_decoder.layers.0.self_attn.in_proj_weight",
+        "orthography_decoder.layers.0.multihead_attn.in_proj_weight",
+        "phonology_decoder.layers.0.self_attn.in_proj_weight",
+        "phonology_decoder.layers.0.multihead_attn.in_proj_weight",
         "linear_orthography_decoder.weight",
         "linear_phonology_decoder.weight",
         "gp_multihead_attention.in_proj_weight",
         "pg_multihead_attention.in_proj_weight",
     ]:
         assert expected in keys, f"checkpoint key disappeared: {expected}"
+    assert len(keys) == 167
+    assert not [key for key in keys if "position" in key]
 
 
 def test_a_state_dict_round_trips():
@@ -325,21 +329,19 @@ def test_a_state_dict_round_trips():
 def test_the_phoneme_feature_table_stays_out_of_the_state_dict():
     """``phon_feature_matrix`` is derived from ``phonreps.csv``, not learned.
 
-    It is registered ``persistent=False`` precisely so it never reaches a checkpoint. If
-    that flag were dropped, every ``.pth`` written before the issue #221 refactor would
-    fail to load under ``strict=True``, the failure this test exists to prevent.
+    It is registered ``persistent=False`` precisely so it never reaches a checkpoint: a
+    checkpoint holds what was learned, and this is read from the table.
     """
     model = build()
     assert "phon_feature_matrix" in dict(model.named_buffers())
     assert "phon_feature_matrix" not in model.state_dict()
 
 
-def test_a_pre_refactor_checkpoint_loads_strictly():
-    """Spec acceptance gate: an existing ``.pth`` still loads with ``strict=True``.
+def test_a_saved_state_dict_loads_strictly():
+    """A checkpoint this model saved has exactly this model's key set.
 
-    The refactor added no parameters and changed no shapes, so a checkpoint saved before it
-    has exactly today's key set. Round-tripping through ``torch.save``/``torch.load`` is
-    what ``TrainingPipeline.load_model`` actually does, so this exercises that path rather
+    Round-tripping through ``torch.save``/``torch.load`` is what
+    ``TrainingPipeline.load_model`` actually does, so this exercises that path rather
     than a bare dict copy.
     """
     saved = io.BytesIO()
@@ -351,6 +353,36 @@ def test_a_pre_refactor_checkpoint_loads_strictly():
         torch.load(saved, weights_only=True)["model_state_dict"], strict=True
     )
     assert not missing and not unexpected
+
+
+@pytest.mark.parametrize(
+    "table", ["orth_position_embedding.weight", "phon_position_embedding.weight"]
+)
+def test_a_state_dict_holding_a_position_table_is_refused(table):
+    """Oracle: the rule. A state dict with a tensor this model has no place for does not
+    load, and the error names the tensor. A table of position embeddings is such a
+    tensor, and weights trained beside one mean nothing without it.
+
+    The control is the same state dict without the extra tensor, which loads.
+    """
+    model = build()
+    state = model.state_dict()
+    model.load_state_dict(state)
+
+    state[table] = torch.zeros(30, D_MODEL)
+    with pytest.raises(RuntimeError, match="Unexpected key") as raised:
+        model.load_state_dict(state)
+    assert table in str(raised.value)
+
+
+def test_a_state_dict_missing_a_tensor_is_refused():
+    """The other half: nothing loads with a key silently missing."""
+    model = build()
+    state = model.state_dict()
+    del state["global_embedding"]
+    with pytest.raises(RuntimeError, match="Missing key") as raised:
+        model.load_state_dict(state)
+    assert "global_embedding" in str(raised.value)
 
 
 # --- phoneme table provenance ----------------------------------------------
@@ -374,13 +406,40 @@ def test_a_vocab_spec_without_a_fingerprint_still_builds():
     )
 
 
-def test_layer_wrappers_are_still_exported():
-    assert issubclass(Encoder, torch.nn.Module)
-    assert issubclass(Decoder, torch.nn.Module)
+def test_the_stacks_are_exported_and_the_model_is_built_from_them():
+    """The two encoders and the two decoders are the stacks of ``layers.py``, whose
+    self-attention is rotary. The mixer is torch's stock encoder, which has no position."""
+    m = build()
+    assert type(m.orthography_encoder) is type(m.phonology_encoder) is Encoder
+    assert type(m.orthography_decoder) is type(m.phonology_decoder) is Decoder
+    assert type(m.transformer_mixer) is torch.nn.TransformerEncoder
+
+
+def test_every_stack_has_a_feedforward_width_of_four_times_d_model():
+    """Oracle: the rule, ``4 * d_model`` in all five stacks. The mixer is torch's own
+    layer, whose width is 2048 unless it is told, so it is the one that could differ in
+    silence: nothing in a forward's shapes shows a feedforward width."""
+    state = build().state_dict()
+    for stack in (
+        "orthography_encoder",
+        "phonology_encoder",
+        "transformer_mixer",
+        "orthography_decoder",
+        "phonology_decoder",
+    ):
+        assert state[f"{stack}.layers.0.linear1.weight"].shape == (4 * D_MODEL, D_MODEL), stack
 
 
 def test_layer_counts_follow_the_config():
-    m = build(num_orth_enc_layers=3, num_phon_enc_layers=1, num_mixing_enc_layers=2)
-    assert len(m.orthography_encoder.transformer_encoder.layers) == 3
-    assert len(m.phonology_encoder.transformer_encoder.layers) == 1
-    assert len(m.transformer_mixer.transformer_encoder.layers) == 2
+    m = build(
+        num_orth_enc_layers=3,
+        num_phon_enc_layers=1,
+        num_mixing_enc_layers=2,
+        num_orth_dec_layers=4,
+        num_phon_dec_layers=5,
+    )
+    assert len(m.orthography_encoder.layers) == 3
+    assert len(m.phonology_encoder.layers) == 1
+    assert len(m.transformer_mixer.layers) == 2
+    assert len(m.orthography_decoder.layers) == 4
+    assert len(m.phonology_decoder.layers) == 5

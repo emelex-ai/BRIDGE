@@ -462,7 +462,9 @@ def test_a_batch_whose_sides_differ_trains_evaluates_and_generates(pairs, make, 
     start = tokenizer.orth_start([e.target_languages[0] for e in examples])
     assert torch.equal(start, batch.target.orth.ids[:, :2])
     assert not torch.equal(start, batch.input.orth.ids[:, :2]), "the languages must differ"
-    output = model.generate(batch.input, pathway, orth_start=start, deterministic=True)
+    output = model.generate(
+        batch.input, pathway, max_new_tokens=6, orth_start=start, deterministic=True
+    )
     assert output.global_encoding.shape[0] == len(pairs)
     if "orth" in writes:
         assert torch.equal(output.orth_tokens[:, :2], start)

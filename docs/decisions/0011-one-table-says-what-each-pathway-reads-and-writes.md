@@ -1,6 +1,10 @@
 # 0011. One table says what each pathway reads and writes
 
-Status: Accepted
+Status: Accepted, amended by [0017](0017-positions-are-computed-for-any-length.md)
+
+> `PATHWAY_IO` and the uniform check set still hold. One check is amended away: there is
+> no length bound, since a sequence may be any length. One is added for every pathway:
+> `max_new_tokens`, the caller's cap on what generation writes. See 0017.
 Date: 2026-09-16
 
 ## Context

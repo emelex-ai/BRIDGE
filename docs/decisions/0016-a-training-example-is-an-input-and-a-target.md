@@ -1,6 +1,10 @@
 # 0016. A training example is an input and a target
 
-Status: Accepted
+Status: Accepted, amended by [0017](0017-positions-are-computed-for-any-length.md)
+
+> The five types and the two sides still hold. One detail is amended. `Model.generate`
+> also takes `max_new_tokens`, keyword-only and required, the most tokens to write after
+> the start of each sequence. See 0017.
 Date: 2026-11-23
 Amends [0004](0004-orthographic-teacher-forcing-alignment.md) and
 [0013](0013-the-caller-owns-the-loop-in-fact.md), and details of

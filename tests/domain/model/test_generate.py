@@ -2,12 +2,13 @@
 
 Every pathway, exercised through the public :meth:`Model.generate` entry point. The
 assertions are structural: which fields a pathway populates, what shapes they carry, that
-a deterministic run repeats, and what generation reads. It reads a ``BridgeInput`` and,
-on a pathway that writes orthography, the ``orth_start`` the caller names the output
-language with. It reads nothing else, and each of those is checked from both sides: what
-it must respond to, and what it must not. The numeric values are pinned separately by
-``tests/domain/test_phon_baseline_equivalence.py`` and the per-step mechanics by
-``tests/domain/model/test_decoder_loops.py``.
+a deterministic run repeats, and what generation reads. It reads a ``BridgeInput``, the
+``max_new_tokens`` that caps what it writes and, on a pathway that writes orthography,
+the ``orth_start`` the caller names the output language with. It reads nothing else, and
+each of those is checked from both sides: what it must respond to, and what it must not.
+What the cap does is pinned in ``tests/domain/model/test_max_new_tokens.py``, that
+generation agrees with teacher forcing in ``tests/domain/model/test_any_length.py``, and
+the per-step mechanics in ``tests/domain/model/test_decoder_loops.py``.
 """
 
 import pytest
@@ -27,6 +28,9 @@ from bridge.domain.tokenizer import BridgeTokenizer
 TOKENIZER = BridgeTokenizer()
 WORDS = ["cat", "dog", "elephant"]
 LANGUAGES = ["EN", "EN", "EN"]
+# The most tokens a sequence may write after its start. The assertions here are about
+# which fields are filled and what generation reads, so a few tokens are enough.
+CAP = 6
 
 # Which GenerationOutput fields each pathway is responsible for filling in.
 ORTH_FIELDS = ("orth_tokens", "orth_probs")
@@ -64,7 +68,9 @@ def start():
 def generated(model, inputs, start):
     """Each pathway's greedy output for ``inputs`` and ``start``, generated once."""
     return {
-        pathway: model.generate(inputs, pathway, orth_start=start, deterministic=True)
+        pathway: model.generate(
+            inputs, pathway, max_new_tokens=CAP, orth_start=start, deterministic=True
+        )
         for pathway in PATHWAYS
     }
 
@@ -110,7 +116,9 @@ def test_generated_batches_keep_their_alignment(generated, pathway):
 @pytest.mark.parametrize("pathway", sorted(PRODUCES))
 def test_deterministic_generation_repeats(model, inputs, start, generated, pathway):
     first = generated[pathway]
-    second = model.generate(inputs, pathway, orth_start=start, deterministic=True)
+    second = model.generate(
+        inputs, pathway, max_new_tokens=CAP, orth_start=start, deterministic=True
+    )
     assert first is not second
 
     for field in PRODUCES[pathway]:
@@ -119,7 +127,7 @@ def test_deterministic_generation_repeats(model, inputs, start, generated, pathw
 
 def test_an_unknown_pathway_is_rejected(model, inputs, start):
     with pytest.raises(ValueError, match="Invalid pathway"):
-        model.generate(inputs, "nonsense", orth_start=start, deterministic=True)
+        model.generate(inputs, "nonsense", max_new_tokens=CAP, orth_start=start, deterministic=True)
 
 
 # --- what generation reads: the input ----------------------------------------
@@ -141,7 +149,9 @@ def test_generation_responds_to_each_modality_it_reads_and_to_no_other(
         rolled = type(part)(part.ids.roll(1, dims=0), part.pad_mask.roll(1, dims=0))
         assert not torch.equal(rolled.ids, part.ids), "the roll must change the rows"
         other = {"orth": inputs.orth, "phon": inputs.phon, modality: rolled}
-        moved = model.generate(BridgeInput(**other), pathway, orth_start=start, deterministic=True)
+        moved = model.generate(
+            BridgeInput(**other), pathway, max_new_tokens=CAP, orth_start=start, deterministic=True
+        )
 
         changed = not torch.equal(moved.global_encoding, base.global_encoding)
         assert changed == (modality in PATHWAY_IO[pathway][0]), (pathway, modality)
@@ -180,7 +190,11 @@ def test_a_target_changes_nothing_generation_returns(model, pathway, tmp_path):
 
     orth_start = TOKENIZER.orth_start(["ES", "ES", "EN"])
     outputs = [
-        fields(model.generate(batch.input, pathway, orth_start=orth_start, deterministic=True))
+        fields(
+            model.generate(
+                batch.input, pathway, max_new_tokens=CAP, orth_start=orth_start, deterministic=True
+            )
+        )
         for batch in batches.values()
     ]
     assert same(outputs[0], outputs[1])
@@ -194,7 +208,7 @@ def test_generation_takes_an_input_and_refuses_anything_else(model, inputs, star
     target = TOKENIZER.encode_target(WORDS, LANGUAGES)
     for wrong in (target, BridgeBatch(input=inputs, target=target), None, inputs.orth):
         with pytest.raises(TypeError, match="generate reads a BridgeInput, got"):
-            model.generate(wrong, "o2o", orth_start=start, deterministic=True)
+            model.generate(wrong, "o2o", max_new_tokens=CAP, orth_start=start, deterministic=True)
 
 
 # --- a modality the input does not carry --------------------------------------
@@ -214,9 +228,13 @@ def test_a_pathway_reading_a_modality_the_input_lacks_raises_naming_both(
     if missing in PATHWAY_IO[pathway][0]:
         message = f"pathway '{pathway}' reads {missing}, which this input does not carry"
         with pytest.raises(ValueError, match=message):
-            model.generate(one_sided, pathway, orth_start=start, deterministic=True)
+            model.generate(
+                one_sided, pathway, max_new_tokens=CAP, orth_start=start, deterministic=True
+            )
     else:
-        partial = model.generate(one_sided, pathway, orth_start=start, deterministic=True)
+        partial = model.generate(
+            one_sided, pathway, max_new_tokens=CAP, orth_start=start, deterministic=True
+        )
         assert same(fields(generated[pathway]), fields(partial))
 
 
@@ -227,12 +245,19 @@ def test_a_nonword_is_read_through_its_spelling(model):
     assert nonwords.phon is None
     orth_start = TOKENIZER.orth_start(["EN", "EN"])
 
-    assert model.generate(nonwords, "o2p", deterministic=True).phon_tokens is not None
-    spelled = model.generate(nonwords, "o2o", orth_start=orth_start, deterministic=True)
+    assert (
+        model.generate(nonwords, "o2p", max_new_tokens=CAP, deterministic=True).phon_tokens
+        is not None
+    )
+    spelled = model.generate(
+        nonwords, "o2o", max_new_tokens=CAP, orth_start=orth_start, deterministic=True
+    )
     assert spelled.orth_tokens.shape[0] == 2
     for pathway in ("p2o", "p2p", "op2op"):
         with pytest.raises(ValueError, match=f"pathway '{pathway}' reads phon"):
-            model.generate(nonwords, pathway, orth_start=orth_start, deterministic=True)
+            model.generate(
+                nonwords, pathway, max_new_tokens=CAP, orth_start=orth_start, deterministic=True
+            )
 
 
 # --- what generation reads: the start of orthography --------------------------
@@ -244,7 +269,9 @@ def test_orth_start_is_the_first_two_orthographic_tokens(model, inputs, pathway)
     output language is the caller's choice and the input's language is not consulted:
     the input rows are all English, and each is started in a different language."""
     orth_start = TOKENIZER.orth_start(["ES", "EN", None])
-    output = model.generate(inputs, pathway, orth_start=orth_start, deterministic=True)
+    output = model.generate(
+        inputs, pathway, max_new_tokens=CAP, orth_start=orth_start, deterministic=True
+    )
     assert torch.equal(output.orth_tokens[:, :2], orth_start)
     assert output.orth_tokens[:, :2].tolist() == [[8, 0], [7, 0], [6, 0]]
 
@@ -258,7 +285,11 @@ def test_changing_orth_start_changes_only_what_orthography_follows(
     english = fields(generated[pathway])  # every row started in English
     spanish = fields(
         model.generate(
-            inputs, pathway, orth_start=TOKENIZER.orth_start(["ES"] * 3), deterministic=True
+            inputs,
+            pathway,
+            max_new_tokens=CAP,
+            orth_start=TOKENIZER.orth_start(["ES"] * 3),
+            deterministic=True,
         )
     )
 
@@ -281,7 +312,7 @@ def test_a_pathway_that_writes_orthography_requires_orth_start(model, inputs, pa
     model.train()
     try:
         with pytest.raises(ValueError) as raised:
-            model.generate(given, pathway, deterministic=True)
+            model.generate(given, pathway, max_new_tokens=CAP, deterministic=True)
         assert model.training
     finally:
         model.eval()
@@ -295,16 +326,18 @@ def test_a_pathway_that_writes_no_orthography_does_not_read_orth_start(
     model, inputs, start, pathway
 ):
     """Oracle: invariant. With a start, with another, or with none, the output is the same."""
-    without = fields(model.generate(inputs, pathway, deterministic=True))
+    without = fields(model.generate(inputs, pathway, max_new_tokens=CAP, deterministic=True))
     for orth_start in (start, TOKENIZER.orth_start(["ES"] * 3)):
         with_start = fields(
-            model.generate(inputs, pathway, orth_start=orth_start, deterministic=True)
+            model.generate(
+                inputs, pathway, max_new_tokens=CAP, orth_start=orth_start, deterministic=True
+            )
         )
         assert same(without, with_start)
 
 
-def test_orth_start_and_deterministic_are_keyword_only(model, inputs, start):
-    """Oracle: the signature. A positional third argument would be read as one or the
-    other depending on the order they were written in."""
+def test_everything_after_the_pathway_is_keyword_only(model, inputs, start):
+    """Oracle: the signature. A positional third argument would be read as the cap, the
+    start or the sampling mode depending on the order they were written in."""
     with pytest.raises(TypeError, match="positional"):
-        model.generate(inputs, "o2o", start, True)
+        model.generate(inputs, "o2o", CAP, start, True)

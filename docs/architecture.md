@@ -27,8 +27,22 @@ generate. See `docs/decisions/0011`.
 
 `ModelConfig` (`bridge/domain/datamodels/model_config.py`) accepts only sizes for which
 that holds. The five layer counts, `d_model`, `nhead` and `d_embedding` are each at least
-one, and `nhead` divides `d_model`, so a mistake in a size fails when the config is built
-and names the field. See `docs/decisions/0014`.
+one. `nhead` divides `d_model` into heads of two or more dimensions. A mistake in a size
+fails when the config is built, and the error names the field. See `docs/decisions/0014`
+and `docs/decisions/0017`.
+
+| size | default | what it sets |
+|---|---|---|
+| `d_model` | 64 | the width of every token vector |
+| `nhead` | 2 | attention heads; each gets `d_model / nhead` dimensions |
+| `d_embedding` | 2 | rows of the global memory, which is all a decoder reads of the input |
+| `num_orth_enc_layers`, `num_phon_enc_layers` | 2 | layers of each encoder |
+| `num_mixing_enc_layers` | 2 | layers of the mixer, the stack that writes the global memory |
+| `num_orth_dec_layers`, `num_phon_dec_layers` | 2 | layers of each decoder |
+
+A head needs two dimensions because position is a rotation of pairs of them. A head of
+one has no pair, so the encoders would read "cat" and "act" as one word. The smallest
+size, `d_model=2` with `nhead=1`, validates and still cannot read order.
 
 The scientific premise is that phonemes sharing phonetic features share embedding mass. A
 phoneme's embedding is the mean of its active feature embeddings, never a free parameter of
@@ -160,8 +174,9 @@ its text and each word's language.
 Orthographic accuracy is reported as two pairs. `letter_wise_accuracy` and
 `word_wise_accuracy` count every scored token, switches included, which are the positions
 the loss trains. The `_without_switches` pair leaves out the positions whose label is a
-language token, so it measures spelling alone. It is absent when
-`VocabSpec.orth_language_ids` is not set. See `docs/decisions/0015`.
+language token, so it measures spelling alone. `VocabSpec.orth_language_ids` names the
+language tokens and is required, so both pairs are always reported. See
+`docs/decisions/0015`.
 
 ## A dataset row is an input and a target
 
@@ -231,6 +246,52 @@ by 31 phonetic features plus 5 special-token columns (`[BOS]`, `[EOS]`, `[UNK]`,
 `PhonemeTable.fingerprint` is a digest of the table, recorded into `VocabSpec` and checked when
 a checkpoint loads, so a `phonreps.csv` edit that silently relabels every id is detectable.
 
+## Position and length
+
+A token embeds to the same vector wherever it sits. Position enters the model in one
+place, `rotate` in `bridge/domain/model/layers.py`. Inside self-attention it turns every
+query and every key by an angle proportional to its position, before the dot product.
+This is rotary position embedding. The score between two tokens then depends on how far
+apart they are, and not on which slots they fill.
+
+Think of the two hands of a clock. Move both on by an hour and the angle between them is
+what it was.
+
+| attention | position |
+|---|---|
+| self-attention of the two encoders | rotated |
+| self-attention of the two decoders | rotated |
+| a decoder's cross-attention to the global memory | none: the memory's rows have no order |
+| the mixer | none: it is torch's stock `nn.TransformerEncoder` |
+| the two cross-attentions between modalities on `op2op` | none: torch's stock `nn.MultiheadAttention` |
+
+The encoders and the decoders are built from the blocks in `layers.py`. Torch's stock
+layers give no access between the query and key projections and the dot product, which
+is where the rotation sits. The blocks keep the parameter names and shapes of torch's
+stacks. With the rotation switched off they compute what the stock stacks compute on the
+same weights, and `tests/domain/model/test_rotary_layers.py` pins that.
+
+**The model holds no maximum length.** No table is indexed by position. A sequence of any
+length trains, evaluates and generates, and no length is checked anywhere.
+`tests/domain/model/test_any_length.py` runs rows past 60 tokens on every pathway.
+
+Three things still bound length, and none of them is a check.
+
+- **What the model trained on.** A model reads an input somewhat longer than any it
+  trained on. Trained on phrases of up to 19 tokens, a model that hears a phrase and
+  spells its last word scores 0.848 [0.450, 1.000] at 23 to 30 tokens, over six seeds.
+  It does not repeat a longer phrase: exact match is 0.000 to 0.003 past the trained
+  lengths. Training data must cover the lengths in use.
+- **The global memory.** A decoder reads `d_embedding` rows, however long the input is.
+  With the default of 2, a model trained on phrases of up to 47 tokens repeats none of
+  those of 33 to 47. With 8 rows it repeats 0.620 of them, and with 32 rows 0.895. A run
+  on phrases sets `d_embedding`.
+- **The cap at generation.** Nothing in the model says when to stop, so `generate` takes
+  `max_new_tokens` from its caller. "How a batch flows" says how it counts.
+
+Measured 2026-11-24 on CPU, on small closed vocabularies. `docs/decisions/0017` carries
+the numbers and names the scripts.
+
 ## Layout
 
 ```
@@ -241,14 +302,22 @@ bridge/domain/datamodels/encodings.py Tokens, Target, BridgeInput, BridgeTarget,
 bridge/domain/datamodels/pathways.py  PATHWAY_IO: what each pathway reads and writes
 bridge/domain/tokenizer/              CharacterTokenizer, PhonemeTokenizer, BridgeTokenizer
 bridge/domain/tokenizer/languages.py  what a word is, and which language each word is in
-bridge/domain/model/model.py          encoders, decoders, generation loops
+bridge/domain/model/layers.py         rotate, and the encoder and decoder blocks whose
+                                      self-attention reads position through it
+bridge/domain/model/model.py          token embeddings, the mixer, the five pathways,
+                                      generation loops
 bridge/domain/data/bridge_dataset.py  dataset of input and target rows, languages checked at load
-bridge/application/training/          TrainingPipeline, loss, metrics
+bridge/application/training/          TrainingPipeline, loss, metrics, checkpoints
 bridge/utils/device_manager.py        the process device, selected by BRIDGE_DEVICE
 tests/fixtures/phon_baseline.pt       golden master, immutable
 tests/fixtures/bench_phon.py          phonological hot-path benchmarks
 tests/application/training/test_input_target_wiring.py
                                       asserts which tensors of a batch each pathway reads
+tests/domain/model/test_rotary_layers.py
+                                      the blocks against torch's stock stacks, and the rotation
+tests/domain/model/test_any_length.py position, padding and generation on the whole model
+tests/domain/model/test_max_new_tokens.py
+                                      the cap on what generation writes
 tests/test_documentation.py           asserts this document against the live system
 tests/test_diagram.py                 asserts BRIDGE-Models.drawio against the live model
 tests/fixtures/sync_diagram_table.py  rewrites the figure's feature table from phonreps.csv
@@ -281,7 +350,11 @@ a file row: input string, target string, one language code per word of each
        encoder tensors                  <- batch.input.orth
        decoder tensors                  <- batch.target.phon
   -> Model.embed_o                    -> global memory (batch, d_embedding, d_model)
+       orthography_encoder              token embeddings in; self-attention rotated by position
+       transformer_mixer                the global rows and the encoding in; no position
   -> Model._decode_phon               -> logits["phon"] (batch, 2, seq, 35)
+       phonology_decoder                causal self-attention rotated by position;
+                                        cross-attention to the global memory, no position
   -> TrainingPipeline.compute_loss(logits, batch.target)
                                       -> cross_entropy against batch.target.phon.labels,
                                          ignore_index=phon_pad_id
@@ -300,13 +373,36 @@ dataset and a slice, and do all of the above.
 Embedding the phonological side is a table lookup, not a loop: `phon_feature_matrix @
 phonology_embedding.weight` gives every phoneme's embedding in one small matmul, and
 `F.embedding` indexes it. The matrix is a non-persistent buffer, so it stays out of
-`state_dict` and old checkpoints still load with `strict=True`.
+`state_dict`.
 
-Generation is `Model.generate(inputs, pathway, *, orth_start=None, deterministic=False)`.
+Generation is
+`Model.generate(inputs, pathway, *, max_new_tokens, orth_start=None, deterministic=False)`.
 It reads a `BridgeInput` and nothing else: there is no target, and nothing about the
 output is taken from the input in silence. It replaces the decoder call with
-`orthography_decoder_loop` or `phonology_decoder_loop`, which decode one position at a
-time and return ragged per-item lists because sequences finish at different lengths.
+`orthography_decoder_loop` or `phonology_decoder_loop`. Each writes one position per step
+and decodes the whole prefix to do it, so a token keeps the position it will have in the
+finished sequence. They return ragged per-item lists because sequences finish at
+different lengths.
+
+`max_new_tokens` is the most tokens to write after the start of each sequence. It is
+keyword-only and required, with no default: the model holds no length to fall back on.
+The start is `[LANG, BOS]` for orthography and `[BOS]` for phonology, and it is not
+counted.
+
+| point | rule |
+|---|---|
+| The value | A positive `int`. `0`, `2.0`, `True` and a numpy integer each raise `ValueError` naming the value and its type |
+| Stopping | A sequence stops at `[EOS]` or at the cap, whichever comes first |
+| A finished row | It holds `[EOS]`, and padding after it (`docs/decisions/0009`) |
+| A cut row | It reached the cap and holds no `[EOS]`. That is how a caller sees it was cut |
+| `op2op` | The one cap applies to each modality written |
+| Sizing, orthography | `n` characters, spaces included, take `n + 1` tokens, and one more for each change of language |
+| Sizing, phonology | One token for each phoneme, one for each gap between words, and one for `[EOS]` |
+| Cost | The batch is dense, so one row that never ends runs every row to the cap |
+
+A phonological row counts as finished when the `[EOS]` feature is on at one of its
+positions, alone or beside other features. A cut row can decode to the same string as a
+finished shorter one, so test the ids, not the text. See `docs/decisions/0017`.
 
 A pathway that writes orthography requires `orth_start`, the `(batch, 2)` `[LANG, BOS]`
 rows built by `BridgeTokenizer.orth_start(["ES", ...])`, one code per row. Omitting it
@@ -334,6 +430,19 @@ the rows the step covered, each a JSON list.
 where a run's weights land is the caller's decision. See
 `docs/decisions/0006-the-caller-owns-the-training-loop.md`.
 
+**A checkpoint loads only into a model with the same tensors.** `load_model(path)`, and a
+pipeline built with `TrainingConfig.checkpoint_path`, compare the file with the model
+before copying anything: every tensor name, and every shape. On any difference they
+raise `RuntimeError` naming the file, how many tensors differ and the first of each
+kind, and the model, the optimizer and `start_epoch` are left as they were. Nothing loads
+with keys missing.
+
+A checkpoint written by a model with position tables is refused this way, which covers
+one saved at commit `a3cb285`, the last commit with the tables. There is no migration:
+those weights were trained to read position from the tables, and would mean nothing
+here. A checkpoint whose `d_embedding` or `d_model` differs from the model's is refused
+by its shapes. See `docs/decisions/0017`.
+
 ## Dependencies
 
 PyTorch for the model, pydantic v2 for configs and validation, pandas for the feature CSV,
@@ -355,7 +464,8 @@ Tracked as GitHub issues rather than restated here:
   `phon_enc_input` (`docs/decisions/0011`). An input that lacks a modality its pathway
   reads, such as phonemes alone on `o2p`, raises
   `pathway 'o2p' reads orth, which this input does not carry` (`docs/decisions/0016`).
-  Measured 2026-11-23 on CPU; record 0016 names the script
+  Measured 2026-11-24 on CPU, on the model with rotary position; record 0017 names the
+  script
 
 ## Decision index
 
@@ -374,6 +484,7 @@ Tracked as GitHub issues rather than restated here:
 | [0011](decisions/0011-one-table-says-what-each-pathway-reads-and-writes.md) | `PATHWAY_IO` is the single definition of what each pathway reads and writes; validation is uniform across pathways |
 | [0012](decisions/0012-the-pipeline-follows-the-model.md) | `TrainingPipeline.device` reads `model.device`; the pipeline never moves the model |
 | [0013](decisions/0013-the-caller-owns-the-loop-in-fact.md) | The library keeps the step and loses the loop; split, batching, shuffling, epochs and progress bars are the caller's |
-| [0014](decisions/0014-a-config-that-validates-runs-every-pathway.md) | Every size in `ModelConfig` is at least one and `nhead` divides `d_model`, so a config that validates builds a model that runs every pathway |
+| [0014](decisions/0014-a-config-that-validates-runs-every-pathway.md) | Every size in `ModelConfig` is at least one and `nhead` divides `d_model`, so a config that validates builds a model that runs every pathway. 0017 adds that each head has two dimensions or more |
 | [0015](decisions/0015-language-belongs-to-each-word.md) | Language belongs to each word of a row, by position; phonology reads each word in its own lexicon and orthography marks each change |
 | [0016](decisions/0016-a-training-example-is-an-input-and-a-target.md) | A training example is an input and a target, held in five types named for their side; `target_raw` is required, and the caller names the language orthographic generation starts in |
+| [0017](decisions/0017-positions-are-computed-for-any-length.md) | Position is a rotation inside the self-attention of the encoders and decoders, computed for any length; generation takes a required `max_new_tokens`; `d_embedding` defaults to 2; checkpoints from a model with position tables are refused |

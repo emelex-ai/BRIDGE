@@ -7,7 +7,7 @@ def calculate_orth_metrics(
     logits: dict[str, torch.Tensor],
     labels: torch.Tensor,
     orth_pad_id: int,
-    orth_language_ids: Sequence[int] | None,
+    orth_language_ids: Sequence[int],
 ) -> dict[str, float]:
     """Letter-wise and word-wise accuracy over the real (non-padded) positions, twice.
 
@@ -18,8 +18,8 @@ def calculate_orth_metrics(
 
     The ``_without_switches`` pair scores the same positions except those whose label is
     a language token, so it measures spelling alone. On a row with no switch the two pairs
-    are equal. Telling a switch from a letter takes ``orth_language_ids``; with ``None``
-    the pair is left out, since reporting it would mean guessing.
+    are equal. ``orth_language_ids`` is what tells a switch from a letter: the ids of the
+    language tokens.
 
     ``labels`` is the orthographic target's ``labels``, the tensor the loss is computed
     against. A metric scoring different positions than the loss trains reports on a model
@@ -37,14 +37,15 @@ def calculate_orth_metrics(
         return letter_wise.item(), word_wise.item()
 
     letter_wise, word_wise = accuracies(scored)
-    metrics = {"letter_wise_accuracy": letter_wise, "word_wise_accuracy": word_wise}
-    if orth_language_ids is not None:
-        # The labels start after the opening language token, so a language id among
-        # them is a switch.
-        switches = torch.isin(
-            labels, torch.tensor(orth_language_ids, dtype=torch.long, device=labels.device)
-        )
-        letters_only, words_only = accuracies(scored & ~switches)
-        metrics["letter_wise_accuracy_without_switches"] = letters_only
-        metrics["word_wise_accuracy_without_switches"] = words_only
-    return metrics
+    # The labels start after the opening language token, so a language id among them is
+    # a switch.
+    switches = torch.isin(
+        labels, torch.tensor(orth_language_ids, dtype=torch.long, device=labels.device)
+    )
+    letters_only, words_only = accuracies(scored & ~switches)
+    return {
+        "letter_wise_accuracy": letter_wise,
+        "word_wise_accuracy": word_wise,
+        "letter_wise_accuracy_without_switches": letters_only,
+        "word_wise_accuracy_without_switches": words_only,
+    }

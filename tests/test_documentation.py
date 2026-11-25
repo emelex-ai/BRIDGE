@@ -172,6 +172,81 @@ def test_the_type_tables_name_every_field_of_every_type(architecture, readme):
             )
 
 
+def test_the_documented_generate_signature_is_the_real_one(architecture):
+    """The map writes out how ``Model.generate`` is called, and a caller copies it.
+
+    Oracle: ``inspect.signature``. A parameter that is added, removed, renamed, given a
+    default or moved across the keyword-only bar leaves the map showing a call that is
+    not the method's.
+    """
+    import inspect
+
+    from bridge import Model
+
+    parts, keyword_only = [], False
+    for name, parameter in inspect.signature(Model.generate).parameters.items():
+        if name == "self":
+            continue
+        if parameter.kind is inspect.Parameter.KEYWORD_ONLY and not keyword_only:
+            parts.append("*")
+            keyword_only = True
+        has_default = parameter.default is not inspect.Parameter.empty
+        parts.append(f"{name}={parameter.default!r}" if has_default else name)
+    live = f"Model.generate({', '.join(parts)})"
+
+    documented = re.findall(r"`(Model\.generate\([^`]*\*[^`]*\))`", flat(architecture))
+    assert documented, "architecture.md parsed to no generate signature; the test is wrong"
+    assert set(documented) == {live}, f"the map shows {documented}, the method is {live}"
+
+
+def test_the_size_tables_give_the_real_defaults(architecture, readme):
+    """Both documents tabulate the sizes of ``ModelConfig`` and what each defaults to.
+
+    Oracle: the field defaults of the class. A default that moves, or a size that is
+    added or removed, leaves a table telling a reader the model is another size.
+    """
+    from bridge import ModelConfig
+
+    live = {
+        name: field.default
+        for name, field in ModelConfig.model_fields.items()
+        if field.annotation is int
+    }
+    assert "d_embedding" in live, "ModelConfig parsed to no sizes; the test is wrong"
+    for name, document in (("docs/architecture.md", architecture), ("README.md", readme)):
+        table = document.split("| size | default |")[1].split("\n\n")[0]
+        documented = {}
+        for names, default in re.findall(r"^\| ([^|]+) \| (\d+) \|", table, re.M):
+            for size in re.findall(r"`(\w+)`", names):
+                documented[size] = int(default)
+        assert documented == live, (
+            f"{name}: only documented {sorted(set(documented) - set(live))}; "
+            f"only on ModelConfig {sorted(set(live) - set(documented))}; "
+            f"differing {sorted(k for k in set(live) & set(documented) if live[k] != documented[k])}"
+        )
+
+
+def test_the_recorded_parameter_count_is_a_default_models(project_rules):
+    """The project rules say how many parameter tensors and scalars a default model has,
+    which is what a differential reports "n of n tensors" against.
+
+    Oracle: a model built from the default ``ModelConfig``.
+    """
+    from bridge import Model, ModelConfig, VocabSpec
+
+    recorded = re.search(
+        r"A default model has (\d+) parameter tensors and (\d+) scalars", flat(project_rules)
+    )
+    assert recorded, "no parameter count recorded in .claude/rules/measurement.md"
+    parameters = list(
+        Model(ModelConfig(vocab=VocabSpec.from_tokenizer(BridgeTokenizer()))).parameters()
+    )
+    live = (len(parameters), sum(parameter.numel() for parameter in parameters))
+    assert tuple(map(int, recorded.groups())) == live, (
+        f"the rules record {recorded.groups()}, a default model has {live}"
+    )
+
+
 def test_every_path_named_in_the_layout_exists(architecture):
     """A renamed or deleted module leaves the map pointing at nothing."""
     block = architecture.split("## Layout")[1].split("```")[1]

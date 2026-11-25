@@ -179,5 +179,5 @@ def test_generation_is_reachable_from_the_top_level_package_alone():
     assert isinstance(inputs, BridgeInput)
 
     start = tokenizer.orth_start(["ES", "EN"])
-    output = model.generate(inputs, "o2o", orth_start=start, deterministic=True)
+    output = model.generate(inputs, "o2o", max_new_tokens=6, orth_start=start, deterministic=True)
     assert output.orth_tokens[:, :2].tolist() == start.tolist() == [[8, 0], [7, 0]]

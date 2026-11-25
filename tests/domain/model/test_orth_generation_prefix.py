@@ -38,6 +38,8 @@ from bridge.domain.model.model import WRITES_ORTH
 from bridge.domain.tokenizer import BridgeTokenizer
 
 WORDS = ["long", "pencil", "hello world"]
+# The most tokens a row may write after its start. These tests read the start, so it is small.
+CAP = 6
 
 
 @pytest.fixture(scope="module")
@@ -85,7 +87,9 @@ def test_generation_opens_with_the_same_prefix_training_uses(
     expected_prefix = target.orth.ids[:, :2]
     assert torch.equal(start, expected_prefix), "orth_start must be the training prefix"
 
-    result = model.generate(inputs, pathway, orth_start=start, deterministic=True)
+    result = model.generate(
+        inputs, pathway, max_new_tokens=CAP, orth_start=start, deterministic=True
+    )
 
     assert torch.equal(result.orth_tokens[:, :2], expected_prefix), (
         f"{pathway} opened with {result.orth_tokens[:, :2].tolist()}, "
@@ -106,7 +110,11 @@ def test_the_prefix_is_the_language_the_caller_asked_for(tokenizer, model):
     seen = {}
     for language in (None, "EN", "ES"):
         result = model.generate(
-            english, "p2o", orth_start=tokenizer.orth_start([language]), deterministic=True
+            english,
+            "p2o",
+            max_new_tokens=CAP,
+            orth_start=tokenizer.orth_start([language]),
+            deterministic=True,
         )
         seen[language] = names(tokenizer, result.orth_tokens[0, :2])
 
@@ -131,7 +139,9 @@ def test_a_mixed_row_is_seeded_with_its_first_words_language(tokenizer, model):
     assert torch.equal(orth_start, tokenizer.encode_target(texts, languages).orth.ids[:, :2])
 
     for pathway in sorted(WRITES_ORTH):
-        result = model.generate(inputs, pathway, orth_start=orth_start, deterministic=True)
+        result = model.generate(
+            inputs, pathway, max_new_tokens=CAP, orth_start=orth_start, deterministic=True
+        )
         assert [names(tokenizer, row[:2]) for row in result.orth_tokens] == [
             ["ES", "[BOS]"],
             ["EN", "[BOS]"],
@@ -148,7 +158,9 @@ def test_an_input_with_no_orthography_is_spelled_from_the_start_it_is_given(toke
     assert phonology_only.orth is None
 
     orth_start = tokenizer.orth_start([None, "ES", "EN"])
-    result = model.generate(phonology_only, "p2o", orth_start=orth_start, deterministic=True)
+    result = model.generate(
+        phonology_only, "p2o", max_new_tokens=CAP, orth_start=orth_start, deterministic=True
+    )
 
     assert [names(tokenizer, row[:2]) for row in result.orth_tokens] == [
         ["--", "[BOS]"],
@@ -168,7 +180,9 @@ def test_the_probability_history_stays_aligned_with_the_tokens(
     certain of the token actually seeded there, so this also catches a row built for the
     wrong token.
     """
-    result = model.generate(inputs, pathway, orth_start=start, deterministic=True)
+    result = model.generate(
+        inputs, pathway, max_new_tokens=CAP, orth_start=start, deterministic=True
+    )
 
     for item, (tokens, history) in enumerate(
         zip(result.orth_tokens, result.orth_probs, strict=True)
@@ -183,18 +197,6 @@ def test_the_probability_history_stays_aligned_with_the_tokens(
             assert row.sum().item() == pytest.approx(1.0)
 
 
-def test_generation_never_exceeds_the_position_table(model, inputs, start):
-    """The step budget is the table less the two seeded positions, and must stay bounded.
-
-    ``_positions`` raises when a sequence outruns the position table, so a loop that
-    budgeted ``max_orth_seq_len - 1`` steps on top of a two-token seed would raise here
-    rather than silently truncate.
-    """
-    for pathway in sorted(WRITES_ORTH):
-        result = model.generate(inputs, pathway, orth_start=start, deterministic=True)
-        assert result.orth_tokens.shape[1] <= model.max_orth_seq_len
-
-
 def test_seeding_the_decoder_directly_without_a_start_is_refused(model, inputs):
     """``_generate`` is reachable on its own, and a missing start must say so.
 
@@ -206,5 +208,6 @@ def test_seeding_the_decoder_directly_without_a_start_is_refused(model, inputs):
             pathway="p2o",
             phon_enc_input=inputs.phon.ids,
             phon_enc_pad_mask=inputs.phon.pad_mask,
+            max_new_tokens=CAP,
             deterministic=True,
         )

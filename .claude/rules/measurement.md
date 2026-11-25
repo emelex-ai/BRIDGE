@@ -8,7 +8,8 @@ be rediscovered every session.
 
 `tests/fixtures/phon_baseline.pt` is a golden master: a behavioural fingerprint of the
 phonological path recorded before the issue #221 refactor. `tests/domain/test_phon_baseline_equivalence.py`
-asserts every recorded value against a freshly built model.
+asserts what the recording still says of a freshly built model. The table below says how
+much that is.
 
 **It is immutable.** Regenerating it to make a test pass destroys the only thing it is for. It
 was verified genuine by rebuilding it from a pristine worktree at `5d7e8d9` and diffing:
@@ -32,8 +33,32 @@ input carrying orthography alone generates what the fixture records for `o2p`. M
 2026-11-23 against `7386f8e`, generation from such an input is bitwise equal to generation
 from the stand-in on `o2p` and `o2o`, 729 of 729 values. See `docs/decisions/0016`.
 
-Every other phonological value in the fixture, which is what it was recorded for, is still
-asserted exactly.
+**Every value that passes through the model's weights is superseded too, and the file
+was still not touched.** Position is a rotation inside self-attention, and the model
+holds no position table (`docs/decisions/0017`). The recording was made by a model with
+two tables of 30 rows. Without them a seed's draws fall differently across the parameters
+that remain, so no recorded embedding, logit, encoding or generated token can be produced
+again. Measured 2026-11-24 against `a3cb285`: with that commit's tables zeroed and the
+rotation switched off, the same weights give bitwise equal logits on all five pathways,
+551424 elements, so position is all that moved.
+
+What the 24 test nodes still assert, measured by mutating a copy of the recording 255
+ways and running the nodes of both trees on each:
+
+| nodes | how they read the recording |
+|---|---|
+| 9 tokenizer and 1 vocabulary | exactly, as at `a3cb285` |
+| 1 gradient of the phonological embedding | at the tolerance it has always had; no weight enters that gradient |
+| 1 gradient of the position table | exactly: the recording is the count of rows per slot, and no parameter is left for it to reach |
+| 1 input without phonology | exactly on the recorded stand-in; its generation is compared with an input carrying both modalities |
+| 3 generations that write phonology | form, the recorded `[BOS]` that opens each sequence, and each recorded length |
+| 2 embeddings, 4 logits, 2 generations that write orthography alone | form only: which outputs are filled, shape, dtype, finiteness, id range |
+
+That is 11 nodes reading the recording as they did and 13 changed. None is deleted and
+none is emptied: each still fails on some change to the recording. What the model
+computes is pinned against reference and analytic oracles in
+`tests/domain/model/test_rotary_layers.py`, `tests/domain/model/test_any_length.py` and
+`tests/domain/model/test_max_new_tokens.py`, not against a re-recording.
 
 The fixture names its tensors as the code did when it was recorded: `enc_input_ids`,
 `dec_input_ids`, `targets`. The test maps each to the tensor that holds it. The encoder's
@@ -51,19 +76,39 @@ is needed.
 
 ## The noise floor
 
-Established by perturbing something semantically irrelevant, not assumed. Running the same
-training loop at `HEAD` against itself with `OMP_NUM_THREADS=1` and `MKL_NUM_THREADS=1` gives:
+Established by perturbing something semantically irrelevant, not assumed. The same
+training loop is run twice on one tree, at two BLAS thread counts. Each figure belongs to
+one model, so the table names it.
 
-| comparison | max relative loss deviation | relative L2 parameter distance |
-|---|---|---|
-| HEAD vs HEAD, single-threaded BLAS | 2.229e-07 | 9.559e-06 |
-| same tree, rerun | 0.0 | 0.0 |
+| model | comparison | max relative loss deviation | relative L2 parameter distance |
+|---|---|---|---|
+| this model: rotary position, 167 parameter tensors | one thread against 6 | 1.850e-07 | 6.223e-06 |
+| this model | one thread against 4 | 1.480e-07 | 7.279e-06 |
+| this model | rerun at one thread | 0.0 | 0.0 |
+| `a3cb285`: position tables, 169 tensors | one thread against 6 | 1.327e-07 | 5.856e-06 |
+| `a3cb285` | one thread against 4 | 1.327e-07 | 6.769e-06 |
+| `a3cb285` | rerun at one thread | 0.0 | 0.0 |
+| the tree of 2026-08-30: position tables | another BLAS thread count | 2.229e-07 | 9.559e-06 |
+| the tree of 2026-08-30 | rerun | 0.0 | 0.0 |
 
-So a change whose loss trajectory stays within roughly **2.2e-07** relative is inside the
-floor. Measured 2026-08-30 on CPU, 12 Adam steps, `d_model=32`, batch 8, over the `o2p`,
-`p2p`, `p2o` and `op2op` pathways. Re-measure rather than reuse this figure if the shapes,
-the optimizer or the device change. Reruns of an unchanged tree are bit-exact, so any nonzero difference between two runs
-of the same code indicates a real nondeterminism, not noise.
+So a change to this model whose loss trajectory stays within roughly **1.9e-07** relative
+is inside the floor. The first six rows were measured 2026-11-24 on CPU in one session:
+12 steps of `single_step`, `d_model=32`, `nhead=2`, the default `d_embedding` (2 for this
+model, 1 at `a3cb285`), seed 0, batch 8, over the `o2p`, `p2p`, `p2o` and `op2op`
+pathways, torch 2.12.0+cu130, on a machine whose default is 6 threads. Record 0017 names
+the script. The last two rows were measured 2026-08-30 on CPU: 12 Adam steps,
+`d_model=32`, batch 8, the same four pathways.
+
+The instrument was checked on this model. `global_embedding` scaled by 1 + 1e-3 reads
+1.853e-04 and 7.063e-04, with 0 of 12 losses bitwise equal on every pathway. Scaled by
+1 + 1e-6 it reads 1.850e-07 and 7.958e-06, which is inside the floor: a change that small
+cannot be told from a thread count.
+
+Re-measure rather than reuse these figures if the shapes, the optimizer or the device
+change. Reruns of an unchanged tree are bit-exact, 167 of 167 tensors, so any nonzero
+difference between two runs of the same code indicates a real nondeterminism, not noise.
+
+A default model has 167 parameter tensors and 625779 scalars, at `d_embedding` 2.
 
 ## Splitting exact from approximate
 
@@ -84,7 +129,8 @@ Four numbers worth not rediscovering, all CPU, torch 2.12.0+cu130, commit `7979d
 
 `TrainingPipeline` used to call `model.to(device_manager.device)` in `__init__`, which
 silently moved a model the caller had placed: 169/169 parameters back on CPU after an
-explicit `.to("cuda")`. See `docs/decisions/0012`.
+explicit `.to("cuda")`. The model of that commit had 169 parameter tensors. See
+`docs/decisions/0012`.
 
 The phonological metric helpers were verified equivalent across the dedup by differential
 against the committed implementation, paired inputs, 6 seeds x 8 metrics, max relative
@@ -98,16 +144,25 @@ order and kernel selection, so the noise floor above does not transfer to the RT
 re-measured there, and any claim of GPU equivalence is currently unsupported. Every number
 in `docs/decisions/0015`, the per-word language record, is CPU only too, as of 2026-11-22.
 So is every number in `docs/decisions/0016`, the input and target record, as of 2026-11-23.
+So is every number in `docs/decisions/0017`, the position record, as of 2026-11-24, and
+that includes the noise floor of this model.
 
 CUDA *behaviour* has been measured, on an RTX 5080 with torch 2.12.0+cu130: device
 resolution and comparison, that a constructed model is entirely on one device, and that all
 five pathways generate on a GPU with no explicit `.to()`. That is placement and control flow,
 not numerics, and the two should not be conflated.
 
+The same was measured again on this model, with rotary position, on 2026-11-24, RTX 5080,
+torch 2.12.0+cu130. A model built on the process device sits on `cuda:0`. All five
+pathways generate with no explicit `.to()`. One optimizer step and one `evaluate` give a
+finite loss on each. A batch holding a 102-token row steps, evaluates and generates.
+Record 0017 names the script. No CUDA float was compared with a CPU float.
+
 Since #229, initialisation no longer depends on the device: weights are drawn on the default
 device and then moved, so a seed gives bitwise identical parameters on CPU and CUDA, measured
-169/169 at seed 5. A CPU-recorded fingerprint is therefore a valid starting point for a CUDA
-run, which it was not before.
+167/167 at seed 5 on 2026-11-24. Two seeds on one device differ in 81 of 167, the rest
+being biases and norm weights that start at 0 or 1. A CPU-recorded fingerprint is
+therefore a valid starting point for a CUDA run, which it was not before.
 
 `device_manager` no longer defaults to CPU unconditionally. It reads `BRIDGE_DEVICE`, so a
 measurement script inherits whatever the shell exports. Record the device the run actually
@@ -135,18 +190,20 @@ uv run mypy bridge
 uv run ruff check . && uv run ruff format --check .
 ```
 
-The suite runs in about ten seconds because the pronunciation lexicon parse is memoised
-process-wide. A change that takes it well past that has probably reintroduced
+The suite runs in about eleven and a half seconds because the pronunciation lexicon parse
+is memoised process-wide. A change that takes it well past that has probably reintroduced
 per-instance parsing, which cost 45 seconds before the memo (measured 2026-08-30).
-Currently 873 passed and 6 skipped, in 10.11 to 10.46 s by pytest's own count, median
-10.22, and 12.91 to 13.37 s of wall clock, which includes interpreter start. Measured
-2026-11-23 on the input and target change: six runs of
-`uv run --no-sync pytest -q -p no:cacheprovider` with `OMP_NUM_THREADS=1` and
-`MKL_NUM_THREADS=1`, load average 1.65 to 2.76. The 711 tests of `7386f8e` took 7.04 to
-7.48 s by pytest's count, median 7.24, in the same sessions, the two suites run
-alternately. That is 162 more tests and about 3 s more than `7386f8e`. Record 0016 names
-the script. The suite took 12.9 s before the pipeline stopped running `gc.collect()` every
-ten steps.
+Currently 1046 passed and 6 skipped, in 11.39 to 11.55 s by pytest's own count and 14.28
+to 14.43 s of wall clock, which includes interpreter start. Measured 2026-11-24 on the
+position change: three runs of `uv run --no-sync pytest -q -p no:cacheprovider` with
+`OMP_NUM_THREADS=1` and `MKL_NUM_THREADS=1`, load average 1.4 to 2.3. The 873 tests of
+`a3cb285` took 10.07 to 10.22 s by pytest's count in the same session, the two suites run
+alternately. That is 173 more tests and about 1.3 s more than `a3cb285`. Record 0017
+names the script. The 6 skips are six cases of one test, each a pathway that does read
+the modality the case leaves out. No test is skipped for want of a GPU on a machine that
+has one. With the thread variables unset, 1042 of these tests were run and passed, so no
+tolerance in them is tuned to one thread. The suite took 12.9 s before the pipeline
+stopped running `gc.collect()` every ten steps.
 
 `mypy` is clean over `bridge/`. CI enforces it rather than advising, as of 2026-09-16.
 

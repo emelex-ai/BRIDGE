@@ -1,7 +1,8 @@
 # 0008. Orthographic generation is seeded with the prefix training uses
 
 Status: Accepted, amended by [0015](0015-language-belongs-to-each-word.md) and
-[0016](0016-a-training-example-is-an-input-and-a-target.md)
+[0016](0016-a-training-example-is-an-input-and-a-target.md), superseded in part by
+[0017](0017-positions-are-computed-for-any-length.md)
 
 > The seed this record chose still holds. Two details are amended: the language is asked
 > for through `languages=`, one code per word, and there is no `language_map`; and the
@@ -11,6 +12,11 @@ Status: Accepted, amended by [0015](0015-language-belongs-to-each-word.md) and
 > Where the seed comes from is amended. The caller passes it as `orth_start`, built by
 > `BridgeTokenizer.orth_start`, and a pathway that writes orthography raises without it.
 > Nothing is taken off the input, and there is no placeholder. See 0016.
+>
+> What bounds the loop is superseded. There is no position table, no `position_offset`
+> and no `max_orth_seq_len`. Position is a rotation inside self-attention, computed for
+> any length, and the step budget is the caller's `max_new_tokens`, counted after the
+> seed. The seed is still the two positions training feeds the decoder first. See 0017.
 Date: 2026-09-14
 
 ## Context

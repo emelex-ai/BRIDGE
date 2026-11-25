@@ -1,7 +1,7 @@
 """Pins the semantics of the phonological embedding path.
 
-A phoneme's embedding is the *mean of its active phonetic features'* embeddings, plus a
-position embedding. Issue #221 replaced a Python double loop over ragged feature lists
+A phoneme's embedding is the *mean of its active phonetic features'* embeddings and
+nothing else: it carries no position, which is read inside self-attention. Issue #221 replaced a Python double loop over ragged feature lists
 with two entry points over the same underlying operation:
 
 * :meth:`Model.embed_phon_tokens` takes ``(B, L)`` phoneme row ids, used for training and
@@ -61,17 +61,13 @@ def test_each_position_is_the_mean_of_its_feature_embeddings(model):
     feats = [1, 5, 9]
     out = model.embed_phon_vectors(multihot(feats))
 
-    expected = (
-        model.phonology_embedding(torch.tensor(feats)).mean(dim=0)
-        + model.phon_position_embedding.weight[0]
-    )
+    expected = model.phonology_embedding(torch.tensor(feats)).mean(dim=0)
     assert torch.allclose(out[0, 0], expected, atol=1e-6)
 
 
 def test_row_ids_embed_as_the_mean_of_that_phonemes_features(model):
     """The same property through the table path, for every phoneme in the table."""
-    # One phoneme per batch item, all at position 0. The table has more rows (91) than
-    # the model has position embeddings (max_phon_seq_len).
+    # One phoneme per batch item.
     rows = torch.arange(TABLE.num_rows).unsqueeze(1)
     out = model.embed_phon_tokens(rows)
 
@@ -79,17 +75,13 @@ def test_row_ids_embed_as_the_mean_of_that_phonemes_features(model):
         features = TABLE.features_of(row)
         if len(features) == 0:
             continue  # covered by test_featureless_phoneme_embeds_to_zero
-        expected = (
-            model.phonology_embedding(features).mean(dim=0)
-            + model.phon_position_embedding.weight[0]
-        )
+        expected = model.phonology_embedding(features).mean(dim=0)
         assert torch.allclose(out[row, 0], expected, atol=1e-6), f"row {row}"
 
 
 def test_single_feature_phoneme_is_just_that_embedding(model):
     out = model.embed_phon_vectors(multihot([7]))
-    expected = model.phonology_embedding.weight[7] + model.phon_position_embedding.weight[0]
-    assert torch.allclose(out[0, 0], expected, atol=1e-6)
+    assert torch.allclose(out[0, 0], model.phonology_embedding.weight[7], atol=1e-6)
 
 
 def test_the_two_entry_points_agree(model):
@@ -102,22 +94,18 @@ def test_the_two_entry_points_agree(model):
 # --- position handling -----------------------------------------------------
 
 
-def test_position_embedding_is_added_per_position(model):
-    """Two identical phonemes at different positions differ only by position embedding."""
-    out = model.embed_phon_vectors(multihot([4, 8], [4, 8]))
-    delta = out[0, 1] - out[0, 0]
-    expected = model.phon_position_embedding.weight[1] - model.phon_position_embedding.weight[0]
-    assert torch.allclose(delta, expected, atol=1e-6)
+def test_a_phoneme_embeds_the_same_at_every_position(model):
+    """Oracle: analytic. The embedding is a function of the phoneme alone, so one phoneme
+    at 200 positions gives 200 equal vectors, bitwise, through both entry points. The
+    control is a second phoneme, which must differ from the first."""
+    rows = torch.full((1, 200), 5)
+    by_row = model.embed_phon_tokens(rows)
+    assert torch.equal(by_row, by_row[:, :1].expand_as(by_row))
 
+    by_vector = model.embed_phon_vectors(multihot(*[[4, 8]] * 200))
+    assert torch.equal(by_vector, by_vector[:, :1].expand_as(by_vector))
 
-def test_position_offset_shifts_the_position_embeddings(model):
-    """The generation loop embeds one new position at a time; the offset selects its row."""
-    rows = torch.tensor([[5]])
-    shifted = model.embed_phon_tokens(rows, position_offset=3)
-    unshifted = model.embed_phon_tokens(rows)
-    delta = shifted[0, 0] - unshifted[0, 0]
-    expected = model.phon_position_embedding.weight[3] - model.phon_position_embedding.weight[0]
-    assert torch.allclose(delta, expected, atol=1e-6)
+    assert not torch.equal(model.embed_phon_tokens(torch.tensor([[6]]))[0, 0], by_row[0, 0])
 
 
 # --- independence ----------------------------------------------------------
@@ -135,10 +123,7 @@ def test_variable_feature_counts_within_one_batch(model):
     assert out.shape == (2, 2, D_MODEL)
     for b, row in enumerate(sets):
         for i, features in enumerate(row):
-            expected = (
-                model.phonology_embedding(torch.tensor(features)).mean(dim=0)
-                + model.phon_position_embedding.weight[i]
-            )
+            expected = model.phonology_embedding(torch.tensor(features)).mean(dim=0)
             assert torch.allclose(out[b, i], expected, atol=1e-6), f"batch {b} position {i}"
 
 
@@ -178,11 +163,7 @@ def test_padding_row_is_embedded_like_any_other(model):
     """[PAD] is a real vocabulary row here, and every padded position relies on it."""
     pad_row = TABLE.row_index["[PAD]"]
     out = model.embed_phon_tokens(torch.tensor([[pad_row]]))
-    expected = (
-        model.phonology_embedding.weight[VOCAB.phon_pad_id]
-        + model.phon_position_embedding.weight[0]
-    )
-    assert torch.allclose(out[0, 0], expected, atol=1e-6)
+    assert torch.allclose(out[0, 0], model.phonology_embedding.weight[VOCAB.phon_pad_id], atol=1e-6)
 
 
 def test_featureless_phoneme_embeds_to_zero_not_nan(model):
@@ -197,25 +178,24 @@ def test_featureless_phoneme_embeds_to_zero_not_nan(model):
 
     out = model.embed_phon_tokens(empty_rows[:1].unsqueeze(0))
     assert not out.isnan().any()
-    assert torch.allclose(out[0, 0], model.phon_position_embedding.weight[0], atol=1e-6)
+    assert torch.equal(out[0, 0], torch.zeros(D_MODEL))
 
 
 def test_all_zero_feature_vector_embeds_to_zero_not_nan(model):
     out = model.embed_phon_vectors(torch.zeros((1, 1, V)))
     assert not out.isnan().any()
-    assert torch.allclose(out[0, 0], model.phon_position_embedding.weight[0], atol=1e-6)
+    assert torch.equal(out[0, 0], torch.zeros(D_MODEL))
 
 
 # --- gradients -------------------------------------------------------------
 
 
-def test_gradients_reach_both_embedding_tables(model):
-    """The rewrite must keep both tables in the autograd graph."""
+def test_gradients_reach_the_embedding_table(model):
+    """The embedding table is in the autograd graph, and only its used rows get gradient."""
     model.zero_grad(set_to_none=True)
     model.embed_phon_vectors(multihot([1, 2], [3], batch=2)).sum().backward()
 
     assert model.phonology_embedding.weight.grad is not None
-    assert model.phon_position_embedding.weight.grad is not None
     used = torch.tensor([1, 2, 3])
     grad = model.phonology_embedding.weight.grad
     assert (grad[used] != 0).any()

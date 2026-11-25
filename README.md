@@ -91,7 +91,33 @@ flowchart LR
 
 The encoders read the input. The dotted lines are training only: there the decoders are fed the target and scored against it. Generation has no target.
 
-Five pathways, listed in `bridge.PATHWAYS` and tabulated in [`docs/architecture.md`](docs/architecture.md): `o2p`, `p2o`, `o2o`, `p2p` and `op2op`. Any of them can train (`TrainingConfig.training_pathway`) or generate (`Model.generate(inputs, pathway)`).
+Five pathways, listed in `bridge.PATHWAYS` and tabulated in [`docs/architecture.md`](docs/architecture.md): `o2p`, `p2o`, `o2o`, `p2p` and `op2op`. Any of them can train (`TrainingConfig.training_pathway`) or generate (`Model.generate(inputs, pathway, max_new_tokens=...)`).
+
+### Position and length
+
+Position is a rotation inside the self-attention of the two encoders and the two decoders (rotary position embedding). Attention sees how far apart two tokens are, not which slots they fill. No table is indexed by position, so the model has no maximum length: a sequence of any length trains, evaluates and generates.
+
+Two things to know before using long sequences. Both were measured, and [decision 0017](docs/decisions/0017-positions-are-computed-for-any-length.md) has the numbers.
+
+- **Train on the lengths you will use.** A model reads an input somewhat longer than any it trained on. It does not repeat a phrase longer than any it trained on.
+- **Set `d_embedding` for phrases.** It is the number of rows of the global embedding, which is all a decoder reads of the input. With the default of 2, a model trained on phrases of up to 47 tokens repeats 0.817 of those of 9 to 19 tokens exactly, 0.223 of those of 23 to 30, and none of 33 to 47. With 8 rows it repeats 0.620 of the longest group, and with 32 rows 0.895.
+
+### Model sizes
+
+`ModelConfig` takes the sizes below and a `vocab`. Each size is at least one, and `nhead` must divide `d_model` into heads of two or more dimensions. A size that breaks a rule raises when the config is built.
+
+| size | default |
+|---|---|
+| `d_model` | 64 |
+| `nhead` | 2 |
+| `d_embedding` | 2 |
+| `num_orth_enc_layers` | 2 |
+| `num_phon_enc_layers` | 2 |
+| `num_mixing_enc_layers` | 2 |
+| `num_orth_dec_layers` | 2 |
+| `num_phon_dec_layers` | 2 |
+
+A checkpoint loads only into a model with the same tensors, name for name and shape for shape. Anything else raises a `RuntimeError` that names the file, and leaves the model as it was. That includes a checkpoint from a model that held position tables, such as one saved at commit `a3cb285`. There is no migration for those.
 
 ---
 
@@ -141,7 +167,7 @@ Three mistakes fail where they are made:
 
 ### Generating
 
-`Model.generate` reads a `BridgeInput` and nothing else. A pathway that writes orthography also needs `orth_start`, which names the language its output starts in. Omitting it raises `ValueError`.
+`Model.generate` reads a `BridgeInput` and nothing else. Every call needs `max_new_tokens`, the most tokens to write, and a call without it raises `TypeError`. A pathway that writes orthography also needs `orth_start`, which names the language its output starts in. Omitting that raises `ValueError`.
 
 ```python
 from bridge import BridgeTokenizer, Model, ModelConfig, VocabSpec
@@ -151,19 +177,43 @@ model = Model(ModelConfig(d_model=64, nhead=2, vocab=VocabSpec.from_tokenizer(to
 inputs = tok.encode_input(["cat", "the word is gato"], ["EN", "EN EN EN ES"])
 
 # o2p writes phonology, so the input is all it needs.
-spoken = model.generate(inputs, "o2p", deterministic=True)
+spoken = model.generate(inputs, "o2p", max_new_tokens=30, deterministic=True)
 
 # o2o writes orthography. orth_start takes one code per row: here the first row is
 # written starting in Spanish and the second starting in English.
 start = tok.orth_start(["ES", "EN"])
-written = model.generate(inputs, "o2o", orth_start=start, deterministic=True)
+written = model.generate(inputs, "o2o", max_new_tokens=30, orth_start=start, deterministic=True)
 
 # The output opens with the [LANG, BOS] rows the caller named. ES is id 8, EN is id 7.
 written.orth_tokens[:, :2].tolist()
 # [[8, 0], [7, 0]]
+
+# max_new_tokens counts what is written after that start, so a row is at most 2 + 30 wide.
+written.orth_tokens.shape[1] <= 2 + 30
+# True
+
+# A row that reached the cap holds no [EOS]. A row that finished holds one.
+finished = (written.orth_tokens == model.model_config.vocab.orth_eos_id).any(dim=1)
 ```
 
 `orth_start` names the language of the first word only. A later change of language is the decoder's to emit, as a language token in its output.
+
+#### Choosing `max_new_tokens`
+
+`max_new_tokens` is keyword-only and required. It has no default, because the model holds no maximum length to fall back on. It must be a positive `int`.
+
+It counts the tokens written after the start of each sequence. The start is `[LANG, BOS]` for orthography and `[BOS]` for phonology. A sequence stops at `[EOS]` or at the cap, whichever comes first. On `op2op` the one cap applies to each modality written.
+
+| what is written | tokens it takes |
+|---|---|
+| orthography of `n` characters, spaces included | `n + 1`, the last being `[EOS]`, plus one for each change of language |
+| phonology | one for each phoneme, one for each gap between words, and one for `[EOS]` |
+
+So `"the word is gato"`, 16 characters with one change of language, takes 18. Set the cap to the longest output you expect, with a little room.
+
+- **Too low cuts the output.** A cut row ends without `[EOS]`. Test the ids for it, as above. The decoded text cannot tell you: a cut row can decode to the same string as a finished shorter one.
+- **Too high costs time, not correctness.** A finished row writes padding from its `[EOS]` on, and the loop stops once every row has finished. One row that never finishes runs the whole batch to the cap, and each step decodes everything written so far. An untrained model can write to the cap on every row.
+- **Phonology finishes on a feature.** A phonological position is a set of features. A row is finished when the `[EOS]` feature is on at one of its positions, alone or beside others.
 
 ---
 
@@ -305,7 +355,7 @@ for epoch in range(pipeline.start_epoch, 3):
 # Generation reads an input and nothing else. The tokenizer builds on the process device,
 # so the input is moved to wherever the model is.
 inputs = tokenizer.encode_input(["cat", "gato"], ["EN", "ES"]).to(model.device)
-output = model.generate(inputs, "o2p", deterministic=True)
+output = model.generate(inputs, "o2p", max_new_tokens=30, deterministic=True)
 ```
 
 Each event's `metrics` also carry `input` and `target`, the strings of the rows the step covered.

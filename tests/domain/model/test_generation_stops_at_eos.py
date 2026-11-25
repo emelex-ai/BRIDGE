@@ -16,14 +16,16 @@ So the returned tensor is self-describing, content then `[EOS]` then padding, an
 produces the right string without being changed.
 
 **Batch invariance is exact here, but only just, and only on this configuration.** Batching
-perturbs `global_encoding` by up to about 1.2e-06, and `phono_sample` thresholds a probability
+perturbs `global_encoding` by up to about 6e-07, and `phono_sample` thresholds a probability
 at `> 0.5`, so a feature sitting within an ulp of 0.5 can flip between a solo and a batched
-run. That is pre-existing, unrelated to padding, and it has been observed elsewhere in the
-lexicon. It does not reach these tests: measured in this exact configuration, the smallest
-`|P(ON) - 0.5|` is 8.2e-03, about 6800 times the perturbation, and the smallest orthographic
-argmax margin is 2.5e-05, about 21 times it. If a future edit to the model config or the word
-list makes an invariance test below fail by a single feature or a single character, suspect
-that knife edge before suspecting the padding guard.
+run. That is unrelated to padding, and it has been observed elsewhere in the lexicon. It
+does not reach these tests: measured in this exact configuration (seed 18, `MIXED`, a cap
+of 28, CPU), the smallest `|P(ON) - 0.5|` is 5.4e-04, about 900 times the perturbation, and
+the smallest orthographic argmax margin is 6.7e-05, about 110 times it. The seed was chosen
+by that measurement, out of 40: it is one of three on which `p2o` ends two rows at
+different steps, and of those it has the widest orthographic margin. If a future edit to
+the model config or the word list makes an invariance test below fail by a single feature
+or a single character, suspect that knife edge before suspecting the padding guard.
 
 **The oracle throughout is batch invariance.** A causal decoder's rows are independent, so
 what a word generates must not depend on which other words share its batch. That is a
@@ -45,6 +47,10 @@ from bridge.domain.tokenizer import BridgeTokenizer
 # post-termination positions and so cannot see this defect at all.
 MIXED = ["a", "cat", "elephant", "hi", "computer"]
 
+# The most tokens a row may write after its start. A row that never emits [EOS] writes
+# exactly this many.
+CAP = 28
+
 
 @pytest.fixture(scope="module")
 def tokenizer():
@@ -58,7 +64,7 @@ def vocab(tokenizer):
 
 @pytest.fixture(scope="module")
 def model(vocab):
-    built = Model(ModelConfig(vocab=vocab, d_model=32, nhead=2, seed=5))
+    built = Model(ModelConfig(vocab=vocab, d_model=32, nhead=2, seed=18))
     built.eval()
     return built
 
@@ -83,10 +89,10 @@ def phon_first_eos(sets, eos_id):
 # ------------------------------------------------------- the loop's contract, scripted
 #
 # An untrained model terminates wherever it happens to. On this word list only `p2o` ends
-# early at all, and no row runs to the position limit, so a test written against it can
-# exercise neither the ragged case nor the never-terminating one, and two of three pathways
-# see nothing. Driving the sampler directly puts the termination schedule under the test's
-# control, which is the only way to cover all three shapes deliberately.
+# a row early, two of its five, so a test written against it cannot choose where a row
+# ends, and two of three pathways see nothing. Driving the sampler directly puts the
+# termination schedule under the test's control, which is the only way to cover all three
+# shapes deliberately.
 #
 # The sampler is an input here, not an oracle. What is asserted is the loop's contract given a
 # known emission schedule, and the schedule is chosen so a loop that padded on the wrong
@@ -112,6 +118,7 @@ def generate(model, tokenizer, words, pathway, deterministic=True):
     return model.generate(
         tokenizer.encode_input(words),
         pathway,
+        max_new_tokens=CAP,
         orth_start=tokenizer.orth_start([None] * len(words)),
         deterministic=deterministic,
     )
@@ -148,8 +155,9 @@ def test_the_loop_pads_every_row_from_its_own_eos(tokenizer, model, vocab):
 
     width = len(rows[0])
     prefix = [int(v) for v in tokenizer.orth_start([None])[0]]
-    # The loop stops when every row has finished, so item 2 is what sets the width.
-    assert width == model.max_orth_seq_len, width
+    # The loop stops when every row has finished or at the cap, so item 2, which never
+    # finishes, sets the width: the two tokens of the start and CAP more.
+    assert width == len(prefix) + CAP, width
 
     assert rows[0] == prefix + [a, eos] + [pad] * (width - len(prefix) - 2)
     assert rows[1] == prefix[:1] + [prefix[1], a, b, c, a, eos] + [pad] * (width - len(prefix) - 5)

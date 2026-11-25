@@ -85,7 +85,9 @@ def test_every_pathway_generates_on_a_cuda_device_requested_without_an_index(mon
     outcomes = {}
     for pathway in ("o2p", "op2op", "p2o", "p2p", "o2o"):
         try:
-            output = model.generate(inputs, pathway, orth_start=start, deterministic=True)
+            output = model.generate(
+                inputs, pathway, max_new_tokens=4, orth_start=start, deterministic=True
+            )
         except Exception as exc:
             outcomes[pathway] = f"{type(exc).__name__}: {exc}"
         else:

@@ -1,7 +1,8 @@
 """Equivalence against the pre-refactor behavioural fingerprint (issue #221).
 
 ``tests/fixtures/phon_baseline.pt`` was recorded on the commit before the phonological
-refactor began. This module rebuilds the same objects and asserts every recorded value.
+refactor began. This module rebuilds the same objects and asserts every recorded value
+that still describes them.
 
 **The fixture is immutable.** If a value here changes, either the refactor changed behaviour
 or the change was intentional and the spec says so. Regenerating the fixture to make a test
@@ -34,20 +35,45 @@ A second value is superseded the same way. The fixture records ``placeholder_pho
 stand-in phonology an orthography-only encoding carried: one position per row, all of it
 padding. An input that has no phonology carries ``None`` there and no stand-in exists, so
 there is no tensor to compare. What the stand-in was for still holds and is what the
-reduced assertion checks: an input with orthography alone generates, on a pathway that
-reads orthography alone, exactly what the fixture records for that pathway. Measured
-against the commit before the change, generation from such an input is bitwise equal to
-generation from the stand-in encoding on ``o2p`` and ``o2o``, 729 of 729 recorded values.
+reduced assertion checks: an input with orthography alone generates on a pathway that
+reads orthography alone, bitwise what an input carrying both modalities generates there.
+Measured against the commit before that change, generation from such an input is bitwise
+equal to generation from the stand-in encoding on ``o2p`` and ``o2o``, 729 of 729 recorded
+values.
 The behaviour of a missing modality is pinned against ``PATHWAY_IO`` in
 ``tests/domain/model/test_generate.py``.
 
+**Every value that passes through the model's weights is superseded as well, and the
+fixture was still not touched.** Position is a rotation inside self-attention, computed for
+any length, and the model holds no position table. The recording was made by a model with
+two such tables of 30 rows. Without them a seed's draws fall differently across the
+parameters that remain, so no recorded embedding, logit, encoding or generated token can be
+produced again. Measured 2026-11-23 against ``a3cb285``, the commit before the change, on
+CPU: with that commit's tables zeroed and the rotation switched off, teacher-forced logits
+of the two models are bitwise equal on all five pathways, 36 of 36 outputs over six
+models, so position is all that moved.
+
+The assertions on those values are reduced to what the recording still says about the
+model: which outputs a pathway returns, their shapes and dtypes, which fields a generation
+fills, that ids stay inside their vocabulary, and that a generated phonological sequence
+opens with the recorded ``[BOS]``. Two kinds of recorded value survive whole and are
+asserted exactly as before. One is every tokenizer and vocabulary value. The other is the
+gradient of an embedded batch with respect to the phonological embedding, which counts
+features and depends on no weight. The recorded gradient of the position table has no
+parameter to be compared with; its test checks that the recording is the count of rows per
+slot, and that the phonological embedding is the only parameter an embedding reaches.
+
+What the model computes is pinned against reference and analytic oracles in
+``tests/domain/model/test_rotary_layers.py``, ``tests/domain/model/test_any_length.py`` and
+``tests/domain/model/test_max_new_tokens.py``, not against a re-recording.
+
 **The plumbing is not.** The refactor changes the phonological representation from a ragged
 ``list[list[Tensor]]`` to a ``(batch, sequence)`` tensor of row ids, and the adapters in the
-ADAPTERS block below absorb that; everything under ASSERTIONS compares recorded numbers and
-should not need to change. The fixture names its tensors by the encoder and decoder that
-read them. The encoder's are the ids and mask of the input, the decoder's are the ids and
-mask of the target, and the recorded targets are the target's labels; ``FIELD_OF`` below
-is that mapping. The words are encoded once as an input and once as a target, which is
+ADAPTERS block below absorb that; everything under ASSERTIONS compares against the
+recording. The fixture names its tensors by the encoder and decoder that read them. The
+encoder's are the ids and mask of the input, the decoder's are the ids and mask of the
+target, and the recorded targets are the target's labels; ``FIELD_OF`` below is that
+mapping. The words are encoded once as an input and once as a target, which is
 repetition, the task the fixture recorded.
 
 Runs on CPU: ``device_manager`` defaults to CPU, and CUDA reduction order differs.
@@ -66,7 +92,6 @@ from bridge.domain.tokenizer.bridge_tokenizer import BridgeTokenizer
 
 FIXTURE_PATH = Path(__file__).resolve().parents[1] / "fixtures" / "phon_baseline.pt"
 
-FORWARD_ATOL = 1e-6
 # Gradients diverge further than the forward pass under a reduction-order change: measured
 # worst case is 3.8e-6 absolute, which clears the default rtol=1e-5 but not atol alone.
 GRAD_ATOL, GRAD_RTOL = 1e-6, 1e-5
@@ -129,8 +154,26 @@ def run_forward(model: Model, example: dict, pathway: str) -> dict[str, torch.Te
     return model(task=pathway, **kwargs)
 
 
-def stack_nested(nested) -> torch.Tensor:
-    return torch.stack([torch.stack(row) for row in nested])
+def recorded_cap(baseline: dict) -> int:
+    """The most tokens a recorded generation wrote after its start.
+
+    Every recorded orthographic row is 30 wide, the two tokens of ``[LANG, BOS]`` and 28
+    more. A generation here is given the same 28, so it can be no wider than the recording.
+    """
+    widths = {
+        recorded["orth_tokens"].shape[1]
+        for recorded in baseline["generate"].values()
+        if "orth_tokens" in recorded
+    }
+    assert widths == {30}, widths
+    return 28
+
+
+def assert_same_form(actual: torch.Tensor, recorded: torch.Tensor, name: str) -> None:
+    """``actual`` has the recorded shape and dtype, and every value in it is finite."""
+    assert actual.shape == recorded.shape, f"{name} shape"
+    assert actual.dtype == recorded.dtype, f"{name} dtype"
+    assert bool(torch.isfinite(actual).all()), f"{name} holds a non-finite value"
 
 
 # --------------------------------------------------------------------------- FIXTURES
@@ -155,13 +198,18 @@ def rebuilt(baseline):
     }
     assert example["input"].phon is not None, "baseline words no longer encode"
     assert example["target"] is not None, "baseline words no longer encode"
+    # The recording holds no language ids and no count of memory rows. The ids are the
+    # tokenizer's. The count is one: every recorded ``global_encoding`` has one row.
+    assert {g["global_encoding"].shape[1] for g in baseline["generate"].values()} == {1}
     model = Model(
         ModelConfig(
             vocab=VocabSpec(
-                **{k: v for k, v in baseline["vocab"].items() if k in VocabSpec.model_fields}
+                **{k: v for k, v in baseline["vocab"].items() if k in VocabSpec.model_fields},
+                orth_language_ids=tokenizer.orth_language_ids,
             ),
             d_model=baseline["d_model"],
             nhead=baseline["nhead"],
+            d_embedding=1,
             seed=baseline["seed"],
         )
     )
@@ -217,12 +265,14 @@ def test_phon_targets_unchanged(baseline, rebuilt):
     assert torch.equal(phon_targets_of(example), baseline["tok"]["phon_targets"])
 
 
-def test_an_input_without_phonology_generates_what_the_recorded_stand_in_did(baseline, rebuilt):
+def test_an_input_without_phonology_generates_on_the_pathway_the_stand_in_served(baseline, rebuilt):
     """Superseded in part; see this module's docstring.
 
     The recorded stand-in is checked to be what the docstring says it was, all padding,
-    so nothing it held is being dropped. Then the reason it existed is asserted against
-    the recorded generation: ``o2p`` from an input carrying orthography alone.
+    so nothing it held is being dropped. Then the reason it existed is asserted: an input
+    carrying orthography alone generates on ``o2p``. Oracle: invariant. ``o2p`` reads no
+    phonology, so that input generates bitwise what the input carrying both generates,
+    and it fills the fields the recording fills, in the recorded form.
     """
     tokenizer, example, model = rebuilt
     recorded = baseline["placeholder_phon"]
@@ -236,78 +286,144 @@ def test_an_input_without_phonology_generates_what_the_recorded_stand_in_did(bas
     orthography_only = BridgeInput(orth=example["input"].orth)
     assert orthography_only.phon is None
 
-    result = model.generate(orthography_only, "o2p", deterministic=True)
+    cap = recorded_cap(baseline)
+    result = model.generate(orthography_only, "o2p", max_new_tokens=cap, deterministic=True)
+    both = model.generate(example["input"], "o2p", max_new_tokens=cap, deterministic=True)
     expected = baseline["generate"]["o2p"]
-    assert torch.allclose(result.global_encoding, expected["global_encoding"], atol=FORWARD_ATOL)
-    assert canon_features(result.phon_tokens, tokenizer) == expected["phon_tokens"]
-    assert torch.equal(stack_nested(result.phon_vecs), expected["phon_vecs"])
+
+    assert_same_form(result.global_encoding, expected["global_encoding"], "global_encoding")
+    assert torch.equal(result.global_encoding, both.global_encoding)
+    assert canon_features(result.phon_tokens, tokenizer) == canon_features(
+        both.phon_tokens, tokenizer
+    )
+    for field in ("phon_probs", "phon_vecs"):
+        ours, theirs = getattr(result, field), getattr(both, field)
+        assert [len(row) for row in ours] == [len(row) for row in theirs], field
+        assert all(
+            torch.equal(a, b)
+            for row, other in zip(ours, theirs, strict=True)
+            for a, b in zip(row, other, strict=True)
+        ), field
+    assert result.orth_tokens is None and "orth_tokens" not in expected
 
 
 @pytest.mark.parametrize("side", ["enc", "dec"])
-def test_embed_phon_tokens_unchanged(baseline, rebuilt, side):
+def test_embed_phon_tokens_has_the_recorded_form(baseline, rebuilt, side):
+    """Superseded in part; see this module's docstring. The recorded values held a
+    position vector and another draw of the weights. The shape and dtype still hold."""
     _, example, model = rebuilt
     ids = recorded_field(example, "phon", f"{side}_input_ids")
-    actual = model.embed_phon_tokens(ids)
-    assert torch.allclose(actual, baseline["embed"][side], atol=FORWARD_ATOL)
+    assert_same_form(model.embed_phon_tokens(ids), baseline["embed"][side], f"embed/{side}")
 
 
-@pytest.mark.parametrize("table", ["phonology_embedding", "phon_position_embedding"])
-def test_gradients_unchanged(baseline, rebuilt, table):
+def test_gradients_unchanged(baseline, rebuilt):
+    """Compared with the recording at the tolerance it has always had, ``GRAD_ATOL`` and
+    ``GRAD_RTOL``. The gradient of an embedded batch's sum with respect to the
+    phonological embedding counts how often each feature is active, divided by its
+    phoneme's feature count. No weight enters it and no position does."""
     _, example, model = rebuilt
     model.zero_grad(set_to_none=True)
     model.embed_phon_tokens(example["target"].phon.ids).sum().backward()
-    actual = getattr(model, table).weight.grad
+    actual = model.phonology_embedding.weight.grad
     model.zero_grad(set_to_none=True)
-    assert torch.allclose(actual, baseline["grads"][table], atol=GRAD_ATOL, rtol=GRAD_RTOL)
+    assert torch.allclose(
+        actual, baseline["grads"]["phonology_embedding"], atol=GRAD_ATOL, rtol=GRAD_RTOL
+    )
+
+
+def test_the_recorded_position_gradient_has_no_parameter_left_to_reach(baseline, rebuilt):
+    """Superseded; see this module's docstring.
+
+    The recording holds the gradient of the same sum with respect to a table of 30
+    position embeddings. It is checked to be what that would be, the number of rows in
+    every slot the batch reaches and zero in the rest, so nothing else it held is being
+    dropped. The model has no such table, and what holds in its place is asserted: the
+    phonological embedding is the only parameter an embedding reaches.
+    """
+    _, example, model = rebuilt
+    ids = example["target"].phon.ids
+    rows, width = ids.shape
+    recorded = baseline["grads"]["phon_position_embedding"]
+    assert recorded.shape == (30, baseline["d_model"])
+    assert torch.equal(recorded[:width], torch.full_like(recorded[:width], rows))
+    assert torch.equal(recorded[width:], torch.zeros_like(recorded[width:]))
+
+    model.zero_grad(set_to_none=True)
+    model.embed_phon_tokens(ids).sum().backward()
+    reached = [name for name, parameter in model.named_parameters() if parameter.grad is not None]
+    model.zero_grad(set_to_none=True)
+    assert reached == ["phonology_embedding.weight"]
 
 
 @pytest.mark.parametrize("pathway", ["o2p", "p2o", "p2p", "op2op"])
-def test_forward_logits_unchanged(baseline, rebuilt, pathway):
+def test_forward_logits_have_the_recorded_form(baseline, rebuilt, pathway):
+    """Superseded in part; see this module's docstring. The values moved with the weights.
+    Which outputs the pathway returns, and the shape and dtype of each, still hold."""
     _, example, model = rebuilt
     with torch.no_grad():
         actual = run_forward(model, example, pathway)
     expected = baseline["logits"][pathway]
     assert set(actual) == set(expected), f"{pathway} output keys changed"
     for key, want in expected.items():
-        assert torch.allclose(actual[key], want, atol=FORWARD_ATOL), f"{pathway}/{key}"
+        assert_same_form(actual[key], want, f"{pathway}/{key}")
 
 
 @pytest.mark.parametrize("pathway", ["o2p", "p2o", "p2p", "op2op", "o2o"])
-def test_generation_unchanged(baseline, rebuilt, pathway):
-    tokenizer, example, model = rebuilt
-    # The words carry no language, so orthography starts unspecified, which is the prefix
-    # the recorded run's encoding supplied.
-    start = tokenizer.orth_start([None] * len(baseline["words"]))
-    result = model.generate(example["input"], pathway, orth_start=start, deterministic=True)
-    expected = baseline["generate"][pathway]
+def test_generation_fills_the_recorded_fields(baseline, rebuilt, pathway):
+    """Superseded in part; see this module's docstring. The generated values moved with
+    the weights. What still holds of each recorded field is asserted: that the pathway
+    fills it and no other, its dtype, its row count and vector widths, that every id lies
+    in its vocabulary, and that every sequence has the recorded length.
 
-    assert torch.allclose(result.global_encoding, expected["global_encoding"], atol=FORWARD_ATOL), (
-        f"{pathway}/global_encoding"
+    The lengths are equal because the two models end their rows alike, which is a fact
+    about these weights and not a rule. Given the recorded cap, no orthographic row of
+    either ends before it, and every phonological row of either ends on its first step.
+    Measured 2026-11-24 on CPU."""
+    tokenizer, example, model = rebuilt
+    words = len(baseline["words"])
+    cap = recorded_cap(baseline)
+    # The words carry no language, so orthography starts unspecified.
+    start = tokenizer.orth_start([None] * words)
+    result = model.generate(
+        example["input"], pathway, max_new_tokens=cap, orth_start=start, deterministic=True
     )
+    expected = baseline["generate"][pathway]
+    vocab = baseline["vocab"]
+
+    assert_same_form(result.global_encoding, expected["global_encoding"], "global_encoding")
 
     if "orth_tokens" in expected:
         assert result.orth_tokens is not None
-        # Values superseded by #228; see this module's docstring. Shape is still pinned,
-        # because a width change would mean something other than the seeding moved.
-        assert result.orth_tokens.shape == expected["orth_tokens"].shape, (
-            f"{pathway}/orth_tokens shape"
-        )
-        assert stack_nested(result.orth_probs).shape == expected["orth_probs"].shape, (
-            f"{pathway}/orth_probs shape"
-        )
+        recorded_tokens, recorded_probs = expected["orth_tokens"], expected["orth_probs"]
+        assert result.orth_tokens.dtype == recorded_tokens.dtype
+        assert result.orth_tokens.shape == recorded_tokens.shape == (words, 2 + cap)
+        assert torch.equal(result.orth_tokens[:, :2], start)
+        assert int(result.orth_tokens.min()) >= 0
+        assert int(result.orth_tokens.max()) < vocab["orth_vocab_size"]
+        assert len(result.orth_probs) == words
+        for row in result.orth_probs:
+            assert len(row) == recorded_probs.shape[1]
+            assert {step.shape for step in row} == {recorded_probs.shape[2:]}
+            assert {step.dtype for step in row} == {recorded_probs.dtype}
     else:
-        assert result.orth_tokens is None
+        assert result.orth_tokens is None and result.orth_probs is None
 
     if "phon_tokens" in expected:
         assert result.phon_tokens is not None
-        assert canon_features(result.phon_tokens, tokenizer) == expected["phon_tokens"], (
-            f"{pathway}/phon_tokens"
-        )
-        assert torch.allclose(
-            stack_nested(result.phon_probs), expected["phon_probs"], atol=FORWARD_ATOL
-        ), f"{pathway}/phon_probs"
-        assert torch.equal(stack_nested(result.phon_vecs), expected["phon_vecs"]), (
-            f"{pathway}/phon_vecs"
-        )
+        tokens = canon_features(result.phon_tokens, tokenizer)
+        assert len(tokens) == len(result.phon_probs) == len(result.phon_vecs) == words
+        for row, recorded_row in zip(tokens, expected["phon_tokens"], strict=True):
+            assert row[0] == recorded_row[0] == (vocab["phon_bos_id"],)
+            assert len(row) == len(recorded_row)
+            assert all(0 <= feature < vocab["phon_vocab_size"] for p in row for feature in p)
+        for field in ("phon_probs", "phon_vecs"):
+            recorded = expected[field]
+            for row, tokens_row in zip(getattr(result, field), tokens, strict=True):
+                assert len(row) == len(tokens_row) - 1, f"{pathway}/{field} length"
+                assert {step.shape for step in row} == {recorded.shape[2:]}, f"{pathway}/{field}"
+                assert {step.dtype for step in row} == {recorded.dtype}, f"{pathway}/{field}"
+        vecs = torch.stack([step for row in result.phon_vecs for step in row])
+        assert bool(((vecs == 0) | (vecs == 1)).all()), f"{pathway}/phon_vecs is not binary"
     else:
         assert result.phon_tokens is None
+        assert result.phon_probs is None and result.phon_vecs is None

@@ -1,6 +1,11 @@
 # 0002. Phonology uses (batch, sequence) row ids, matching orthography
 
-Status: Accepted
+Status: Accepted, superseded in part by [0017](0017-positions-are-computed-for-any-length.md)
+
+> The row ids this record chose still hold, and the feature matrix is still a
+> non-persistent buffer. One sentence is superseded: "existing checkpoints keep loading
+> under `strict=True`". A checkpoint from a model with position tables is refused when it
+> loads, with no migration. See 0017.
 Date: 2026-08-30
 Issue: #221
 
