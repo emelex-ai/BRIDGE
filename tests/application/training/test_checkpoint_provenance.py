@@ -66,11 +66,9 @@ def test_load_model_runs_the_drift_check_on_a_real_checkpoint(
 ):
     """The check is wired into the door a foreign checkpoint actually comes through.
 
-    This replaces a test that read ``TrainingPipeline``'s source and asserted the string
-    ``_warn_on_phoneme_table_drift`` appeared inside two method bodies. That had no oracle
-    beyond "the text is in the file", and one of the two methods it guarded was never
-    called by anything. Driving a real checkpoint through the real ``load_model`` is the
-    claim the source search was standing in for.
+    A search of ``TrainingPipeline``'s source for the string
+    ``_warn_on_phoneme_table_drift`` has no oracle beyond "the text is in the file".
+    Driving a real checkpoint through the real ``load_model`` is the claim itself.
 
     The control is the second half: a checkpoint whose fingerprint matches must load in
     silence, so the warning above is evidence of drift detection rather than of a loader

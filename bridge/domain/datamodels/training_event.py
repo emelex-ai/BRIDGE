@@ -5,8 +5,7 @@ caller's own loop emits the rest, since the library runs no loop of its own. Tha
 point of keeping all four phases here rather than only the one the library produces: a
 downstream logger can consume any BRIDGE run without inventing its own record type.
 
-See docs/decisions/0013-the-caller-owns-the-loop-in-fact.md, which supersedes the half of
-0006 that shipped the loop alongside the step.
+See docs/decisions/0013-the-caller-owns-the-loop-in-fact.md.
 """
 
 from dataclasses import dataclass, field

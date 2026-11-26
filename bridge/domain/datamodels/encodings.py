@@ -33,8 +33,6 @@ def pad_rows(
 
 
 def _check_ids_and_mask(owner: str, ids: torch.Tensor, pad_mask: torch.Tensor) -> None:
-    """``ids`` are non-negative ``(batch, sequence)`` integers and ``pad_mask`` is a boolean
-    tensor covering exactly those positions, on the same device."""
     for name, tensor in (("ids", ids), ("pad_mask", pad_mask)):
         if not isinstance(tensor, torch.Tensor):
             raise ValueError(f"{owner} {name} must be a torch.Tensor, got {type(tensor).__name__}")
@@ -76,7 +74,6 @@ class Tokens:
         _check_ids_and_mask("Tokens", self.ids, self.pad_mask)
 
     def to(self, device: torch.device) -> "Tokens":
-        """These tokens on ``device``."""
         return Tokens(self.ids.to(device), self.pad_mask.to(device))
 
 
@@ -114,12 +111,10 @@ class Target:
             )
 
     def to(self, device: torch.device) -> "Target":
-        """This target on ``device``."""
         return Target(self.ids.to(device), self.pad_mask.to(device), self.labels.to(device))
 
 
 def _check_modalities(owner: str, kind: type, parts: dict[str, Any]) -> None:
-    """Every modality in ``parts`` is a ``kind``, and they agree on batch size and device."""
     for modality, part in parts.items():
         if not isinstance(part, kind):
             raise TypeError(
@@ -154,7 +149,6 @@ class BridgeInput:
         _check_modalities("BridgeInput", Tokens, self._carried())
 
     def _carried(self) -> dict[str, Tokens]:
-        """The modalities this input carries."""
         both = (("orth", self.orth), ("phon", self.phon))
         return {modality: tokens for modality, tokens in both if tokens is not None}
 
@@ -170,11 +164,9 @@ class BridgeInput:
 
     @property
     def device(self) -> torch.device:
-        """The device every tensor of this input lives on."""
         return next(iter(self._carried().values())).ids.device
 
     def to(self, device: torch.device) -> "BridgeInput":
-        """This input on ``device``."""
         return BridgeInput(**{m: tokens.to(device) for m, tokens in self._carried().items()})
 
     def __len__(self) -> int:
@@ -201,11 +193,9 @@ class BridgeTarget:
 
     @property
     def device(self) -> torch.device:
-        """The device every tensor of this target lives on."""
         return self.orth.ids.device
 
     def to(self, device: torch.device) -> "BridgeTarget":
-        """This target on ``device``."""
         return BridgeTarget(orth=self.orth.to(device), phon=self.phon.to(device))
 
     def __len__(self) -> int:
@@ -241,7 +231,6 @@ class BridgeBatch:
             )
 
     def to(self, device: torch.device) -> "BridgeBatch":
-        """This batch on ``device``."""
         return BridgeBatch(input=self.input.to(device), target=self.target.to(device))
 
     def __len__(self) -> int:

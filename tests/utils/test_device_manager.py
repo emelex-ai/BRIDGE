@@ -3,17 +3,11 @@
 ``torch.device("cuda")`` and ``torch.device("cuda:0")`` are different objects and compare
 unequal, yet every tensor torch allocates for ``device="cuda"`` comes back carrying the
 index. A manager that stores the request verbatim therefore holds a device that no tensor
-in the process will ever match, and ``Model._validate_device`` compares with ``!=``, so it
-rejects input that is on exactly the right GPU.
+in the process will ever match, and the model's device checks compare with ``!=``, so
+they reject input that is on exactly the right GPU.
 
-The damage looked pathway-specific rather than device-specific because only three of the
-five pathways run a device check at all: ``o2p`` and ``op2op`` never call
-``_validate_device``, so they generated happily on an indexless device while ``p2o``,
-``p2p`` and ``o2o`` raised. Those two are the control here.
-
-The second half of the issue is that there is no supported way to point the process at a
-different device: no setter, no environment variable, only assignment to a private
-attribute. ``set_device`` and ``BRIDGE_DEVICE`` are that supported way.
+``set_device`` and ``BRIDGE_DEVICE`` are the supported ways to point the process at a
+different device.
 """
 
 import importlib.util
@@ -38,12 +32,8 @@ needs_cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a C
 
 @needs_cuda
 def test_requesting_cuda_names_the_device_torch_allocates_on():
-    """The invariant: the manager's device is the device tensors actually land on.
-
-    Oracle is torch itself. ``torch.zeros(device="cuda")`` reports where the allocation
-    went, and that reading is independent of anything ``DeviceManager`` computed. The
-    manager exists to describe the process device, so any device it reports that a real
-    allocation does not match is a wrong answer, whatever it prints.
+    """Oracle: torch itself. ``torch.zeros(device="cuda")`` reports where the allocation
+    went, and that reading is independent of anything ``DeviceManager`` computed.
 
     The control is the bare ``torch.device("cuda")``: it must come out unequal to the same
     allocation, which is what proves the comparison can tell the two apart and that the
@@ -59,16 +49,11 @@ def test_requesting_cuda_names_the_device_torch_allocates_on():
 
 @needs_cuda
 def test_every_pathway_generates_on_a_cuda_device_requested_without_an_index(monkeypatch):
-    """End to end: asking for "cuda" must not make three of the five pathways unusable.
+    """``Model`` reads ``device_manager.device`` once, in ``__init__``, so the manager has
+    to be in place before the model is built.
 
-    ``Model`` reads ``device_manager.device`` once, in ``__init__``, so the manager has to
-    be in place before the model is built. Everything then really runs on the GPU: the
-    parameters, the input and the decode loops.
-
-    ``o2p`` and ``op2op`` are the control. They reach the same decoders over the same
-    tensors but skip ``_validate_device``, so they generate today and must keep generating.
-    If they were to fail too, the failure would be something about CUDA generally rather
-    than about the device comparison, and this test would not be evidence for #223.
+    ``o2p`` and ``op2op`` are asserted apart, as the control of issue #223. If they fail
+    too, the failure is about CUDA generally and not about the device comparison.
     """
     manager = DeviceManager("cuda")
     monkeypatch.setattr(model_module, "device_manager", manager)
@@ -101,11 +86,9 @@ def test_every_pathway_generates_on_a_cuda_device_requested_without_an_index(mon
 
 
 def test_requesting_cpu_names_the_device_torch_allocates_on():
-    """The same invariant as the CUDA case, on the host every machine has.
-
-    CPU has no index to lose, so this passes with or without the fix. It is here to show
-    that the equality being asserted above is the ordinary one and holds for a device the
-    manager already gets right.
+    """CPU has no index to lose, so this passes on a manager that stores the request
+    verbatim too. It shows that the equality asserted in the CUDA case is the ordinary
+    one.
     """
     manager = DeviceManager("cpu")
 
@@ -113,9 +96,7 @@ def test_requesting_cpu_names_the_device_torch_allocates_on():
 
 
 def test_cuda_on_a_host_without_it_falls_back_to_cpu_and_says_so(monkeypatch, caplog):
-    """Falling back to CPU, and doing it without ever asking for a device index.
-
-    ``torch.cuda.current_device()`` raises when there is no CUDA runtime, so resolving the
+    """``torch.cuda.current_device()`` raises when there is no CUDA runtime, so resolving the
     index has to sit behind the availability check rather than in front of it. Booby
     trapping ``current_device`` is what makes this test see the ordering: patching
     availability alone would pass whichever order the two calls were written in.
@@ -203,9 +184,9 @@ def import_device_manager_module():
 def test_bridge_device_selects_the_process_device(monkeypatch):
     """The environment variable is the only knob available before anything is constructed.
 
-    Tokenizers, datasets, the pipeline and the model each capture ``device_manager.device``
-    in their own ``__init__``, so a device chosen after import reaches none of them. It has
-    to be settable before the first import runs.
+    The tokenizers and the model each read ``device_manager.device`` in their own
+    ``__init__``, so a device chosen after they are built reaches none of them. It has to
+    be settable before the first import runs.
     """
     monkeypatch.setenv("BRIDGE_DEVICE", "meta")
 

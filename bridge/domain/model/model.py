@@ -63,10 +63,8 @@ class Model(nn.Module):
         # does not live on. See docs/decisions/0007.
         target_device = device_manager.device
 
-        # `is not None`, not truthiness: 0 is a perfectly good seed and a falsy one, so
-        # `if seed:` left `seed=0` unseeded with no warning. An ensemble built over
-        # `range(n)` then had a member 0 that did not reproduce while every other member
-        # did, and the discrepancy looked like ordinary training noise.
+        # `is not None`, not truthiness: 0 is a good seed and a falsy one, so `if seed:`
+        # leaves member 0 of an ensemble built over `range(n)` unseeded, with no warning.
         if self.model_config.seed is not None:
             set_seed(seed=self.model_config.seed)
 
@@ -143,7 +141,8 @@ class Model(nn.Module):
             num_layers=self.model_config.num_phon_enc_layers,
         )
 
-        # Multihead attentions and layer norms
+        # The two cross-attentions between modalities, which only `op2op` runs. Torch's
+        # stock layer, given no position.
         self.gp_multihead_attention = nn.MultiheadAttention(
             embed_dim=self.model_config.d_model,
             num_heads=self.model_config.nhead,
@@ -173,7 +172,6 @@ class Model(nn.Module):
         self.reduce = torch.nn.Linear(self.model_config.d_model, self.model_config.d_model)
         self.reduce_layer_norm = torch.nn.LayerNorm(self.model_config.d_model)
 
-        # Decoders and output layers
         self.orthography_decoder = Decoder(
             d_model=self.model_config.d_model,
             nhead=self.model_config.nhead,
@@ -188,6 +186,7 @@ class Model(nn.Module):
             nhead=self.model_config.nhead,
             num_layers=self.model_config.num_phon_dec_layers,
         )
+        # Two classes, off and on, for every feature but [PAD], which is never predicted.
         self.linear_phonology_decoder = nn.Linear(
             self.model_config.d_model,
             2 * (self.phonological_vocabulary_size - 1),
@@ -201,21 +200,15 @@ class Model(nn.Module):
 
     @property
     def device(self) -> torch.device:
-        """Where this module actually is.
-
-        Derived from a parameter rather than stored. A stored snapshot of
-        ``device_manager.device`` disagreed with the module the moment anyone called
-        ``.to()`` with anything else, and every runtime tensor this class builds, the causal
-        masks and the generation-loop buffers, is created on ``self.device``. A snapshot
-        therefore turned a deliberate ``.to()`` into device-mismatch errors deep inside a
-        decoder rather than into anything readable.
+        """Where this module is, read from a parameter and not stored, so ``.to()`` is
+        authoritative. Every runtime tensor this class builds, the generation-loop buffers
+        among them, is created on ``self.device``. See ``docs/decisions/0007``.
 
         ``global_embedding`` is the witness because it is a plain parameter that every
         configuration has. Any parameter would do; the module is placed as a whole.
         """
         return self.global_embedding.device
 
-    # Helper functions
     def embed_orth_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
         """Embed ``(batch, seq)`` character ids as ``(batch, seq, d_model)``.
 
@@ -350,7 +343,6 @@ class Model(nn.Module):
         phonology_encoding = self.phonology_encoder(
             phonology, src_key_padding_mask=phon_enc_pad_mask
         )
-        # Query = orthography_encoding, Key = phonology_encoding
         gp_encoding = (
             self.gp_multihead_attention(
                 orthography_encoding,
@@ -361,7 +353,6 @@ class Model(nn.Module):
             + orthography_encoding
         )
         gp_encoding = self.gp_layer_norm(gp_encoding)
-        # Query = phonology_encoding, Key = orthography_encoding
         pg_encoding = (
             self.pg_multihead_attention(
                 phonology_encoding,
@@ -373,7 +364,6 @@ class Model(nn.Module):
         )
         pg_encoding = self.pg_layer_norm(pg_encoding)
 
-        # Concatenate outputs of cross-attention modules and add residual connection
         gp_pg = torch.cat((gp_encoding, pg_encoding), dim=1) + torch.cat(
             (orthography_encoding, phonology_encoding), dim=1
         )
@@ -439,17 +429,8 @@ class Model(nn.Module):
         }
 
     def ortho_sample(self, last_token_probs: torch.Tensor, deterministic: bool) -> torch.Tensor:
-        """
-        Samples a single orthographic token, either greedily (deterministic) or stochastically.
-
-        Args:
-            last_token_probs: Tensor of shape (batch_size, vocab_size) containing
-                              the probabilities for the next token.
-            deterministic: Whether to sample greedily (True) or from the distribution (False).
-
-        Returns:
-            A tensor of shape (batch_size, 1) containing the sampled token IDs.
-        """
+        """One token id per row, ``(batch, 1)``, from ``(batch, vocab)`` probabilities: the
+        argmax when ``deterministic``, a draw otherwise."""
         if deterministic:
             return last_token_probs.argmax(dim=1, keepdim=True)
         return torch.multinomial(last_token_probs, num_samples=1)
@@ -475,7 +456,7 @@ class Model(nn.Module):
                 widened by one column and, for all-off rows only, [PAD] switched on. This
                 is what gets embedded and what ``phon_tokens`` is decoded from.
 
-        The two differ deliberately, and the asymmetry predates this implementation: an
+        The two differ deliberately: an
         all-off vector is *reported* as all-off but *decodes* to [PAD]. Collapsing them
         into one tensor would silently change generation output.
 
@@ -483,9 +464,8 @@ class Model(nn.Module):
         so the embedding input is one column wider than the sampled presence.
         """
         if deterministic:
-            # Greater than 0.5 probability indicates feature presence
             feature_presence = (last_token_probs[:, 1, :] > 0.5).long()
-        else:  # non-deterministic
+        else:
             feature_presence = torch.bernoulli(last_token_probs[:, 1, :]).long()
 
         batch_size, num_predicted = feature_presence.shape
@@ -508,8 +488,6 @@ class Model(nn.Module):
         deterministic: bool,
     ) -> tuple[list[list[torch.Tensor]], torch.Tensor]:
         """
-        Iteratively generates orthographic tokens for all sequences in the batch.
-
         The orthographic twin of :meth:`phonology_decoder_loop`: the batch stays dense
         inside the loop and the ragged ``orth_probs`` lists are cut once at the end.
 
@@ -690,8 +668,7 @@ class Model(nn.Module):
             step_vecs.append(new_vectors)
             step_multihot.append(embedding_input)
 
-            # Check for early stopping (if all sequences have hit EOS). One reduction per
-            # step against a running flag, rather than rescanning the whole history.
+            # One reduction per step against a running flag, not a rescan of the history.
             finished |= embedding_input[:, phon_eos_id].bool()
             if bool(finished.all()):
                 break
@@ -734,37 +711,15 @@ class Model(nn.Module):
         max_new_tokens: int,
         deterministic: bool = False,
     ) -> GenerationDict:
-        """
-        Generates either orthographic tokens or phonological features (or both),
-        depending on the chosen pathway.
+        """Validate the tensors, encode them, and run the decoder loop of each modality
+        ``pathway`` writes.
 
-        Encode the inputs with ``BridgeTokenizer.encode_input`` (or the individual
-        character / phoneme tokenizers) before calling this; :meth:`generate` is the
-        friendlier entry point that unpacks a :class:`BridgeInput` for you.
+        :meth:`generate` is the public entry point. It unpacks a :class:`BridgeInput` into
+        the ``(batch, seq)`` ids and pad masks taken here, and documents the rest. A
+        modality the pathway does not read must be ``None``.
 
-        Args:
-            pathway: One of ``PATHWAYS``.
-            orth_enc_input: (batch_size, seq) input IDs (from an orth encoder).
-            orth_enc_pad_mask: (batch_size, seq) Boolean mask indicating PAD tokens.
-            phon_enc_input: (batch_size, seq) input IDs (from a phon encoder).
-            phon_enc_pad_mask: (batch_size, seq) Boolean mask indicating PAD tokens.
-            orth_start: (batch_size, 2) the ``[LANG, BOS]`` rows the orthographic decoder
-                starts from. Required by a pathway that writes orthography.
-            max_new_tokens: The most tokens to write after the start of each sequence.
-                See :meth:`generate`.
-            deterministic: Whether sampling is greedy (True) or stochastic (False).
-
-        Returns:
-            A ``GenerationDict``. ``global_encoding``, the (batch_size, d_embedding,
-            d_model) memory passed to the decoders, is always populated; the
-            orthographic and phonological fields are filled in only for the pathways
-            that generate them, and stay ``None`` otherwise.
-
-        See Also:
-            - phonology_decoder_loop
-            - phono_sample
-            - orthography_decoder_loop
-            - ortho_sample
+        Returns a ``GenerationDict``. ``global_encoding`` is always filled, and the fields
+        of a modality the pathway does not write stay ``None``.
         """
         self._validate_generate_input(
             pathway,
@@ -813,7 +768,6 @@ class Model(nn.Module):
                 "phon_tokens": None,
             }
 
-            # All these pathways have "2p" meaning we need to run the phonological decoder loop
             if pathway in WRITES_PHON:
                 # Generation works in feature space, not phoneme-row space: the decoder
                 # samples features independently, so a generated vector need not be any
@@ -832,7 +786,6 @@ class Model(nn.Module):
                 output["phon_vecs"] = phon_vecs
                 output["phon_tokens"] = phon_tokens
 
-            # All these pathways have "2o" meaning we need to run the orthography decoder loop
             if pathway in WRITES_ORTH:
                 assert orth_start is not None
                 # Seeded with the prefix training uses, [LANG, BOS], rather than a lone
@@ -894,12 +847,10 @@ class Model(nn.Module):
                 of the first word written; any later change of language is the decoder's
                 to emit. Required by a pathway that writes orthography, and not read by
                 one that does not.
-            deterministic: Whether to use deterministic (greedy) or stochastic sampling.
-                        Defaults to False (stochastic).
+            deterministic: Greedy when True, sampled when False.
 
         Returns:
-            A GenerationOutput object containing the generated sequences and associated
-            probability distributions.
+            A validated :class:`GenerationOutput`.
 
         Raises:
             TypeError: If ``inputs`` is not a :class:`BridgeInput`.

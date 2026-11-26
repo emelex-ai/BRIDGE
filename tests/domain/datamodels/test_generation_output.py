@@ -1,11 +1,8 @@
 """Pins the per-field validation rules of ``GenerationOutput``.
 
-Two near-identical validators (``validate_probability_list`` /
-``validate_phonological_vectors``) were merged into ``validate_nested_tensors`` plus a
-pluggable per-element check. The merge is only correct if each field keeps exactly the
-rules it had. The old code selected them with ``if name == "orth_probs"`` /
-``if name == "phon_vecs"`` string comparisons, which is easy to get wrong when
-refactoring. The asymmetries below are the whole point of this file:
+One validator, ``validate_nested_tensors``, walks all four nested fields, and each field's
+rules differ only in the per-element check it is handed. The asymmetries below are the
+whole point of this file:
 
 * ``orth_probs`` is a softmax over the orthographic vocabulary -> must sum to 1
 * ``phon_probs`` is an independent per-feature probability -> must NOT be required to
@@ -54,9 +51,6 @@ def phon_kwargs(**over):
     return kwargs
 
 
-# --- happy paths -----------------------------------------------------------
-
-
 def test_orthographic_only_output_is_valid():
     build(orth_probs=simplex(), orth_tokens=orth_tokens())
 
@@ -67,9 +61,6 @@ def test_phonological_only_output_is_valid():
 
 def test_both_modalities_is_valid():
     build(orth_probs=simplex(), orth_tokens=orth_tokens(), **phon_kwargs())
-
-
-# --- the asymmetries the validator merge had to preserve -------------------
 
 
 def test_orth_probs_must_sum_to_one():
@@ -101,9 +92,6 @@ def test_phon_vecs_must_be_binary():
 def test_phon_tokens_are_unconstrained_indices():
     """Feature indices are neither binary nor within [0, 1]."""
     build(**phon_kwargs(phon_tokens=nested(3.0, 17.0, 29.0)))
-
-
-# --- shared structural rules ----------------------------------------------
 
 
 @pytest.mark.parametrize("field", ["orth_probs", "phon_probs", "phon_vecs", "phon_tokens"])
@@ -147,14 +135,11 @@ def test_a_structural_error_names_the_field_and_position():
 def test_a_numeric_error_names_the_field():
     """Numeric checks run once over every row at once, so they name the field only.
 
-    Per-tensor checking cost thousands of device syncs per ``generate()``; the position
+    Per-tensor checking costs thousands of device syncs per ``generate()``; the position
     is worth less than that.
     """
     with pytest.raises(ValueError, match="orth_probs probabilities must sum to 1"):
         build(orth_probs=nested(0.1, 0.1), orth_tokens=orth_tokens())
-
-
-# --- cross-field consistency ----------------------------------------------
 
 
 def test_at_least_one_modality_required():
@@ -187,14 +172,10 @@ def test_orth_tokens_batch_size_must_match_global_encoding():
 
 @pytest.mark.parametrize("field", ["phon_probs", "phon_vecs", "phon_tokens"])
 def test_phonological_batch_mismatch_names_the_field(field):
-    """The message used to interpolate the whole tensor list, which was unreadable."""
     kwargs = phon_kwargs()
     kwargs[field] = [[torch.tensor([1.0])]]  # batch of 1 vs global's 2 (binary-safe)
     with pytest.raises(ValueError, match=f"{field} batch size mismatch"):
         build(**kwargs)
-
-
-# --- global_encoding and orth_tokens ---------------------------------------
 
 
 def test_global_encoding_must_be_three_dimensional():
@@ -224,7 +205,7 @@ def test_orth_tokens_must_be_two_dimensional():
 def test_rows_of_unequal_length_are_a_validation_error():
     """Batching the numeric check must not let a shape mismatch escape as RuntimeError.
 
-    ``element_check`` now runs once over every row stacked together rather than per
+    ``element_check`` runs once over every row stacked together rather than per
     tensor. ``torch.stack`` raises a bare ``RuntimeError`` on ragged input, which would
     bypass pydantic entirely, so the width is agreed in the structural walk instead.
     """

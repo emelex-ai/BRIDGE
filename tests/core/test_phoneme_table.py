@@ -22,7 +22,6 @@ def phonreps_csv() -> pd.DataFrame:
 
 
 def test_row_order_is_phonreps_order_then_special_tokens():
-    """The contract: CSV order first, specials appended in SPECIAL_TOKENS order."""
     csv = phonreps_csv()
     table = load_phoneme_table()
 
@@ -72,11 +71,12 @@ def test_the_tokenizer_reports_the_tables_special_token_columns():
 
 
 def test_features_of_inverts_the_multi_hot_encoding():
-    """A row id carries exactly the feature set the ragged representation used to carry.
+    """For a real phoneme the feature set is its CSV row; for a special token it is the
+    single dedicated column.
 
-    For real phonemes that set is the CSV row; for special tokens it is the single
-    dedicated column. Together they cover every row, which is what makes a `(B, L)`
-    tensor of row ids lossless against the `list[list[Tensor]]` it replaced.
+    Together they cover every row, which is what makes a `(B, L)` tensor of row ids
+    lossless against a ragged `list[list[Tensor]]` of feature ids. See
+    docs/decisions/0002.
     """
     csv = phonreps_csv()
     table = load_phoneme_table()
@@ -142,8 +142,8 @@ def test_the_cache_key_is_normalized_across_device_spellings():
     """``"cpu"`` and ``torch.device("cpu")`` name one device, so they get one table.
 
     Without normalization each spelling is a distinct cache key, and the CSV is parsed
-    twice: ``tests/vocab.py`` passes the default string while ``Model.__init__`` and
-    ``PhonemeTokenizer.__init__`` pass ``device_manager.device``.
+    twice: ``tests/vocab.py`` passes the default string while
+    ``PhonemeTokenizer.__init__`` passes ``device_manager.device``.
     """
     assert load_phoneme_table() is load_phoneme_table(torch.device("cpu"))
     assert load_phoneme_table("cpu") is load_phoneme_table(torch.device("cpu"))

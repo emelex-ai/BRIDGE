@@ -1,10 +1,9 @@
 """``train_steps`` is the seam: one optimizer step per slice, one record per step.
 
-The library used to ship the loop as well, and this file used to assert its arithmetic:
-epochs, a validation pass per epoch, a merged epoch aggregate, a ``num_epochs`` override.
-All of that was experiment policy and moved to the caller (docs/decisions/0013), so what
-is left to pin is narrow and should stay narrow: the stream is one event per slice, in
-order, carrying enough to act on, and abandoning it does no further work.
+Epochs, a validation pass per epoch, an epoch aggregate and the number of epochs are
+experiment policy and belong to the caller (docs/decisions/0013). What is pinned here is
+narrow and should stay narrow: the stream is one event per slice, in order, carrying
+enough to act on, and abandoning it does no further work.
 """
 
 import json
@@ -28,7 +27,6 @@ def slices(words_dataset):
 
 
 def test_one_event_per_slice_in_order(pipeline, words_dataset, slices):
-    """The arithmetic of the stream, counted against the slices handed in."""
     events = list(pipeline.train_steps(words_dataset, slices, epoch=0))
 
     assert len(events) == SLICES

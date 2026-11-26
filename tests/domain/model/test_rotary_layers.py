@@ -113,9 +113,6 @@ def moved(by) -> object:
     return lambda x, positions: real(x, by(positions))
 
 
-# --- (a) reference implementation: the stock layers -------------------------
-
-
 def stock_and_owned() -> tuple[nn.Module, nn.Module, Encoder, Decoder]:
     """Torch's stock encoder and decoder with redrawn weights, and an owned encoder and
     decoder holding the same weights, loaded by name with ``strict=True``. All in eval mode.
@@ -247,9 +244,6 @@ def test_a_fresh_owned_stack_starts_from_the_weights_a_fresh_stock_stack_would(s
         assert any(not torch.equal(other[name], reference[name]) for name in reference), "control"
 
 
-# --- (b) analytic: attention sees distances ---------------------------------
-
-
 @pytest.mark.parametrize(("shift", "limit"), [(1, NOISE), (17, NOISE), (1000, FAR)])
 def test_moving_every_position_by_the_same_amount_changes_nothing(
     monkeypatch, stacks, shift, limit
@@ -319,9 +313,6 @@ def test_self_attention_scores_how_far_apart_two_positions_are():
 
     assert deviation(here, further) < NOISE
     assert deviation(here, spread) > SEEN
-
-
-# --- (c) analytic: rotate itself ---------------------------------------------
 
 
 def test_rotate_turns_each_pair_by_its_own_rate_times_the_position():

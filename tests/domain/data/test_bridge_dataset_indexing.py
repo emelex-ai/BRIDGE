@@ -27,9 +27,6 @@ def fresh():
     return BridgeDataset(DatasetConfig(dataset_filepath=DATA))
 
 
-# --- indexing forms --------------------------------------------------------
-
-
 def test_int_index_returns_a_batch_of_one(dataset):
     batch = dataset[0]
     assert isinstance(batch, BridgeBatch)
@@ -55,9 +52,6 @@ def test_strided_slice_is_supported(dataset):
 
 def test_len_matches_the_examples(dataset):
     assert len(dataset) == len(dataset.examples) == 7300
-
-
-# --- index errors ----------------------------------------------------------
 
 
 def test_negative_int_is_rejected_before_slice_conversion(dataset):
@@ -123,9 +117,6 @@ def test_nothing_is_kept_between_reads(tmp_path):
         assert homographs[2].input.phon.ids.tolist() == [[86, 69, 22, 89, 68, 32, 87]]
         assert homographs[3].input.phon.ids.tolist() == [[86, 69, 22, 89, 68, 27, 87]]
     assert homographs[0] is not homographs[0]
-
-
-# --- shuffle ---------------------------------------------------------------
 
 
 def test_shuffle_is_a_permutation(fresh):

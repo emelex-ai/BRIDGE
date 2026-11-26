@@ -57,9 +57,6 @@ def batch(**over) -> BridgeBatch:
     return BridgeBatch(**{"input": bridge_input(), "target": bridge_target(), **over})
 
 
-# --- happy path ------------------------------------------------------------
-
-
 def test_valid_objects_construct_and_report_batch_size():
     assert len(bridge_input()) == 2
     assert len(bridge_target()) == 2
@@ -78,8 +75,6 @@ def test_input_and_target_lengths_are_independent():
     narrow = BridgeTarget(orth=orth_target(length=4), phon=phon_target(length=3))
     assert len(BridgeBatch(input=wide, target=narrow)) == 2
 
-
-# --- what one sequence must be ----------------------------------------------
 
 SEQUENCE_INVALID = [
     ("ids_not_a_tensor", {"ids": [[1, 2, 3]] * 2}, "ids must be a torch.Tensor"),
@@ -166,9 +161,6 @@ def test_labels_give_one_row_per_decoder_position(override, message):
     assert message in str(exc.value)
 
 
-# --- the two modalities of one side ------------------------------------------
-
-
 def test_the_modalities_of_an_input_agree_on_batch_size():
     with pytest.raises(ValueError, match=r"Batch size mismatch in BridgeInput: .*2.*3"):
         BridgeInput(orth=tokens(batch=2), phon=tokens(batch=3))
@@ -194,9 +186,6 @@ def test_swapped_target_modalities_are_rejected():
         BridgeTarget(orth=phon_target(), phon=orth_target())
     with pytest.raises(ValueError, match="BridgeTarget.phon labels must be 3-dimensional"):
         BridgeTarget(orth=orth_target(), phon=orth_target())
-
-
-# --- a modality the input does not carry -------------------------------------
 
 
 @pytest.mark.parametrize("carried", ["orth", "phon"])
@@ -239,9 +228,6 @@ def test_a_target_has_both_modalities():
         BridgeTarget(orth=orth_target(), phon=None)
 
 
-# --- an input is not a target ------------------------------------------------
-
-
 def test_a_batch_of_two_inputs_is_rejected():
     """The swap a repetition test cannot see: both sides hold the same strings, so only
     the type says which is which."""
@@ -270,9 +256,6 @@ def test_tokens_are_not_a_target_and_a_target_is_not_tokens():
 def test_tokens_have_no_labels():
     """What stops an input reaching a loss: the loss reads ``labels``."""
     assert not hasattr(tokens(), "labels")
-
-
-# --- device movement -------------------------------------------------------
 
 
 def test_to_same_device_preserves_contents():
@@ -377,9 +360,6 @@ def test_parts_on_mixed_devices_are_rejected():
         BridgeTarget(orth=orth_target().to(cuda), phon=phon_target())
     with pytest.raises(ValueError, match="Device mismatch in BridgeBatch"):
         BridgeBatch(input=bridge_input().to(cuda), target=bridge_target())
-
-
-# --- immutability ----------------------------------------------------------
 
 
 @pytest.mark.parametrize(

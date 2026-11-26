@@ -268,7 +268,6 @@ class PhonemeTokenizer:
         return self.vocabulary_size
 
     def _create_inverse_phoneme_mapping(self):
-        """Create an inverse mapping from phoneme vectors to phoneme strings."""
         self.phoneme_vectors_to_strings: dict[tuple, list[str]] = {}
 
         self.all_phoneme_names = self.phoneme_table.phonemes
@@ -279,15 +278,21 @@ class PhonemeTokenizer:
             self.phoneme_vectors_to_strings.setdefault(vector_tuple, []).append(phoneme)
 
     def phoneme_vector_to_phoneme(self, phoneme_vector, distance_fn=None, top_k=1):
-        """Map a phoneme vector back to phoneme string(s).
+        """The phoneme names a feature vector stands for.
 
         Args:
-            phoneme_vector: Tensor representing a phoneme's features
-            distance_fn: Optional distance function. If None, uses Hamming distance
-            top_k: Number of closest phonemes to return if no exact match
+            phoneme_vector: The phonetic features of one phoneme. A full-width vector,
+                special-token columns included, is accepted: one whose only active entry
+                is a special-token column returns that token, and any other is cut to its
+                phonetic features.
+            distance_fn: Called as ``distance_fn(vector, phoneme)`` when nothing matches
+                exactly. Hamming distance when ``None``.
+            top_k: How many of the nearest phonemes to return when nothing matches exactly.
 
         Returns:
-            List of phoneme strings (exact matches or closest matches)
+            Every phoneme whose features match exactly, as names, whatever ``top_k`` is.
+            Otherwise the nearest ``top_k``: names when ``top_k`` is 1, and
+            ``(name, distance)`` pairs when it is more.
         """
         if isinstance(phoneme_vector, torch.Tensor):
             phoneme_vector = phoneme_vector.to(self.device)
@@ -323,7 +328,8 @@ class PhonemeTokenizer:
         return [(self.all_phoneme_names[idx.item()], distances[idx].item()) for idx in indices]
 
     def phoneme_vectors_to_word(self, phoneme_vectors, distance_fn=None):
-        """Convert a sequence of phoneme vectors back to a sequence of phonemes."""
+        """One phoneme name per vector, not a spelled word. A 0-dimensional tensor is read
+        as the feature id of a special token."""
         phonemes = []
 
         for vector in phoneme_vectors:

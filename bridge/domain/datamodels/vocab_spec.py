@@ -1,23 +1,8 @@
-"""VocabSpec: the vocabulary contract between Model and Tokenizer.
+"""VocabSpec: what a ``Model`` needs to know of its two vocabularies.
 
-A `Model` needs to know its vocabulary sizes (to size `nn.Embedding` layers)
-and a handful of special-token IDs (to drive autoregressive generation). This
-information is intrinsic to whichever tokenizer produced the inputs but is
-*not* the tokenizer itself. The model can be loaded, run, and generate from
-without ever holding a tokenizer reference if it has these numbers on its
-config.
-
-This is the same separation used by HuggingFace `PretrainedConfig` (where
-`vocab_size`, `pad_token_id`, `eos_token_id`, etc. live alongside architecture
-hyperparameters). BRIDGE has two vocabularies (orthographic + phonological),
-so the fields are prefixed accordingly.
-
-The companion `from_tokenizer` classmethod is the one-line bridge for
-downstream researchers wiring a `BridgeTokenizer` to a `Model`:
-
-    >>> tok = BridgeTokenizer()
-    >>> config.vocab = VocabSpec.from_tokenizer(tok)
-    >>> model = Model(config)
+The sizes that shape its embedding layers and the special-token ids that drive
+generation. A tokenizer defines them, but the model holds these numbers and not the
+tokenizer, so a model loads, runs and generates with no tokenizer in the process.
 """
 
 from __future__ import annotations
@@ -31,18 +16,14 @@ if TYPE_CHECKING:
 
 
 class VocabSpec(BaseModel):
-    """The full vocab contract the `Model` needs at construction and generation.
+    """The sizes, the pad, bos and eos ids and the language-token ids are required.
 
-    The sizes, the pad, bos and eos ids and the language-token ids are required. Use
-    `VocabSpec.from_tokenizer(...)` to derive an instance from an existing
-    `BridgeTokenizer`, or construct one manually with hardcoded numbers (e.g.
-    for testing or when loading a checkpoint without instantiating the
-    tokenizer).
+    Build one with :meth:`from_tokenizer`. A spec written by hand is checked against the
+    phoneme table when a ``Model`` is built from it.
     """
 
-    # An unknown key is a typo in someone's experiment config, and silently
-    # ignoring it means the run does something other than what the file says.
-    # Removing a field (gcs_path, max_nb_steps) made that reachable.
+    # An unknown key is a typo in an experiment config. Ignored, the run does something
+    # other than what the file says.
     model_config = ConfigDict(extra="forbid")
 
     orth_vocab_size: int = Field(description="Orthographic vocabulary size.")
@@ -86,12 +67,6 @@ class VocabSpec(BaseModel):
 
     @classmethod
     def from_tokenizer(cls, tokenizer: BridgeTokenizer) -> VocabSpec:
-        """Build a `VocabSpec` from a constructed `BridgeTokenizer`.
-
-        This is the canonical bridge from tokenizer to model config. Any
-        downstream code constructing a Model from a BridgeTokenizer should
-        flow through this classmethod.
-        """
         sizes = tokenizer.get_vocabulary_sizes()
         return cls(
             orth_vocab_size=sizes["orthographic"],

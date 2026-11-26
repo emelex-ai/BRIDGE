@@ -56,9 +56,6 @@ def validates(**sizes) -> bool:
     return True
 
 
-# --- d_model and nhead ------------------------------------------------------
-
-
 def test_head_counts_are_accepted_exactly_when_torch_builds_them_and_position_turns_them():
     """Oracle: reference implementation, in two parts. Torch's attention says which pairs
     build at all. ``rotate``, the one place position enters, says which of those have a
@@ -156,9 +153,6 @@ def test_every_fix_the_error_offers_validates_and_none_nearer_exists(d_model, nh
     assert offered("d_model"), "a wider model always validates, so a width is always offered"
 
 
-# --- every size has a floor -------------------------------------------------
-
-
 @pytest.mark.parametrize("field", SIZES)
 @pytest.mark.parametrize("value", [0, -1])
 def test_a_size_below_one_is_rejected_at_its_own_field(field, value):
@@ -184,9 +178,6 @@ def test_a_zero_head_count_is_reported_as_out_of_range_not_as_a_division():
     assert [error["loc"] for error in errors] == [("nhead",)]
 
 
-# --- the default memory --------------------------------------------------------
-
-
 def test_the_global_memory_defaults_to_two_rows(shared_tokenizer):
     """Oracle: the decision. ``d_embedding`` is the number of rows in the global memory,
     which is all a decoder reads of the input, and it defaults to two. The model is built
@@ -203,9 +194,6 @@ def test_the_global_memory_defaults_to_two_rows(shared_tokenizer):
         2,
         config.d_model,
     )
-
-
-# --- the contract -----------------------------------------------------------
 
 
 def test_exactly_the_sizes_at_or_above_their_floor_validate():

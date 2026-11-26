@@ -4,13 +4,6 @@ its `vocab` field) is the model's source of truth for vocabulary architecture:
 embedding dimensions, parameter counts, and special-token IDs all flow from the
 config, not from any tokenizer or dataset reference. The phonological half must
 agree with `phonreps.csv`, which the model checks at construction.
-
-These tests survived the decoupling refactor and provide permanent regression
-coverage for the model↔tokenizer boundary. (The migration-only scaffolding
-tests (AST scans, signature checks, attribute checks) were intentionally
-deleted in Step 8 of `plans/sleepy-wishing-bird.md`: code review enforces
-their invariants more reliably and they become brittle to legitimate
-reorganization.)
 """
 
 import math
@@ -24,9 +17,7 @@ from tests.vocab import PHONEME_TABLE, TEST_VOCAB
 
 
 def _build_test_model(**vocab_overrides) -> Model:
-    """Construct a Model with controllable vocab numbers for testing.
-
-    The orthographic half is free; the phonological half is derived from
+    """The orthographic half of the vocab is free; the phonological half is derived from
     ``phonreps.csv`` and is validated at construction, so it comes from TEST_VOCAB
     rather than being hand-written here.
     """
@@ -53,8 +44,6 @@ def _find_in_pydantic(model_obj, attr_name):
 
 
 class TestConfigDrivesArchitecture:
-    """Vocab sizes in the config control model construction."""
-
     def test_embedding_layer_sizes_match_config_vocab(self):
         model = _build_test_model(orth_vocab_size=50, phon_vocab_size=36)
         assert model.orthography_embedding.num_embeddings == 50
@@ -89,11 +78,9 @@ class TestConfigDrivesArchitecture:
 def test_every_pathway_trains(words_dataset, make_pipeline):
     """All five pathways take an optimizer step and report the loss terms their row implies.
 
-    ``o2o`` became trainable when ``forward_o2o`` was added and ``training_pathway`` widened
-    to the ``Pathway`` literal, and nothing exercised it: a wrong row in ``PATHWAY_IO``
-    would have passed the whole suite, because ``PATHWAY_INPUTS``, the ``forward_*``
+    The defect is a wrong row in ``PATHWAY_IO``: ``PATHWAY_INPUTS``, the ``forward_*``
     dispatch and the ``WRITES_ORTH``/``WRITES_PHON`` membership that selects losses and
-    metrics are all derived from that one table.
+    metrics are all derived from that one table, so none of them can contradict it.
 
     Oracle: the table itself. A pathway that writes orthography must produce ``orth_loss``
     and no other, and likewise for phonology, so the assertion is a differential between

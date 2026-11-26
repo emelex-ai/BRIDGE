@@ -1,10 +1,10 @@
 """Resuming from a checkpoint has to actually resume.
 
-``load_model`` reads the epoch out of the checkpoint, logs "Resuming training from epoch N",
-and then used to throw the number away on the next line, so a run resumed from epoch 9 of 12
-re-trained all twelve while the log said it started at ten. Nothing raised and nothing looked
-wrong. The library no longer runs the loop, so ``start_epoch`` is now a value the caller
-reads rather than one the library consumes, and it still has to be right.
+``load_model`` reads the epoch out of the checkpoint and logs "Resuming training from epoch
+N". The defect is a load that logs it and leaves ``start_epoch`` at 0: a run resumed from
+epoch 9 of 12 re-trains all twelve while the log says it started at ten, and nothing raises.
+The library runs no loop (docs/decisions/0013), so ``start_epoch`` is a value the caller
+reads, and it has to be right.
 
 The guard in front of the assignment needs every branch exercised, because a branch that
 never fires and a branch that always fires look identical from the outside:
@@ -13,13 +13,12 @@ never fires and a branch that always fires look identical from the outside:
 * a path naming a pretraining or finetuning checkpoint restarts at 0 on purpose, since those
   weights are being carried into a different run and the old epoch count means nothing there;
 * a checkpoint carrying no epoch stays at 0 and says so in the log;
-* a load that throws propagates the exception. A failed load and a deliberate reset used
-  to be indistinguishable, because ``load_model`` swallowed everything and returned a
-  ``False`` that ``__init__`` never checked.
+* a load that throws propagates the exception. A ``load_model`` that swallowed it would
+  make a failed load and a deliberate reset indistinguishable.
 
 Every numeric assertion here is paired with a control in the same test: the same recipe under
-a condition that must come out the other way. The oracle throughout is the arithmetic stated
-in the code's own comment, "Start from the next epoch", plus ``range(start, stop)``.
+a condition that must come out the other way. The oracle throughout is the arithmetic
+``epoch + 1``, plus ``range(start, stop)``.
 """
 
 import logging
@@ -157,10 +156,9 @@ def test_a_checkpoint_without_an_epoch_key_starts_at_zero_and_warns(
 
 
 def test_a_corrupt_checkpoint_raises_rather_than_resuming_from_nothing(dataset, state, tmp_path):
-    """A load that failed and a load that deliberately reset the counter used to leave
-    identical state behind, because ``load_model`` swallowed every exception and returned
-    ``False`` that nobody checked. A run then trained from random weights believing it had
-    resumed. It raises now, so the two are distinguishable by construction.
+    """A ``load_model`` that swallowed the exception would leave the state a deliberate
+    reset of the counter leaves, and the run would train from random weights believing it
+    had resumed. It raises, so the two are distinguishable by construction.
 
     The control is a good checkpoint through the same pipeline, which must still reach
     epoch 10 rather than raising.
@@ -296,10 +294,7 @@ def test_a_checkpoint_of_another_shape_is_refused_and_no_tensor_is_overwritten(
 
 
 def test_start_epoch_is_what_a_callers_own_loop_resumes_from(dataset, state, tmp_path):
-    """The consequence of the field, now that the loop belongs to the caller.
-
-    The library used to iterate ``range(self.start_epoch, num_epochs)`` itself. It does
-    not run a loop any more (docs/decisions/0013), so what has to hold is that
+    """The library runs no loop (docs/decisions/0013), so what has to hold is that
     ``start_epoch`` is correct and reachable, and that a caller writing the obvious
     ``range(pipeline.start_epoch, n)`` gets the remaining epochs and no others.
 

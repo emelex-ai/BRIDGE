@@ -1,10 +1,9 @@
 """Checkpointing is the caller's decision, and the pipeline's format.
 
-Two training runs pointed at the same artifacts directory used to overwrite each other
-without a word: ``save_model`` took a ``run_name``, was passed one, and built its filename
-from the epoch alone. The repair is not a better naming scheme. It is that no naming scheme
-the library picks can be right for every experiment, so ``save_checkpoint`` takes a path and
-``save_every`` is gone. See docs/decisions/0006-the-caller-owns-the-training-loop.md.
+``save_checkpoint`` takes a path and there is no ``save_every``, because no naming scheme
+the library picks can be right for every experiment. A filename built from the epoch alone
+lets two runs pointed at the same artifacts directory overwrite each other without a word.
+See docs/decisions/0006-the-caller-owns-the-training-loop.md.
 
 The oracle throughout is a round trip: what the pipeline is told to record has to come back
 off disk saying the same thing. Where the file lands is checked against paths computed in
@@ -52,12 +51,12 @@ def make_pipeline(dataset, artifacts_dir, **overrides):
 
 
 def test_distinct_paths_keep_distinct_checkpoints(dataset, tmp_path):
-    """The defect, stated as the invariant it violated.
+    """The defect: two runs sharing an artifacts directory collapse to a single
+    ``model_epoch_0.pth``.
 
-    Two runs sharing an artifacts directory previously collapsed to a single
-    ``model_epoch_0.pth``. Injectivity is asserted here by counting distinct files against
-    distinct requests, rather than by pinning filename literals, so any layout the caller
-    chooses satisfies it: a prefix, a subdirectory, a timestamp.
+    Injectivity is asserted here by counting distinct files against distinct requests,
+    rather than by pinning filename literals, so any layout the caller chooses satisfies
+    it: a prefix, a subdirectory, a timestamp.
     """
     pipeline = make_pipeline(dataset, tmp_path)
 
@@ -123,8 +122,8 @@ def test_the_bundle_round_trips(dataset, tmp_path):
         assert torch.equal(saved, before[key]), f"{key} did not survive the round trip"
     assert loaded["model_config"].d_model == 16
     assert "optimizer_state_dict" in loaded
-    # Recorded only when the caller names the dataset. The pipeline no longer holds one,
-    # so it cannot stamp a bundle with data that did not train the weights.
+    # Recorded only when the caller names the dataset. The pipeline holds none, so it
+    # cannot stamp a bundle with data that did not train the weights.
     assert "dataset_config" not in loaded
 
     with_data = pipeline.save_checkpoint(tmp_path / "with_data.pth", epoch=7, dataset=dataset)
@@ -133,15 +132,13 @@ def test_the_bundle_round_trips(dataset, tmp_path):
 
 
 def test_nothing_writes_a_checkpoint_except_save_checkpoint(words_dataset, make_pipeline, tmp_path):
-    """The library owns no save policy, which is now a structural fact rather than a
-    property of one loop: there is no loop left to check.
+    """The library owns no save policy, and it has no loop to hold one.
 
     Oracle: a search with a stated space, parsed rather than grepped, and the space is
-    the whole module rather than the bodies of plain functions. The first version of this
-    walked only `ast.FunctionDef` for a literal `torch.save` attribute, so a call at module
-    scope, a call inside an `async def`, and `from torch import save` all passed it while
-    claiming to have searched for "every torch.save call". Validated by planting each of
-    those three spellings plus the ordinary one and confirming all four are caught.
+    the whole module rather than the bodies of plain functions. A walk of only
+    `ast.FunctionDef` for a literal `torch.save` attribute passes a call at module scope,
+    a call inside an `async def`, and `from torch import save`. Validated by planting each
+    of those three spellings plus the ordinary one and confirming all four are caught.
     """
     import ast
 

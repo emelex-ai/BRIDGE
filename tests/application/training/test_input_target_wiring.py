@@ -101,7 +101,6 @@ LABELS = {"target.orth.labels", "target.phon.labels"}
 
 @pytest.fixture(scope="module")
 def datasets(tmp_path_factory, shared_tokenizer):
-    """Each batch of ``BATCHES`` as a dataset loaded from a csv of its rows."""
     directory = tmp_path_factory.mktemp("pairs")
     loaded = {}
     for number, (name, rows) in enumerate(BATCHES.items()):
@@ -141,7 +140,6 @@ def tensor_of(batch: BridgeBatch, name: str) -> torch.Tensor:
 
 
 def with_rolled(batch: BridgeBatch, name: str) -> BridgeBatch:
-    """``batch`` with the one tensor ``name`` rolled a row along the batch dimension."""
     side, modality, field = name.split(".")
     part = getattr(getattr(batch, side), modality)
     rolled = getattr(part, field).roll(1, dims=0)
@@ -153,7 +151,6 @@ def with_rolled(batch: BridgeBatch, name: str) -> BridgeBatch:
 
 
 def differing(left, right) -> int:
-    """How many tensors of two aligned runs are not bitwise equal."""
     return sum(not torch.equal(a, b) for a, b in zip(left, right, strict=True))
 
 
@@ -172,7 +169,6 @@ def sides_as_written(tokenizer, rows):
 
 
 def hand_wired(model: Model, pathway: str, inputs, target) -> dict[str, torch.Tensor]:
-    """``Model.forward`` with its keyword arguments spelled out per pathway."""
     orth_enc = {"orth_enc_input": inputs.orth.ids, "orth_enc_pad_mask": inputs.orth.pad_mask}
     phon_enc = {"phon_enc_input": inputs.phon.ids, "phon_enc_pad_mask": inputs.phon.pad_mask}
     orth_dec = {"orth_dec_input": target.orth.ids, "orth_dec_pad_mask": target.orth.pad_mask}
@@ -223,9 +219,6 @@ def hand_metrics(logits: dict[str, torch.Tensor], target, vocab: VocabSpec) -> d
     return metrics
 
 
-# --- the premises ------------------------------------------------------------
-
-
 def test_the_batch_is_not_repetition(pairs):
     """Every claim below rests on input and target being distinguishable, tensor by tensor."""
     batch = pairs[0 : len(pairs)]
@@ -257,9 +250,6 @@ def test_the_hand_written_read_table_covers_every_pathway_and_agrees_with_pathwa
         from_table = {f"input.{m}.{f}" for m in reads for f in ("ids", "pad_mask")}
         from_table |= {f"target.{m}.{f}" for m in writes for f in ("ids", "pad_mask", "labels")}
         assert READ[pathway] == from_table, pathway
-
-
-# --- read set ----------------------------------------------------------------
 
 
 @pytest.mark.parametrize("rows", BATCHES)
@@ -296,9 +286,6 @@ def test_the_loss_moves_exactly_when_a_tensor_the_pathway_reads_is_rolled(
         f"should be read but did not move it {sorted(READ[pathway] - moved_loss)}"
     )
     assert moved_logits == READ[pathway] - LABELS
-
-
-# --- hand-wired reference ------------------------------------------------------
 
 
 @pytest.mark.parametrize("rows", BATCHES)
@@ -393,11 +380,11 @@ def test_evaluate_names_the_rows_it_scored(pairs, make):
 
 @pytest.mark.parametrize("pathway", PATHWAYS)
 def test_the_reference_wired_the_wrong_way_round_gives_other_numbers(pairs, make, pathway):
-    """The control for the test above: on this batch a swap is visible.
+    """The control for the hand-wired reference tests: on this batch a swap is visible.
 
     The same hand wiring, with each side built from the other side's strings, must
     disagree with the pipeline. If it agreed, the batch could not tell the two sides
-    apart and the equality above would say nothing about which is which.
+    apart and their equality would say nothing about which is which.
     """
     pipeline = make(pathway)
     model, tokenizer, examples = pipeline.model, pairs.tokenizer, pairs.examples
@@ -414,9 +401,6 @@ def test_the_reference_wired_the_wrong_way_round_gives_other_numbers(pairs, make
         got = pipeline.forward(pairs[0 : len(pairs)])
     for key in got:
         assert got[key].shape != swapped[key].shape or not torch.equal(got[key], swapped[key])
-
-
-# --- the whole path on a batch that is not repetition ---------------------------
 
 
 @pytest.mark.parametrize("pathway", PATHWAYS)
@@ -473,9 +457,6 @@ def test_a_batch_whose_sides_differ_trains_evaluates_and_generates(pairs, make, 
     assert (output.phon_tokens is not None) == ("phon" in writes)
     if "phon" in writes:
         assert len(output.phon_tokens) == len(pairs)
-
-
-# --- the boundary ------------------------------------------------------------
 
 
 @pytest.mark.parametrize("pathway", PATHWAYS)

@@ -91,9 +91,6 @@ def mixed_rows() -> list[tuple[str, list[str]]]:
 MIXED_ROWS = mixed_rows()
 
 
-# --- layout ----------------------------------------------------------------
-
-
 def test_a_mixed_row_is_laid_out_token_for_token(tok):
     """Oracle: hand-written. The design's own example, typed out as token names.
 
@@ -161,9 +158,6 @@ def test_every_pattern_matches_the_reference_layout_and_lexicon(tok, text, langu
     assert target.phon.ids[0].tolist() == phonemes[:-1]
     table = tok.phoneme_tokenizer.phoneme_table
     assert torch.equal(target.phon.labels[0], table.multihot[phonemes[1:]][:, :-1].long())
-
-
-# --- phonology -------------------------------------------------------------
 
 
 def test_a_spanish_phrase_gets_spanish_phonemes(tok):
@@ -274,9 +268,6 @@ def test_a_target_opens_with_its_first_words_language(tok):
     assert torch.equal(tok.orth_start(["ES", "EN", None]), target.ids[:, :2])
 
 
-# --- a row does not depend on its neighbours --------------------------------
-
-
 def unpadded(inputs, target, row: int) -> dict[str, torch.Tensor]:
     """One row of an input and a target with its padding cut off: the ids of all four
     parts and the labels of the two targets."""
@@ -335,9 +326,6 @@ def test_a_row_encodes_the_same_alone_and_in_any_batch(tok):
                         assert torch.equal(got[name], want), (
                             f"{rows[i]} {name} changed inside {picked}"
                         )
-
-
-# --- decoding ---------------------------------------------------------------
 
 
 def test_decode_with_languages_returns_the_text_and_each_words_language(tok):
@@ -448,9 +436,6 @@ def test_padding_does_not_change_what_a_row_decodes_to(tok):
     expected = [(text, langs) for text, langs in MIXED_ROWS]
     assert tok.decode_with_languages(source.ids.tolist()) == expected
     assert tok.decode_with_languages(target.ids.tolist()) == expected
-
-
-# --- which arguments are accepted ---------------------------------------------
 
 
 @pytest.mark.parametrize("encoder", ["encode_input", "encode_target"])
@@ -583,9 +568,6 @@ def test_languages_hold_one_entry_per_row(tok):
         ("sin son", ["EN", "ES"]),
         ("no la", [None, None]),
     ]
-
-
-# --- the shared pieces ---------------------------------------------------------
 
 
 def test_per_word_languages_returns_one_code_per_word():

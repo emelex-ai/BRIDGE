@@ -43,17 +43,13 @@ DATA = "tests/domain/model/data/data.csv"
 
 
 def loss_of(metrics):
-    """The step's loss as a plain float."""
     value = metrics["loss"]
     return float(value.detach()) if hasattr(value, "detach") else float(value)
 
 
 def test_a_working_pipeline_assembles_from_the_top_level_package_alone(tmp_path):
-    """Assemble and run a real training step using only ``from bridge import ...``.
-
-    This is the test that states the promise. Every import here is from the top-level
-    package, so the test fails at exactly the point where the public API runs out, and
-    passes only when a consumer could genuinely write this code. It runs one
+    """Every import here is from the top-level package, so the test fails at exactly the
+    point where the public API runs out. It runs one
     ``single_step`` rather than only constructing the pipeline, because a public API that
     builds an object which cannot compute anything is not sufficient either.
 
@@ -126,8 +122,7 @@ def test_every_listed_export_resolves():
     """A name in ``__all__`` that was never imported is invisible until a user hits it.
 
     ``from bridge import X`` and ``from bridge import *`` both fail on such a name, with a
-    message that points at the user's code rather than at the package. The listing is the
-    claim; attribute access is the check.
+    message that points at the user's code rather than at the package.
 
     Oracle: the invariant that ``__all__`` names attributes of the module it belongs to,
     which is what the language itself assumes when expanding a star import.
@@ -149,11 +144,10 @@ def test_no_established_export_has_been_dropped():
 
 
 def test_an_example_has_no_single_type_for_both_sides():
-    """An input and a target are different types, and no name stands for both.
-
-    Oracle: the design. ``BridgeEncoding`` and ``EncodingComponent`` each held what an
-    encoder reads and what a decoder is taught in one object, which only makes sense when
-    the two are the same string. An alias to either would bring that premise back.
+    """Oracle: the design, ``docs/decisions/0016``. A ``BridgeEncoding`` or an
+    ``EncodingComponent`` holds what an encoder reads and what a decoder is taught in one
+    object, which only makes sense when the two are the same string. An alias to either
+    would bring that premise back.
     """
     assert not hasattr(bridge, "BridgeEncoding")
     assert not hasattr(bridge, "EncodingComponent")

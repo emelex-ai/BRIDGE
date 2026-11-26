@@ -7,16 +7,15 @@ positions, which the caller builds with ``BridgeTokenizer.orth_start`` and passe
 ``orth_start``. A lone ``[BOS]`` at position 0 would ask the decoder to continue from a
 state it never saw in training and would withhold the language token entirely.
 
-Phonology never had this problem, which is what made it visible: its decoder input is
-``[BOS, ...phonemes, PAD...]`` with no language slot, so its ``[BOS]`` is at position 0 in
-both regimes. Orthography was the odd one out, not both.
+Phonology has no such gap: its decoder input is ``[BOS, ...phonemes, PAD...]`` with no
+language slot, so its ``[BOS]`` is at position 0 in both regimes.
 
 Two things are pinned here and they are different claims.
 
 **Register.** The seed is the same two positions training uses, so the decoder starts where it
-was taught to start. Measured on a model trained to memorise a closed 8-word list: the old
-seeding reproduced 5 of 8 and derailed on two words entirely, `table` coming out `telephant`;
-seeding the training prefix reproduces 8 of 8.
+was taught to start. Measured on a model trained to memorise a closed 8-word list: a lone
+``[BOS]`` seed reproduced 5 of 8 and derailed on two words entirely, `table` coming out
+`telephant`; seeding the training prefix reproduces 8 of 8.
 
 **Conditioning.** Keeping the language token on the decoder is what lets ``p2o`` spell the
 same phonemes differently per language, which is the whole reason a language token exists.

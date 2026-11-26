@@ -97,9 +97,6 @@ def writes(pathway: str, modality: str) -> bool:
     return modality in PATHWAY_IO[pathway][1]
 
 
-# --- required -----------------------------------------------------------------
-
-
 @pytest.mark.parametrize("method", ["generate", "_generate"])
 def test_max_new_tokens_is_keyword_only_and_has_no_default(method):
     """Oracle: the signature. A default would be a length the model does not have, and it
@@ -138,9 +135,6 @@ def test_a_cap_that_is_not_a_positive_int_is_refused_and_the_model_left_as_it_wa
         model.eval()
 
 
-# --- counted after the start, and a cut row has no [EOS] -------------------------
-
-
 @pytest.mark.parametrize("pathway", PATHWAYS)
 @pytest.mark.parametrize("cap", [1, 2, 7])
 def test_a_row_that_never_finishes_writes_exactly_the_cap_after_its_start(
@@ -172,9 +166,6 @@ def test_a_row_that_never_finishes_writes_exactly_the_cap_after_its_start(
     else:
         assert result.phon_tokens is None
     assert steps == {m: cap if writes(pathway, m) else 0 for m in ("orth", "phon")}
-
-
-# --- stops at [EOS] or at the cap, whichever comes first ----------------------------
 
 
 def test_a_finished_row_pads_and_a_cut_row_does_not(

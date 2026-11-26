@@ -4,9 +4,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class DatasetConfig(BaseModel):
-    # An unknown key is a typo in someone's experiment config, and silently
-    # ignoring it means the run does something other than what the file says.
-    # Removing a field (gcs_path, max_nb_steps) made that reachable.
+    # An unknown key is a typo in an experiment config. Ignored, the run does something
+    # other than what the file says.
     model_config = ConfigDict(extra="forbid")
 
     dataset_filepath: str = Field(description="Path to dataset file")

@@ -66,7 +66,6 @@ def start():
 
 @pytest.fixture(scope="module")
 def generated(model, inputs, start):
-    """Each pathway's greedy output for ``inputs`` and ``start``, generated once."""
     return {
         pathway: model.generate(
             inputs, pathway, max_new_tokens=CAP, orth_start=start, deterministic=True
@@ -128,9 +127,6 @@ def test_deterministic_generation_repeats(model, inputs, start, generated, pathw
 def test_an_unknown_pathway_is_rejected(model, inputs, start):
     with pytest.raises(ValueError, match="Invalid pathway"):
         model.generate(inputs, "nonsense", max_new_tokens=CAP, orth_start=start, deterministic=True)
-
-
-# --- what generation reads: the input ----------------------------------------
 
 
 @pytest.mark.parametrize("pathway", PATHWAYS)
@@ -211,9 +207,6 @@ def test_generation_takes_an_input_and_refuses_anything_else(model, inputs, star
             model.generate(wrong, "o2o", max_new_tokens=CAP, orth_start=start, deterministic=True)
 
 
-# --- a modality the input does not carry --------------------------------------
-
-
 @pytest.mark.parametrize("pathway", PATHWAYS)
 @pytest.mark.parametrize("missing", ["orth", "phon"])
 def test_a_pathway_reading_a_modality_the_input_lacks_raises_naming_both(
@@ -258,9 +251,6 @@ def test_a_nonword_is_read_through_its_spelling(model):
             model.generate(
                 nonwords, pathway, max_new_tokens=CAP, orth_start=orth_start, deterministic=True
             )
-
-
-# --- what generation reads: the start of orthography --------------------------
 
 
 @pytest.mark.parametrize("pathway", WRITES_ORTH)

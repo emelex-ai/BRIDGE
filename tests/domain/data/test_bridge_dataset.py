@@ -1,8 +1,3 @@
-"""
-Test suite for the BridgeDataset class: loading, indexing into a BridgeBatch, and the
-tokenizer it reads through.
-"""
-
 import json
 import pickle
 from unittest.mock import Mock
@@ -17,22 +12,16 @@ from bridge.domain.tokenizer import BridgeTokenizer
 
 @pytest.fixture
 def mock_gcs_client():
-    """A no-op reader stub for BridgeDataset.
-
-    Specced against the ``CSVReader`` protocol the dataset declares rather than against a
-    concrete cloud client: BRIDGE ships none, so the only contract is ``read_csv``.
-    """
+    """Specced against the ``CSVReader`` protocol the dataset declares rather than against a
+    concrete cloud client: BRIDGE ships none, so the only contract is ``read_csv``."""
     return Mock(spec=CSVReader)
 
 
 @pytest.fixture
 def mock_dataset_file(tmp_path):
-    """Create a temporary dataset file with known test data.
-
-    Uses the columnar pkl format expected by ``BridgeDataset._load_raw_dataframe``:
+    """The columnar pkl format ``BridgeDataset._load_raw_dataframe`` reads:
     ``{"word_raw": [...], "language": [...], "target_raw": [...]}``. The target is the
-    input here, which is repetition.
-    """
+    input here, which is repetition."""
     test_data = {
         "word_raw": ["cat", "dog"],
         "language": ["EN", "EN"],
@@ -48,11 +37,8 @@ def mock_dataset_file(tmp_path):
 
 @pytest.fixture
 def mock_cmudict_file(tmp_path):
-    """Create a temporary CMUdict JSON file with known test data.
-
-    Uses the nested-by-language format expected by ``PhonemeTokenizer``:
-    ``{word: {lang_code: [[phonemes], ...]}}``.
-    """
+    """The nested-by-language format ``PhonemeTokenizer`` reads:
+    ``{word: {lang_code: [[phonemes], ...]}}``."""
     test_data = {
         "the": {"en": [["DH", "IY0"]]},
         "read": {"en": [["R", "IY1", "D"]]},
@@ -67,10 +53,7 @@ def mock_cmudict_file(tmp_path):
 
 
 class MockDatasetConfig:
-    """Mock implementation of DatasetConfig with updated attributes."""
-
     def __init__(self, **kwargs):
-        # Updated attributes based on new DatasetConfig
         self.dataset_filepath = kwargs.get("dataset_filepath", "data.csv")
         self.device = kwargs.get("device", "cpu")
         self.custom_cmudict_path = kwargs.get("custom_cmudict_path", None)
@@ -78,7 +61,6 @@ class MockDatasetConfig:
 
 @pytest.fixture
 def dataset_config(mock_dataset_file, mock_cmudict_file):
-    """Create a DatasetConfig with test parameters."""
     return MockDatasetConfig(
         dataset_filepath=mock_dataset_file, custom_cmudict_path=mock_cmudict_file
     )
@@ -101,7 +83,6 @@ def mock_bridge_tokenizer(mock_cmudict_file):
 
 @pytest.fixture
 def bridge_dataset(dataset_config, mock_bridge_tokenizer, mock_gcs_client):
-    """Create a BridgeDataset instance with mocked components."""
     dataset = BridgeDataset(dataset_config, mock_gcs_client, tokenizer=mock_bridge_tokenizer)
     dataset.mock_tokenizer = mock_bridge_tokenizer
     return dataset
@@ -112,7 +93,6 @@ def inputs_of(dataset) -> list[str]:
 
 
 def test_dataset_initialization(bridge_dataset, mock_dataset_file):
-    """Test dataset initialization with proper configuration."""
     assert isinstance(bridge_dataset, BridgeDataset)
     assert len(bridge_dataset.examples) == 2
     assert inputs_of(bridge_dataset) == ["cat", "dog"]
@@ -120,7 +100,6 @@ def test_dataset_initialization(bridge_dataset, mock_dataset_file):
 
 
 def test_dataset_length(bridge_dataset):
-    """Test the dataset length calculation."""
     assert len(bridge_dataset) == 2
 
 
@@ -146,7 +125,6 @@ def test_get_item_by_index(bridge_dataset):
 
 
 def test_get_item_has_the_expected_ids(bridge_dataset):
-    """The row for "cat", id for id."""
     item = bridge_dataset[inputs_of(bridge_dataset).index("cat")]
     # [LANG=7 ("EN"), BOS=0, c=21, a=19, t=38, EOS=1]. The fixture tags every word
     # as "EN", and EN sits at index 7 in the vocab (after 6 special tokens + "--").
@@ -156,7 +134,6 @@ def test_get_item_has_the_expected_ids(bridge_dataset):
 
 
 def test_get_item_by_slice(bridge_dataset):
-    """Test accessing multiple items using slice notation."""
     items = bridge_dataset[0:2]
     assert isinstance(items, BridgeBatch)
     assert len(items) == 2
@@ -167,7 +144,6 @@ def test_get_item_by_slice(bridge_dataset):
 
 
 def test_invalid_index_access(bridge_dataset):
-    """Test error handling for invalid indices."""
     with pytest.raises(IndexError):
         _ = bridge_dataset[100]
 
@@ -212,7 +188,6 @@ def test_batch_consistency(bridge_dataset):
 
 
 def test_shuffle_functionality(bridge_dataset):
-    """Test dataset shuffling maintains data consistency."""
     original = list(bridge_dataset.examples)
     bridge_dataset.shuffle(1)
 
@@ -222,9 +197,7 @@ def test_shuffle_functionality(bridge_dataset):
 
 
 def test_data_validation(tmp_path, dataset_config, mock_gcs_client):
-    """Test data validation during loading."""
-    # Create invalid dataset file that's not a dictionary of columns
-    invalid_data = []  # Not a dictionary
+    invalid_data = []
     file_path = tmp_path / "invalid.pkl"
     with open(file_path, "wb") as f:
         pickle.dump(invalid_data, f)

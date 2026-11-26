@@ -24,10 +24,10 @@ from bridge.utils import device_manager  # noqa: E402
 def restore_process_device():
     """Put ``device_manager`` back after any test that repoints it.
 
-    Every BRIDGE object captures ``device_manager.device`` in its own ``__init__``, so a
-    test that leaves the singleton on CUDA silently moves every model built after it. The
-    device tests repoint it deliberately; this makes that safe rather than relying on each
-    one to clean up.
+    The tokenizers and the model read ``device_manager.device`` in their own ``__init__``,
+    so a test that leaves the singleton on CUDA silently moves every model built after it.
+    The device tests repoint it deliberately; this makes that safe rather than relying on
+    each one to clean up.
     """
     before = device_manager.device
     yield
@@ -47,25 +47,21 @@ WORDS_CSV = "tests/domain/model/data/data.csv"
 
 @_pytest.fixture(scope="session")
 def shared_tokenizer() -> BridgeTokenizer:
-    """One tokenizer for the whole session.
+    """One tokenizer for the session, for the sake of one definition and not of speed.
 
-    Thirteen test modules built their own. Construction is cheap after the first
-    (0.96 ms against 392 ms cold, since the lexicon parse is memoised process-wide), so
-    this is about having one definition rather than about speed.
+    Construction is cheap after the first: 0.96 ms against 392 ms cold, since the lexicon
+    parse is memoised process-wide.
     """
     return BridgeTokenizer()
 
 
 @_pytest.fixture
 def words_dataset(shared_tokenizer: BridgeTokenizer) -> BridgeDataset:
-    """A ``BridgeDataset`` over ``WORDS_CSV``, sharing the session tokenizer."""
     return BridgeDataset(DatasetConfig(dataset_filepath=WORDS_CSV), tokenizer=shared_tokenizer)
 
 
 @_pytest.fixture
 def load(shared_tokenizer: BridgeTokenizer):
-    """Build a ``BridgeDataset`` over a path, sharing the session tokenizer."""
-
     def build(path: str) -> BridgeDataset:
         return BridgeDataset(DatasetConfig(dataset_filepath=path), tokenizer=shared_tokenizer)
 
@@ -73,7 +69,6 @@ def load(shared_tokenizer: BridgeTokenizer):
 
 
 def batch_tensors(batch) -> dict:
-    """The ten tensors of a batch by name."""
     out = {}
     for side in ("input", "target"):
         for modality in ("orth", "phon"):
@@ -86,22 +81,20 @@ def batch_tensors(batch) -> dict:
 
 
 def batch_slices(dataset, size: int = 8) -> list[slice]:
-    """Contiguous slices over a dataset, the partition the pipeline used to build itself.
+    """Contiguous slices over a dataset.
 
-    A test helper now rather than library code: which slices a run uses is experiment
-    policy, so `TrainingPipeline` no longer owns a train/validation split. See
-    docs/decisions/0013.
+    A test helper and not library code: which slices a run uses is experiment policy, so
+    `TrainingPipeline` owns no train/validation split. See docs/decisions/0013.
     """
     return [slice(i, min(i + size, len(dataset))) for i in range(0, len(dataset), size)]
 
 
 @_pytest.fixture
 def make_pipeline():
-    """Build a ``TrainingPipeline`` over a dataset, overriding any ``TrainingConfig`` field.
+    """Build a ``TrainingPipeline`` over a dataset.
 
-    Six test modules had their own copy of this, so a new required config field broke
-    eight call sites in six files. Model hyperparameters are small and seeded, matching
-    what every copy used.
+    ``d_model``, ``nhead``, ``seed`` and ``d_embedding`` go to the model. Every other
+    keyword overrides a ``TrainingConfig`` field.
     """
     from bridge.application.training import TrainingPipeline
 

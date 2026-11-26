@@ -13,9 +13,8 @@ def _divisors(n: int) -> list[int]:
 
 
 class ModelConfig(BaseModel):
-    # An unknown key is a typo in someone's experiment config, and silently
-    # ignoring it means the run does something other than what the file says.
-    # Removing a field (gcs_path, max_nb_steps) made that reachable.
+    # An unknown key is a typo in an experiment config. Ignored, the run does something
+    # other than what the file says.
     model_config = ConfigDict(extra="forbid")
 
     # Every size has a floor of one, so that a config which validates builds a model on
