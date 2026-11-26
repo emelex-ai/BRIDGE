@@ -11,9 +11,9 @@ samples has to be the first character of the word. Training the ``[BOS]`` positi
 anything else teaches the model to skip a character, so the pair at that position is the
 whole argument, and ``test_bos_is_trained_to_predict_the_first_character`` pins it.
 
-Labels a position short of the logits make ``CrossEntropyLoss`` refuse the batch outright.
-That is issue #225: ``p2o`` and ``op2op`` raise on every batch and cannot train at all,
-while ``o2p`` and ``p2p`` are untouched. The untouched pathways appear here as a control,
+Labels a position short of the logits make ``CrossEntropyLoss`` refuse every batch of
+``p2o`` and ``op2op``, the pathways trained on them, so neither can train at all. That
+is issue #225. ``o2p`` and ``p2p`` never read those labels and appear here as a control,
 so a failure in this file can be read as a statement about the orthographic labels rather
 than about the harness.
 
@@ -107,8 +107,6 @@ def artifacts_dir(tmp_path_factory):
 
 @pytest.fixture(scope="module")
 def make_pipeline(dataset, artifacts_dir):
-    """Build a real pipeline for one pathway. Everything expensive is already built."""
-
     vocab = VocabSpec.from_tokenizer(dataset.tokenizer)
 
     def build(pathway: str) -> TrainingPipeline:
@@ -138,8 +136,8 @@ def record_cross_entropy_calls(monkeypatch) -> list[tuple[torch.Tensor, torch.Te
     Whatever ``compute_loss`` scored against is what gets inspected, so a test that
     passes here cannot pass by agreeing with itself.
 
-    Patched on the module ``compute_loss`` reads the name from, not on
-    ``torch.nn.functional``, since the pipeline imports ``torch`` and calls through it.
+    Patched on ``torch.nn.functional`` itself: the pipeline calls
+    ``torch.nn.functional.cross_entropy`` by attribute, so it reads the name at each call.
     """
     calls: list[tuple[torch.Tensor, torch.Tensor]] = []
     real = torch.nn.functional.cross_entropy
@@ -171,9 +169,7 @@ def step_loss(pipeline, dataset, batch_slice) -> float:
 
 @pytest.mark.parametrize("pathway", ["o2p", "p2p", "p2o", "op2op"])
 def test_every_pathway_completes_a_training_step(make_pipeline, dataset, pathway):
-    """A pathway that raises on every batch cannot train, whatever else is true of it.
-
-    ``o2p`` and ``p2p`` are the control: they never read the orthographic labels. If they
+    """``o2p`` and ``p2p`` are the control: they never read the orthographic labels. If they
     fail too, the fixtures are wrong and the other failures here say nothing about the
     alignment.
     """

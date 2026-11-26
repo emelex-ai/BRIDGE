@@ -1,19 +1,13 @@
 """A finished sequence stops contributing content (issue #231).
 
 Both decoder loops run until *every* sequence in the batch has emitted `[EOS]`, because a
-dense batch cannot stop early for one row. What they did with the rows that had already
-finished was keep sampling and keep the result. `CharacterTokenizer.decode` strips `[EOS]`
-rather than stopping at it, so that content reached the caller as part of the word.
+dense batch cannot stop early for one row. `CharacterTokenizer.decode` strips `[EOS]`
+rather than stopping at it, so anything a finished row went on to sample would reach the
+caller as part of the word.
 
-Measured on an untrained model before the fix: a 5-word batch left 32 non-padding tokens
-after a terminating `[EOS]`, and 4 of the 5 decoded to something longer than the model
-produced. The phonological loop does the same thing, though it needs a batch whose items
-terminate at different steps to show it: 8 items, 7 finishing at step 0 and one at step 4,
-left 28 positions of sampled features after their own `[EOS]`.
-
-The fix is the standard batched-generation guard: once a row is finished it emits padding.
+The guard is the standard batched-generation one: once a row is finished it emits padding.
 So the returned tensor is self-describing, content then `[EOS]` then padding, and `decode`
-produces the right string without being changed.
+produces the right string as it is. ``docs/decisions/0009`` carries the measurements.
 
 **Batch invariance is exact here, but only just, and only on this configuration.** Batching
 perturbs `global_encoding` by up to about 6e-07, and `phono_sample` thresholds a probability
@@ -29,10 +23,10 @@ or a single character, suspect that knife edge before suspecting the padding gua
 
 **The oracle throughout is batch invariance.** A causal decoder's rows are independent, so
 what a word generates must not depend on which other words share its batch. That is a
-property of the system rather than of this implementation, it holds before and after the fix
-for the content that precedes `[EOS]`, and it is what distinguishes "stopped emitting" from
-"changed what it emits". Tests that only assert padding-after-`[EOS]` would pass against a
-fix that quietly disturbed the real output too.
+property of the system rather than of this implementation, it holds with or without the
+guard for the content that precedes `[EOS]`, and it is what distinguishes "stopped emitting"
+from "changed what it emits". Tests that only assert padding-after-`[EOS]` would pass
+against a guard that quietly disturbed the real output too.
 """
 
 import pytest
@@ -86,8 +80,6 @@ def phon_first_eos(sets, eos_id):
     return next((i for i, features in enumerate(sets) if eos_id in features), None)
 
 
-# ------------------------------------------------------- the loop's contract, scripted
-#
 # An untrained model terminates wherever it happens to. On this word list only `p2o` ends
 # a row early, two of its five, so a test written against it cannot choose where a row
 # ends, and two of three pathways see nothing. Driving the sampler directly puts the
@@ -125,7 +117,6 @@ def generate(model, tokenizer, words, pathway, deterministic=True):
 
 
 def run_scripted_orth(model, tokenizer, plan, words):
-    """Run the real orthographic loop with a scripted sampler, returning the token rows."""
     real = model.ortho_sample
     model.ortho_sample = ScriptedOrthoSampler(plan, model.device)
     try:
@@ -170,7 +161,7 @@ def test_a_lockstep_batch_gains_no_padding_at_all(tokenizer, model, vocab):
     """Rows that finish on the same step need no suppression.
 
     If padding appeared here the guard would be firing on the loop ending rather than on each
-    row's own termination, which is the mistake this whole change is about.
+    row's own termination.
     """
     a = tokenizer.char_tokenizer.char_2_idx["a"]
     eos, pad = vocab.orth_eos_id, vocab.orth_pad_id
@@ -195,9 +186,6 @@ def test_padding_starts_after_the_terminator_not_at_it(tokenizer, model, vocab):
     assert rows[0].count(eos) == 1, f"expected exactly one [EOS], got {rows[0]}"
     assert rows[0][3] == eos, f"[EOS] should sit at position 3, row is {rows[0]}"
     assert set(rows[0][4:]) == {vocab.orth_pad_id}
-
-
-# --------------------------------------------------------------------- orthography, end to end
 
 
 def test_nothing_but_padding_follows_the_orthographic_eos(tokenizer, model, vocab):
@@ -246,9 +234,9 @@ def test_orthographic_content_does_not_depend_on_the_rest_of_the_batch(
     """The real oracle: a causal decoder's rows are independent.
 
     Each word is generated alone and then in a batch, and the content up to and including its
-    `[EOS]` must be identical. This holds before the fix too, which is the point: it pins that
-    suppressing post-termination output did not disturb the output that precedes it. It runs
-    on all three orthographic pathways because it needs no row to terminate.
+    `[EOS]` must be identical. It pins that suppressing post-termination output does not
+    disturb the output that precedes it. It runs on all three orthographic pathways because
+    it needs no row to terminate.
     """
     batched = orth_rows(generate(model, tokenizer, MIXED, pathway))
 
@@ -264,11 +252,11 @@ def test_orthographic_content_does_not_depend_on_the_rest_of_the_batch(
 
 
 def test_decoding_a_batch_returns_what_the_model_generated(tokenizer, model, vocab):
-    """The reported symptom, on the user-facing path.
+    """The symptom of issue #231, on the user-facing path.
 
-    ``decode`` is not changed by this fix. It strips padding already, so a correctly padded
-    row decodes to the right string. The comparison is against an independent truncation
-    computed here, not against ``decode`` called a second way.
+    ``decode`` strips padding, so a correctly padded row decodes to the right string. The
+    comparison is against an independent truncation computed here, not against ``decode``
+    called a second way.
     """
     rows = orth_rows(generate(model, tokenizer, MIXED, "p2o"))
 
@@ -284,7 +272,7 @@ def test_decoding_a_batch_returns_what_the_model_generated(tokenizer, model, voc
 def test_a_word_decodes_the_same_alone_as_in_a_batch(tokenizer, model):
     """Batch invariance again, at the level a caller actually observes.
 
-    Before the fix a word decoded correctly alone and incorrectly beside a longer word, which
+    The defect: a word decodes correctly alone and incorrectly beside a longer word, which
     is the worst shape a defect can take: correct in the small case someone debugs with.
     """
     batched = tokenizer.char_tokenizer.decode(orth_rows(generate(model, tokenizer, MIXED, "p2o")))
@@ -298,10 +286,10 @@ def test_a_word_decodes_the_same_alone_as_in_a_batch(tokenizer, model):
 
 
 def test_the_probability_history_still_marks_where_content_ends(tokenizer, model, vocab):
-    """``orth_probs`` was already cut per item; the token row now agrees with it.
+    """``orth_probs`` is cut per item at its `[EOS]`, and the token row agrees with it.
 
-    Before the fix these disagreed: the probabilities stopped at `[EOS]` and the tokens ran
-    on. Their agreeing is what makes the returned object internally consistent.
+    Tokens that ran on past where the probabilities stop would leave the returned object
+    internally inconsistent.
     """
     result = generate(model, tokenizer, MIXED, "p2o")
     rows = orth_rows(result)
@@ -313,9 +301,6 @@ def test_the_probability_history_still_marks_where_content_ends(tokenizer, model
             f"item {item}: {len(result.orth_probs[item])} probability rows for {expected} "
             "real token positions"
         )
-
-
-# --------------------------------------------------------------------- phonology
 
 
 def test_nothing_but_padding_follows_the_phonological_eos(tokenizer, model, vocab):

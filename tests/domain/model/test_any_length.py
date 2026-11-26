@@ -159,9 +159,6 @@ def phon_features(result, row: int) -> list[tuple[int, ...]]:
     return [tuple(sorted(t.tolist())) for t in result.phon_tokens[row]]
 
 
-# --- every position moved, or not ----------------------------------------------
-
-
 @pytest.mark.parametrize("pathway", PATHWAYS)
 def test_moving_every_position_changes_no_logit(monkeypatch, model, batch, pathway):
     """Oracle: analytic. Attention reads the distance between two tokens, so adding 17 to
@@ -188,9 +185,6 @@ def test_moving_every_position_changes_no_logit(monkeypatch, model, batch, pathw
     split = logits(model, pathway, batch)
     for key, reference in base.items():
         assert deviation(reference, split[key]) > SEEN, f"control: {key} did not move"
-
-
-# --- where position is read ------------------------------------------------------------
 
 
 @pytest.mark.parametrize("pathway", PATHWAYS)
@@ -249,9 +243,6 @@ def test_every_self_attention_turns_its_queries_and_keys_at_positions_zero_to_le
     assert sorted(turned) == sorted(expected)
 
 
-# --- eval mode, and train mode with dropout off -----------------------------------
-
-
 @pytest.mark.parametrize("pathway", PATHWAYS)
 def test_eval_and_train_agree_once_dropout_is_off(model, batch, pathway):
     """Oracle: invariant. With every dropout at zero the two modes are one function, so
@@ -274,9 +265,6 @@ def test_eval_and_train_agree_once_dropout_is_off(model, batch, pathway):
     noisy = logits(model, pathway, batch, train=True)
     for key, reference in trained.items():
         assert deviation(reference, noisy[key]) > SEEN, "control: dropout changes nothing"
-
-
-# --- generating a step at a time, and decoding the result in one pass ----------------
 
 
 @pytest.mark.parametrize("pathway", PATHWAYS)
@@ -329,9 +317,6 @@ def test_generating_step_by_step_equals_decoding_the_result_at_once(model, batch
     assert compared >= len(ROWS), "control: nothing was generated, so nothing was compared"
 
 
-# --- a row in a padded batch, and the row alone --------------------------------------
-
-
 @pytest.mark.parametrize("pathway", PATHWAYS)
 def test_a_padded_batch_scores_each_row_as_the_row_alone(model, shared_tokenizer, batch, pathway):
     """Oracle: invariant. A row's logits at its own positions are what the row gets with
@@ -368,9 +353,6 @@ def test_a_padded_batch_generates_each_row_as_the_row_alone(
             end = ends[0] + 1 if ends else len(ours)
             assert theirs[:end] == ours[:end], (pathway, ROWS[row])
             assert len(ours) > 1
-
-
-# --- past sixty tokens ------------------------------------------------------------------
 
 
 @pytest.fixture(scope="module")

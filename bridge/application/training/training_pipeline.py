@@ -35,17 +35,14 @@ class TrainingPipeline:
             lr=training_config.learning_rate,
             weight_decay=training_config.weight_decay,
         )
-        # Nothing here touches the garbage collector. A `gc.collect()` every ten steps cost
-        # a measured 17% of every epoch and reclaimed nothing (RSS across an epoch was flat
-        # with and without it), because the ~768k objects it rescanned are the
-        # process-lifetime pronunciation lexicon cache and can never be freed. Removing it
-        # was the whole win. Freezing the heap was tried in its place and is not here
-        # either: it bought +0.025 s on a 2.9 s epoch against a 0.149 s run-to-run spread,
-        # and in exchange moved every object alive at construction, the caller's included,
-        # into a generation the collector never examines. A caller cycle held across
-        # `TrainingPipeline(...)` then leaked for the process lifetime, measured at 32 MB,
-        # with nothing anywhere to undo it. A library does not get to decide that about
-        # someone else's heap.
+        # Nothing here touches the garbage collector, by measurement. A `gc.collect()`
+        # every ten steps costs 17% of every epoch and frees nothing: the ~768k objects it
+        # rescans are the process-lifetime pronunciation lexicon cache, and RSS across an
+        # epoch is flat with and without it. `gc.freeze()` is not here either. It buys
+        # 0.025 s on a 2.9 s epoch against a 0.149 s run-to-run spread, and it moves every
+        # object alive at construction, the caller's included, into a generation the
+        # collector never examines: a caller cycle held across `TrainingPipeline(...)`
+        # leaks for the process lifetime, measured at 32 MB.
 
         self.start_epoch = 0
         if training_config.checkpoint_path:
@@ -53,26 +50,17 @@ class TrainingPipeline:
 
     @property
     def device(self) -> torch.device:
-        """Where the model is, asked rather than told.
-
-        The pipeline follows the model and never moves it. A stored snapshot of
-        ``device_manager.device`` plus a ``model.to(...)`` in ``__init__`` would silently
-        undo the caller's own placement: a model explicitly moved to CUDA comes back on
-        CPU, every parameter of it, and the run trains an order of magnitude slower with
-        nothing but an INFO line to say so. See ``docs/decisions/0012``. A caller who
-        wants the process device writes ``model.to(device_manager.device)``, which is one
-        visible line.
-        """
+        """Where the model is. The pipeline follows the model and never moves it, so a
+        caller's own ``model.to(...)`` stands. See ``docs/decisions/0012``."""
         return self.model.device
 
     @property
     def phon_reps(self) -> torch.Tensor:
         """The phonetic-feature block, on whatever device the model is on right now.
 
-        Derived rather than stored, for the same reason `device` is. Snapshotting it in
-        `__init__` left a model moved afterwards, which decision 0012 makes legal,
-        comparing against a table on the old device, and `cdist` raised.
-        `load_phoneme_table` is cached per device, so this costs a dict lookup.
+        Derived, not stored: a model may move after the pipeline is built
+        (``docs/decisions/0012``), and ``cdist`` raises on a table left on the old device.
+        ``load_phoneme_table`` is cached per device, so this costs a dict lookup.
         """
         return load_phoneme_table(device=self.device).phonetic_features
 
@@ -118,8 +106,6 @@ class TrainingPipeline:
                 logits["orth"], target.orth.labels, ignore_index=vocab.orth_pad_id
             )
 
-        # The pathway decides how many terms there are; summing the ones present replaces
-        # a four-branch cascade over (orth_loss, phon_loss) presence.
         return {"loss": torch.stack(list(losses.values())).sum(), **losses}
 
     def compute_metrics(
@@ -281,19 +267,13 @@ class TrainingPipeline:
     ) -> Path:
         """Write the full checkpoint bundle to ``path``, and return where it went.
 
-        No policy. The caller chooses when to save and what to call the file; the pipeline
-        knows what belongs in one. That split is why this takes a path rather than a run
-        name and a ``save_every`` cadence: two runs sharing an artifacts directory used to
-        overwrite each other silently, because the filename depended only on the epoch, and
-        no naming scheme the library picks can be right for every experiment.
+        No policy: the caller chooses when to save and what to call the file. A filename
+        the library derives from the epoch alone lets two runs that share an artifacts
+        directory overwrite each other. Nothing is uploaded either; the returned path is
+        what a caller copies to object storage. See ``docs/decisions/0006``.
 
-        It returns the path for the same reason it uploads nowhere. Copying the file to
-        object storage is one more thing the caller decides, and reading a bucket name out
-        of the environment made a successful ``torch.save`` raise ``KeyError`` afterwards.
-
-        A relative path resolves against `training_config.model_artifacts_dir`, so the
-        common case stays short. Parent directories are created here, which is the point of
-        first write now that validating a config no longer touches the filesystem.
+        A relative path resolves against `training_config.model_artifacts_dir`. Parent
+        directories are created here, the first write: validating a config creates none.
 
         `epoch` is recorded in the bundle and is what `load_model` resumes from, so it must
         be the epoch these weights finished, not the one about to start.
@@ -318,11 +298,9 @@ class TrainingPipeline:
     def load_model(self, model_path: str) -> None:
         """Restore weights, optimizer state and the epoch counter from a checkpoint.
 
-        Raises rather than reporting failure. A blanket ``except Exception: return False``
-        turned a corrupt file, a missing one, a shape mismatch and an unpickling error into
-        one return value, and ``__init__`` did not check it, so a failed resume started a
-        fresh run from random weights with nothing but a log line to say so. A caller who
-        wants best-effort resume writes the ``try`` themselves.
+        Raises on any failure and returns nothing. ``__init__`` calls this, so a failure
+        swallowed here would start a fresh run from random weights. A caller who wants
+        best-effort resume writes the ``try`` themselves.
         """
         checkpoint = torch.load(model_path, weights_only=False)
         self._refuse_weights_of_another_model(checkpoint["model_state_dict"], model_path)
@@ -372,17 +350,12 @@ class TrainingPipeline:
     def _set_start_epoch(self, checkpoint: dict, model_path: str) -> None:
         """Decide which epoch a resumed run counts from.
 
-        Three cases, and the middle one is a real distinction rather than a special case.
         A checkpoint saved partway through a run is being *resumed*, so the counter picks up
         where it left off. A pretraining or finetuning checkpoint is weights being carried
-        into a NEW run, so the counter restarts. A checkpoint predating the `epoch` key
-        cannot say, so it starts at 0.
+        into a NEW run, so the counter restarts. A checkpoint with no `epoch` key cannot
+        say, so it starts at 0.
 
-        The guard used to read `"pretraining" not in path or "finetuning" not in path`,
-        which is true for every path a checkpoint can realistically have, since one can
-        rarely contain both words. It admitted everything, and an unconditional
-        `self.start_epoch = 0` underneath undid whatever it decided anyway. This keys on
-        `model_path`, the file actually being loaded, rather than on
+        This keys on `model_path`, the file being loaded, and not on
         `training_config.checkpoint_path`, so a direct `load_model` call resumes too.
 
         The substring match is over the whole path, not the filename, because the marker

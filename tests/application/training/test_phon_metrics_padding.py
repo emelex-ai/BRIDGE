@@ -1,19 +1,19 @@
 """Phonological metrics must mask padding with the phonological pad id, not with 2.
 
-Every one of the eight phonological metrics builds its valid mask as ``phon_true != 2``.
-Two is the *orthographic* pad id. Phonological targets are multi-hot rows whose only
-values are 0, 1 and 35, so the comparison is a tautology: it keeps every position, and
-padded rows are scored as though they were real phonemes.
+The defect: a valid mask built as ``phon_true != 2``. Two is the *orthographic* pad id.
+Phonological targets are multi-hot rows whose only values are 0, 1 and 35, so the
+comparison is a tautology: it keeps every position, and padded rows are scored as though
+they were real phonemes. See docs/decisions/0005.
 
 The two id spaces are the trap. Row space (0 to 90) says which phoneme; feature space
 (0 to 35) says which phonetic feature, and the target's labels live in feature space
-where [PAD] is 35. A literal that belongs to neither space silently disables the mask instead
-of raising, which is why nothing has caught it.
+where [PAD] is 35. A literal that belongs to neither space silently disables the mask
+instead of raising.
 
-These tests assert the fixed contract: ``calculate_phon_metrics`` takes a required
-``phon_pad_id``, mirroring ``calculate_orth_metrics``'s ``orth_pad_id``, and the pipeline
-hands it the vocabulary's own phonological pad id. Passing 2 reproduces today's
-behaviour, so each comparison below runs the same code twice and only the pad id changes.
+The contract: ``calculate_phon_metrics`` takes a required ``phon_pad_id``, mirroring
+``calculate_orth_metrics``'s ``orth_pad_id``, and the pipeline hands it the vocabulary's
+own phonological pad id. Passing 2 reproduces the defect, so each comparison below runs
+the same code twice and only the pad id changes.
 
 The oracle is analytic throughout. The predictions are constructed to match the targets
 exactly at every real position, so a mask that keeps only real positions must report a
@@ -98,8 +98,8 @@ def test_padding_exists_and_the_orthographic_pad_id_cannot_see_it(tokenizer):
 
     Both halves matter. The mask built from the real pad id keeps strictly less than
     every position, so padding is genuinely there to be masked. The value 2 never occurs
-    anywhere in the targets, so the mask in use could not have found that padding under
-    any batch, and its passing today says nothing.
+    anywhere in the targets, so a mask built from it cannot find that padding in any
+    batch.
     """
     targets = tokenizer.encode_target(PADDED_WORDS).phon.labels
 
@@ -113,7 +113,7 @@ def test_padding_exists_and_the_orthographic_pad_id_cannot_see_it(tokenizer):
     assert int((~pad_rows).sum()) == REAL_ROWS
     assert targets.shape == (len(PADDED_WORDS), TOTAL_ROWS // len(PADDED_WORDS), FEATURE_WIDTH)
 
-    # The mask actually in use keeps everything.
+    # A mask built from the orthographic pad id keeps everything.
     assert bool((targets != ORTH_PAD_ID).all())
     # The correct mask keeps only the real rows.
     kept = (targets != PHON_PAD_ID).float().mean().item()
@@ -122,12 +122,9 @@ def test_padding_exists_and_the_orthographic_pad_id_cannot_see_it(tokenizer):
 
 
 def test_calculate_phon_metrics_requires_a_phon_pad_id(tokenizer, phon_reps):
-    """The pad id is not an optional courtesy, it is part of the contract.
-
-    ``calculate_orth_metrics`` already takes ``orth_pad_id`` as a required argument, so
-    an orthographic caller cannot forget it. The phonological side must be symmetric:
-    a call that omits the pad id has not said which id space its targets are in, and
-    guessing is exactly how the literal 2 got there.
+    """``calculate_orth_metrics`` takes ``orth_pad_id`` as a required argument, so an
+    orthographic caller cannot forget it. The phonological side must be symmetric: a call
+    that omits the pad id has not said which id space its targets are in.
     """
     logits, targets = perfect_batch(tokenizer, PADDED_WORDS)
 
@@ -140,7 +137,7 @@ def test_calculate_phon_metrics_requires_a_phon_pad_id(tokenizer, phon_reps):
 
 
 def test_every_phon_metric_moves_when_the_mask_uses_the_real_pad_id(tokenizer, phon_reps):
-    """All eight metrics are wrong under padding, not just one or two.
+    """All eight metrics read the mask, so all eight must move.
 
     The prediction is exact on every real row, so a mask that keeps only real rows must
     score perfectly: accuracy 1.0 and euclidean distance 0. The numbers under pad id 2
@@ -221,7 +218,7 @@ def test_scoring_padded_positions_biases_feature_accuracy_downward(tokenizer, ph
     can ever be counted correct. Both figures share a numerator, the count of correct
     real features, and differ only in the denominator: real positions versus all
     positions. The corrected accuracy is therefore the larger by exactly the ratio of the
-    two counts, and today's reported number is an understatement.
+    two counts, and the figure over all positions is an understatement.
 
     The batch here is deliberately imperfect on real positions too, one whole row of the
     prediction inverted, so the corrected figure is 13/14 rather than a trivial 1.0.

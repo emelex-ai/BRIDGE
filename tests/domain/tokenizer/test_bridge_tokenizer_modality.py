@@ -28,9 +28,6 @@ def tok():
     return BridgeTokenizer()
 
 
-# --- nonwords --------------------------------------------------------------
-
-
 def test_the_nonword_is_in_no_lexicon(tok):
     """The premise of this module, checked against the lexicon itself."""
     assert NONWORD not in tok.phoneme_tokenizer.pronunciation_dict
@@ -70,9 +67,6 @@ def test_a_word_carries_both_modalities(tok):
     inputs = tok.encode_input([WORD])
     assert inputs.orth is not None
     assert inputs.phon is not None
-
-
-# --- a data condition is not an argument error -------------------------------
 
 
 def test_an_unsupported_language_code_raises(tok):
@@ -126,9 +120,6 @@ def test_languages_are_one_entry_per_row(tok, encoder):
     assert encode([WORD, "dog"], ("EN", None)) is not None
 
 
-# --- the start of orthographic generation ------------------------------------
-
-
 def test_orth_start_is_lang_then_bos_for_each_row(tok):
     """Oracle: hand-written ids. 6, 7 and 8 are ``--``, ``EN`` and ``ES``; 0 is ``[BOS]``."""
     start = tok.orth_start(["ES", "EN", None, "es"])
@@ -155,9 +146,6 @@ def test_orth_start_takes_one_code_per_row(tok):
         tok.orth_start("EN")
 
 
-# --- contract --------------------------------------------------------------
-
-
 def test_vocabulary_sizes_come_from_the_child_tokenizers(tok):
     sizes = tok.get_vocabulary_sizes()
     assert sizes["orthographic"] == tok.char_tokenizer.get_vocabulary_size()
@@ -173,9 +161,6 @@ def test_special_ids_are_read_from_the_child_tokenizers(tok):
     assert tok.phon_eos_id == tok.phoneme_tokenizer.special_token_dims["[EOS]"]
     assert tok.phon_pad_id == tok.phoneme_tokenizer.special_token_dims["[PAD]"]
     assert tok.phon_spc_id == tok.phoneme_tokenizer.special_token_dims["[SPC]"]
-
-
-# --- phoneme reverse lookup (the float-keyed special-token map) ------------
 
 
 def test_every_special_token_dim_maps_back_to_its_token(tok):
@@ -194,9 +179,6 @@ def test_non_integral_dim_maps_to_unk(tok):
     linear ``==`` scan would."""
     pt = tok.phoneme_tokenizer
     assert pt.phoneme_vectors_to_word([torch.tensor(pt.base_dim + 0.5)]) == ["[UNK]"]
-
-
-# --- phonological labels ---------------------------------------------------
 
 
 def test_phonological_labels_are_the_fed_phonemes_one_position_on(tok):

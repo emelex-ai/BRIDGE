@@ -8,28 +8,20 @@ the training forward of each pathway, and a block must be opaque exactly when it
 fired. A refactor that changes what a pathway runs therefore fails a test naming the page
 and the block, rather than leaving a public figure quietly wrong.
 
-When this was written, the diagram as delivered failed five ways that these tests now
-catch: the O2P page drew the phonology encoder as active, the P2O page the orthography
-encoder, the P2P page the orthography decoder; the phonology embedding was labelled with a
-vocabulary axis where the tensor has a sequence axis; and two pages labelled a phonology
-encoding "Encoded Orthography with GE". Each test was run against that original file and
-failed on the defect it names before it was trusted.
-
 Every page also claims which side of a training example each block reads. The boxes on the
 left are the input and the boxes on the right are the target, and they hold different words.
 An encoder is drawn reading the input. A decoder is drawn fed the target, through a
 tokenization and embedding block of its own. Those claims are checked against hooks on the
 encoders and decoders, run on the words the figure draws: the input and the target differ
 in length there, so a captured tensor can be the embedding of only one of them. A figure
-that feeds a decoder from the input's embedding cube fails, and that check was run against
-such a figure before it was trusted.
+that feeds a decoder from the input's embedding cube fails.
 
 Every page also claims where position enters. The two groups of blocks that hold the
 encoders and the decoders name it beside their self-attention, and no other label names it.
 That is checked against a measurement of which stages read the order of the sequence they
 are handed: each stage is run again on the tensors the forward gave it, with the sequence
 reversed. A figure whose embedding blocks say "+ Position" fails, as does one whose
-encoders do not name it, and the check was run against both before it was trusted.
+encoders do not name it.
 
 What a test cannot check, and what is therefore left to review: whether a label's wording
 is the clearest true description, and layout.
@@ -60,7 +52,7 @@ from bridge.domain.tokenizer import BridgeTokenizer
 ROOT = Path(__file__).resolve().parents[1]
 DIAGRAM = ROOT / "BRIDGE-Models.drawio"
 
-# Page name -> pathway. Every pathway gets exactly one page and every page is a pathway.
+# Every pathway gets exactly one page and every page is a pathway.
 PAGE_PATHWAY = {
     "OP2OP Model": "op2op",
     "O2P Model": "o2p",
@@ -139,13 +131,8 @@ INPUT_WORDS = ["cats", "apples", "rivers"]
 TARGET_WORDS = ["cat", "apple", "river"]
 
 
-# --------------------------------------------------------------------------------------------
-# Reading the diagram
-# --------------------------------------------------------------------------------------------
-
-
 def plain(value: str | None) -> str:
-    """A cell's label as a reader sees it: HTML stripped, entities decoded, spaces collapsed."""
+    """A cell's label as a reader sees it."""
     text = re.sub(r"<[^>]+>", " ", value or "")
     return re.sub(r"\s+", " ", html.unescape(text).replace("\xa0", " ")).strip()
 
@@ -255,11 +242,6 @@ def drawn_sources(page: Page, cid: str) -> set[tuple[str, str]]:
             elif plain(source.get("value")) not in BLOCK_MODULE:
                 stack.append(source.get("id"))
     return found
-
-
-# --------------------------------------------------------------------------------------------
-# The oracle: what each pathway actually runs
-# --------------------------------------------------------------------------------------------
 
 
 @cache
@@ -518,9 +500,7 @@ def expected_blocks(page: Page, pathway: str) -> dict[str, tuple[ET.Element, boo
     return out
 
 
-# --------------------------------------------------------------------------------------------
-# Checks, written as functions of a file so they can be run against any copy of the diagram
-# --------------------------------------------------------------------------------------------
+# Each check takes the file to read, so it can be run against any copy of the diagram.
 
 
 def page_set_problems(path: Path = DIAGRAM) -> list[str]:
@@ -647,11 +627,6 @@ def axis_label_problems(path: Path = DIAGRAM) -> list[str]:
                     f"{name}: {modality} cube axis labels {found}; the axis is the batch's padded sequence length"
                 )
     return problems
-
-
-# --------------------------------------------------------------------------------------------
-# The tests
-# --------------------------------------------------------------------------------------------
 
 
 def layout_problems(path: Path = DIAGRAM) -> list[str]:

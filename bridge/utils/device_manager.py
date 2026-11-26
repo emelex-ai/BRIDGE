@@ -8,27 +8,18 @@ logger = logging.getLogger(__name__)
 
 
 class DeviceManager:
-    """Manages compute device selection and tensor operations across platforms."""
+    """The process's choice of device.
+
+    ``None`` is CPU. A request for ``cuda`` or ``mps`` that the machine cannot serve falls
+    back to CPU with a warning, not an error.
+    """
 
     def __init__(self, device=None):
-        """
-        Initializes the device manager.
-
-        If no device is provided, defaults to CPU.
-        If a device is provided, it will check for its availability:
-          - If 'cuda' is requested and available, use it; otherwise, fall back to CPU.
-          - If 'mps' is requested and available (Apple Silicon), use it; otherwise, fall back to CPU.
-        """
         self._device = self._resolve(device)
         logger.info(f"Using device: {self._device}")
 
     @staticmethod
     def _resolve(device) -> torch.device:
-        """Turn a device request into the device that will actually be used.
-
-        Shared by ``__init__`` and :meth:`set_device` so the two cannot drift apart, which
-        is the failure a setter written as `self.__init__(...)` invites.
-        """
         if device is None:
             return torch.device("cpu")
 
@@ -39,10 +30,9 @@ class DeviceManager:
                 return torch.device("cpu")
             # Resolve the index now. `torch.device("cuda") != torch.device("cuda:0")` while
             # every tensor torch allocates carries an index, so an unresolved device makes
-            # every `tensor.device != self.device` check reject valid input. Resolving here
-            # fixes all of them at once, and makes `device_manager.device` print what is
-            # actually being used. It sits behind the availability check because
-            # `torch.cuda.current_device()` raises with no CUDA runtime.
+            # every `tensor.device != self.device` check reject valid input. Behind the
+            # availability check because `torch.cuda.current_device()` raises with no CUDA
+            # runtime.
             if requested_device.index is not None:
                 return requested_device
             return torch.device("cuda", torch.cuda.current_device())
@@ -62,11 +52,9 @@ class DeviceManager:
     def set_device(self, device: str | torch.device | None) -> torch.device:
         """Repoint the manager, and return the device it settled on.
 
-        Every BRIDGE object snapshots ``device_manager.device`` in its own ``__init__``, so
-        this only affects objects constructed afterwards. Calling it too late is a silent
-        no-op that leaves everything on CPU, and the symptom is a training run an order of
-        magnitude slower than expected with nothing in the log. Call it before building
-        anything.
+        The tokenizers and ``Model`` read ``device_manager.device`` once, in their own
+        ``__init__``, so this affects only what is built afterwards. Called later it is a
+        silent no-op for everything that already exists. Call it before building anything.
         """
         self._device = self._resolve(device)
         logger.info(f"Using device: {self._device}")
@@ -74,11 +62,8 @@ class DeviceManager:
 
     @property
     def device(self) -> torch.device:
-        """Returns the current compute device."""
         return self._device
 
 
-# The process-wide device, selectable without editing code. There is no other supported
-# way to reach a GPU: before this, the only working override was assigning the private
-# attribute before constructing any BRIDGE object.
+# Read once, at import. After that, `set_device` is the way to change it.
 device_manager = DeviceManager(device=os.environ.get("BRIDGE_DEVICE", "cpu"))

@@ -1,11 +1,7 @@
 """Scoring for the phonological predictions.
 
 Every metric here reads the same thing: the real (non-padded) phoneme positions of a
-batch, as float rows. That preamble is built once, in :func:`calculate_phon_metrics`, and
-passed down. It used to be rebuilt inside each helper, four times identically and a fifth
-with ``.view`` instead of ``.reshape``, which is ~1.3 ms of a 7.7 ms call at batch 64 and
-is how the ``[:, :-4]`` literal below came to be written twice with a comment naming the
-wrong columns.
+batch, as float rows. :func:`calculate_phon_metrics` builds that once and passes it down.
 """
 
 import torch
@@ -17,10 +13,9 @@ def calculate_phon_word_accuracy(
     """Fraction of words whose every real phoneme position is predicted exactly right.
 
     A padded position cannot make a word wrong, so it is forced true before the reduction
-    rather than indexed out. That is what lets this be one reduction over the batch
-    instead of a Python loop doing a boolean index and two reductions per row, which cost
-    1.185 ms against 0.053 ms at batch 64 and was verified identical against the loop at
-    six corruption levels spanning accuracy 1.0 down to 0.0.
+    and not indexed out. That makes this one reduction over the batch: 0.053 ms at batch
+    64, against 1.185 ms for a per-row loop that returns the same values at six corruption
+    levels from accuracy 1.0 down to 0.0.
     """
     real = phon_true != phon_pad_id
     return (phoneme_wise_mask | ~real).all(dim=2).all(dim=1).float().mean()
@@ -60,13 +55,10 @@ def nearest_phoneme(rows: torch.Tensor, phon_reps: torch.Tensor, metric: str) ->
 
     ``rows`` and ``phon_reps`` both carry only the phonetic-feature columns.
 
-    One function, and it returns *distances* so the reduction is always ``argmin``. The
-    cosine variant used to take ``argmin`` over a cosine **similarity**, which selects the
-    least similar phoneme. Measured: over the 86 real phoneme rows, that reduction picks a
-    row's own index 0 times out of 86, where ``argmax`` picks it 85 times, and on a fully
-    scrambled prediction the metric read 0.6395 where the L2 control correctly read 0.0.
-    Expressing cosine as a distance rather than a similarity is what makes the direction
-    impossible to get wrong again.
+    Every metric is computed as a *distance*, so the reduction is always ``argmin``.
+    Cosine is ``1 - similarity`` for that reason: ``argmin`` over a similarity selects the
+    least similar phoneme. Over the 86 real phoneme rows it picks a row's own index 0
+    times, where ``argmax`` picks it 85 times.
     """
     if metric == "cosine":
         eps = 1e-8
@@ -131,10 +123,9 @@ def calculate_phon_metrics(
     true_rows = labels.float()[phon_valid_mask].reshape(-1, width)
     pred_rows = phon_pred.float()[phon_valid_mask].reshape(-1, width)
     # The phonetic-feature block alone, without the special-token columns. The width comes
-    # off `phon_reps`, which is `PhonemeTable.phonetic_features`, rather than being written
-    # as the literal `[:, :-4]`: that number was correct only by coincidence, its comment
-    # named PAD (already dropped by the tokenizer) and omitted BOS, and a sixth special
-    # token in phonreps.csv would have shifted it silently.
+    # off `phon_reps`, which is `PhonemeTable.phonetic_features`, and not from a literal:
+    # the labels have already lost the [PAD] column, so the count of special columns
+    # here is one less than `SPECIAL_TOKENS` holds.
     base = phon_reps.shape[1]
     true_base, pred_base = true_rows[:, :base], pred_rows[:, :base]
 

@@ -14,7 +14,6 @@ from bridge.domain.tokenizer.bridge_tokenizer import BridgeTokenizer
 
 @pytest.fixture
 def bridge_tokenizer():
-    """Create a BridgeTokenizer instance for testing."""
     return BridgeTokenizer()
 
 
@@ -66,13 +65,8 @@ class TestBridgeTokenizer:
 
 
 class TestMultilingual:
-    """Tests for the multilingual / code-switching encoding paths."""
-
     def test_spanish_word_encodes_with_spanish_lexicon(self, bridge_tokenizer):
-        """A Spanish word should encode against the Spanish phoneme lexicon."""
         inputs = bridge_tokenizer.encode_input(["hola"], ["ES"])
-        # The orth language token at position 0 should be "ES" (vocab index 8:
-        # 6 special tokens + "--" + "EN" + "ES").
         es_idx = bridge_tokenizer.char_tokenizer.char_2_idx["ES"]
         assert inputs.orth.ids[0, 0].item() == es_idx
         # "hola" is AO1 L AA0 in the Spanish lexicon and HH OW1 L AH0 in the English one,
@@ -84,7 +78,6 @@ class TestMultilingual:
         assert target.phon.ids.tolist() == [[86, 22, 67, 0]]
 
     def test_code_switching_in_one_batch(self, bridge_tokenizer):
-        """Two words in one batch encoded against two different languages."""
         inputs = bridge_tokenizer.encode_input(["hola", "world"], ["ES", "EN"])
         es_idx = bridge_tokenizer.char_tokenizer.char_2_idx["ES"]
         en_idx = bridge_tokenizer.char_tokenizer.char_2_idx["EN"]
@@ -92,7 +85,6 @@ class TestMultilingual:
         assert inputs.orth.ids[1, 0].item() == en_idx
 
     def test_default_no_language_uses_placeholder(self, bridge_tokenizer):
-        """Encoding without a language prepends the '--' placeholder token."""
         placeholder_idx = bridge_tokenizer.char_tokenizer.char_2_idx["--"]
         assert bridge_tokenizer.encode_input(["cat"]).orth.ids[0, 0].item() == placeholder_idx
         assert bridge_tokenizer.encode_target(["cat"]).orth.ids[0, 0].item() == placeholder_idx

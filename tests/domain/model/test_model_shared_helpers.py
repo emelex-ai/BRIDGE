@@ -1,9 +1,8 @@
-"""Pins the helpers that three encoders and four forward pathways now share.
+"""The helpers that the three encoders and the forward pathways share.
 
-``_mix_with_global``, ``_decode_orth`` and ``_decode_phon`` replaced seven hand-copied
-blocks. A single edit to any of them now changes every pathway at once, so the shared
-invariants are asserted directly, plus the parameter-name stability that checkpoints
-depend on.
+A single edit to ``_mix_with_global``, ``_decode_orth`` or ``_decode_phon`` changes every
+pathway at once, so the shared invariants are asserted directly, plus the parameter-name
+stability that checkpoints depend on.
 """
 
 import io
@@ -43,9 +42,6 @@ def phon_inputs(seq=4):
     return ids, torch.zeros((BATCH, seq), dtype=torch.bool)
 
 
-# --- _mix_with_global ------------------------------------------------------
-
-
 def test_mix_with_global_returns_d_embedding_rows(model):
     encoding = torch.randn(BATCH, 7, D_MODEL)
     mask = torch.zeros((BATCH, 7), dtype=torch.bool)
@@ -55,8 +51,8 @@ def test_mix_with_global_returns_d_embedding_rows(model):
 
 @pytest.mark.parametrize("d_embedding", [1, 2, 4])
 def test_mix_with_global_honours_d_embedding(d_embedding):
-    """The three encoder tails had drifted: one hardcoded a width of 1 where the others
-    used ``d_embedding``. Unifying them means all three must now scale together."""
+    """The defect: an encoder tail that hardcodes a width of 1 where the others use
+    ``d_embedding``."""
     m = build(d_embedding=d_embedding)
     encoding = torch.randn(BATCH, 5, D_MODEL)
     mask = torch.zeros((BATCH, 5), dtype=torch.bool)
@@ -69,8 +65,8 @@ def test_mix_with_global_slices_every_global_row(d_embedding):
 
     A shape assertion cannot catch a wrong slice here: ``mixed[:, :1] + global`` has
     shape ``(B, 1, D) + (B, d_embedding, D)``, which *broadcasts* back to the right
-    shape while silently giving every global row the mixer's first row. That is
-    precisely the bug the pre-refactor ``embed_o`` carried, so it is pinned by value.
+    shape while silently giving every global row the mixer's first row, so it is
+    pinned by value.
     """
     m = build(d_embedding=d_embedding)
     m.eval()
@@ -128,9 +124,6 @@ def test_mix_with_global_never_masks_the_global_positions(model):
     assert torch.isfinite(out).all()
 
 
-# --- _decode_orth / _decode_phon ------------------------------------------
-
-
 def test_decode_orth_logit_shape(model):
     memory = torch.randn(BATCH, 1, D_MODEL)
     ids, mask = orth_inputs(seq=5)
@@ -157,9 +150,6 @@ def test_decoders_are_causal(model):
         tampered[:, -1] = (tampered[:, -1] + 1) % VOCAB.orth_vocab_size
         after = model._decode_orth(memory, tampered, mask)
     assert torch.allclose(base[:, :, :-1], after[:, :, :-1], atol=1e-5)
-
-
-# --- forward pathways compose the helpers ---------------------------------
 
 
 def test_forward_pathways_return_the_expected_keys(model):
@@ -226,9 +216,6 @@ def test_o2p_and_p2p_share_the_phonological_decode(model):
     assert a["phon"].shape == b["phon"].shape
 
 
-# --- phono_sample ---------------------------------------------------------
-
-
 def active_features(embedding_input: torch.Tensor) -> list[list[int]]:
     """Decode phono_sample's embedding input back to per-row active feature indices."""
     return [torch.nonzero(row).flatten().tolist() for row in embedding_input]
@@ -280,9 +267,6 @@ def test_phono_sample_embedding_input_is_one_column_wider_than_presence(model):
     presence, embedding_input = model.phono_sample(probs, deterministic=True)
     assert presence.shape == (BATCH, VOCAB.phon_vocab_size - 1)
     assert embedding_input.shape == (BATCH, VOCAB.phon_vocab_size)
-
-
-# --- checkpoint compatibility ---------------------------------------------
 
 
 def test_parameter_names_are_pinned():
@@ -385,9 +369,6 @@ def test_a_state_dict_missing_a_tensor_is_refused():
     assert "global_embedding" in str(raised.value)
 
 
-# --- phoneme table provenance ----------------------------------------------
-
-
 def test_from_tokenizer_records_the_table_fingerprint():
     tokenizer = BridgeTokenizer()
     spec = VocabSpec.from_tokenizer(tokenizer)
@@ -400,7 +381,7 @@ def test_a_model_records_the_fingerprint_of_the_table_it_built_from():
 
 
 def test_a_vocab_spec_without_a_fingerprint_still_builds():
-    """Specs written before the field carry ``None`` and must construct without complaint."""
+    """The fingerprint is optional: a spec without one carries ``None`` and must construct."""
     assert isinstance(
         build(vocab=TEST_VOCAB.model_copy(update={"phon_table_fingerprint": None})), Model
     )

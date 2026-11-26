@@ -33,9 +33,6 @@ def ids(tok, chars):
     return [tok.char_2_idx[c] for c in chars]
 
 
-# --- structure -------------------------------------------------------------
-
-
 def test_each_encoder_returns_its_own_type(tok):
     assert isinstance(tok.encode_input(["cat"]), Tokens)
     assert isinstance(tok.encode_target(["cat"]), Target)
@@ -104,9 +101,6 @@ def test_input_and_target_of_one_string_share_everything_but_the_eos(tok):
         assert [i for i in source_row if i != eos][: len(target_row)] == target_row
 
 
-# --- padding ---------------------------------------------------------------
-
-
 def test_shorter_rows_are_right_padded(tok):
     """Each row is built in Python; a row shorter than the tensor width must not
     become trailing zeros (which is [BOS], not [PAD])."""
@@ -146,9 +140,6 @@ def test_empty_string_beside_a_longer_one_is_padded(tok):
     assert out.ids[0].tolist() == ids(tok, ["--", "[BOS]", "[EOS]"]) + [pad] * 3
 
 
-# --- language tokens -------------------------------------------------------
-
-
 def test_language_token_occupies_position_zero(tok):
     for out in (
         tok.encode_input(["cat", "gato"], ["EN", "ES"]),
@@ -165,12 +156,8 @@ def test_a_row_given_no_language_gets_the_placeholder(tok):
 
 
 def test_language_code_case_is_accepted_either_way(tok):
-    """A lower-case code is the same language, and writes that language's token."""
     out = tok.encode_input(["cat"], ["es"])
     assert out.ids[0, 0].item() == tok.char_2_idx["ES"]
-
-
-# --- unknown characters ----------------------------------------------------
 
 
 def test_characters_outside_the_vocabulary_become_unk(tok):
@@ -185,9 +172,6 @@ def test_every_printable_character_round_trips(tok):
     assert tok.decode(out.ids.tolist()) == [printable]
 
 
-# --- input validation ------------------------------------------------------
-
-
 @pytest.mark.parametrize("bad", [123, "cat", ("cat",), ["ok", 1], [None], {"a": 1}])
 def test_rows_are_a_list_of_strings(tok, bad):
     """One form only. A bare string is not a one-row list: it raises like any other."""
@@ -195,9 +179,6 @@ def test_rows_are_a_list_of_strings(tok, bad):
         tok.encode_input(bad)
     with pytest.raises(TypeError, match="The rows to encode are a list of strings"):
         tok.encode_target(bad)
-
-
-# --- decode ----------------------------------------------------------------
 
 
 def test_decode_strips_special_and_language_tokens(tok):
@@ -228,9 +209,6 @@ def test_decode_preserves_spaces(tok):
     """A space is an ordinary printable character, not a special token."""
     out = tok.encode_input(["a b"])
     assert tok.decode(out.ids.tolist()) == ["a b"]
-
-
-# --- vocabulary ------------------------------------------------------------
 
 
 def test_vocabulary_size_matches_the_vocab_list(tok):

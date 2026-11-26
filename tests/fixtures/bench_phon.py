@@ -1,23 +1,22 @@
 """Phonological hot-path benchmarks (issue #221).
 
-Measures the four things the refactor is meant to move, through the *public* API, so the
-same script runs unchanged before and after:
+Measures four things through the *public* API, so the same script runs unchanged on a
+commit from before that issue's refactor and on one after it:
 
-    embed_phon_tokens   the double loop being replaced
+    embed_phon_tokens   against `reference_embed`, the double loop it replaces
     encode              one batch through BridgeTokenizer, as an input and as a target
     train step          end-to-end o2p, so the isolated wins can be put in context
     generate            o2p, deterministic
 
-The reference double-loop implementation is carried here permanently so the speedup stays
-measurable after the loop is gone from the model.
+The model holds no double loop. `reference_embed` keeps one here so the speedup stays
+measurable.
 
     BENCH_DEV=cpu  uv run python tests/fixtures/bench_phon.py
     BENCH_DEV=cuda uv run python tests/fixtures/bench_phon.py
     BENCH_SIZES=32,256 BENCH_DEV=cpu uv run python tests/fixtures/bench_phon.py
 
-Named `bench_` rather than `test_`, so pytest collects `capture_phon_baseline.py`'s
-neighbour and not this. It lives here because a promoted probe belongs beside the harness
-it resembles, per `.claude/rules/measurement.md`.
+Named `bench_` rather than `test_`, so pytest does not collect it. It lives here because a
+promoted probe belongs beside the harness it resembles, per `.claude/rules/measurement.md`.
 """
 
 from __future__ import annotations
@@ -79,7 +78,8 @@ def ragged_features(ids, tokenizer) -> list[list[torch.Tensor]]:
 
 
 def reference_embed(model: Model, ragged) -> torch.Tensor:
-    """The pre-refactor double loop, preserved as the speedup baseline."""
+    """Each phoneme's embedding as the mean of its feature embeddings, one position at a
+    time. The speedup baseline for `embed_phon_tokens`."""
     batch_size = len(ragged)
     seq_len = len(ragged[0])
     out = torch.zeros((batch_size, seq_len, model.model_config.d_model), device=model.device)

@@ -74,10 +74,7 @@ class BridgeDataset:
         tokenizer: BridgeTokenizer | None = None,
     ):
         """
-        Initialize the dataset with configuration and setup tokenization.
-
         Args:
-            dataset_config: Configuration object containing dataset parameters
             gcs_client: Any object with a ``read_csv(bucket_name, blob_name, **kwargs)``
                 method, for reading datasets from ``gs://`` paths. Required only if
                 ``dataset_filepath`` is a GCS URI.
@@ -115,10 +112,6 @@ class BridgeDataset:
         logger.info(f"Loaded {len(self.examples)} examples.")
 
     def _load_raw_dataframe(self, path: str) -> pd.DataFrame:
-        """
-        Dispatch method to load raw data based on path scheme or extension.
-        Returns a DataFrame holding whichever of ``COLUMNS`` the source has.
-        """
         if path.startswith("gs://"):
             parts = path.replace("gs://", "").split("/", 1)
             bucket, blob = parts[0], parts[1]
@@ -152,9 +145,9 @@ class BridgeDataset:
         raise ValueError(f"Unsupported data format: {ext}")
 
     def _read_gcs_csv(self, bucket: str, blob: str) -> pd.DataFrame:
-        """Read a CSV blob from GCS into a DataFrame."""
         if self.gcs_client is None:
             raise ValueError("A GCS client must be passed to BridgeDataset to read gs:// paths.")
+        # Unlike the local read, the result is not checked for rows longer than the header.
         return self.gcs_client.read_csv(
             bucket_name=bucket,
             blob_name=blob,
@@ -227,7 +220,6 @@ class BridgeDataset:
         return languages
 
     def __len__(self) -> int:
-        """Return the number of examples in the dataset."""
         return len(self.examples)
 
     def __getitem__(self, idx: int | slice) -> BridgeBatch:

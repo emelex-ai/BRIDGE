@@ -1,12 +1,8 @@
-"""Pins the batched rewrite of the two autoregressive decoder loops (issue #221).
+"""The two autoregressive decoder loops, which stay dense and batched (issue #221).
 
-Both loops used to run a Python ``for b in range(batch_size)`` every step to append
-per-item values, and both re-embedded their entire prefix each step. They now stay dense
-and batched, embed only the position they just generated, and cut the ragged
-``GenerationOutput`` shapes once at the end.
-
-Two invariants survive that rewrite only if it is done correctly, and neither is covered
-elsewhere:
+Each loop embeds only the position it just generated and cuts the ragged
+``GenerationOutput`` shapes once at the end. Two invariants hold only if that is done
+correctly, and neither is covered elsewhere:
 
 * ``orth_probs`` is *genuinely ragged*: a sequence stops collecting distributions at its
   own EOS. Every other generation test drives identical batch items, where a misaligned
@@ -150,7 +146,6 @@ def test_incremental_embedding_equals_embedding_the_whole_prefix(model, prompt):
     built = fed[-1]
     assert built.shape[1] > 1, "the loop must actually have appended rows to embed"
 
-    # Rebuild the buffer the loop accumulated, and embed all of it in one call.
     full = torch.zeros(
         (BATCH, len(phon_tokens[0]), model.phonological_vocabulary_size), dtype=torch.long
     )
@@ -164,7 +159,7 @@ def test_incremental_embedding_equals_embedding_the_whole_prefix(model, prompt):
 
 
 def test_the_loop_embeds_a_linear_number_of_positions(model, prompt):
-    """Re-embedding the prefix every step is what made generation quadratic in length.
+    """Re-embedding the prefix every step would make generation quadratic in length.
 
     Asserted in aggregate, so a rewrite that batches or reorders the embedding work still
     passes and only a genuine return to the quadratic path fails.

@@ -1,19 +1,9 @@
-"""The documentation is executable.
-
-`README.md`, `docs/architecture.md` and `.claude/rules/measurement.md` state facts about the
-live system.
-Prose rots silently; an assertion does not. Every fact here that a code change could
-invalidate is checked against the running system, so drift surfaces as a failing test naming
-the file to edit rather than as a document nobody notices has gone wrong.
+"""`README.md`, `docs/architecture.md` and `.claude/rules/measurement.md` state facts about the
+live system. Every fact here that a code change could invalidate is checked against the
+running system, so drift is a failing test naming the file to edit.
 
 Facts that cannot be checked mechanically (a measured noise floor, which devices have been
 swept) carry a date and the artifact that produced them, in the documents themselves.
-
-The README was outside this net until it had drifted four ways at once: it claimed 87 tests
-against 535, four pathways against five, an import list three names short, and a
-`TrainingPipeline(...)` example whose argument order and argument names were both wrong, so
-the only worked example in the file raised `TypeError`. Prose about intent can rot quietly;
-a signature cannot.
 """
 
 from __future__ import annotations
@@ -59,9 +49,7 @@ def readme() -> str:
 
 
 def test_the_pathway_table_lists_exactly_the_real_pathways(architecture):
-    """A new pathway absent from the table is a map that misleads.
-
-    Scoped to the table rather than the whole document: a pathway name occurs in several
+    """Scoped to the table rather than the whole document: a pathway name occurs in several
     places, so a document-wide substring check passes even after its row is deleted.
     """
     table = architecture.split("| pathway | reads | writes |")[1].split("\n\n")[0]
@@ -149,11 +137,7 @@ def test_the_documented_tensors_are_the_tensors_of_a_live_batch(architecture):
 
 
 def test_the_type_tables_name_every_field_of_every_type(architecture, readme):
-    """Both documents tabulate the five types of an example, and each row names the
-    fields its type really has.
-
-    Oracle: ``dataclasses.fields`` of the exported classes.
-    """
+    """Oracle: ``dataclasses.fields`` of the exported classes."""
     import dataclasses
 
     import bridge
@@ -200,10 +184,8 @@ def test_the_documented_generate_signature_is_the_real_one(architecture):
 
 
 def test_the_size_tables_give_the_real_defaults(architecture, readme):
-    """Both documents tabulate the sizes of ``ModelConfig`` and what each defaults to.
-
-    Oracle: the field defaults of the class. A default that moves, or a size that is
-    added or removed, leaves a table telling a reader the model is another size.
+    """Oracle: the field defaults of ``ModelConfig``. A default that moves, or a size that
+    is added or removed, leaves a table telling a reader the model is another size.
     """
     from bridge import ModelConfig
 
@@ -248,7 +230,6 @@ def test_the_recorded_parameter_count_is_a_default_models(project_rules):
 
 
 def test_every_path_named_in_the_layout_exists(architecture):
-    """A renamed or deleted module leaves the map pointing at nothing."""
     block = architecture.split("## Layout")[1].split("```")[1]
     paths = [
         m.group(1)
@@ -261,7 +242,6 @@ def test_every_path_named_in_the_layout_exists(architecture):
 
 
 def test_decision_records_and_the_index_agree(architecture):
-    """A record nobody indexes is a record nobody reads."""
     on_disk = {p.name for p in DECISIONS.glob("[0-9]*.md")}
     indexed = set(re.findall(r"\(decisions/([^)]+)\)", architecture))
     assert on_disk == indexed, (
@@ -303,15 +283,9 @@ def test_known_defects_are_still_open(architecture):
     )
 
 
-# --- README ---------------------------------------------------------------
-
-
 def test_the_readme_import_list_is_the_public_api(readme):
-    """The README used to hand-copy a list of exports that fell three names behind.
-
-    Oracle: a differential against ``bridge.__all__``, which is the surface
-    ``tests/test_public_api.py`` pins. The README block is the claim; ``__all__`` is the
-    fact.
+    """Oracle: a differential against ``bridge.__all__``, which is the surface
+    ``tests/test_public_api.py`` pins.
     """
     import bridge
 
@@ -325,12 +299,7 @@ def test_the_readme_import_list_is_the_public_api(readme):
 
 
 def test_the_readme_usage_example_matches_the_real_signature(readme):
-    """The one worked example in the file must be callable.
-
-    Oracle: ``inspect.signature``. The previous example passed ``dataset`` where
-    ``training_config`` goes and a ``wandb_wrapper=`` keyword that no longer existed, so a
-    reader following the README got ``TypeError`` on their first attempt.
-    """
+    """Oracle: ``inspect.signature``."""
     import inspect
 
     from bridge import TrainingPipeline
@@ -409,9 +378,7 @@ def test_every_readme_python_example_runs_as_written(readme, tmp_path, monkeypat
 
 
 def test_the_readme_pathway_list_is_complete(readme):
-    """A pathway missing from the README is a pathway nobody knows they can use.
-
-    Scoped to the sentence that enumerates them, so deleting a name from the list fails
+    """Scoped to the sentence that enumerates them, so deleting a name from the list fails
     even though that name still occurs elsewhere in the file.
     """
     sentence = flat(readme).split("pathways, listed in `bridge.PATHWAYS`")[1].split(". ")[0]
@@ -430,9 +397,7 @@ def test_the_readme_id_space_table_matches_the_phoneme_table(readme):
 
 
 def test_every_path_the_readme_links_to_exists(readme):
-    """A renamed or deleted file leaves the README linking to nothing.
-
-    Markdown link targets plus the unindented roots of the layout tree. The tree's nested
+    """Markdown link targets plus the unindented roots of the layout tree. The tree's nested
     entries are relative to their parent and are left to
     ``test_every_path_named_in_the_layout_exists``, which covers the same modules through
     ``docs/architecture.md`` where they are written out in full.
@@ -449,7 +414,6 @@ def test_every_path_the_readme_links_to_exists(readme):
 
 
 def test_the_readme_dependency_claim_matches_pyproject(readme):
-    """The README tells a reader what gets installed. It has to be what gets installed."""
     import tomllib
 
     declared = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["dependencies"]

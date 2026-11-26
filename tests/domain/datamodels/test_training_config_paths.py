@@ -1,22 +1,21 @@
 """Pins where ``TrainingConfig`` puts a relative ``model_artifacts_dir``, and when it
 touches the disk.
 
-``convert_paths`` currently joins a relative ``model_artifacts_dir`` onto
+The defect these tests exist to catch: a relative ``model_artifacts_dir`` joined onto
 ``get_project_root()``, which is BRIDGE's own install root rather than the directory the
-caller is working in, and then creates that directory as a side effect of validation. A
-user who passes ``"runs/experiment1"`` therefore gets checkpoints written inside the
-installed package, where the next reinstall deletes them. Absolute paths escape only by
-accident: ``os.path.join`` discards its prefix when the second argument is absolute.
+caller is working in, and created as a side effect of validation. A user who passes
+``"runs/experiment1"`` then gets checkpoints written inside the installed package, where
+the next reinstall deletes them.
 
 The contract asserted here is that a relative directory means "relative to the working
 directory", the same rule ``open("runs/x")`` follows, and that constructing a config is a
 pure function of its arguments: nothing appears on disk until something is actually
-written. Creation moves to ``TrainingPipeline.save_checkpoint``, so the last test builds a real
-pipeline and checks that saving still works once eager creation is gone.
+written. ``TrainingPipeline.save_checkpoint`` creates the directory, so the last test
+builds a real pipeline and checks that saving works with nothing created beforehand.
 
-``checkpoint_path`` is the control. It names a file that must already exist, so its
-existence check has to survive; if that check disappeared along with the directory check,
-a typo in a resume path would fail deep inside ``load_model`` instead of at construction.
+``checkpoint_path`` names a file that must already exist, so its existence check stays:
+without it a typo in a resume path would fail deep inside ``load_model`` instead of at
+construction.
 """
 
 from pathlib import Path
@@ -37,20 +36,16 @@ RELATIVE_DIR = "bridge_relative_artifacts_probe"
 
 @pytest.fixture
 def no_repo_litter():
-    """Remove the directory today's code wrongly creates inside the install root.
+    """Cleans up after a failing run only.
 
-    The defect under test is that a relative ``model_artifacts_dir`` is created under
-    ``get_project_root()``. Running the red half of this pair therefore leaves an empty
-    directory in the checked-out repository. Once the fix lands nothing is created and
-    this fixture does nothing.
+    The defect under test is a relative ``model_artifacts_dir`` created under
+    ``get_project_root()``, which leaves an empty directory in the checked-out repository.
+    While the tests pass nothing is created and this does nothing.
     """
     yield
     stray = Path(get_project_root()) / RELATIVE_DIR
     if stray.is_dir() and not any(stray.iterdir()):
         stray.rmdir()
-
-
-# --- where a relative directory lands --------------------------------------
 
 
 def test_relative_artifacts_dir_resolves_under_the_working_directory(
@@ -59,7 +54,7 @@ def test_relative_artifacts_dir_resolves_under_the_working_directory(
     """A relative path means "from here", not "from wherever BRIDGE happens to be installed".
 
     Both halves matter. The directory has to sit under the caller's working directory, and
-    it has to *not* sit under the install root, which is where it goes today.
+    it has to *not* sit under the install root.
     """
     monkeypatch.chdir(tmp_path)
     cwd = Path.cwd()
@@ -101,18 +96,13 @@ def test_the_default_artifacts_dir_resolves_under_the_working_directory(monkeypa
 def test_absolute_artifacts_dir_is_preserved_exactly(tmp_path):
     """An absolute path is already an answer, so resolution must be the identity on it.
 
-    This is the round trip: what goes in comes back out unchanged. It works today only
-    because ``os.path.join`` drops its prefix for an absolute second argument, so it needs
-    stating explicitly rather than relying on that accident.
+    Oracle: round trip. What goes in comes back out unchanged.
     """
     given = str(tmp_path / "runs" / "experiment1")
 
     config = TrainingConfig(model_artifacts_dir=given)
 
     assert config.model_artifacts_dir == given
-
-
-# --- validation is pure ----------------------------------------------------
 
 
 def test_construction_creates_nothing_on_disk(tmp_path):
@@ -138,9 +128,8 @@ def test_construction_creates_nothing_on_disk(tmp_path):
 def test_missing_artifacts_dir_is_not_an_error(tmp_path):
     """A directory that does not exist yet is normal, not a failure.
 
-    The old ``validate_paths`` check raised ``FileNotFoundError`` here, which was only ever
-    unreachable because the eager ``makedirs`` ran first. With creation deferred to the
-    first save, the check has to go or every fresh run would refuse to start.
+    The directory is created at the first save, so an existence check here would make
+    every fresh run refuse to start.
     """
     artifacts = tmp_path / "fresh_run"
 
@@ -150,10 +139,9 @@ def test_missing_artifacts_dir_is_not_an_error(tmp_path):
 
 
 def test_save_checkpoint_creates_the_artifacts_directory_on_first_write(tmp_path, words_dataset):
-    """Deferring creation must not simply break saving.
+    """``save_checkpoint`` resolves a relative path against ``model_artifacts_dir``. Nothing
+    else makes that directory, so the write has to.
 
-    ``save_checkpoint`` resolves a relative path against ``model_artifacts_dir``. With eager
-    creation gone, nothing else has made that directory, so the write has to make it.
     The assertion before the call is the control: it shows the directory really was absent,
     so the file landing afterwards is evidence of lazy creation and not of a directory that
     was already sitting there.

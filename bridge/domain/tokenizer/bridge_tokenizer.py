@@ -1,11 +1,4 @@
-"""
-The BridgeTokenizer is a wrapper class that combines orthographic (character-based) and
-phonological (phoneme-based) tokenization to support the various pathways in the BRIDGE model.
-
-Objects:
-- CharacterTokenizer: maps text to character ids
-- PhonemeTokenizer: maps words to phoneme row ids
-- BridgeTokenizer: A wrapper around both tokenizers
+"""BridgeTokenizer: the character tokenizer and the phoneme tokenizer behind one call.
 
 Both tokenizers emit the same shape: a ``(batch, sequence)`` integer tensor of ids plus a
 matching boolean pad mask. Only the id space differs. Character ids index the character
@@ -37,25 +30,23 @@ logger = logging.getLogger(__name__)
 
 
 class BridgeTokenizer:
-    """
-    A wrapper tokenizer that combines orthographic (character-based) and
-    phonological (phoneme-based) tokenization.
-    """
+    """Encodes each side of a training example in both modalities: ``encode_input`` for
+    what the encoders read, ``encode_target`` for what the decoders are fed and scored
+    against."""
 
     def __init__(
         self,
         custom_cmudict_path: str | None = None,
     ):
-        # Initialize device
         self.device = device_manager.device
-        # Initialize both tokenizers with the same device
         self.custom_cmudict_path = custom_cmudict_path
         self.char_tokenizer = CharacterTokenizer()
         self.phoneme_tokenizer = PhonemeTokenizer(custom_cmudict_path=custom_cmudict_path)
         self.phon_table_fingerprint = self.phoneme_tokenizer.phoneme_table.fingerprint
+        # The four phon ids are in feature space, unlike the row ids the encoders emit.
+        # See VocabSpec.phon_pad_id.
         self.phon_bos_id = self.phoneme_tokenizer.special_token_dims["[BOS]"]
         self.phon_pad_id = self.phoneme_tokenizer.special_token_dims["[PAD]"]
-        # Feature space, unlike the row ids the encoders emit. See VocabSpec.phon_pad_id.
         self.phon_spc_id = self.phoneme_tokenizer.special_token_dims["[SPC]"]
         self.phon_eos_id = self.phoneme_tokenizer.special_token_dims["[EOS]"]
         self.orth_bos_id = self.char_tokenizer.char_2_idx["[BOS]"]
@@ -132,16 +123,17 @@ class BridgeTokenizer:
         ortho_indices: list[list[int]] | None = None,
         phono_indices: list[list[int]] | None = None,
     ) -> dict | None:
-        """
-        Decode both orthographic and phonological representations.
+        """Decode either modality, or both.
 
         Args:
-            ortho_indices: Optional List of lists of character indices
-            phono_indices: Optional list of lists of phoneme *feature* indices, as held by
+            ortho_indices: Rows of character ids.
+            phono_indices: Rows of phoneme *feature* indices, as held by
                 ``GenerationOutput.phon_tokens``. Not the row ids ``encode_input`` returns.
 
         Returns:
-            Dictionary containing decoded strings and tensors or None if no input
+            A dict holding ``"orthographic"``, a list of strings, and ``"phonological"``,
+            a dense multi-hot tensor, each only if its argument was given. ``None`` when
+            neither was.
         """
         if ortho_indices is None and phono_indices is None:
             return None
@@ -164,16 +156,16 @@ class BridgeTokenizer:
         return self.char_tokenizer.decode_with_languages(ortho_indices)
 
     def get_vocabulary_sizes(self) -> dict:
-        """Return vocabulary sizes for both tokenizers."""
         return {
             "orthographic": self.char_tokenizer.get_vocabulary_size(),
             "phonological": self.phoneme_tokenizer.get_vocabulary_size(),
         }
 
     def phoneme_vectors_to_word(self, phoneme_vectors, distance_fn=None):
-        """Convert phoneme vectors to word."""
+        """The phoneme name of each vector, not a spelled word. See
+        :meth:`PhonemeTokenizer.phoneme_vectors_to_word`."""
         return self.phoneme_tokenizer.phoneme_vectors_to_word(phoneme_vectors, distance_fn)
 
     def phoneme_vector_to_phoneme(self, phoneme_vector, distance_fn=None, top_k=1):
-        """Convert a single phoneme vector to phoneme string(s)."""
+        """See :meth:`PhonemeTokenizer.phoneme_vector_to_phoneme`."""
         return self.phoneme_tokenizer.phoneme_vector_to_phoneme(phoneme_vector, distance_fn, top_k)

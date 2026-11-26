@@ -1,19 +1,18 @@
-"""Equivalence against the pre-refactor behavioural fingerprint (issue #221).
+"""Asserts what the golden master ``tests/fixtures/phon_baseline.pt`` still says of a model.
 
-``tests/fixtures/phon_baseline.pt`` was recorded on the commit before the phonological
-refactor began. This module rebuilds the same objects and asserts every recorded value
-that still describes them.
+The fixture is a behavioural fingerprint of the phonological path, recorded on the commit
+before the phonological refactor (issue #221). This module rebuilds the same objects and
+asserts every recorded value that still describes them.
 
-**The fixture is immutable.** If a value here changes, either the refactor changed behaviour
-or the change was intentional and the spec says so. Regenerating the fixture to make a test
-pass defeats its entire purpose.
+**The fixture is immutable.** Regenerating it to make a test pass destroys the only thing
+it is for. Three groups of recorded values are superseded. Each is handled by reducing its
+assertions here to what still holds, and the fixture is not touched.
 
-One value has since been superseded, deliberately, and the fixture was not touched.
-Issue #228 changed how the orthographic decoder is seeded at generation: from a lone ``[BOS]``
-at position 0 to the ``[LANG, BOS]`` prefix training actually uses. The decoder therefore
-continues from a different state and emits different tokens, so the recorded
-``orth_tokens`` and ``orth_probs`` describe behaviour that was wrong. Measured at the commit
-that changed it, the effect is bounded to exactly that:
+**Orthographic generation.** Generation seeds the orthographic decoder with the
+``[LANG, BOS]`` prefix training uses (issue #228, ``docs/decisions/0008``). The recording
+seeded it with a lone ``[BOS]`` at position 0, so the recorded ``orth_tokens`` and
+``orth_probs`` describe behaviour that was wrong. Measured at the commit that changed it,
+the effect is bounded to exactly that:
 
 ===============  ==============  =============  ==============
 pathway          global_encoding  orth_tokens    phonological
@@ -27,54 +26,52 @@ o2o              same             **moved**      n/a
 
 ``op2op`` is the load-bearing row: it generates both modalities from one encoding, and its
 phonological output is unchanged while its orthographic output moved. Shapes are unchanged
-throughout, ``(9, 30)`` and ``(9, 30, 109)``. The orthographic equality assertions below are
-reduced to shape, and the new behaviour is pinned against analytic oracles in
-``tests/domain/model/test_orth_generation_prefix.py`` rather than against a re-recording.
+throughout, ``(9, 30)`` and ``(9, 30, 109)``. The orthographic assertions below are reduced
+to shape, and the seeded behaviour is pinned against analytic oracles in
+``tests/domain/model/test_orth_generation_prefix.py``, not against a re-recording.
 
-A second value is superseded the same way. The fixture records ``placeholder_phon``, the
-stand-in phonology an orthography-only encoding carried: one position per row, all of it
-padding. An input that has no phonology carries ``None`` there and no stand-in exists, so
-there is no tensor to compare. What the stand-in was for still holds and is what the
-reduced assertion checks: an input with orthography alone generates on a pathway that
-reads orthography alone, bitwise what an input carrying both modalities generates there.
-Measured against the commit before that change, generation from such an input is bitwise
-equal to generation from the stand-in encoding on ``o2p`` and ``o2o``, 729 of 729 recorded
-values.
-The behaviour of a missing modality is pinned against ``PATHWAY_IO`` in
-``tests/domain/model/test_generate.py``.
+**The stand-in phonology.** The fixture records ``placeholder_phon``, the stand-in an
+orthography-only encoding carried: one position per row, all of it padding. An input with
+no phonology carries ``None`` there (``docs/decisions/0016``), so there is no tensor to
+compare. The reduced assertion checks what the stand-in was for: an input with orthography
+alone generates on a pathway that reads orthography alone, bitwise what an input carrying
+both modalities generates there. Measured against the commit before that change,
+generation from such an input is bitwise equal to generation from the stand-in encoding on
+``o2p`` and ``o2o``, 729 of 729 recorded values. The behaviour of a missing modality is
+pinned against ``PATHWAY_IO`` in ``tests/domain/model/test_generate.py``.
 
-**Every value that passes through the model's weights is superseded as well, and the
-fixture was still not touched.** Position is a rotation inside self-attention, computed for
-any length, and the model holds no position table. The recording was made by a model with
-two such tables of 30 rows. Without them a seed's draws fall differently across the
-parameters that remain, so no recorded embedding, logit, encoding or generated token can be
-produced again. Measured 2026-11-23 against ``a3cb285``, the commit before the change, on
-CPU: with that commit's tables zeroed and the rotation switched off, teacher-forced logits
-of the two models are bitwise equal on all five pathways, 36 of 36 outputs over six
-models, so position is all that moved.
+**Every value that passes through the model's weights.** Position is a rotation inside
+self-attention, computed for any length, and the model holds no position table
+(``docs/decisions/0017``). The recording was made by a model with two such tables of 30
+rows. Without them a seed's draws fall differently across the parameters that remain, so
+no recorded embedding, logit, encoding or generated token can be produced again. Measured
+2026-11-23 against ``a3cb285``, the last commit with the tables, on CPU: with that commit's
+tables zeroed and the rotation switched off, teacher-forced logits of the two models are
+bitwise equal on all five pathways, 36 of 36 outputs over six models, so position is all
+that moved.
 
 The assertions on those values are reduced to what the recording still says about the
 model: which outputs a pathway returns, their shapes and dtypes, which fields a generation
 fills, that ids stay inside their vocabulary, and that a generated phonological sequence
-opens with the recorded ``[BOS]``. Two kinds of recorded value survive whole and are
-asserted exactly as before. One is every tokenizer and vocabulary value. The other is the
-gradient of an embedded batch with respect to the phonological embedding, which counts
-features and depends on no weight. The recorded gradient of the position table has no
-parameter to be compared with; its test checks that the recording is the count of rows per
-slot, and that the phonological embedding is the only parameter an embedding reaches.
+opens with the recorded ``[BOS]``. Two kinds of recorded value are asserted exactly. One
+is every tokenizer and vocabulary value. The other is the gradient of an embedded batch
+with respect to the phonological embedding, which counts features and depends on no
+weight. The recorded gradient of the position table has no parameter to be compared with;
+its test checks that the recording is the count of rows per slot, and that the
+phonological embedding is the only parameter an embedding reaches.
 
 What the model computes is pinned against reference and analytic oracles in
 ``tests/domain/model/test_rotary_layers.py``, ``tests/domain/model/test_any_length.py`` and
 ``tests/domain/model/test_max_new_tokens.py``, not against a re-recording.
 
-**The plumbing is not.** The refactor changes the phonological representation from a ragged
-``list[list[Tensor]]`` to a ``(batch, sequence)`` tensor of row ids, and the adapters in the
-ADAPTERS block below absorb that; everything under ASSERTIONS compares against the
-recording. The fixture names its tensors by the encoder and decoder that read them. The
-encoder's are the ids and mask of the input, the decoder's are the ids and mask of the
-target, and the recorded targets are the target's labels; ``FIELD_OF`` below is that
-mapping. The words are encoded once as an input and once as a target, which is
-repetition, the task the fixture recorded.
+**Two differences of form are bridged, not asserted.** The fixture holds phonology as a
+ragged ``list[list[Tensor]]`` of feature indices and the tokenizer returns a
+``(batch, sequence)`` tensor of row ids; ``canon_features`` reduces both to one form. The
+fixture names its tensors by the encoder and decoder that read them. The encoder's are the
+ids and mask of the input, the decoder's are the ids and mask of the target, and the
+recorded targets are the target's labels; ``FIELD_OF`` below is that mapping. The words
+are encoded once as an input and once as a target, which is repetition, the task the
+fixture recorded.
 
 Runs on CPU: ``device_manager`` defaults to CPU, and CUDA reduction order differs.
 """
@@ -97,15 +94,11 @@ FIXTURE_PATH = Path(__file__).resolve().parents[1] / "fixtures" / "phon_baseline
 GRAD_ATOL, GRAD_RTOL = 1e-6, 1e-5
 
 
-# --------------------------------------------------------------------------- ADAPTERS
-# The only places that should need editing as the refactor lands.
-
-
 def canon_features(ids, tokenizer) -> list[list[tuple[int, ...]]]:
-    """Canonicalise phonological inputs to per-position sorted feature-index tuples.
+    """Per-position sorted feature-index tuples, from either form.
 
-    Accepts both representations: the pre-refactor ragged ``list[list[Tensor]]`` of feature
-    indices, and the post-refactor ``(B, L)`` tensor of phoneme row ids.
+    The fixture holds a ragged ``list[list[Tensor]]`` of feature indices. The tokenizer and
+    the model give a ``(B, L)`` tensor of phoneme row ids.
     """
     if isinstance(ids, torch.Tensor):
         table = tokenizer.phoneme_tokenizer.phoneme_table
@@ -130,12 +123,10 @@ def recorded_field(example: dict, modality: str, field: str) -> torch.Tensor:
 
 
 def phon_targets_of(example: dict) -> torch.Tensor:
-    """Phonological loss targets."""
     return example["target"].phon.labels
 
 
 def run_forward(model: Model, example: dict, pathway: str) -> dict[str, torch.Tensor]:
-    """Forward pass, whichever calling convention the model currently exposes."""
     parts = {
         f"{modality}_{side}": {
             f"{modality}_{side}_input": recorded_field(example, modality, f"{side}_input_ids"),
@@ -170,13 +161,9 @@ def recorded_cap(baseline: dict) -> int:
 
 
 def assert_same_form(actual: torch.Tensor, recorded: torch.Tensor, name: str) -> None:
-    """``actual`` has the recorded shape and dtype, and every value in it is finite."""
     assert actual.shape == recorded.shape, f"{name} shape"
     assert actual.dtype == recorded.dtype, f"{name} dtype"
     assert bool(torch.isfinite(actual).all()), f"{name} holds a non-finite value"
-
-
-# --------------------------------------------------------------------------- FIXTURES
 
 
 @pytest.fixture(scope="module")
@@ -217,11 +204,7 @@ def rebuilt(baseline):
     return tokenizer, example, model
 
 
-# --------------------------------------------------------------------------- ASSERTIONS
-
-
-# Recorded fields that VocabSpec no longer carries. `orth_spc_id`/`phon_spc_id` were
-# dropped deliberately: nothing ever read them.
+# Recorded fields that VocabSpec deliberately does not carry: nothing read them.
 RETIRED_VOCAB_FIELDS = {"orth_spc_id", "phon_spc_id"}
 
 

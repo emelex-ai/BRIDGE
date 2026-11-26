@@ -1,14 +1,8 @@
-"""Pins the error surface of ``Model._validate_generate_input``.
+"""The error surface of ``Model._validate_generate_input``.
 
-The validation used to be five hand-copied per-pathway blocks applying four different
-subsets of the available checks, and this file was 404 lines pinning those differences in
-place: ``o2p`` alone skipped the range and device checks, ``op2op`` alone reported a
-non-tensor as ``TypeError``, and only ``op2op`` bounded the orthographic sequence length.
-None of that was designed; it was what a partial refactor left behind, and issue #233
-reported the gaps as defects.
-
-There is one set of checks now, applied to whatever a pathway reads, so the test is a
-sweep rather than a list. Each malformation is generated for every pathway/modality pair
+There is one set of checks, applied to whatever a pathway reads, so the test is a sweep
+rather than a list. A check that one pathway applies and another skips is the defect issue
+#233 reports. Each malformation is generated for every pathway/modality pair
 that ``PATHWAY_IO`` says is read, which means a new pathway is covered the moment it is
 added to the table, and a check that stops applying to one modality fails here rather
 than silently narrowing.
@@ -91,11 +85,9 @@ MALFORMED = [
         lambda m: {"ids": torch.full((2, 4), -1)},
         "ids must lie in [0, {space})",
     ),
-    # The validator's device check had no test at all. main pinned the old gap with
-    # `test_op2op_does_not_check_device`, so deleting that removed the only reference to
-    # the branch, and dropping the `tensor.device != self.device` loop entirely would have
-    # passed the whole suite. "meta" is a real torch device that needs no hardware, so this
-    # runs everywhere rather than only where CUDA is present.
+    # These two cases are what hold the validator's `tensor.device != self.device` loop
+    # in place. "meta" is a real torch device that needs no hardware, so they run
+    # everywhere rather than only where CUDA is present.
     (
         "ids_on_another_device",
         lambda m: {"ids": ids().to("meta")},
@@ -147,9 +139,9 @@ def test_every_pathway_rejects_every_malformation_of_what_it_reads(
 def test_a_modality_a_pathway_does_not_read_must_be_absent(model, pathway, modality):
     """Passing phonology to an orthography-only pathway is a mistake, not an extra.
 
-    ``o2p`` used to accept it silently, which is one of the three shapes issue #233
-    reported: a phonology-only encoding reached pathways that read orthography and failed
-    somewhere deep instead of at the boundary.
+    Accepting it silently is one of the three shapes issue #233 reports: a phonology-only
+    encoding reaches pathways that read orthography and fails somewhere deep instead of at
+    the boundary.
     """
     if modality in PATHWAY_IO[pathway][0]:
         pytest.skip(f"{pathway} reads {modality}")

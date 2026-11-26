@@ -81,9 +81,6 @@ def lang_names(dataset, batch):
     return [idx_2_char[int(i)] for i in batch.input.orth.ids[:, 0]]
 
 
-# --- what is stored ----------------------------------------------------------
-
-
 def test_languages_are_stored_as_one_code_per_word(dataset):
     """Oracle: hand-written. A tuple per row, upper case, one entry per word."""
     expected = [
@@ -111,9 +108,6 @@ def test_a_missing_language_column_means_english(tmp_path, load):
     assert [example.input_languages for example in dataset.examples] == [("EN", "EN"), ("EN",)]
     assert [example.target_languages for example in dataset.examples] == [("EN", "EN"), ("EN",)]
     assert lang_names(dataset, dataset[0:2]) == ["EN", "EN"]
-
-
-# --- rows encode in their own languages ---------------------------------------
 
 
 def test_a_spanish_phrase_row_gets_spanish_phonemes(dataset):
@@ -184,9 +178,6 @@ def test_a_shuffle_moves_each_rows_languages_with_its_word(dataset):
         dataset.shuffle(len(dataset), seed=seed)
         assert sorted(stored(dataset)) == before
     assert stored(dataset) != order_before, "the shuffles must have moved something"
-
-
-# --- a bad cell raises at load, naming the row --------------------------------
 
 
 @pytest.mark.parametrize(
@@ -298,9 +289,6 @@ def test_the_load_error_is_the_tokenizers_own_message(tmp_path, load, shared_tok
     with pytest.raises(ValueError) as at_load:
         load(write_csv(tmp_path / "bad.csv", [("me", "EN"), ("no", "FR")]))
     assert str(at_load.value) == f"Row 1 ('no', language 'FR'): {direct.value}"
-
-
-# --- pkl cells ------------------------------------------------------------------
 
 
 def test_a_pkl_file_may_hold_lists_or_tuples_of_codes(tmp_path, load, dataset):

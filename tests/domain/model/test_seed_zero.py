@@ -1,10 +1,10 @@
 """Zero is a seed like any other.
 
-``Model.__init__`` decides whether to seed by testing the truth of
-``model_config.seed``. Zero is a perfectly ordinary seed and a perfectly falsy int, so a
-model asked for ``seed=0`` is built from whatever state the global RNG happened to be in.
-Nothing warns. The run looks seeded, the config records a seed, and the weights are
-different every time, for that one seed value only.
+``Model.__init__`` seeds when ``model_config.seed is not None``. The defect is a test of
+its truth: zero is a perfectly ordinary seed and a perfectly falsy int, so a model asked
+for ``seed=0`` would be built from whatever state the global RNG happened to be in.
+Nothing would warn. The run would look seeded, the config would record a seed, and the
+weights would be different every time, for that one seed value only.
 
 The oracle is the behaviour of ``set_seed`` (``bridge/utils/helper_functions.py``): it
 calls ``torch.manual_seed``, and every parameter here is drawn from that one global
@@ -13,12 +13,12 @@ same seed must agree bit for bit, and ``torch.equal`` rather than a tolerance is
 comparator, since a tolerance would pass a model that was never seeded at all as long as
 the two draws happened to land close.
 
-``seed=1`` is the control. It exercises the same code along the same path and must pass
-both before and after the fix; if it ever fails, the defect is in this file rather than in
+``seed=1`` is the control. It exercises the same code along the same path and passes
+under either test; if it ever fails, the defect is in this file rather than in
 ``Model``. The complementary control is that different seeds must produce *different*
 weights, which is what rules out the trivial pass where every model comes out the same.
 
-``seed=None`` is the third case and the reason the fix is ``is not None`` rather than a
+``seed=None`` is the third case and the reason the check is ``is not None`` rather than a
 truthiness test that also happens to accept zero: absent means unseeded, and unseeded
 models must still differ from one another.
 """
@@ -34,7 +34,6 @@ D_MODEL = 16
 
 
 def build(seed: int | None) -> Model:
-    """A small model whose only varying input is the seed."""
     return Model(ModelConfig(vocab=TEST_VOCAB, d_model=D_MODEL, nhead=2, seed=seed))
 
 
@@ -59,9 +58,9 @@ def test_same_seed_gives_bitwise_identical_parameters(seed):
     """The defect at seed=0, and its control at seed=1.
 
     Initialization draws from the generator ``set_seed`` seeds, so the same seed must
-    reproduce the same weights exactly. seed=1 takes the identical path and passes today;
-    seed=0 is falsy and skips the seeding call, so its two models are built from an
-    uncontrolled generator.
+    reproduce the same weights exactly. Under a truthiness test seed=0 is falsy and skips
+    the seeding call, so its two models are built from an uncontrolled generator; seed=1
+    takes the identical path and passes either way.
     """
     difference = first_difference(build(seed), build(seed))
     assert difference is None, (
@@ -86,7 +85,7 @@ def test_different_seeds_give_different_parameters():
 def test_absent_seed_leaves_the_model_unseeded():
     """seed=None must stay unseeded, which is what makes zero a real distinction.
 
-    The fix is ``is not None``, not ``>= 0`` or a default. Constructing a model consumes
+    The check is ``is not None``, not ``>= 0`` or a default. Constructing a model consumes
     randomness from the global generator, so two unseeded models drawn back to back are
     built from different states and must differ.
     """

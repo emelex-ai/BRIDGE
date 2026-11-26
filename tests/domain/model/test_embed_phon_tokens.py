@@ -1,19 +1,17 @@
-"""Pins the semantics of the phonological embedding path.
+"""The semantics of the phonological embedding path.
 
 A phoneme's embedding is the *mean of its active phonetic features'* embeddings and
-nothing else: it carries no position, which is read inside self-attention. Issue #221 replaced a Python double loop over ragged feature lists
-with two entry points over the same underlying operation:
+nothing else: it carries no position, which is read inside self-attention. Two entry
+points share that operation (issue #221):
 
 * :meth:`Model.embed_phon_tokens` takes ``(B, L)`` phoneme row ids, used for training and
   teacher forcing. Gathers from a per-phoneme table precomputed once per call.
 * :meth:`Model.embed_phon_vectors` takes ``(B, L, V)`` binary feature vectors, used during
   generation, where a sampled vector need not be any real phoneme.
 
-The assertions here are the same contract the pre-refactor tests stated; only the way the
-inputs are spelled has changed. The mean, the divisor, the per-position independence and
-the gradient flow are all still pinned. Arbitrary feature sets are expressed through
-``embed_phon_vectors`` because the row table is fixed by ``phonreps.csv`` and cannot be
-made to contain a hand-picked feature combination.
+Arbitrary feature sets are expressed through ``embed_phon_vectors`` because the row table
+is fixed by ``phonreps.csv`` and cannot be made to contain a hand-picked feature
+combination.
 """
 
 import pytest
@@ -47,9 +45,6 @@ def rows_with_feature_counts() -> dict[int, int]:
     return {int(c): int((counts == c).nonzero()[0]) for c in counts.unique()}
 
 
-# --- shape and the defining property --------------------------------------
-
-
 def test_output_shape_is_batch_by_seq_by_dmodel(model):
     rows = torch.zeros((4, 2), dtype=torch.long)
     assert model.embed_phon_tokens(rows).shape == (4, 2, D_MODEL)
@@ -57,7 +52,6 @@ def test_output_shape_is_batch_by_seq_by_dmodel(model):
 
 
 def test_each_position_is_the_mean_of_its_feature_embeddings(model):
-    """The defining property: a phoneme's embedding is the mean over active features."""
     feats = [1, 5, 9]
     out = model.embed_phon_vectors(multihot(feats))
 
@@ -66,7 +60,6 @@ def test_each_position_is_the_mean_of_its_feature_embeddings(model):
 
 
 def test_row_ids_embed_as_the_mean_of_that_phonemes_features(model):
-    """The same property through the table path, for every phoneme in the table."""
     # One phoneme per batch item.
     rows = torch.arange(TABLE.num_rows).unsqueeze(1)
     out = model.embed_phon_tokens(rows)
@@ -85,13 +78,9 @@ def test_single_feature_phoneme_is_just_that_embedding(model):
 
 
 def test_the_two_entry_points_agree(model):
-    """embed_phon_tokens(rows) must equal embed_phon_vectors(the same rows' features)."""
     rows = torch.tensor([[3, 17, TABLE.row_index["[EOS]"]], [42, 8, TABLE.row_index["[PAD]"]]])
     dense = TABLE.multihot[rows]
     assert torch.allclose(model.embed_phon_tokens(rows), model.embed_phon_vectors(dense), atol=1e-6)
-
-
-# --- position handling -----------------------------------------------------
 
 
 def test_a_phoneme_embeds_the_same_at_every_position(model):
@@ -108,11 +97,7 @@ def test_a_phoneme_embeds_the_same_at_every_position(model):
     assert not torch.equal(model.embed_phon_tokens(torch.tensor([[6]]))[0, 0], by_row[0, 0])
 
 
-# --- independence ----------------------------------------------------------
-
-
 def test_variable_feature_counts_within_one_batch(model):
-    """Feature counts differ across positions AND across batch items."""
     dense = torch.zeros((2, 2, V))
     sets = [[[1], [2, 3, 4, 5]], [[6, 7, 8], [9, 10]]]
     for b, row in enumerate(sets):
@@ -128,7 +113,6 @@ def test_variable_feature_counts_within_one_batch(model):
 
 
 def test_batch_items_are_independent(model):
-    """Reordering batch items reorders rows and changes nothing else."""
     rows = torch.tensor([[1, 2], [9, 4]])
     both = model.embed_phon_tokens(rows)
     swapped = model.embed_phon_tokens(rows.flip(0))
@@ -156,9 +140,6 @@ def test_feature_order_within_a_phoneme_does_not_matter(model):
     )
 
 
-# --- edge cases ------------------------------------------------------------
-
-
 def test_padding_row_is_embedded_like_any_other(model):
     """[PAD] is a real vocabulary row here, and every padded position relies on it."""
     pad_row = TABLE.row_index["[PAD]"]
@@ -169,8 +150,8 @@ def test_padding_row_is_embedded_like_any_other(model):
 def test_featureless_phoneme_embeds_to_zero_not_nan(model):
     """phonreps.csv contains one phoneme with no active features ('_').
 
-    The old per-phoneme ``mean()`` over an empty index tensor returned NaN; the table path
-    returns the zero vector. A deliberate improvement, pinned so it stays deliberate.
+    A ``mean()`` over its empty index tensor is NaN; the table path returns the zero
+    vector, deliberately.
     """
     counts = TABLE.multihot.sum(-1)
     empty_rows = (counts == 0).nonzero().flatten()
@@ -185,9 +166,6 @@ def test_all_zero_feature_vector_embeds_to_zero_not_nan(model):
     out = model.embed_phon_vectors(torch.zeros((1, 1, V)))
     assert not out.isnan().any()
     assert torch.equal(out[0, 0], torch.zeros(D_MODEL))
-
-
-# --- gradients -------------------------------------------------------------
 
 
 def test_gradients_reach_the_embedding_table(model):

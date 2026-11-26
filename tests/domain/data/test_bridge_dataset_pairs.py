@@ -68,9 +68,6 @@ def assert_batch_is(batch, tokenizer, examples):
         assert got[name].dtype == tensor.dtype and torch.equal(got[name], tensor), name
 
 
-# --- what a row holds --------------------------------------------------------
-
-
 def test_a_row_is_stored_as_one_example_of_four_fields(pairs):
     """Oracle: hand-written. Each side keeps its own string and one code per word."""
     assert pairs.examples[:5] == [
@@ -119,9 +116,6 @@ def test_input_and_target_widths_are_independent(pairs):
     assert batch.target.orth.ids.shape == (1, 2 + len("la con"))
     assert batch.target.orth.labels.shape == (1, 2 + len("la con"))
     assert batch.input.phon.ids.shape[1] != batch.target.phon.ids.shape[1] + 1
-
-
-# --- target_raw is required ---------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -249,9 +243,6 @@ def test_repetition_is_a_file_whose_two_columns_match(tmp_path, load):
     assert_batch_is(dataset[0:2], dataset.tokenizer, dataset.examples)
 
 
-# --- the default for target_language -----------------------------------------
-
-
 @pytest.mark.parametrize(
     ("header", "row", "expected"),
     [
@@ -359,9 +350,6 @@ def test_a_bad_target_language_cell_raises_at_load_naming_the_row(tmp_path, load
         load(write_csv(tmp_path / "bad.csv", rows))
 
 
-# --- pronunciations ----------------------------------------------------------
-
-
 @pytest.mark.parametrize("bad", [0, 1])
 def test_a_target_with_no_pronunciation_raises_when_its_row_is_read(tmp_path, load, bad):
     """Oracle: the lexicon. "the" has no Spanish entry, so "the" tagged ES is no target.
@@ -420,9 +408,6 @@ def test_a_row_without_a_string_on_either_side_is_left_out(tmp_path, load, caplo
         dataset = load(str(path))
     assert dataset.examples == [Example("no", ("ES",), "no", ("ES",))]
     assert "Skipping row 1" in caplog.text and "Skipping row 2" in caplog.text
-
-
-# --- a shuffle moves whole rows -----------------------------------------------
 
 
 def test_a_shuffle_keeps_each_rows_four_fields_together(pairs):
