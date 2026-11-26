@@ -51,11 +51,8 @@ def dataset(tmp_path_factory):
     """Eight common words. The dataset is only here so a real pipeline can be built;
     nothing in this file trains, and constructing the tokenizer is the slow part."""
     csv = tmp_path_factory.mktemp("data") / "words.csv"
-    csv.write_text(
-        "word_raw\n"
-        + "\n".join(["long", "pencil", "cat", "dog", "read", "write", "sun", "moon"])
-        + "\n"
-    )
+    words = ["long", "pencil", "cat", "dog", "read", "write", "sun", "moon"]
+    csv.write_text("word_raw,target_raw\n" + "".join(f"{word},{word}\n" for word in words))
     return BridgeDataset(dataset_config=DatasetConfig(dataset_filepath=str(csv)))
 
 
@@ -183,6 +180,119 @@ def test_a_corrupt_checkpoint_raises_rather_than_resuming_from_nothing(dataset, 
     pipeline.training_config.checkpoint_path = good
     pipeline.load_model(good)
     assert pipeline.start_epoch == NEXT_EPOCH
+
+
+def test_a_checkpoint_of_another_model_is_refused_by_name_and_the_model_left_alone(
+    dataset, state, tmp_path
+):
+    """Oracle: the rule that nothing loads with a tensor missing or left over, and the
+    counts, worked out by hand.
+
+    The checkpoint holds two tables of position embeddings, which this model has no place
+    for, and lacks ``global_embedding``, which it has. That is 2 of the checkpoint's 168
+    tensors and 1 of the model's 167. The error gives both counts and names the first of
+    each, in a message short enough to read.
+
+    The refusal comes before any weight is copied. ``linear_orthography_decoder.weight``
+    is in both and differs in the checkpoint, and after the refusal the model still holds
+    its own. Left to ``load_state_dict``, it would hold the checkpoint's.
+
+    The control is the unedited checkpoint through the same pipeline, which loads.
+    """
+    shared = "linear_orthography_decoder.weight"
+    weights = dict(state["model_state_dict"])
+    weights["orth_position_embedding.weight"] = torch.zeros(30, 32)
+    weights["phon_position_embedding.weight"] = torch.zeros(30, 32)
+    weights[shared] = weights[shared] + 1.0
+    del weights["global_embedding"]
+    bad = write_checkpoint(
+        {**state, "model_state_dict": weights}, tmp_path / "bad" / "model_epoch_9.pth"
+    )
+    good = write_checkpoint(state, tmp_path / "good" / "model_epoch_9.pth")
+
+    pipeline = build_pipeline(dataset, tmp_path / "artifacts")
+    before = pipeline.model.state_dict()[shared].clone()
+    with pytest.raises(RuntimeError) as raised:
+        pipeline.load_model(bad)
+
+    message = str(raised.value)
+    assert message == (
+        f"{bad} does not hold this model's weights. Tensors in it with no place in the "
+        "model: 2 of 168, the first 'orth_position_embedding.weight'. Tensors of the model "
+        "missing from it: 1 of 167, the first 'global_embedding'."
+    )
+    assert torch.equal(pipeline.model.state_dict()[shared], before)
+    assert pipeline.start_epoch == 0
+
+    pipeline.load_model(good)
+    assert pipeline.start_epoch == NEXT_EPOCH
+
+
+@pytest.mark.parametrize(
+    ("fault", "expected"),
+    [
+        ("left over", "Tensors in it with no place in the model: 1 of 168, the first 'extra'."),
+        (
+            "missing",
+            "Tensors of the model missing from it: 1 of 167, the first 'global_embedding'.",
+        ),
+    ],
+    ids=["left_over", "missing"],
+)
+def test_a_checkpoint_wrong_in_one_way_reports_that_way_only(
+    dataset, state, tmp_path, fault, expected
+):
+    """Each half of the message alone: a tensor left over, and a tensor missing."""
+    weights = dict(state["model_state_dict"])
+    if fault == "left over":
+        weights["extra"] = torch.zeros(1)
+    else:
+        del weights["global_embedding"]
+    bad = write_checkpoint({**state, "model_state_dict": weights}, tmp_path / "model_epoch_9.pth")
+
+    with pytest.raises(RuntimeError) as raised:
+        build_pipeline(dataset, tmp_path / "artifacts").load_model(bad)
+    assert str(raised.value) == f"{bad} does not hold this model's weights. {expected}"
+
+
+def test_a_checkpoint_of_another_shape_is_refused_and_no_tensor_is_overwritten(
+    dataset, state, tmp_path
+):
+    """Oracle: the rule that a refused load leaves the model as it was, checked on every
+    tensor, bitwise.
+
+    The checkpoint names exactly the model's tensors, and one has another shape: its
+    ``global_embedding`` holds one memory row where the model holds two, which is what a
+    checkpoint saved at ``d_embedding=1`` looks like to a model built at the default.
+    Every other tensor in it fits and differs from the model's by one.
+
+    The control is ``load_state_dict`` on a model built the same way. It raises as well,
+    after copying in the tensors that fit, so an overwrite is something this test sees.
+    """
+    weights = {name: tensor + 1.0 for name, tensor in state["model_state_dict"].items()}
+    weights["global_embedding"] = weights["global_embedding"][:, :1]
+    bad = write_checkpoint({**state, "model_state_dict": weights}, tmp_path / "model_epoch_9.pth")
+
+    def overwritten(model, before) -> int:
+        after = model.state_dict()
+        return sum(not torch.equal(before[name], after[name]) for name in before)
+
+    pipeline = build_pipeline(dataset, tmp_path / "artifacts")
+    before = {name: tensor.clone() for name, tensor in pipeline.model.state_dict().items()}
+    with pytest.raises(RuntimeError) as raised:
+        pipeline.load_model(bad)
+
+    assert str(raised.value) == (
+        f"{bad} does not hold this model's weights. Tensors of another shape: 1 of 167, "
+        "the first 'global_embedding', (1, 1, 32) where the model has (1, 2, 32)."
+    )
+    assert overwritten(pipeline.model, before) == 0
+    assert pipeline.start_epoch == 0
+
+    control = build_pipeline(dataset, tmp_path / "artifacts").model
+    with pytest.raises(RuntimeError, match="size mismatch for global_embedding"):
+        control.load_state_dict(weights)
+    assert overwritten(control, before) > 0, "control: torch's own refusal overwrites nothing"
 
 
 def test_start_epoch_is_what_a_callers_own_loop_resumes_from(dataset, state, tmp_path):

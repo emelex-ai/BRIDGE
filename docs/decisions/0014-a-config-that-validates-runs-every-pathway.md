@@ -1,6 +1,10 @@
 # 0014. A config that validates builds a model that runs every pathway
 
-Status: Accepted
+Status: Accepted, amended by [0017](0017-positions-are-computed-for-any-length.md)
+
+> The floors and the divisibility rule still hold. Two details are amended. `nhead` must
+> divide `d_model` into heads of two or more dimensions, and the same validator, named
+> `heads_fit_the_width`, makes both checks. `d_embedding` defaults to 2. See 0017.
 Date: 2026-10-09
 
 ## Context

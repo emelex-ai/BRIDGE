@@ -1,6 +1,17 @@
 # 0015. Language belongs to each word of a row
 
-Status: Accepted
+Status: Accepted, amended by [0016](0016-a-training-example-is-an-input-and-a-target.md)
+and [0017](0017-positions-are-computed-for-any-length.md)
+
+> The rules for languages this record chose still hold. Four details are amended. The
+> tokenizer's calls are `encode_input` and `encode_target`, and a word with no
+> pronunciation gives an input whose `phon` is `None`, or no target. `languages` is one
+> entry per row and nothing else. A first row with no pronunciation loads and raises when
+> it is read, like any other row. A phonology-only input has no orthographic placeholder,
+> and the caller names the language orthographic generation starts in. See 0016.
+>
+> One more detail is amended. `VocabSpec.orth_language_ids` is required, so the
+> `_without_switches` accuracy pair is always reported and is never absent. See 0017.
 Date: 2026-11-22
 Amends [0008](0008-generation-seeds-the-training-prefix.md) and one sentence of
 [0004](0004-orthographic-teacher-forcing-alignment.md)

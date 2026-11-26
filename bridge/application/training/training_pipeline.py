@@ -9,11 +9,11 @@ from bridge.application.training.ortho_metrics import calculate_orth_metrics
 from bridge.application.training.phon_metrics import calculate_phon_metrics
 from bridge.core.phonreps import load_phoneme_table
 from bridge.domain.data import BridgeDataset
-from bridge.domain.datamodels import EncodingComponent, TrainingConfig, TrainingEvent
+from bridge.domain.datamodels import BridgeBatch, BridgeTarget, TrainingConfig, TrainingEvent
 from bridge.domain.model import Model
 from bridge.domain.model.model import PATHWAY_INPUTS, WRITES_ORTH, WRITES_PHON
 
-# Per-step results: loss tensors + scalar metrics + the JSON-encoded `word`.
+# Per-step results: loss tensors, scalar metrics and the JSON-encoded `input` and `target`.
 type MetricsDict = dict[str, torch.Tensor | float | str]
 
 
@@ -55,13 +55,13 @@ class TrainingPipeline:
     def device(self) -> torch.device:
         """Where the model is, asked rather than told.
 
-        A stored snapshot of ``device_manager.device`` plus a ``model.to(...)`` in
-        ``__init__`` silently undid the caller's own placement: a model explicitly moved to
-        CUDA came back on CPU, all 169 parameters, and the run trained an order of
-        magnitude slower with nothing but an INFO line to say so. That is the failure
-        ``docs/decisions/0007`` fixed inside :class:`Model`, reintroduced one layer up. The
-        pipeline follows the model now. A caller who wants the process device writes
-        ``model.to(device_manager.device)``, which is one visible line.
+        The pipeline follows the model and never moves it. A stored snapshot of
+        ``device_manager.device`` plus a ``model.to(...)`` in ``__init__`` would silently
+        undo the caller's own placement: a model explicitly moved to CUDA comes back on
+        CPU, every parameter of it, and the run trains an order of magnitude slower with
+        nothing but an INFO line to say so. See ``docs/decisions/0012``. A caller who
+        wants the process device writes ``model.to(device_manager.device)``, which is one
+        visible line.
         """
         return self.model.device
 
@@ -76,116 +76,77 @@ class TrainingPipeline:
         """
         return load_phoneme_table(device=self.device).phonetic_features
 
-    def forward(
-        self, orthography: EncodingComponent, phonology: EncodingComponent
-    ) -> dict[str, torch.Tensor]:
+    def forward(self, batch: BridgeBatch) -> dict[str, torch.Tensor]:
         """Run the configured pathway over one batch.
 
-        Which tensors a pathway consumes comes from ``PATHWAY_INPUTS`` rather than being
-        written out per pathway. Four hand-written branches spelled the same mapping four
-        times, and the baseline-capture harness spells it a fifth, so renaming one keyword
-        meant finding every copy or the golden master would keep recording the old
-        convention.
+        The encoders read ``batch.input`` and the decoders are fed ``batch.target``. Which
+        modalities of each a pathway takes comes from ``PATHWAY_INPUTS``, the one table,
+        and is not written out per pathway here.
         """
         pathway = self.training_config.training_pathway
-        component = {"orth": orthography, "phon": phonology}
         kwargs: dict[str, torch.Tensor] = {}
         for modality, side in PATHWAY_INPUTS[pathway]:
-            part = component[modality]
-            kwargs[f"{modality}_{side}_input"] = getattr(part, f"{side}_input_ids")
-            kwargs[f"{modality}_{side}_pad_mask"] = getattr(part, f"{side}_pad_mask")
+            part = (
+                batch.input.read(modality, pathway)
+                if side == "enc"
+                else getattr(batch.target, modality)
+            )
+            kwargs[f"{modality}_{side}_input"] = part.ids
+            kwargs[f"{modality}_{side}_pad_mask"] = part.pad_mask
         return self.model(task=pathway, **kwargs)
 
     def compute_loss(
-        self,
-        logits: dict[str, torch.Tensor],
-        orthography: EncodingComponent,
-        phonology: EncodingComponent,
+        self, logits: dict[str, torch.Tensor], target: BridgeTarget
     ) -> dict[str, torch.Tensor]:
+        """Score the logits against the target's labels, for the modalities this pathway
+        writes.
+
+        Decoder position ``i`` is scored against ``labels[:, i]``. The tokenizer builds
+        the labels beside the decoder ids, and that is where the alignment is defined.
+        """
         pathway = self.training_config.training_pathway
         vocab = self.model.model_config.vocab
         losses: dict[str, torch.Tensor] = {}
 
         if pathway in WRITES_PHON:
             losses["phon_loss"] = torch.nn.functional.cross_entropy(
-                logits["phon"], phonology.phon_targets, ignore_index=vocab.phon_pad_id
+                logits["phon"], target.phon.labels, ignore_index=vocab.phon_pad_id
             )
 
         if pathway in WRITES_ORTH:
-            # Teacher forcing: decoder position i is scored against the token at i+1. The
-            # character tokenizer lays each sequence out as
-            #     enc = [LANG, BOS, ...chars, EOS, PAD...]
-            #     dec = [LANG, BOS, ...chars,      PAD...]
-            # so the encoder ids shifted left by one give the next token for every decoder
-            # position, at the same width. The `[BOS] -> first character` pair this creates
-            # is what generation needs: `orthography_decoder_loop` seeds the same prefix and
-            # the token it samples next must be the word's first character. See
-            # docs/decisions/0004-orthographic-teacher-forcing-alignment.md.
-            orth_target = orthography.enc_input_ids[:, 1:]
-            self._check_orth_target_width(logits["orth"], orth_target)
             losses["orth_loss"] = torch.nn.functional.cross_entropy(
-                logits["orth"], orth_target, ignore_index=vocab.orth_pad_id
+                logits["orth"], target.orth.labels, ignore_index=vocab.orth_pad_id
             )
-
-        if not losses:
-            raise ValueError(f"No loss configured for training_pathway={pathway!r}")
 
         # The pathway decides how many terms there are; summing the ones present replaces
         # a four-branch cascade over (orth_loss, phon_loss) presence.
         return {"loss": torch.stack(list(losses.values())).sum(), **losses}
 
-    @staticmethod
-    def _check_orth_target_width(orth_logits: torch.Tensor, orth_target: torch.Tensor) -> None:
-        """Fail with both shapes named when the target and the logits disagree.
-
-        Left to ``cross_entropy`` this reads ``Expected target size [8, 8], got [8, 7]``,
-        which names neither tensor nor where either came from. That message is what issue
-        #225 presented as, and it cost more to diagnose than it should have.
-        """
-        if orth_target.shape[1] != orth_logits.shape[-1]:
-            raise ValueError(
-                "Orthographic loss target and logits disagree on how many positions the "
-                f"decoder scored: target {tuple(orth_target.shape)} covers "
-                f"{orth_target.shape[1]} positions, logits {tuple(orth_logits.shape)} cover "
-                f"{orth_logits.shape[-1]}. The target must be enc_input_ids shifted left by "
-                "one, giving exactly one target per decoder input position."
-            )
-
     def compute_metrics(
-        self,
-        logits: dict[str, torch.Tensor],
-        orthography: EncodingComponent,
-        phonology: EncodingComponent,
+        self, logits: dict[str, torch.Tensor], target: BridgeTarget
     ) -> dict[str, float]:
-        """The metrics of the modalities this pathway writes.
+        """The metrics of the modalities this pathway writes, against the target's labels.
 
         Orthographic accuracy comes as two pairs: every scored token, and the
-        ``_without_switches`` pair that leaves language tokens out. The second pair needs
-        ``VocabSpec.orth_language_ids``, which ``VocabSpec.from_tokenizer`` fills in. When
-        the spec does not name them the pair is absent from the result, not estimated.
+        ``_without_switches`` pair that leaves language tokens out, which
+        ``VocabSpec.orth_language_ids`` names.
         """
         pathway = self.training_config.training_pathway
+        vocab = self.model.model_config.vocab
         metrics: dict[str, float] = {}
         if pathway in WRITES_PHON:
             metrics.update(
                 calculate_phon_metrics(
-                    logits,
-                    phonology,
-                    self.phon_reps,
-                    phon_pad_id=self.model.model_config.vocab.phon_pad_id,
+                    logits, target.phon.labels, self.phon_reps, phon_pad_id=vocab.phon_pad_id
                 )
             )
         if pathway in WRITES_ORTH:
-            vocab = self.model.model_config.vocab
             metrics.update(
                 calculate_orth_metrics(
                     logits,
-                    orthography,
+                    target.orth.labels,
                     orth_pad_id=vocab.orth_pad_id,
-                    # Pickle restores a VocabSpec without validating it, so one taken
-                    # from a checkpoint may lack the attribute altogether. It is read
-                    # with a default, as `phon_table_fingerprint` is in `load_model`.
-                    orth_language_ids=getattr(vocab, "orth_language_ids", None),
+                    orth_language_ids=vocab.orth_language_ids,
                 )
             )
         return metrics
@@ -193,28 +154,24 @@ class TrainingPipeline:
     def _resolve(self, dataset: BridgeDataset, batch_slice: slice) -> slice:
         """Check a caller-supplied slice against the dataset before anything indexes it.
 
-        The library used to build every slice itself and could assume they were sound.
-        The caller supplies the partition now (decision 0013), so the assumptions have to
-        become checks. Each of these was reachable and silent or opaque:
+        The caller supplies the partition (decision 0013), so nothing about a slice is
+        assumed. Three kinds are refused, each by name:
 
-        * a ``step`` was dropped on the floor. ``_create_sub_slices`` rebuilt the slice
-          from ``.start`` and ``.stop`` only, so ``slice(0, 16, 2)`` trained on 16 rows
-          while the event's ``word`` field named the 8 the caller asked for.
-        * a ``stop`` past the end either trained a short batch in silence or raised
-          ``max() iterable argument is empty`` from inside the tokenizer, naming neither
-          the slice nor the dataset.
-        * an empty slice reached the model and failed somewhere below here.
+        * one with a ``step``. A batch is contiguous rows, and the slice returned here
+          carries no step, so the rows trained would not be the rows named.
+        * one whose ``stop`` is past the end, which would train a short batch in
+          silence.
+        * an empty one, which has nothing to step over.
         """
         start, stop, step = batch_slice.indices(len(dataset))
         if step != 1:
             raise ValueError(
-                f"batch_slice {batch_slice} has step {step}; a step is silently dropped when "
-                f"the batch is indexed, so the rows trained would not be the rows named. "
+                f"batch_slice {batch_slice} has step {step}; a batch is contiguous rows. "
                 f"Pass an explicit list of contiguous slices instead."
             )
         if batch_slice.stop is not None and batch_slice.stop > len(dataset):
             raise ValueError(
-                f"batch_slice {batch_slice} ends past the dataset, which has {len(dataset)} words."
+                f"batch_slice {batch_slice} ends past the dataset, which has {len(dataset)} rows."
             )
         if start >= stop:
             raise ValueError(f"batch_slice {batch_slice} is empty; there is nothing to step over.")
@@ -228,36 +185,31 @@ class TrainingPipeline:
     ) -> MetricsDict:
         """Run one optimizer step over one slice.
 
-        Always steps, and puts the model in train mode to do it. It used to gate every
-        part of itself on ``self.model.training``, which meant a model left in ``eval``
-        turned the step into a silent no-op: one ``model.generate(...)`` call from inside
-        a caller's loop set ``eval`` and never restored it, and the remaining steps moved
-        0 of 169 parameters while the reported loss went on falling, because each step
-        scores a different batch. Inferring intent from a mutable flag was the mistake.
-        :meth:`evaluate` is the no-grad counterpart, and it says so in its name.
+        Always steps, and puts the model in train mode to do it. Nothing here is gated on
+        ``self.model.training``. A step that read that flag would be a silent no-op on a
+        model left in ``eval``: no parameter moves while the reported loss goes on
+        falling, because each step scores a different batch. Intent is not inferred from
+        a mutable flag. :meth:`evaluate` is the no-grad counterpart, and it says so in
+        its name.
         """
         batch_slice = self._resolve(dataset, batch_slice)
         self.model.train()
         self.optimizer.zero_grad()
 
-        # Placed at the point of use, not at construction. The dataset builds its encodings
+        # Placed at the point of use, not at construction. The dataset builds its batches
         # on the process device and the model goes wherever the caller put it, so something
         # has to reconcile the two; doing it here rather than by moving the model in
         # `__init__` keeps the caller's placement authoritative (decision 0012) and still
-        # holds when the model moves mid-run. `BridgeEncoding.to` returns self when the
-        # device already matches.
+        # holds when the model moves mid-run.
         batch = dataset[batch_slice].to(self.device)
-        orthography, phonology = batch.orthographic, batch.phonological
-        logits = self.forward(orthography, phonology)
-        losses = self.compute_loss(logits, orthography, phonology)
+        logits = self.forward(batch)
+        losses = self.compute_loss(logits, batch.target)
 
         losses["loss"].backward()
         self.optimizer.step()
         self.optimizer.zero_grad()
 
-        return self._report(
-            losses, logits, orthography, phonology, dataset, batch_slice, calculate_metrics
-        )
+        return self._report(losses, logits, batch.target, dataset, batch_slice, calculate_metrics)
 
     @torch.no_grad()
     def evaluate(
@@ -274,17 +226,15 @@ class TrainingPipeline:
         """
         self.model.eval()
         batch = dataset[self._resolve(dataset, batch_slice)].to(self.device)
-        orthography, phonology = batch.orthographic, batch.phonological
-        logits = self.forward(orthography, phonology)
-        losses = self.compute_loss(logits, orthography, phonology)
-        return self._report(
-            losses, logits, orthography, phonology, dataset, batch_slice, calculate_metrics
-        )
+        logits = self.forward(batch)
+        losses = self.compute_loss(logits, batch.target)
+        return self._report(losses, logits, batch.target, dataset, batch_slice, calculate_metrics)
 
     def _report(
-        self, losses, logits, orthography, phonology, dataset, batch_slice, calculate_metrics
+        self, losses, logits, target, dataset, batch_slice, calculate_metrics
     ) -> MetricsDict:
-        """Package one batch's losses and optional metrics for the caller.
+        """Package one batch's losses and optional metrics for the caller, with the input
+        and target strings of the rows it covered.
 
         Losses are detached before they leave. These are the tensors ``backward()`` just
         ran on, so handing them out live means every ``TrainingEvent`` a caller keeps pins
@@ -295,8 +245,10 @@ class TrainingPipeline:
         """
         metrics: MetricsDict = {key: value.detach() for key, value in losses.items()}
         if calculate_metrics:
-            metrics.update(self.compute_metrics(logits, orthography, phonology))
-        metrics["word"] = json.dumps(dataset.words[batch_slice])
+            metrics.update(self.compute_metrics(logits, target))
+        examples = dataset.examples[batch_slice]
+        metrics["input"] = json.dumps([example.input for example in examples])
+        metrics["target"] = json.dumps([example.target for example in examples])
         return metrics
 
     def train_steps(
@@ -373,10 +325,49 @@ class TrainingPipeline:
         wants best-effort resume writes the ``try`` themselves.
         """
         checkpoint = torch.load(model_path, weights_only=False)
+        self._refuse_weights_of_another_model(checkpoint["model_state_dict"], model_path)
         self._warn_on_phoneme_table_drift(checkpoint, model_path)
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self._set_start_epoch(checkpoint, model_path)
+
+    def _refuse_weights_of_another_model(self, state: dict, model_path: str) -> None:
+        """Raise unless ``state`` holds exactly the tensors the model has, name for name
+        and shape for shape.
+
+        ``load_state_dict`` refuses such a checkpoint too, but only after copying in every
+        tensor that does fit, and by listing every name on both sides, which for another
+        architecture is hundreds. Checked here first, the model is left as it was, and
+        the error says how many tensors differ and names the first of each kind.
+        """
+        expected = self.model.state_dict()
+        unknown = [name for name in state if name not in expected]
+        absent = [name for name in expected if name not in state]
+        reshaped = [
+            name for name in expected if name in state and state[name].shape != expected[name].shape
+        ]
+        found = []
+        if unknown:
+            found.append(
+                f"Tensors in it with no place in the model: {len(unknown)} of {len(state)}, "
+                f"the first {unknown[0]!r}."
+            )
+        if absent:
+            found.append(
+                f"Tensors of the model missing from it: {len(absent)} of {len(expected)}, "
+                f"the first {absent[0]!r}."
+            )
+        if reshaped:
+            first = reshaped[0]
+            found.append(
+                f"Tensors of another shape: {len(reshaped)} of {len(expected)}, the first "
+                f"{first!r}, {tuple(state[first].shape)} where the model has "
+                f"{tuple(expected[first].shape)}."
+            )
+        if found:
+            raise RuntimeError(
+                f"{model_path} does not hold this model's weights. {' '.join(found)}"
+            )
 
     def _set_start_epoch(self, checkpoint: dict, model_path: str) -> None:
         """Decide which epoch a resumed run counts from.
@@ -423,9 +414,7 @@ class TrainingPipeline:
         no longer mean what they did, and that is the caller's judgement to make.
         """
         saved = getattr(checkpoint.get("model_config"), "vocab", None)
-        # Specs written before the field carry no fingerprint; pickle restores __dict__
-        # verbatim, so the attribute can be absent rather than None.
-        recorded = getattr(saved, "phon_table_fingerprint", None)
+        recorded = saved.phon_table_fingerprint if saved is not None else None
         current = self.model.phon_table_fingerprint
         if recorded is not None and recorded != current:
             self.logger.warning(

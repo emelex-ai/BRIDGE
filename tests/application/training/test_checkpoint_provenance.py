@@ -32,10 +32,8 @@ def pipeline():
     return stub
 
 
-def checkpoint(fingerprint, missing=False):
+def checkpoint(fingerprint):
     vocab = TEST_VOCAB.model_copy(update={"phon_table_fingerprint": fingerprint})
-    if missing:  # pickle restores __dict__ verbatim, so the field can be absent entirely
-        del vocab.__dict__["phon_table_fingerprint"]
     return {"model_config": SimpleNamespace(vocab=vocab)}
 
 
@@ -53,10 +51,11 @@ def test_a_matching_fingerprint_is_silent(pipeline, caplog):
     assert caplog.text == ""
 
 
-@pytest.mark.parametrize("ckpt", [checkpoint(None), checkpoint(None, missing=True), {}])
-def test_a_checkpoint_predating_the_field_is_silent(pipeline, caplog, ckpt):
-    """Absent, None, and no config at all must all load without noise, and without
-    raising, which a bare attribute read on an old pickled spec would do."""
+@pytest.mark.parametrize("ckpt", [checkpoint(None), {}])
+def test_a_checkpoint_recording_no_fingerprint_is_silent(pipeline, caplog, ckpt):
+    """A fingerprint of None, and no config at all, both load without noise and without
+    raising. A spec built by hand may leave the fingerprint out, and then there is
+    nothing to compare."""
     with caplog.at_level(logging.WARNING, logger=LOGGER):
         pipeline._warn_on_phoneme_table_drift(ckpt, "model.pth")
     assert caplog.text == ""

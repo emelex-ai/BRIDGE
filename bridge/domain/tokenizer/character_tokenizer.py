@@ -3,12 +3,12 @@ import string
 
 import torch
 
-from bridge.domain.datamodels.encodings import EncodingComponent
+from bridge.domain.datamodels.encodings import Target, Tokens, pad_rows
 from bridge.domain.tokenizer.languages import (
     SUPPORTED_LANGUAGES,
     UNSPECIFIED,
     Languages,
-    rows_and_languages,
+    per_row_languages,
     split_words,
 )
 from bridge.utils import device_manager
@@ -36,20 +36,13 @@ class CharacterTokenizer:
     def get_vocabulary_size(self) -> int:
         return self.vocabulary_size
 
-    def encode(
-        self,
-        list_of_strings: str | list[str],
-        languages: Languages = None,
-    ) -> EncodingComponent:
-        """Encode strings to character ids, marking the language of every word.
+    def encode_input(self, texts: list[str], languages: Languages = None) -> Tokens:
+        """Encode rows as what the orthographic encoder reads.
 
-        Each row is laid out as ``[LANG, BOS, ...chars, EOS, PAD, ...]`` for encoder input
-        and ``[LANG, BOS, ...chars, PAD, ...]`` for decoder input, where ``LANG`` is the
-        first word's language. Slicing past the BOS therefore requires ``[:, 2:]`` (skip
-        both the language token and BOS).
-
-        A language token appears again only where the language changes, directly before
-        the first character of the word that changes it, so after the whitespace::
+        Each row is laid out as ``[LANG, BOS, ...chars, EOS, PAD, ...]``, where ``LANG`` is
+        the first word's language. A language token appears again only where the language
+        changes, directly before the first character of the word that changes it, so
+        after the whitespace::
 
             the word is gato        EN EN EN ES
             [EN] [BOS] t h e _ w o r d _ i s _ [ES] g a t o [EOS]
@@ -58,39 +51,42 @@ class CharacterTokenizer:
         language holds a single language token.
 
         Args:
-            list_of_strings: A string or list of strings to encode.
-            languages: The language of every word, in the forms
-                :func:`~bridge.domain.tokenizer.languages.rows_and_languages` accepts.
+            texts: The rows to encode, a list of strings.
+            languages: The language of every word, one entry per row, in the forms
+                :func:`~bridge.domain.tokenizer.languages.per_row_languages` accepts.
                 ``None`` leaves every row unspecified, ``"--"``.
-
-        Returns:
-            An orthographic :class:`EncodingComponent`.
         """
-        rows, row_languages = rows_and_languages(list_of_strings, languages)
-        bodies = [
-            self._body(row, word_langs) for row, word_langs in zip(rows, row_languages, strict=True)
+        eos = self.char_2_idx["[EOS]"]
+        return Tokens(*self._padded([[*row, eos] for row in self._rows(texts, languages)]))
+
+    def encode_target(self, texts: list[str], languages: Languages = None) -> Target:
+        """Encode rows as what the orthographic decoder is fed and scored against.
+
+        The ids are ``[LANG, BOS, ...chars, PAD, ...]`` and the labels are the same row one
+        position on, ``[BOS, ...chars, EOS, PAD, ...]``. Decoder position ``i`` is scored
+        against the token at ``i + 1``, so ``[BOS]`` predicts the first character and the
+        last character predicts ``[EOS]``. Generation seeds the decoder with ``[LANG,
+        BOS]``, and the token it samples next must be the first character, which is what
+        that pairing trains. A mid-row language token sits in the ids and in the labels,
+        so the decoder learns to emit the switch. See ``docs/decisions/0004``.
+
+        ``texts`` and ``languages`` are as for :meth:`encode_input`.
+        """
+        rows = self._rows(texts, languages)
+        ids, pad_mask = self._padded(rows)
+        labels, _ = self._padded([[*row[1:], self.char_2_idx["[EOS]"]] for row in rows])
+        return Target(ids, pad_mask, labels)
+
+    def _rows(self, texts: list[str], languages: Languages) -> list[list[int]]:
+        """Each row as ``[LANG, BOS, ...body]``, unpadded."""
+        bos = self.char_2_idx["[BOS]"]
+        return [
+            [self.char_2_idx[word_langs[0]], bos, *self._body(text, word_langs)]
+            for text, word_langs in zip(texts, per_row_languages(texts, languages), strict=True)
         ]
-        max_length = max(len(body) for body in bodies)
-        bos, eos, pad = (self.char_2_idx[t] for t in ("[BOS]", "[EOS]", "[PAD]"))
 
-        # Rows are uniform length by construction: 3 + max_length for the encoder
-        # ([LANG], [BOS], [EOS]) and 2 + max_length for the decoder ([LANG], [BOS]).
-        enc_rows, dec_rows = [], []
-        for body, word_langs in zip(bodies, row_languages, strict=True):
-            prefix = [self.char_2_idx[word_langs[0]], bos]
-            padding = [pad] * (max_length - len(body))
-            enc_rows.append([*prefix, *body, eos, *padding])
-            dec_rows.append([*prefix, *body, *padding])
-
-        enc_input_ids = torch.tensor(enc_rows, dtype=torch.long, device=self.device)
-        dec_input_ids = torch.tensor(dec_rows, dtype=torch.long, device=self.device)
-
-        return EncodingComponent(
-            enc_input_ids=enc_input_ids,
-            enc_pad_mask=enc_input_ids == pad,
-            dec_input_ids=dec_input_ids,
-            dec_pad_mask=dec_input_ids == pad,
-        )
+    def _padded(self, rows: list[list[int]]) -> tuple[torch.Tensor, torch.Tensor]:
+        return pad_rows(rows, self.char_2_idx["[PAD]"], self.device)
 
     def _body(self, row: str, word_langs: tuple[str, ...]) -> list[int]:
         """The ids between ``[BOS]`` and ``[EOS]``: the characters, plus a language token
@@ -113,11 +109,11 @@ class CharacterTokenizer:
     ) -> list[tuple[str, list[str | None]]]:
         """Decode each row to its text and the language of each of its words.
 
-        The inverse of the layout :meth:`encode` writes. A word's language is the one in
-        force at its first character, which is the last language token before it, so a
+        The inverse of the layout :meth:`encode_input` writes. A word's language is the one
+        in force at its first character, which is the last language token before it, so a
         language token found inside a word takes effect at the next word. ``"--"`` comes
-        back as ``None``, which :meth:`encode` reads as ``"--"`` again. A row with no words
-        returns no language, so its opening token is not in the result.
+        back as ``None``, which :meth:`encode_input` reads as ``"--"`` again. A row with no
+        words returns no language, so its opening token is not in the result.
         """
         decoded = []
         for ints in list_of_ints:

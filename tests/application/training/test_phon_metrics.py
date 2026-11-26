@@ -66,7 +66,7 @@ from bridge.application.training.phon_metrics import (
 )
 from tests.vocab import PHONEME_TABLE
 
-# Feature space, where phon_targets lives. Not the orthographic 2.
+# Feature space, where the phonological labels live. Not the orthographic 2.
 PHON_PAD_ID = 35
 
 # What TrainingPipeline passes: the real phonemes' feature vectors, special-token rows and

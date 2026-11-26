@@ -1,6 +1,6 @@
 # Spec: input and target are different things
 
-Status: decisions recorded 2026-11-22. Section 1 (PR 1, language per word) is implemented, and decision record 0015, `docs/decisions/0015-language-belongs-to-each-word.md`, describes it as shipped. The numbers in section 1 are the prototype's; the record carries the ones measured on the shipped code. Sections 2 and 3 (PRs 2 and 3) are not implemented.
+Status: decisions recorded 2026-11-22. All three sections are implemented. Section 1 (PR 1, language per word) is described as shipped by decision record 0015, `docs/decisions/0015-language-belongs-to-each-word.md`. Section 2 (PR 2, input and target as types) is described as shipped by decision record 0016, `docs/decisions/0016-a-training-example-is-an-input-and-a-target.md`. Section 3 (PR 3, positions for any length) is described as shipped by decision record 0017, `docs/decisions/0017-positions-are-computed-for-any-length.md`. The numbers in this spec are the prototypes' and the research's; the records carry the ones measured on the shipped code.
 
 ## The answer
 

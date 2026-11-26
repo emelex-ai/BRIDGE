@@ -1,6 +1,13 @@
 # 0013. The caller owns the loop, in fact and not only in principle
 
-Status: Accepted
+Status: Accepted, amended by [0016](0016-a-training-example-is-an-input-and-a-target.md)
+
+> The seam this record drew still holds. What crosses it is amended. A `train` event's
+> metrics carry `input` and `target`, the strings of the rows the step covered, where
+> they carried `word`. `forward` takes a `BridgeBatch`, and `compute_loss` and
+> `compute_metrics` take its target. The orthographic labels are the target's `labels`,
+> so the second row of the table of silent conventions reads `target.orth.labels`, and
+> `_check_orth_target_width` is the `Target` type's check. See 0016.
 Date: 2026-09-19
 Supersedes part of [0006](0006-the-caller-owns-the-training-loop.md)
 

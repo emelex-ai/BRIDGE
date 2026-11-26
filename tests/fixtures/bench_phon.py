@@ -4,7 +4,7 @@ Measures the four things the refactor is meant to move, through the *public* API
 same script runs unchanged before and after:
 
     embed_phon_tokens   the double loop being replaced
-    encode              PhonemeTokenizer.encode, incl. the per-position `targets` write
+    encode              one batch through BridgeTokenizer, as an input and as a target
     train step          end-to-end o2p, so the isolated wins can be put in context
     generate            o2p, deterministic
 
@@ -46,6 +46,8 @@ from bridge.domain.model import Model  # noqa: E402
 
 DATA = "tests/domain/model/data/data.csv"
 SIZES = [int(s) for s in os.environ.get("BENCH_SIZES", "32,256,1024").split(",")]
+# The most phonemes one timed generate call may write after [BOS].
+GENERATE_CAP = 29
 
 
 def sync() -> None:
@@ -84,7 +86,7 @@ def reference_embed(model: Model, ragged) -> torch.Tensor:
     for b, row in enumerate(ragged):
         for i, feats in enumerate(row):
             out[b, i, :] = model.phonology_embedding(feats).mean(axis=0)
-    return out + model.phon_position_embedding.weight[None, :seq_len]
+    return out
 
 
 def measure(dataset, tokenizer, model, optimizer, vocab, size: int) -> dict[str, float]:
@@ -93,37 +95,44 @@ def measure(dataset, tokenizer, model, optimizer, vocab, size: int) -> dict[str,
     A function rather than a loop body so the closures below bind their operands as
     arguments instead of capturing loop variables.
     """
-    words = dataset.words[:size]
-    if len(words) < size:
-        words = (dataset.words * (size // len(dataset.words) + 1))[:size]
+    words = [example.input for example in dataset.examples]
+    words = (words * (size // len(words) + 1))[:size]
     batch_slice = slice(0, size)
 
-    encoding = dataset[batch_slice]
-    phon = encoding.phonological
-    ragged = ragged_features(phon.dec_input_ids, tokenizer)
+    inputs = dataset[batch_slice].input
+    phon = dataset[batch_slice].target.phon
+    ragged = ragged_features(phon.ids, tokenizer)
+
+    def encode() -> None:
+        tokenizer.encode_input(words)
+        tokenizer.encode_target(words)
 
     def train_step() -> None:
         optimizer.zero_grad()
         batch = dataset[batch_slice]
         logits = model(
             task="o2p",
-            orth_enc_input=batch.orthographic.enc_input_ids,
-            orth_enc_pad_mask=batch.orthographic.enc_pad_mask,
-            phon_dec_input=batch.phonological.dec_input_ids,
-            phon_dec_pad_mask=batch.phonological.dec_pad_mask,
+            orth_enc_input=batch.input.orth.ids,
+            orth_enc_pad_mask=batch.input.orth.pad_mask,
+            phon_dec_input=batch.target.phon.ids,
+            phon_dec_pad_mask=batch.target.phon.pad_mask,
         )
         loss = torch.nn.CrossEntropyLoss(ignore_index=vocab.phon_pad_id)(
-            logits["phon"], batch.phonological.phon_targets
+            logits["phon"], batch.target.phon.labels
         )
         loss.backward()
         optimizer.step()
 
     return {
         "ref": bench(lambda: reference_embed(model, ragged), n=10, warm=2),
-        "now": bench(lambda: model.embed_phon_tokens(phon.dec_input_ids)),
-        "encode": bench(lambda: tokenizer.encode(words), n=10, warm=2),
+        "now": bench(lambda: model.embed_phon_tokens(phon.ids)),
+        "encode": bench(encode, n=10, warm=2),
         "step": bench(train_step, n=10, warm=3),
-        "generate": bench(lambda: model.generate(encoding, "o2p", deterministic=True), n=5, warm=2),
+        "generate": bench(
+            lambda: model.generate(inputs, "o2p", max_new_tokens=GENERATE_CAP, deterministic=True),
+            n=5,
+            warm=2,
+        ),
     }
 
 

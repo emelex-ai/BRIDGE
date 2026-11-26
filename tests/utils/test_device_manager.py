@@ -63,7 +63,7 @@ def test_every_pathway_generates_on_a_cuda_device_requested_without_an_index(mon
 
     ``Model`` reads ``device_manager.device`` once, in ``__init__``, so the manager has to
     be in place before the model is built. Everything then really runs on the GPU: the
-    parameters, the encoding and the decode loops.
+    parameters, the input and the decode loops.
 
     ``o2p`` and ``op2op`` are the control. They reach the same decoders over the same
     tensors but skip ``_validate_device``, so they generate today and must keep generating.
@@ -75,17 +75,19 @@ def test_every_pathway_generates_on_a_cuda_device_requested_without_an_index(mon
 
     model = Model(ModelConfig(vocab=TEST_VOCAB, d_model=32, nhead=2, seed=5))
     model.to(manager.device)
-    encoding = BridgeTokenizer().encode(WORDS)
-    assert encoding is not None
-    encoding = encoding.to(manager.device)
+    tokenizer = BridgeTokenizer()
+    inputs = tokenizer.encode_input(WORDS).to(manager.device)
+    start = tokenizer.orth_start([None] * len(WORDS)).to(manager.device)
 
     assert next(model.parameters()).device.type == "cuda"
-    assert encoding.phonological.enc_pad_mask.device.type == "cuda"
+    assert inputs.phon.pad_mask.device.type == "cuda"
 
     outcomes = {}
     for pathway in ("o2p", "op2op", "p2o", "p2p", "o2o"):
         try:
-            output = model.generate(encoding, pathway, deterministic=True)
+            output = model.generate(
+                inputs, pathway, max_new_tokens=4, orth_start=start, deterministic=True
+            )
         except Exception as exc:
             outcomes[pathway] = f"{type(exc).__name__}: {exc}"
         else:

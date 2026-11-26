@@ -88,14 +88,14 @@ def test_device_is_derived_and_cannot_be_set_out_of_sync():
 def test_parameters_are_counted_so_a_new_submodule_cannot_be_missed():
     """The placement assertions above are only meaningful over everything the model owns.
 
-    169 parameters and 1 buffer at this configuration. The count is pinned so that a
+    167 parameters and 1 buffer at this configuration. The count is pinned so that a
     submodule added later, which would be the way this defect returns, shows up here as a
     changed number rather than slipping past a set comparison that never saw it.
     """
     device_manager.set_device("cpu")
     model = build()
 
-    assert sum(1 for _ in model.parameters()) == 169
+    assert sum(1 for _ in model.parameters()) == 167
     assert sum(1 for _ in model.buffers()) == 1
     assert [name for name, _ in model.named_buffers()] == ["phon_feature_matrix"]
 
@@ -110,14 +110,17 @@ def test_a_cuda_model_needs_no_explicit_to_from_the_caller():
     """
     device_manager.set_device("cuda")
     tokenizer = BridgeTokenizer()
-    encoding = tokenizer.encode(["cat", "dog"])
-    assert encoding is not None
+    inputs = tokenizer.encode_input(["cat", "dog"])
+    assert inputs.phon is not None
+    start = tokenizer.orth_start([None, None])
     model = build_from(tokenizer)
 
     assert placement(model) == [str(device_manager.device)]
 
     for pathway in ("o2p", "op2op", "p2o", "p2p", "o2o"):
-        output = model.generate(encoding, pathway, deterministic=True)
+        output = model.generate(
+            inputs, pathway, max_new_tokens=4, orth_start=start, deterministic=True
+        )
         assert output.global_encoding.device.type == "cuda"
 
 

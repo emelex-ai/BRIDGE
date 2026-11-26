@@ -15,6 +15,22 @@ vocabulary axis where the tensor has a sequence axis; and two pages labelled a p
 encoding "Encoded Orthography with GE". Each test was run against that original file and
 failed on the defect it names before it was trusted.
 
+Every page also claims which side of a training example each block reads. The boxes on the
+left are the input and the boxes on the right are the target, and they hold different words.
+An encoder is drawn reading the input. A decoder is drawn fed the target, through a
+tokenization and embedding block of its own. Those claims are checked against hooks on the
+encoders and decoders, run on the words the figure draws: the input and the target differ
+in length there, so a captured tensor can be the embedding of only one of them. A figure
+that feeds a decoder from the input's embedding cube fails, and that check was run against
+such a figure before it was trusted.
+
+Every page also claims where position enters. The two groups of blocks that hold the
+encoders and the decoders name it beside their self-attention, and no other label names it.
+That is checked against a measurement of which stages read the order of the sequence they
+are handed: each stage is run again on the tensors the forward gave it, with the sequence
+reversed. A figure whose embedding blocks say "+ Position" fails, as does one whose
+encoders do not name it, and the check was run against both before it was trusted.
+
 What a test cannot check, and what is therefore left to review: whether a label's wording
 is the clearest true description, and layout.
 """
@@ -34,10 +50,11 @@ import torch
 
 from bridge.application.training.training_pipeline import TrainingPipeline
 from bridge.core.phonreps import SPECIAL_TOKENS, load_phoneme_table
-from bridge.domain.datamodels import ModelConfig
+from bridge.domain.datamodels import BridgeBatch, ModelConfig
 from bridge.domain.datamodels.pathways import PATHWAY_IO, PATHWAYS
 from bridge.domain.datamodels.vocab_spec import VocabSpec
 from bridge.domain.model import Model
+from bridge.domain.model.layers import Attention
 from bridge.domain.tokenizer import BridgeTokenizer
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -72,15 +89,54 @@ BLOCK_MODULE = {
 }
 CROSS_ATTENTION_PREFIX = "Multihead Cross-Attention"
 
-# Blocks that belong to one modality's data rather than to a module. In training a pathway
-# touches a modality's tokenizer and embedding table when it reads that modality (encoder
-# input) or writes it (teacher-forced decoder input), so these are used on reads | writes.
+# Blocks on one modality's input lane, which runs from the left-hand box through that
+# modality's tokenizer and embedding cube to its encoder. A pathway uses the lane exactly
+# when it reads the modality. What it writes takes the other lane, from the right-hand box
+# through a DECODER_EMBEDDING block to the decoder.
 MODALITY_BLOCK = {
     "Orthographic Tokenizer": "orth",
     "Phoneme Tokenizer": "phon",
     "Orthographic Sequence Length": "orth",
     "Phonological Sequence Length": "phon",
 }
+DECODER_EMBEDDING = "Tokenization + Embedding"
+
+# The two labels that say where position enters, each on the group that holds the blocks it
+# describes. No other label on a page names position.
+POSITION_GROUPS = {
+    "Multihead Self-Attention (rotary position) Encoders": (
+        "Orthography Encoder",
+        "Phonology Encoder",
+    ),
+    "Masked Self-Attention (rotary position) + Cross-Attention Decoders": (
+        "Orthography Decoder",
+        "Phonology Decoder",
+    ),
+}
+
+# Kind of stage -> whether the figure draws position entering there. The two labels above
+# put it beside self-attention, and the decoders' one ahead of "+ Cross-Attention".
+DRAWN_WITH_POSITION = {
+    "embedding": False,
+    "encoder self-attention": True,
+    "cross-attention": False,
+    "mixer": False,
+    "decoder self-attention": True,
+    "decoder cross-attention": False,
+}
+
+# The blocks that are fed a token sequence, and so read one side of the example.
+TOKEN_READERS = (
+    "Orthography Encoder",
+    "Phonology Encoder",
+    "Orthography Decoder",
+    "Phonology Decoder",
+)
+
+# The words on the figure's cards. Each input differs from its target, in length too, so a
+# decoder fed from the input is a different drawing and a different tensor.
+INPUT_WORDS = ["cats", "apples", "rivers"]
+TARGET_WORDS = ["cat", "apple", "river"]
 
 
 # --------------------------------------------------------------------------------------------
@@ -169,6 +225,38 @@ def load_pages(path: Path = DIAGRAM) -> dict[str, Page]:
     return {d.get("name", ""): Page(d) for d in root.iter("diagram")}
 
 
+def word_box(page: Page, cell: ET.Element) -> tuple[str, str] | None:
+    """The side of the example and the modality a box of words holds, or None for any other
+    cell. The boxes left of the page's centre are the input and those right of it the target."""
+    label = plain(cell.get("value"))
+    if label not in ("Orthography", "Phonology", "Phonology (features)"):
+        return None
+    side = "input" if page.origin(cell.get("id"))[0] < page.frame_mid_x() else "target"
+    return (side, "orth" if label == "Orthography" else "phon")
+
+
+def drawn_sources(page: Page, cid: str) -> set[tuple[str, str]]:
+    """The boxes of words a block's tokens are drawn as coming from.
+
+    Follows the arrows into the block backwards and stops at a box of words. It goes no
+    further back than a module's output, since what a module emits is not the words."""
+    found: set[tuple[str, str]] = set()
+    seen, stack = {cid}, [cid]
+    while stack:
+        here = stack.pop()
+        for edge in page.edges:
+            source = page.cells.get(edge.get("source"))
+            if edge.get("target") != here or source is None or source.get("id") in seen:
+                continue
+            seen.add(source.get("id"))
+            box = word_box(page, source)
+            if box is not None:
+                found.add(box)
+            elif plain(source.get("value")) not in BLOCK_MODULE:
+                stack.append(source.get("id"))
+    return found
+
+
 # --------------------------------------------------------------------------------------------
 # The oracle: what each pathway actually runs
 # --------------------------------------------------------------------------------------------
@@ -185,7 +273,7 @@ def fired_modules() -> dict[str, frozenset[str]]:
     tokenizer = BridgeTokenizer()
     config = ModelConfig(vocab=VocabSpec.from_tokenizer(tokenizer), d_model=16, nhead=2, seed=0)
     model = Model(config)
-    encoding = tokenizer.encode(["cat", "apple", "river"])
+    batch = figure_batch(tokenizer)
     fired: set[str] = set()
     for name, module in model.named_children():
         module.register_forward_pre_hook(lambda _m, _a, name=name: fired.add(name))
@@ -196,9 +284,23 @@ def fired_modules() -> dict[str, frozenset[str]]:
             stub = types.SimpleNamespace(
                 model=model, training_config=types.SimpleNamespace(training_pathway=pathway)
             )
-            TrainingPipeline.forward(stub, encoding.orthographic, encoding.phonological)
+            TrainingPipeline.forward(stub, batch)
             result[pathway] = frozenset(fired)
     return result
+
+
+def figure_batch(tokenizer: BridgeTokenizer) -> BridgeBatch:
+    """The words the figure draws, as a batch: its input cards and its target cards."""
+    return BridgeBatch(
+        input=tokenizer.encode_input(INPUT_WORDS), target=tokenizer.encode_target(TARGET_WORDS)
+    )
+
+
+def pronunciations(words: list[str]) -> list[str]:
+    """Each word's phonemes as the live tokenizer encodes them, specials left out."""
+    by_row = {row: phoneme for phoneme, row in load_phoneme_table().row_index.items()}
+    rows = BridgeTokenizer().encode_input(words).phon.ids.tolist()
+    return [" ".join(p for r in row if (p := by_row[r]) not in SPECIAL_TOKENS) for row in rows]
 
 
 def small_model(d_embedding: int = 1) -> tuple[Model, BridgeTokenizer]:
@@ -210,31 +312,34 @@ def small_model(d_embedding: int = 1) -> tuple[Model, BridgeTokenizer]:
 
 @cache
 def decoder_calls_causal() -> dict[str, bool]:
-    """Whether every call each decoder received, over every pathway's training forward and
-    generation, carried a causal `tgt_mask`, measured. A decoder that never ran is absent."""
+    """Whether every self-attention of each decoder, over every pathway's training forward
+    and generation, was allowed no key ahead of its query, measured. A decoder that never
+    ran is absent."""
     model, tokenizer = small_model()
-    encoding = tokenizer.encode(["cat", "apple", "river"])
+    batch = figure_batch(tokenizer)
+    start = tokenizer.orth_start([None] * len(batch))
     seen: dict[str, bool] = {}
 
     def record(name: str):
-        def hook(_m, _args, kwargs):
-            mask = kwargs.get("tgt_mask")
-            causal = mask is not None and torch.equal(
-                mask, torch.triu(torch.ones_like(mask, dtype=torch.bool), 1)
-            )
-            seen[name] = seen.get(name, True) and causal
+        def hook(_m, args):
+            allowed = args[2]
+            ahead = torch.triu(torch.ones(allowed.shape[-2:], dtype=torch.bool), 1)
+            seen[name] = seen.get(name, True) and not bool((allowed & ahead).any())
 
         return hook
 
     for name in ("orthography_decoder", "phonology_decoder"):
-        getattr(model, name).register_forward_pre_hook(record(name), with_kwargs=True)
+        for layer in getattr(model, name).layers:
+            layer.self_attn.register_forward_pre_hook(record(name))
     with torch.no_grad():
         for pathway in PATHWAYS:
             stub = types.SimpleNamespace(
                 model=model, training_config=types.SimpleNamespace(training_pathway=pathway)
             )
-            TrainingPipeline.forward(stub, encoding.orthographic, encoding.phonological)
-            model.generate(encoding, pathway, deterministic=True)
+            TrainingPipeline.forward(stub, batch)
+            model.generate(
+                batch.input, pathway, max_new_tokens=8, orth_start=start, deterministic=True
+            )
     return seen
 
 
@@ -247,14 +352,14 @@ def global_embedding_added_back() -> bool:
     could not tell the two apart.
     """
     model, tokenizer = small_model(d_embedding=2)
-    encoding = tokenizer.encode(["cat", "apple", "river"])
-    o, p = encoding.orthographic, encoding.phonological
+    inputs = figure_batch(tokenizer).input
+    o, p = inputs.orth, inputs.phon
     captured: dict[str, torch.Tensor] = {}
     model.transformer_mixer.register_forward_hook(lambda _m, _a, out: captured.update(mix=out))
     encoders = (
-        lambda: model.embed_o(o.enc_input_ids, o.enc_pad_mask),
-        lambda: model.embed_p(p.enc_input_ids, p.enc_pad_mask),
-        lambda: model.embed_op(o.enc_input_ids, o.enc_pad_mask, p.enc_input_ids, p.enc_pad_mask),
+        lambda: model.embed_o(o.ids, o.pad_mask),
+        lambda: model.embed_p(p.ids, p.pad_mask),
+        lambda: model.embed_op(o.ids, o.pad_mask, p.ids, p.pad_mask),
     )
     holds = True
     with torch.no_grad():
@@ -264,6 +369,124 @@ def global_embedding_added_back() -> bool:
             assert not torch.equal(out, rows), "control failed: rows alone already equal the output"
             holds &= torch.equal(out, rows + model.global_embedding.expand(rows.shape[0], -1, -1))
     return holds
+
+
+@cache
+def fed_sides() -> dict[str, frozenset[str]]:
+    """Which side of the batch each encoder and decoder is fed, over every pathway's
+    training forward, measured.
+
+    A forward pre-hook on each captures the embedded sequence it receives, which is compared
+    bitwise with the embedding of the input's ids and of the target's ids. The figure's
+    words give the two different lengths, asserted here as the control, so a captured
+    tensor can match only one of them.
+    """
+    model, tokenizer = small_model()
+    batch = figure_batch(tokenizer)
+    embed = {"orth": model.embed_orth_tokens, "phon": model.embed_phon_tokens}
+    with torch.no_grad():
+        embedded = {
+            (side, modality): embed[modality](getattr(getattr(batch, side), modality).ids)
+            for side in ("input", "target")
+            for modality in embed
+        }
+    for modality in embed:
+        assert embedded["input", modality].shape != embedded["target", modality].shape, (
+            "control failed: the input and the target embed to the same shape"
+        )
+    seen: dict[str, set[str]] = {}
+
+    def record(name: str, modality: str):
+        def hook(_m, args, kwargs):
+            fed = kwargs["tgt"] if "tgt" in kwargs else args[0]
+            sides = [
+                side
+                for side in ("input", "target")
+                if (e := embedded[side, modality]).shape == fed.shape and torch.equal(e, fed)
+            ]
+            seen.setdefault(name, set()).update(sides or ["neither"])
+
+        return hook
+
+    for label in TOKEN_READERS:
+        modality = "orth" if label.startswith("Orthography") else "phon"
+        module = getattr(model, BLOCK_MODULE[label])
+        module.register_forward_pre_hook(record(BLOCK_MODULE[label], modality), with_kwargs=True)
+    with torch.no_grad():
+        for pathway in PATHWAYS:
+            stub = types.SimpleNamespace(
+                model=model, training_config=types.SimpleNamespace(training_pathway=pathway)
+            )
+            TrainingPipeline.forward(stub, batch)
+    return {name: frozenset(sides) for name, sides in seen.items()}
+
+
+@cache
+def reversal_deviations() -> dict[str, tuple[str, float]]:
+    """Each stage of the model, its kind, and how far its output moves when the sequence it
+    is handed is reversed, measured.
+
+    One op2op training forward runs every stage. It runs on the figure's first cards alone,
+    so nothing is padding and reversing a sequence moves only real tokens. A hook on every
+    attention and on the mixer keeps what the forward handed it, and each is then run again
+    on those tensors with the sequence reversed. An attention has its keys and values
+    reversed, and its mask with them, which changes nothing unless it reads where a key
+    sits. The mixer and the embedders have their rows reversed, and must give the same
+    rows back, reversed.
+
+    A deviation is the largest difference over the largest magnitude of the reference. A
+    stage that reads no order moves by a few float32 epsilons at most, the cost of adding in
+    another order, and an embedder by nothing at all.
+    """
+    model, tokenizer = small_model(d_embedding=2)
+    batch = BridgeBatch(
+        input=tokenizer.encode_input(INPUT_WORDS[:1]),
+        target=tokenizer.encode_target(TARGET_WORDS[:1]),
+    )
+    sides = (batch.input.orth, batch.input.phon, batch.target.orth, batch.target.phon)
+    assert not any(side.pad_mask.any() for side in sides), "control failed: a row is padded"
+    kinds = {"transformer_mixer": "mixer"}
+    kinds |= dict.fromkeys(("gp_multihead_attention", "pg_multihead_attention"), "cross-attention")
+    for name, module in model.named_modules():
+        if isinstance(module, Attention):
+            stack = "encoder" if "encoder" in name else "decoder"
+            kinds[name] = f"{stack} {'self' if name.endswith('self_attn') else 'cross'}-attention"
+    handed: dict[str, tuple[tuple, dict]] = {}
+    for name in kinds:
+        model.get_submodule(name).register_forward_pre_hook(
+            lambda _m, args, kwargs, name=name: handed.update({name: (args, kwargs)}),
+            with_kwargs=True,
+        )
+    deviation: dict[str, float] = {}
+
+    def compare(name: str, reference: torch.Tensor, reversed_: torch.Tensor) -> None:
+        deviation[name] = float((reference - reversed_).abs().max() / reference.abs().max())
+
+    with torch.no_grad():
+        stub = types.SimpleNamespace(
+            model=model, training_config=types.SimpleNamespace(training_pathway="op2op")
+        )
+        TrainingPipeline.forward(stub, batch)
+        assert set(handed) == set(kinds), "control failed: a stage did not run"
+        for name, (args, kwargs) in list(handed.items()):
+            module = model.get_submodule(name)
+            if isinstance(module, Attention):
+                query, memory, allowed, *positions = args
+                mask = None if allowed is None else allowed.flip(-1)
+                compare(name, module(*args), module(query, memory.flip(1), mask, *positions))
+            elif kinds[name] == "cross-attention":
+                query, key, value = args
+                turned = module(query, key.flip(1), value.flip(1), **kwargs)[0]
+                compare(name, module(*args, **kwargs)[0], turned)
+            else:
+                (rows,) = args
+                compare(name, module(rows, **kwargs), module(rows.flip(1), **kwargs).flip(1))
+        for name, modality in (("embed_orth_tokens", "orth"), ("embed_phon_tokens", "phon")):
+            ids = getattr(batch.input, modality).ids
+            assert not torch.equal(ids, ids.flip(1)), "control failed: the row is a palindrome"
+            kinds[name] = "embedding"
+            compare(name, getattr(model, name)(ids), getattr(model, name)(ids.flip(1)).flip(1))
+    return {name: (kinds[name], deviation[name]) for name in kinds}
 
 
 def expected_blocks(page: Page, pathway: str) -> dict[str, tuple[ET.Element, bool]]:
@@ -280,14 +503,18 @@ def expected_blocks(page: Page, pathway: str) -> dict[str, tuple[ET.Element, boo
         elif label.startswith(CROSS_ATTENTION_PREFIX):
             out[key] = (cell, "gp_multihead_attention" in fired)
         elif label in MODALITY_BLOCK:
-            out[key] = (cell, MODALITY_BLOCK[label] in reads | writes)
-        elif label in ("Orthography", "Phonology", "Phonology (features)"):
-            modality = "orth" if label == "Orthography" else "phon"
-            is_input = page.origin(cell.get("id"))[0] < page.frame_mid_x()
-            out[f"{'input' if is_input else 'output'} {key}"] = (
-                cell,
-                modality in (reads | writes if is_input else writes),
-            )
+            out[key] = (cell, MODALITY_BLOCK[label] in reads)
+        elif label == DECODER_EMBEDDING:
+            # Used exactly when the decoder it feeds runs.
+            feeds = {
+                plain(page.cells[e.get("target")].get("value"))
+                for e in page.edges
+                if e.get("source") == cell.get("id") and e.get("target") in page.cells
+            }
+            out[key] = (cell, any(BLOCK_MODULE.get(name) in fired for name in feeds))
+        elif (box := word_box(page, cell)) is not None:
+            side, modality = box
+            out[f"{side} {key}"] = (cell, modality in (reads if side == "input" else writes))
     return out
 
 
@@ -356,8 +583,8 @@ def mixer_input_problems(path: Path = DIAGRAM) -> list[str]:
 def edge_problems(path: Path = DIAGRAM) -> list[str]:
     """Every arrow is attached at both ends, animates exactly when it is drawn active, and is
     drawn active exactly when both blocks it joins are. Every "+" sums at least two inputs
-    and feeds something, and no "+" feeds a decoder: the decoders' causal mask is passed to
-    self-attention as `tgt_mask`, and the decoder input reaches the first layer unchanged
+    and feeds something, and no "+" feeds a decoder: the decoders' causal mask goes to
+    self-attention, and the decoder input reaches the first layer unchanged
     (measured bitwise), so a sum drawn into a decoder claims an addition that never happens."""
     decoders = {"Orthography Decoder", "Phonology Decoder"}
     problems = []
@@ -467,7 +694,9 @@ def mask_problems(path: Path = DIAGRAM) -> list[str]:
     """Every page draws an "Autoregressive Mask" arrowing straight into each decoder, faded
     exactly when that decoder is, because every decoder call is causal (measured)."""
     causal = decoder_calls_causal()
-    problems = [f"{name} received a non-causal tgt_mask" for name, ok in causal.items() if not ok]
+    problems = [
+        f"{name} let a query read a key ahead of it" for name, ok in causal.items() if not ok
+    ]
     for name, page in load_pages(path).items():
         for decoder_label in ("Orthography Decoder", "Phonology Decoder"):
             for decoder in page.labelled(decoder_label):
@@ -537,16 +766,17 @@ def global_residual_problems(path: Path = DIAGRAM) -> list[str]:
 
 @cache
 def cat_targets() -> tuple[list[str], list[str], list[list[int]]]:
-    """Feature names in output-column order, the phonemes of "cat" plus [EOS], and the
-    decoder's training targets for them, all from the live feature table and tokenizer."""
+    """Feature names in output-column order, the phonemes of the first target word, "cat",
+    plus [EOS], and the decoder's training targets for them, all from the live feature
+    table and tokenizer."""
     header = next(csv.reader(open(ROOT / "bridge" / "core" / "phonreps.csv")))[1:]
     names = [h.lstrip("#") for h in header] + list(SPECIAL_TOKENS[:-1])  # [PAD] is not predicted
     table = load_phoneme_table()
     by_row = {row: phoneme for phoneme, row in table.row_index.items()}
-    phon = BridgeTokenizer().encode(["cat"]).phonological
-    ids = [int(r) for r in phon.enc_input_ids[0]]
+    phon = BridgeTokenizer().encode_target(TARGET_WORDS[:1]).phon
+    ids = [int(r) for r in phon.ids[0]]
     phonemes = [by_row[r] for r in ids if by_row[r] not in SPECIAL_TOKENS] + ["[EOS]"]
-    targets = phon.targets[0, : len(phonemes)].tolist()
+    targets = phon.labels[0, : len(phonemes)].tolist()
     assert all(len(t) == len(names) for t in targets), "feature names and target width disagree"
     return names, phonemes, targets
 
@@ -612,6 +842,121 @@ def output_table_problems(path: Path = DIAGRAM) -> list[str]:
     return problems
 
 
+def feed_problems(path: Path = DIAGRAM) -> list[str]:
+    """Every encoder is drawn reading the input box of its modality and every decoder is
+    drawn fed from the target box of its modality, which is what the model does (measured).
+
+    A decoder's tokens reach it through exactly one DECODER_EMBEDDING block: what it is fed
+    is the embedding of the target's ids, not the ids. The check is made on every page,
+    faded blocks included, because a faded block is drawn with the same arrows."""
+    sides = fed_sides()
+    problems = []
+    for name, page in load_pages(path).items():
+        for label in TOKEN_READERS:
+            modality = "orth" if label.startswith("Orthography") else "phon"
+            want = {(side, modality) for side in sides[BLOCK_MODULE[label]]}
+            for block in page.labelled(label):
+                drawn = drawn_sources(page, block.get("id"))
+                if drawn != want:
+                    problems.append(
+                        f"{name}: {label} is drawn fed from {sorted(drawn)}, "
+                        f"but the model feeds it {sorted(want)}"
+                    )
+                embeddings = [
+                    e
+                    for e in page.edges
+                    if e.get("target") == block.get("id")
+                    and plain(page.cells.get(e.get("source"), block).get("value"))
+                    == DECODER_EMBEDDING
+                ]
+                if len(embeddings) != (1 if label.endswith("Decoder") else 0):
+                    problems.append(
+                        f"{name}: {label} is fed by {len(embeddings)} {DECODER_EMBEDDING!r} blocks"
+                    )
+    return problems
+
+
+def word_problems(path: Path = DIAGRAM) -> list[str]:
+    """The cards are the batch the measurements here run on. The input boxes hold
+    INPUT_WORDS and their pronunciations, the target box holds TARGET_WORDS, no input word
+    is its own target, and a header names each side."""
+    want = {
+        ("input", "orth"): INPUT_WORDS,
+        ("input", "phon"): pronunciations(INPUT_WORDS),
+        ("target", "orth"): TARGET_WORDS,
+    }
+    problems = [
+        f"{word!r} is both an input and its own target, so the two sides look alike"
+        for word, target in zip(INPUT_WORDS, TARGET_WORDS, strict=True)
+        if word == target
+    ]
+    for name, page in load_pages(path).items():
+        mid = page.frame_mid_x()
+        for box in page.vertices:
+            key = word_box(page, box)
+            if key not in want:
+                continue
+            cards = sorted(
+                (c for c in page.vertices if c.get("parent") == box.get("parent") and c is not box),
+                key=lambda c, page=page: page.visual_box(c.get("id"))[0],
+            )
+            drawn = [plain(c.get("value")) for c in cards]
+            if drawn != want[key]:
+                problems.append(
+                    f"{name}: the {key[0]} {key[1]} box shows {drawn}, want {want[key]}"
+                )
+        for header, on_the_left in (("Input", True), ("Target", False)):
+            cells = page.labelled(header)
+            if len(cells) != 1 or (page.origin(cells[0].get("id"))[0] < mid) != on_the_left:
+                side = "left" if on_the_left else "right"
+                problems.append(f"{name}: no single {header!r} header on the {side}")
+    return problems
+
+
+def position_problems(path: Path = DIAGRAM) -> list[str]:
+    """Each page says where position enters, and says it nowhere else.
+
+    Position is a rotation inside the self-attention of the encoders and of the decoders.
+    An embedding carries none, and the mixer and every cross-attention read none (measured).
+    So each POSITION_GROUPS label sits once on a page, on the group holding its blocks, and
+    no other label, on a block or on an arrow, names position.
+
+    A stage reads order when reversing its sequence moves its output by more than 1e-3 of
+    its scale, and reads none when that stays under 1e-5. A deviation between the two is
+    neither, and is reported instead of being called one or the other."""
+    problems = []
+    for stage, (kind, deviation) in reversal_deviations().items():
+        reads = deviation > 1e-3
+        if 1e-5 <= deviation <= 1e-3:
+            problems.append(f"{stage} moves by {deviation:.1e} when reversed: noise or order?")
+        elif reads != DRAWN_WITH_POSITION[kind]:
+            problems.append(
+                f"{stage} {'reads' if reads else 'does not read'} the order of its sequence, "
+                f"but the figure draws the {kind} {'without' if reads else 'with'} position"
+            )
+    for name, page in load_pages(path).items():
+        for label, blocks in POSITION_GROUPS.items():
+            groups = page.labelled(label)
+            held = {
+                plain(c.get("value"))
+                for group in groups
+                for c in page.vertices
+                if c.get("parent") == group.get("parent")
+            }
+            if len(groups) != 1 or not set(blocks) <= held:
+                problems.append(
+                    f"{name}: {len(groups)} groups labelled {label!r}, holding "
+                    f"{sorted(held & set(blocks))} of {list(blocks)}"
+                )
+        for cell in page.cells.values():
+            label = plain(cell.get("value"))
+            if "position" in label.lower() and label not in POSITION_GROUPS:
+                problems.append(
+                    f"{name}: {label!r} names position, which enters only in self-attention"
+                )
+    return problems
+
+
 @pytest.mark.parametrize(
     "check",
     [
@@ -624,6 +969,9 @@ def output_table_problems(path: Path = DIAGRAM) -> list[str]:
         mask_problems,
         global_residual_problems,
         output_table_problems,
+        feed_problems,
+        word_problems,
+        position_problems,
     ],
     ids=lambda f: f.__name__,
 )

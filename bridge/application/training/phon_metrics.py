@@ -10,8 +10,6 @@ wrong columns.
 
 import torch
 
-from bridge.domain.datamodels import EncodingComponent
-
 
 def calculate_phon_word_accuracy(
     phon_true: torch.Tensor, phoneme_wise_mask: torch.Tensor, phon_pad_id: int
@@ -104,34 +102,33 @@ def calculate_closest_phoneme(
 
 def calculate_phon_metrics(
     logits: dict[str, torch.Tensor],
-    phonology: EncodingComponent,
+    labels: torch.Tensor,
     phon_reps: torch.Tensor,
     phon_pad_id: int,
 ) -> dict[str, float]:
     """Score the phonological predictions, ignoring padded positions.
 
-    ``phon_pad_id`` is in *feature* space: a column of the phoneme feature table, which is
-    where ``phon_targets`` lives. It is 35, not the orthographic pad id of 2. Passing the
-    wrong one produces a mask that selects everything rather than an error, so the argument
-    is required and has no default. See
-    docs/decisions/0005-phonological-metrics-take-the-pad-id.md.
+    ``labels`` is the phonological target's ``labels``. ``phon_pad_id`` is in *feature*
+    space: a column of the phoneme feature table, which is where the labels live. It is
+    35, not the orthographic pad id of 2. Passing the wrong one produces a mask that
+    selects everything rather than an error, so the argument is required and has no
+    default. See docs/decisions/0005-phonological-metrics-take-the-pad-id.md.
 
     Each mask is elementwise while the reshape that follows assumes whole rows survive it.
-    That holds because a padded target row is entirely ``phon_pad_id`` and a real one holds
+    That holds because a padded label row is entirely ``phon_pad_id`` and a real one holds
     only 0 and 1, so rows are selected all or nothing. A target encoding that broke the
     property would raise from the reshape rather than return a wrong number.
     """
     phon_pred = torch.argmax(logits["phon"], dim=1)
-    phon_true = phonology.phon_targets
 
-    phon_valid_mask = phon_true != phon_pad_id
-    masked_phon_true = phon_true[phon_valid_mask]
+    phon_valid_mask = labels != phon_pad_id
+    masked_labels = labels[phon_valid_mask]
     masked_phon_pred = phon_pred[phon_valid_mask]
-    phoneme_wise_mask = phon_pred == phon_true
+    phoneme_wise_mask = phon_pred == labels
 
     # One row per real phoneme in the batch, cast once for every distance metric below.
-    width = phon_true.shape[-1]
-    true_rows = phon_true.float()[phon_valid_mask].reshape(-1, width)
+    width = labels.shape[-1]
+    true_rows = labels.float()[phon_valid_mask].reshape(-1, width)
     pred_rows = phon_pred.float()[phon_valid_mask].reshape(-1, width)
     # The phonetic-feature block alone, without the special-token columns. The width comes
     # off `phon_reps`, which is `PhonemeTable.phonetic_features`, rather than being written
@@ -145,13 +142,13 @@ def calculate_phon_metrics(
         "phon_cosine_similarity": calculate_cosine_distance(true_rows, pred_rows).item(),
         "phon_euclidean_distance": calculate_euclidean_distance(true_rows, pred_rows).item(),
         "phon_feature_accuracy": calculate_phon_feature_accuracy(
-            phon_valid_mask, masked_phon_true, masked_phon_pred
+            phon_valid_mask, masked_labels, masked_phon_pred
         ).item(),
         "phon_phoneme_wise_accuracy": calculate_phoneme_wise_accuracy(
-            phon_true, masked_phon_true, phoneme_wise_mask
+            labels, masked_labels, phoneme_wise_mask
         ).item(),
         "phon_word_accuracy": calculate_phon_word_accuracy(
-            phon_true, phoneme_wise_mask, phon_pad_id
+            labels, phoneme_wise_mask, phon_pad_id
         ).item(),
         **{
             f"closest_phoneme_{metric}_accuracy": calculate_closest_phoneme(

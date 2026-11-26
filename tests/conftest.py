@@ -62,6 +62,29 @@ def words_dataset(shared_tokenizer: BridgeTokenizer) -> BridgeDataset:
     return BridgeDataset(DatasetConfig(dataset_filepath=WORDS_CSV), tokenizer=shared_tokenizer)
 
 
+@_pytest.fixture
+def load(shared_tokenizer: BridgeTokenizer):
+    """Build a ``BridgeDataset`` over a path, sharing the session tokenizer."""
+
+    def build(path: str) -> BridgeDataset:
+        return BridgeDataset(DatasetConfig(dataset_filepath=path), tokenizer=shared_tokenizer)
+
+    return build
+
+
+def batch_tensors(batch) -> dict:
+    """The ten tensors of a batch by name."""
+    out = {}
+    for side in ("input", "target"):
+        for modality in ("orth", "phon"):
+            part = getattr(getattr(batch, side), modality)
+            out[f"{side}.{modality}.ids"] = part.ids
+            out[f"{side}.{modality}.pad_mask"] = part.pad_mask
+            if side == "target":
+                out[f"{side}.{modality}.labels"] = part.labels
+    return out
+
+
 def batch_slices(dataset, size: int = 8) -> list[slice]:
     """Contiguous slices over a dataset, the partition the pipeline used to build itself.
 

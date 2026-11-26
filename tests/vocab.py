@@ -20,6 +20,8 @@ TEST_VOCAB = VocabSpec(
     orth_pad_id=2,
     orth_bos_id=0,
     orth_eos_id=1,
+    # This invented vocabulary has no language tokens.
+    orth_language_ids=(),
     phon_pad_id=PHONEME_TABLE.feature_of("[PAD]"),
     phon_bos_id=PHONEME_TABLE.feature_of("[BOS]"),
     phon_eos_id=PHONEME_TABLE.feature_of("[EOS]"),

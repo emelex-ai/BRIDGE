@@ -20,14 +20,17 @@ import bridge
 # one is, and does.
 ESTABLISHED_EXPORTS = frozenset(
     {
+        "BridgeBatch",
         "BridgeDataset",
-        "BridgeEncoding",
+        "BridgeInput",
+        "BridgeTarget",
         "BridgeTokenizer",
         "DatasetConfig",
-        "EncodingComponent",
         "GenerationOutput",
         "Model",
         "ModelConfig",
+        "Target",
+        "Tokens",
         "TrainingConfig",
         "TrainingEvent",
         "TrainingPhase",
@@ -143,3 +146,38 @@ def test_no_established_export_has_been_dropped():
     exported = set(bridge.__all__)
     dropped = sorted(ESTABLISHED_EXPORTS - exported)
     assert dropped == [], f"no longer exported from bridge: {dropped}"
+
+
+def test_an_example_has_no_single_type_for_both_sides():
+    """An input and a target are different types, and no name stands for both.
+
+    Oracle: the design. ``BridgeEncoding`` and ``EncodingComponent`` each held what an
+    encoder reads and what a decoder is taught in one object, which only makes sense when
+    the two are the same string. An alias to either would bring that premise back.
+    """
+    assert not hasattr(bridge, "BridgeEncoding")
+    assert not hasattr(bridge, "EncodingComponent")
+    assert {"Tokens", "Target", "BridgeInput", "BridgeTarget", "BridgeBatch"} <= set(bridge.__all__)
+    assert not issubclass(bridge.Target, bridge.Tokens)
+    assert not issubclass(bridge.BridgeTarget, bridge.BridgeInput)
+
+
+def test_generation_is_reachable_from_the_top_level_package_alone():
+    """Reading a word and spelling it in a named language, with top-level imports only.
+
+    Oracle: the start the caller built. The first two generated ids are that start, so
+    the public names are enough to encode an input, name the output language and
+    generate.
+    """
+    from bridge import BridgeInput, BridgeTokenizer, Model, ModelConfig, VocabSpec
+
+    tokenizer = BridgeTokenizer()
+    model = Model(
+        ModelConfig(vocab=VocabSpec.from_tokenizer(tokenizer), d_model=32, nhead=2, seed=5)
+    )
+    inputs = tokenizer.encode_input(["cat", "no me"], ["EN", "ES"])
+    assert isinstance(inputs, BridgeInput)
+
+    start = tokenizer.orth_start(["ES", "EN"])
+    output = model.generate(inputs, "o2o", max_new_tokens=6, orth_start=start, deterministic=True)
+    assert output.orth_tokens[:, :2].tolist() == start.tolist() == [[8, 0], [7, 0]]

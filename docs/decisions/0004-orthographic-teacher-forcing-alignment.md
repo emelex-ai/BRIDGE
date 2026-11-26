@@ -1,11 +1,17 @@
 # 0004. Orthographic teacher forcing targets the encoder sequence shifted by one
 
-Status: Accepted, amended by [0015](0015-language-belongs-to-each-word.md)
+Status: Accepted, amended by [0015](0015-language-belongs-to-each-word.md) and
+[0016](0016-a-training-example-is-an-input-and-a-target.md)
 
 > The alignment this record chose still holds. One sentence under Consequences is
 > amended: orthographic accuracy is reported twice, and the second pair leaves out the
 > positions whose target is a language token, so that pair scores fewer positions than
 > the loss trains. See 0015.
+>
+> Where the alignment lives is amended. The shifted row is stored as the orthographic
+> target's `labels`, built by the tokenizer beside the decoder ids, with the values of
+> `enc_input_ids[:, 1:]`. The loss and the metrics read it and slice nothing, and the
+> width check is made when a `Target` is built. See 0016.
 Date: 2026-08-30
 
 ## Context

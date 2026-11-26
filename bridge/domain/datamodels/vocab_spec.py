@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 class VocabSpec(BaseModel):
     """The full vocab contract the `Model` needs at construction and generation.
 
-    The sizes and the pad, bos and eos ids are required. Use
+    The sizes, the pad, bos and eos ids and the language-token ids are required. Use
     `VocabSpec.from_tokenizer(...)` to derive an instance from an existing
     `BridgeTokenizer`, or construct one manually with hardcoded numbers (e.g.
     for testing or when loading a checkpoint without instantiating the
@@ -50,31 +50,29 @@ class VocabSpec(BaseModel):
     orth_pad_id: int = Field(description="Orthographic [PAD] token index.")
     orth_bos_id: int = Field(description="Orthographic [BOS] token index.")
     orth_eos_id: int = Field(description="Orthographic [EOS] token index.")
-    orth_language_ids: tuple[int, ...] | None = Field(
-        default=None,
+    orth_language_ids: tuple[int, ...] = Field(
         description=(
-            "Orthographic language-token indices. A target holding one of these is a "
+            "Orthographic language-token indices. A label holding one of these is a "
             "change of language, not a letter, which is what the letters-only accuracy "
-            "figures leave out. None when the spec does not say which ids they are, and "
-            "those figures are then not reported."
+            "figures leave out. Empty for a vocabulary with no language tokens."
         ),
     )
     phon_pad_id: int = Field(
         description=(
             "Phonological [PAD] id, in *feature* space: a column of the phoneme feature "
-            "table, not one of its rows. Row ids are what encode() emits."
+            "table, not one of its rows. Row ids are what the tokenizer emits."
         )
     )
     phon_bos_id: int = Field(
         description=(
             "Phonological [BOS] id, in *feature* space: a column of the phoneme feature "
-            "table, not one of its rows. Row ids are what encode() emits."
+            "table, not one of its rows. Row ids are what the tokenizer emits."
         )
     )
     phon_eos_id: int = Field(
         description=(
             "Phonological [EOS] id, in *feature* space: a column of the phoneme feature "
-            "table, not one of its rows. Row ids are what encode() emits."
+            "table, not one of its rows. Row ids are what the tokenizer emits."
         )
     )
     phon_table_fingerprint: str | None = Field(
