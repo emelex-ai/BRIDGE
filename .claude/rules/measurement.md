@@ -42,19 +42,37 @@ again. Measured 2026-11-24 against `a3cb285`: with that commit's tables zeroed a
 rotation switched off, the same weights give bitwise equal logits on all five pathways,
 551424 elements, so position is all that moved.
 
-What the 24 test nodes still assert, measured by mutating a copy of the recording 255
-ways and running the nodes of both trees on each:
+**One vocabulary value is superseded as well, and the file was still not touched.** The
+fixture records `orth_vocab_size` 109. The tokenizer's vocabulary is those 109 entries
+followed by 16 characters of Spanish (issue #237), so its size is 125. The vocabulary node
+reads the recorded 109 exactly, as the size before the characters `SPANISH_CHARACTERS`
+names, and every other recorded value as it did. Measured 2026-11-27 against `3d28ee9`,
+on CPU: none of the 109 entries moved, and every row that decoded to its own text there
+encodes to the same ids, masks and labels, 263264 of 263264 rows and 46390938 elements,
+over both lexicons, each tagged with its language and untagged, and 4818 mixed phrases.
+Each recorded vocabulary value changed by one, up and down, fails the node 16 times of
+20 on both trees. The four that pass change `orth_spc_id` and `phon_spc_id`, which
+`VocabSpec` does not carry. The other 23 nodes are untouched and pass: the model they
+rebuild is built at the recorded size, which every id of the fixture's words is under.
+The ids of the 16 characters are pinned by hand in
+`tests/domain/tokenizer/test_character_tokenizer.py`. Scripts:
+`spanish-patching/letters/03_ids_compare.py` and `10_baseline_vocab_mutations.py`.
+
+What the 24 test nodes still assert. The table was measured 2026-11-24 by mutating a copy
+of the recording 255 ways and running the nodes of both trees on each, and its vocabulary
+row again on 2026-11-27 as above:
 
 | nodes | how they read the recording |
 |---|---|
-| 9 tokenizer and 1 vocabulary | exactly, as at `a3cb285` |
+| 9 tokenizer | exactly, as at `a3cb285` |
+| 1 vocabulary | exactly; `orth_vocab_size` as the size before the 16 Spanish characters |
 | 1 gradient of the phonological embedding | at the tolerance it has always had; no weight enters that gradient |
 | 1 gradient of the position table | exactly: the recording is the count of rows per slot, and no parameter is left for it to reach |
 | 1 input without phonology | exactly on the recorded stand-in; its generation is compared with an input carrying both modalities |
 | 3 generations that write phonology | form, the recorded `[BOS]` that opens each sequence, and each recorded length |
 | 2 embeddings, 4 logits, 2 generations that write orthography alone | form only: which outputs are filled, shape, dtype, finiteness, id range |
 
-That is 11 nodes reading the recording as they did and 13 changed. None is deleted and
+That is 10 nodes reading the recording as they did and 14 changed. None is deleted and
 none is emptied: each still fails on some change to the recording. What the model
 computes is pinned against reference and analytic oracles in
 `tests/domain/model/test_rotary_layers.py`, `tests/domain/model/test_any_length.py` and
@@ -82,26 +100,32 @@ one model, so the table names it.
 
 | model | comparison | max relative loss deviation | relative L2 parameter distance |
 |---|---|---|---|
-| this model: rotary position, 167 parameter tensors | one thread against 6 | 1.850e-07 | 6.223e-06 |
-| this model | one thread against 4 | 1.480e-07 | 7.279e-06 |
+| this model: an orthographic vocabulary of 125, 167 parameter tensors | one thread against 6 | 2.309e-07 | 5.049e-06 |
+| this model | one thread against 4 | 1.260e-07 | 4.826e-06 |
 | this model | rerun at one thread | 0.0 | 0.0 |
+| `3d28ee9`: an orthographic vocabulary of 109, rotary position, 167 tensors | one thread against 6 | 1.850e-07 | 6.223e-06 |
+| `3d28ee9` | one thread against 4 | 1.480e-07 | 7.279e-06 |
+| `3d28ee9` | rerun at one thread | 0.0 | 0.0 |
 | `a3cb285`: position tables, 169 tensors | one thread against 6 | 1.327e-07 | 5.856e-06 |
 | `a3cb285` | one thread against 4 | 1.327e-07 | 6.769e-06 |
 | `a3cb285` | rerun at one thread | 0.0 | 0.0 |
 | the tree of 2026-08-30: position tables | another BLAS thread count | 2.229e-07 | 9.559e-06 |
 | the tree of 2026-08-30 | rerun | 0.0 | 0.0 |
 
-So a change to this model whose loss trajectory stays within roughly **1.9e-07** relative
-is inside the floor. The first six rows were measured 2026-11-24 on CPU in one session:
-12 steps of `single_step`, `d_model=32`, `nhead=2`, the default `d_embedding` (2 for this
-model, 1 at `a3cb285`), seed 0, batch 8, over the `o2p`, `p2p`, `p2o` and `op2op`
-pathways, torch 2.12.0+cu130, on a machine whose default is 6 threads. Record 0017 names
-the script. The last two rows were measured 2026-08-30 on CPU: 12 Adam steps,
-`d_model=32`, batch 8, the same four pathways.
+So a change to this model whose loss trajectory stays within roughly **2.3e-07** relative
+is inside the floor. The first nine rows share one protocol: 12 steps of `single_step`,
+`d_model=32`, `nhead=2`, the default `d_embedding` (2 for this model and `3d28ee9`, 1 at
+`a3cb285`), seed 0, batch 8, over the `o2p`, `p2p`, `p2o` and `op2op` pathways, torch
+2.12.0+cu130, on CPU, on a machine whose default is 6 threads. Record 0017 names the
+script. The first three were measured 2026-11-27 with that script unmodified
+(`spanish-patching/letters/13_noise_floor.sh` runs it). The six below them were measured
+2026-11-24, and the three of `3d28ee9` came out digit for digit the same when run again
+in the session of 2026-11-27. The last two rows were measured 2026-08-30 on CPU: 12 Adam
+steps, `d_model=32`, batch 8, the same four pathways.
 
 The instrument was checked on this model. `global_embedding` scaled by 1 + 1e-3 reads
-1.853e-04 and 7.063e-04, with 0 of 12 losses bitwise equal on every pathway. Scaled by
-1 + 1e-6 it reads 1.850e-07 and 7.958e-06, which is inside the floor: a change that small
+4.704e-05 and 3.034e-04, with 0 of 12 losses bitwise equal on every pathway. Scaled by
+1 + 1e-6 it reads 1.947e-07 and 6.986e-06, which is inside the floor: a change that small
 cannot be told from a thread count.
 
 Re-measure rather than reuse these figures if the shapes, the optimizer or the device
@@ -145,8 +169,9 @@ order and kernel selection, so the noise floor above does not transfer to the RT
 re-measured there, and any claim of GPU equivalence is currently unsupported. Every number
 in `docs/decisions/0015`, the per-word language record, is CPU only too, as of 2026-11-22.
 So is every number in `docs/decisions/0016`, the input and target record, as of 2026-11-23.
-So is every number in `docs/decisions/0017`, the position record, as of 2026-11-24, and
-that includes the noise floor of this model.
+So is every number in `docs/decisions/0017`, the position record, as of 2026-11-24. So
+is every number of the Spanish letters change, issue #237, as of 2026-11-27, and that
+includes the noise floor of this model.
 
 CUDA *behaviour* has been measured, on an RTX 5080 with torch 2.12.0+cu130: device
 resolution and comparison, that a constructed model is entirely on one device, and that all
@@ -159,11 +184,20 @@ pathways generate with no explicit `.to()`. One optimizer step and one `evaluate
 finite loss on each. A batch holding a 102-token row steps, evaluates and generates.
 Record 0017 names the script. No CUDA float was compared with a CPU float.
 
+And again on this model, with 125 orthographic entries, on 2026-11-27, RTX 5080, torch
+2.12.0+cu130. The 1344 accented Spanish lexicon words encode on `cuda:0` to the ids the
+vocabulary list gives, 1344 of 1344 rows, none holding `[UNK]`, and their decomposed
+spellings to the same ids in both modalities. A model built on the process device sits
+on `cuda:0`. All five pathways generate from a batch of eight of those words with no
+explicit `.to()`, and one optimizer step on that batch gives a finite loss on each.
+Script: `spanish-patching/letters/14_cuda_behaviour.py`. No CUDA float was compared with
+a CPU float.
+
 Since #229, initialisation no longer depends on the device: weights are drawn on the default
 device and then moved, so a seed gives bitwise identical parameters on CPU and CUDA, measured
-167/167 at seed 5 on 2026-11-24. Two seeds on one device differ in 81 of 167, the rest
-being biases and norm weights that start at 0 or 1. A CPU-recorded fingerprint is
-therefore a valid starting point for a CUDA run, which it was not before.
+167/167 at seed 5 on 2026-11-27, on this model. Two seeds on one device differ in 81 of
+167, the rest being biases and norm weights that start at 0 or 1. A CPU-recorded
+fingerprint is therefore a valid starting point for a CUDA run, which it was not before.
 
 `device_manager` no longer defaults to CPU unconditionally. It reads `BRIDGE_DEVICE`, so a
 measurement script inherits whatever the shell exports. Record the device the run actually

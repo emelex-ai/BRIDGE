@@ -16,9 +16,11 @@ import unicodedata
 from pathlib import Path
 
 import pytest
+import torch
 
 import bridge
 from bridge.domain.tokenizer import BridgeTokenizer, CharacterTokenizer, PhonemeTokenizer
+from tests.conftest import batch_tensors
 
 LEXICON_DIR = Path(bridge.__file__).parent / "core" / "pronunciation_lexicons"
 LEXICONS = sorted(LEXICON_DIR.glob("*.json"))
@@ -64,7 +66,7 @@ def test_both_shipped_lexicons_are_read():
 @pytest.fixture(scope="module", params=LEXICONS, ids=lambda path: path.name)
 def lexicon(request, tok):
     """``(file name, every word of one lexicon, its input ids)``. Encoded once for the
-    module: the English lexicon is 123472 rows and takes about a second."""
+    module: the English lexicon is over 100000 rows and takes about a second."""
     path = request.param
     words = spellings(path)
     return path.name, words, tok.encode_input(words, [language_of(path)] * len(words)).ids
@@ -171,6 +173,33 @@ def test_a_decomposed_word_keeps_its_place_in_a_row_of_several_languages(bridge_
     assert bridge_tok.decode_with_languages(decomposed.orth.ids.tolist()) == [
         (row, ["EN", "ES", "EN", "ES"]) for row in rows
     ]
+
+
+def test_a_dataset_file_typed_decomposed_reads_as_the_composed_file(tmp_path, load, accented):
+    """The dataset is the third reader of a row. It counts a cell's words when the file
+    loads, on the cell as written, and the tokenizers count them on the composed row.
+
+    Oracle: the same file composed. Every row holds two languages on each side, so a word
+    count that moved would raise at load or put a language token somewhere else."""
+    spanish = [(word, apart) for language, word, apart in accented if language == "ES"][:64]
+    header = "word_raw,language,target_raw,target_language\n"
+    composed = tmp_path / "composed.csv"
+    decomposed = tmp_path / "decomposed.csv"
+    composed.write_text(
+        header + "".join(f"the {word},EN ES,{word} is,ES EN\n" for word, _ in spanish),
+        encoding="utf-8",
+    )
+    decomposed.write_text(
+        header + "".join(f"the {apart},EN ES,{apart} is,ES EN\n" for _, apart in spanish),
+        encoding="utf-8",
+    )
+    assert composed.read_bytes() != decomposed.read_bytes()
+
+    want = batch_tensors(load(str(composed))[0 : len(spanish)])
+    got = batch_tensors(load(str(decomposed))[0 : len(spanish)])
+    assert got.keys() == want.keys()
+    for name, tensor in want.items():
+        assert torch.equal(got[name], tensor), name
 
 
 @pytest.mark.parametrize("filed_as", ["NFC", "NFD"])

@@ -70,7 +70,7 @@ tokenizer's vocabulary is those 109 followed by 16 characters of Spanish (issue 
 its size is 125 and the recorded number is no longer the tokenizer's. Measured 2026-11-27
 against ``3d28ee9``, the commit before that change, on CPU: none of the 109 moved, and
 every row that decoded to its own text there encodes to the same ids, masks and labels,
-253220 of 253220 rows over both lexicons, each tagged with its language and untagged,
+258446 of 258446 rows over both lexicons, each tagged with its language and untagged,
 and 4818 of 4818 mixed phrases. The reduced assertion reads the recorded number exactly,
 as the size of the vocabulary before the characters ``SPANISH_CHARACTERS`` names, and
 every other recorded vocabulary value as it always did. The model rebuilt here is still
