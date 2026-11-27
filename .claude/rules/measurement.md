@@ -60,27 +60,29 @@ The ids of the 16 characters are pinned by hand in
 
 What the 24 test nodes still assert. The table was measured 2026-11-24 by mutating a copy
 of the recording 255 ways and running the nodes of both trees on each, and its vocabulary
-row again on 2026-11-27 as above:
+and recoded rows again on 2026-11-27, as above and below:
 
 | nodes | how they read the recording |
 |---|---|
-| 9 tokenizer | exactly, as at `a3cb285` |
+| 6 tokenizer: the orthographic ids and masks, and the phonological masks | exactly, as at `a3cb285` |
+| 3 tokenizer: the phonological feature sets of each side, and the targets | exactly, with three recorded feature sets rewritten by hand |
 | 1 vocabulary | exactly; `orth_vocab_size` as the size before the 16 Spanish characters |
-| 1 gradient of the phonological embedding | at the tolerance it has always had; no weight enters that gradient |
+| 1 gradient of the phonological embedding | the recording is checked to be the feature count over its own sets, and the model's gradient is compared with that count over the rewritten sets, both at the tolerance it has always had |
 | 1 gradient of the position table | exactly: the recording is the count of rows per slot, and no parameter is left for it to reach |
 | 1 input without phonology | exactly on the recorded stand-in; its generation is compared with an input carrying both modalities |
 | 3 generations that write phonology | form, the recorded `[BOS]` that opens each sequence, and each recorded length |
 | 2 embeddings, 4 logits, 2 generations that write orthography alone | form only: which outputs are filled, shape, dtype, finiteness, id range |
 
-That is 10 nodes reading the recording as they did and 14 changed. None is deleted and
+That is 6 nodes reading the recording as they did and 18 changed. None is deleted and
 none is emptied: each still fails on some change to the recording. What the model
 computes is pinned against reference and analytic oracles in
 `tests/domain/model/test_rotary_layers.py`, `tests/domain/model/test_any_length.py` and
 `tests/domain/model/test_max_new_tokens.py`, not against a re-recording.
 
-**The phoneme table has seven more rows than the recording saw, and no node moved.** The
-table holds 98 rows, with seven Spanish phonemes at rows 91 to 97. All 24 nodes pass with
-the test file and the fixture untouched. Three things make that so. The recording holds
+**The phoneme table has seven more rows than the recording saw, and those rows moved no
+node.** The table holds 98 rows, with seven Spanish phonemes at rows 91 to 97. At
+`d2da1cf`, the commit that added them, all 24 nodes passed with the test file and the
+fixture untouched. Three things made that so. The recording holds
 phonology as feature sets, not row ids. Its nine words are English. Every row those
 words use kept its id and its features. Measured 2026-11-27 on CPU against `3d28ee9`,
 one thread, torch 2.12.0+cu130:
@@ -94,6 +96,23 @@ one thread, torch 2.12.0+cu130:
 
 Both comparators were checked on a planted difference first: one id moved by one, and one
 float moved by one unit in the last place.
+
+**Three recorded phonemes are coded differently, and the file was still not touched.**
+`docs/decisions/0018` recodes eight rows of the table. The fixture's nine words use three
+of them: `AE1` in "at", twice, `NG` in "long" and `W` in "world". The recording holds
+each as the feature set of the table it was made on. `RECODED` in the test file writes
+the three sets out by hand, old to new. Four nodes read the recording through it: the
+feature sets of each side, the targets, and the gradient of the phonological embedding.
+Every other recorded position is read exactly as before. Measured 2026-11-27 on CPU at
+`c58886f`, one thread, torch 2.12.0+cu130:
+
+| what | reading | script |
+|---|---|---|
+| the four nodes with the row edits taken out of the csv | 4 fail | the suite, with `phonreps.csv` as at `8fd40d5` |
+| recorded positions holding a rewritten set | 4 a side: two `AE1`, one `NG`, one `W` | asserted by the nodes |
+| the recorded gradient against the feature count over the recorded sets | largest difference 2.8e-07, on values up to 41 | asserted by the node |
+| 13 plants in copies of the tree: 7 in the csv, 4 in a copy of the recording, 2 in `RECODED` | 13 of 13 caught; the unplanted copy passes | `spanish-patching/merged/plant_row_edit_defects.py` |
+| phoneme ids of every lexicon word, before the row edits and after | 130566 of 130566 words bitwise equal, 1089016 ids | `spanish-patching/phonemes/compare_encodings.py`, output in `merged/` |
 
 The fixture names its tensors as the code did when it was recorded: `enc_input_ids`,
 `dec_input_ids`, `targets`. The test maps each to the tensor that holds it. The encoder's
@@ -117,9 +136,12 @@ one model, so the table names it.
 
 | model | comparison | max relative loss deviation | relative L2 parameter distance |
 |---|---|---|---|
-| this model: an orthographic vocabulary of 125, 167 parameter tensors | one thread against 6 | 2.309e-07 | 5.049e-06 |
-| this model | one thread against 4 | 1.260e-07 | 4.826e-06 |
+| this model: an orthographic vocabulary of 125, the table of record 0018, 167 parameter tensors | one thread against 6 | 1.262e-07 | 4.817e-06 |
+| this model | one thread against 4 | 1.891e-07 | 5.519e-06 |
 | this model | rerun at one thread | 0.0 | 0.0 |
+| `109b0a0`: an orthographic vocabulary of 125, the table of `3d28ee9` | one thread against 6 | 2.309e-07 | 5.049e-06 |
+| `109b0a0` | one thread against 4 | 1.260e-07 | 4.826e-06 |
+| `109b0a0` | rerun at one thread | 0.0 | 0.0 |
 | `3d28ee9`: an orthographic vocabulary of 109, rotary position, 167 tensors | one thread against 6 | 1.850e-07 | 6.223e-06 |
 | `3d28ee9` | one thread against 4 | 1.480e-07 | 7.279e-06 |
 | `3d28ee9` | rerun at one thread | 0.0 | 0.0 |
@@ -129,20 +151,21 @@ one model, so the table names it.
 | the tree of 2026-08-30: position tables | another BLAS thread count | 2.229e-07 | 9.559e-06 |
 | the tree of 2026-08-30 | rerun | 0.0 | 0.0 |
 
-So a change to this model whose loss trajectory stays within roughly **2.3e-07** relative
-is inside the floor. The first nine rows share one protocol: 12 steps of `single_step`,
-`d_model=32`, `nhead=2`, the default `d_embedding` (2 for this model and `3d28ee9`, 1 at
-`a3cb285`), seed 0, batch 8, over the `o2p`, `p2p`, `p2o` and `op2op` pathways, torch
+So a change to this model whose loss trajectory stays within roughly **1.9e-07** relative
+is inside the floor. The first twelve rows share one protocol: 12 steps of `single_step`,
+`d_model=32`, `nhead=2`, the default `d_embedding` (2 for this model, `109b0a0` and
+`3d28ee9`, 1 at `a3cb285`), seed 0, batch 8, over the `o2p`, `p2p`, `p2o` and `op2op` pathways, torch
 2.12.0+cu130, on CPU, on a machine whose default is 6 threads. Record 0017 names the
-script. The first three were measured 2026-11-27 with that script unmodified
-(`spanish-patching/letters/13_noise_floor.sh` runs it). The six below them were measured
+script. The first six were measured 2026-11-27 with that script unmodified
+(`spanish-patching/merged/noise_floor.sh` and `spanish-patching/letters/13_noise_floor.sh`
+run it). The six below them were measured
 2026-11-24, and the three of `3d28ee9` came out digit for digit the same when run again
 in the session of 2026-11-27. The last two rows were measured 2026-08-30 on CPU: 12 Adam
 steps, `d_model=32`, batch 8, the same four pathways.
 
 The instrument was checked on this model. `global_embedding` scaled by 1 + 1e-3 reads
-4.704e-05 and 3.034e-04, with 0 of 12 losses bitwise equal on every pathway. Scaled by
-1 + 1e-6 it reads 1.947e-07 and 6.986e-06, which is inside the floor: a change that small
+9.971e-05 and 2.171e-04, with 0 of 12 losses bitwise equal on every pathway. Scaled by
+1 + 1e-6 it reads 1.891e-07 and 6.881e-06, which is inside the floor: a change that small
 cannot be told from a thread count.
 
 Re-measure rather than reuse these figures if the shapes, the optimizer or the device

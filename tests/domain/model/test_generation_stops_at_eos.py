@@ -14,18 +14,21 @@ perturbs `global_encoding` by up to about 1e-06, and `phono_sample` thresholds a
 at `> 0.5`, so a feature sitting within an ulp of 0.5 can flip between a solo and a batched
 run. That is unrelated to padding, and it has been observed elsewhere in the lexicon. It
 does not reach these tests: measured in this exact configuration (seed 75, `MIXED`, a cap
-of 28, CPU, an orthographic vocabulary of 125), the smallest `|P(ON) - 0.5|` on `o2p` is
-1.7e-03, about 1700 times the perturbation, and the smallest orthographic argmax margin is
-8.0e-05, about 80 times it. The seed was chosen by that measurement, out of 200: it is one
+of 28, CPU, an orthographic vocabulary of 125, the phoneme table of
+``docs/decisions/0018``), the smallest `|P(ON) - 0.5|` on `o2p` is 1.7e-03, about 1700
+times the perturbation, and the smallest orthographic argmax margin is 5.0e-05, about 50
+times it. The seed was chosen by that measurement, out of 200: it is one
 of six on which `p2o` ends two rows at different steps and every test here passes, and of
 those it has the widest orthographic margin. If a future edit to the model config or the
 word list makes an invariance test below fail by a single feature or a single character,
 suspect that knife edge before suspecting the padding guard.
 
-**The seed holds for one orthographic vocabulary size.** A seed's draws depend on the shape
-of every parameter drawn before them, so a character added to the vocabulary changes what
-every seed generates: the seed that suited a vocabulary of 109 ends no row of `p2o` at
-125. When the vocabulary grows, sweep the seeds again by the rule above.
+**The seed holds for one orthographic vocabulary size and one phoneme table.** A seed's
+draws depend on the shape of every parameter drawn before them, so a character added to
+the vocabulary changes what every seed generates: the seed that suited a vocabulary of 109
+ends no row of `p2o` at 125. A phoneme's features set what its embedding is, so a row edit
+moves the margins: the same seed had 8.0e-05 on the table before record 0018. When either
+changes, sweep the seeds again by the rule above.
 
 **The oracle throughout is batch invariance.** A causal decoder's rows are independent, so
 what a word generates must not depend on which other words share its batch. That is a

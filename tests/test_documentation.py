@@ -134,6 +134,60 @@ def test_the_documented_spanish_phonemes_are_the_tables(architecture):
     assert f"none of the {holding['_LL_']} that hold `_LL_` is" in text
 
 
+def test_the_documented_decided_rows_are_the_tables(architecture):
+    """The map tabulates the rows whose coding record 0018 decided, each with its features.
+    Oracle: the live table, with feature names from the csv's header."""
+    header = (ROOT / "bridge/core/phonreps.csv").read_text().splitlines()[0].split(",")[1:]
+    features = [name.lstrip("#") for name in header]
+    section = architecture.split("| row | features | the choice |")[1].split("\n\n")[0]
+    listed = {
+        phoneme: set(cells.split(", "))
+        for phoneme, cells in re.findall(r"^\| `(\w+)` \| ([\w, -]+) \|", section, re.M)
+    }
+    assert set(listed) == {"AE1", "W", "WH", "NG", "CH", "JH"}
+    for phoneme, expected in listed.items():
+        row = TABLE.row_index[phoneme]
+        assert {features[column] for column in TABLE.features_of(row).tolist()} == expected, phoneme
+
+
+def test_the_documented_pairs_one_feature_apart_are_the_tables(architecture):
+    """The map lists every pair of rows that differ in one articulatory feature, under
+    that feature, and gives their count. Oracle: the pairs counted from the csv here, a
+    vowel read at primary stress with the two stress columns dropped."""
+    lines = (ROOT / "bridge/core/phonreps.csv").read_text().splitlines()
+    names = [name.lstrip("#") for name in lines[0].split(",")[1:]]
+    stress = {names.index("primary"), names.index("secondary")}
+    rows = {}
+    for line in lines[1:]:
+        phoneme, *cells = line.split(",")
+        if phoneme.endswith(("0", "2")):
+            continue
+        rows[phoneme.removesuffix("1")] = [c for i, c in enumerate(cells) if i not in stress]
+    kept = [name for i, name in enumerate(names) if i not in stress]
+    live = set()
+    ordered = list(rows)
+    for i, first in enumerate(ordered):
+        for second in ordered[i + 1 :]:
+            differing = [
+                n for n, a, b in zip(kept, rows[first], rows[second], strict=True) if a != b
+            ]
+            if len(differing) == 1:
+                live.add((differing[0], frozenset((first, second))))
+
+    section = architecture.split("| feature | pairs one feature apart |")[1].split("\n\n")[0]
+    listed = set()
+    for cell, pairs in re.findall(r"^\| ([\w, ]+) \| (.+) \|$", section, re.M):
+        found = re.findall(r"`(\w+)`/`(\w+)`", pairs)
+        cell_features = cell.split(", ")
+        # A row naming several features gives one pair for each, in order.
+        assert len(cell_features) in (1, len(found)), cell
+        for n, pair in enumerate(found):
+            feature = cell_features[n] if len(cell_features) > 1 else cell_features[0]
+            listed.add((feature, frozenset(pair)))
+    assert listed == live
+    assert f"{len(live)} pairs of rows still differ in one feature" in flat(architecture)
+
+
 def test_documented_target_width_matches_the_vocabulary(architecture):
     """Loss targets are one column narrower than the vocabulary: [PAD] is never predicted."""
     width = VOCAB_SIZES["phonological"] - 1

@@ -326,16 +326,17 @@ of Spanish use rows English already had: that tap, and the [ð] of "nada", which
 A row one feature from another is therefore one wrong feature from being read as the
 other phoneme. Phoneticians disagree about how several of these sounds should be written
 as features. Where they do, the table takes the coding that leaves the rows farther
-apart. Five codings were decided that way or corrected, and `docs/decisions/0018` gives
-the reason for each.
+apart. The rows below were set that way or corrected, and `docs/decisions/0018` gives the
+reason for each.
 
-| rows | features | the choice |
+| row | features | the choice |
 |---|---|---|
-| `AE0`, `AE1`, `AE2` | voice, front, near-open, and stress | front alone, not front and back |
+| `AE1` | voice, front, near-open, primary | front alone, not front and back; `AE0` and `AE2` the same |
 | `W` | labial, glide, voice | voiced |
 | `WH` | labial, glide | voiceless; no word of either lexicon uses it |
 | `NG` | velar, nasal, voice | velar alone, so it is two features from `N`, as `M` is |
-| `CH`, `JH` | palatal, stop, fricative, affricate, and voice on `JH` | a stop released as a fricative; `affricate` keeps `CH` two features from `SH` |
+| `CH` | palatal, stop, fricative, affricate | a stop released as a fricative; `affricate` keeps it two features from `SH` |
+| `JH` | palatal, stop, fricative, affricate, voice | `CH`, voiced |
 
 Stress set aside, 21 pairs of rows still differ in one feature. Ten are voicing pairs,
 such as `B` and `P`. `tests/core/test_phoneme_table.py` lists all 21, so an edit that
@@ -345,7 +346,7 @@ puts two rows side by side, or parts two, fails by name.
 |---|---|
 | voice | `B`/`P`, `CH`/`JH`, `D`/`T`, `DH`/`TH`, `F`/`V`, `G`/`K`, `S`/`Z`, `SH`/`ZH`, `W`/`WH`, `X`/`_GG_` |
 | tense | `IH`/`IY`, `UH`/`UW` |
-| labial | `F`/`TH`, `V`/`DH` |
+| labial | `F`/`TH`, `DH`/`V` |
 | post_y | `AO`/`OY` |
 | dental | `V`/`_BB_` |
 | fricative | `Y`/`_LL_` |
@@ -612,3 +613,4 @@ Tracked as GitHub issues rather than restated here:
 | [0015](decisions/0015-language-belongs-to-each-word.md) | Language belongs to each word of a row, by position; phonology reads each word in its own lexicon and orthography marks each change |
 | [0016](decisions/0016-a-training-example-is-an-input-and-a-target.md) | A training example is an input and a target, held in five types named for their side; `target_raw` is required, and the caller names the language orthographic generation starts in |
 | [0017](decisions/0017-positions-are-computed-for-any-length.md) | Position is a rotation inside the self-attention of the encoders and decoders, computed for any length; generation takes a required `max_new_tokens`; `d_embedding` defaults to 2; checkpoints from a model with position tables are refused |
+| [0018](decisions/0018-spanish-has-its-letters-and-phonemes-and-rows-stay-apart.md) | Sixteen Spanish characters and seven Spanish phonemes take ids after every existing one; where a phoneme's coding is debated the table takes the one that leaves rows farther apart; checkpoints saved before this are refused |

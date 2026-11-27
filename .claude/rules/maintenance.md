@@ -53,6 +53,13 @@ Since 2026-11-27 it also checks the orthographic vocabulary tables. The map and 
 
 It was verified to fail on planted defects in a copy of the tree, 5 in all: a size of 124 in the map, a range starting one late in the README, a character missing from the README's row, a character in the map's row that the vocabulary lacks, and a seventeenth character appended to `SPANISH_CHARACTERS` and to neither table. The check that runs the README's examples was verified on one more: the decomposed-word example shown with the wrong result. The parameter count check was verified on a scalar count of 627842.
 
+Since 2026-11-27 it also checks two tables the row coding of `docs/decisions/0018` wrote down:
+
+- The map's table of decided rows, each one's features, against the live table.
+- The map's table of pairs of rows one feature apart, each pair under its feature, and the count of pairs, against pairs counted from `phonreps.csv`.
+
+Each was verified to fail on planted defects in a copy of the map, 6 in all: `NG` listed with `alveolar`, the `WH` row deleted, a pair dropped, a pair added that is two features apart, a pair filed under the wrong feature, and a count of 20.
+
 `tests/test_diagram.py` does the same for `BRIDGE-Models.drawio`, the public architecture
 figure, as of 2026-11-07. It checks one page per pathway; block opacity against which modules
 each pathway actually fires, measured by forward hooks; the label of the block fed to the
@@ -100,6 +107,8 @@ general instruction to keep things updated.
 - a pathway is added, removed, or changes what it reads or writes
 - a module is added, removed, renamed, or takes on a different responsibility
 - a shape or dtype anywhere in the documented data flow changes
+- a row of `phonreps.csv` is recoded; the tests catch the two tables, not the sentence
+  beside each that says why
 - a phoneme is added to `phonreps.csv`; the test catches its row and its features, not the
   sound, the example words or the reason given for its row
 - a dataset column is added or removed, or what a missing column means changes; the README's
