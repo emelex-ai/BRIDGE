@@ -227,7 +227,7 @@ names a position in `dataset.examples`. They differ after a shuffle, and after a
 Both are `torch.long`. Only naming separates them, and confusing them yields silently wrong
 output rather than an error.
 
-- **Row space**, 0 to 90, indexes rows of the phoneme table: *which phoneme*. This is what
+- **Row space**, 0 to 97, indexes rows of the phoneme table: *which phoneme*. This is what
   the phonological `ids` hold, in `BridgeInput.phon` and in `BridgeTarget.phon`, and what
   `Model.embed_phon_tokens` consumes.
 - **Feature space**, 0 to 35, indexes phonetic feature columns: *which feature*. This is what
@@ -239,9 +239,45 @@ Convert with `PhonemeTable.features_of(row)` and `PhonemeTable.row_of(phoneme)`.
 ## The phoneme table
 
 `bridge/core/phonreps.py` owns the feature scheme and is the single source of truth. It builds
-a `PhonemeTable` from `bridge/core/phonreps.csv`: a `(91, 36)` multi-hot matrix of 91 phonemes
+a `PhonemeTable` from `bridge/core/phonreps.csv`: a `(98, 36)` multi-hot matrix of 98 phonemes
 by 31 phonetic features plus 5 special-token columns (`[BOS]`, `[EOS]`, `[UNK]`, `[SPC]`,
 `[PAD]`). Loading is cached per device for the process lifetime.
+
+Of the 98 rows, 93 are phonemes read from the csv and 5 are the special tokens. No two
+rows share a feature vector.
+
+| rows | hold |
+|---|---|
+| 0 to 85 | the first 86 rows of the csv: the ARPAbet phonemes, and `_`, which has no feature |
+| 86 to 90 | `[BOS]`, `[EOS]`, `[UNK]`, `[SPC]`, `[PAD]` |
+| 91 to 97 | the rest of the csv: seven phonemes of Spanish |
+
+The special tokens sit inside the table so that no row id ever moves. A phoneme appended
+to the csv takes the next id after the last. `PhonemeTable.phonetic_features` is the 93
+phonemes without the special tokens, in csv order, so its row 86 is table row 91.
+
+**Seven rows are Spanish.** The Spanish lexicon writes each with a symbol ARPAbet lacks.
+Each row is an existing row with one thing changed, and uses only the 31 features.
+
+| symbol | row | sound | as in | features | nearest row, and the change |
+|---|---|---|---|---|---|
+| `X` | 91 | [x], voiceless velar fricative | "mejor", "gente" | velar, fricative | `K`, a stop made a fricative |
+| `_BB_` | 92 | [β], voiced bilabial fricative | "sabe", "favor" | labial, fricative, voice | `B`, a stop made a fricative |
+| `_GG_` | 93 | [ɣ], voiced velar fricative | "algo", "amigo" | velar, fricative, voice | `G`, a stop made a fricative |
+| `_JJ_` | 94 | [ʎ], palatal lateral | "calle", "ella" | palatal, liquid, voice | `L`, moved from alveolar to palatal |
+| `_LL_` | 95 | [ʝ], voiced palatal fricative | "yo", "ayuda" | palatal, fricative, glide, voice | `Y`, a glide made a fricative as well |
+| `_NN_` | 96 | [ɲ], palatal nasal | "niño", "año" | palatal, nasal, voice | `N`, moved from alveolar to palatal |
+| `_RR_` | 97 | [r], alveolar trill | "perro", "razón" | alveolar, liquid, rhotic, voice | `L`, made rhotic |
+
+Two of the names mislead. `_JJ_` is the sound spelt "ll" and `_LL_` is the sound spelt
+"y". All 307 words that hold `_JJ_` are spelt with "ll", and none of the 98 that hold
+`_LL_` is. `_LL_` keeps `glide` because the plain row, palatal, fricative and voice, is
+already `ZH`. The other sounds of Spanish use rows English already had: the tap of "pero"
+is `DX`, and the [ð] of "nada" is `DH`.
+
+A symbol with no row encodes as `[UNK]`, row 88, and raises nothing. No word of either
+shipped lexicon does: `tests/domain/tokenizer/test_lexicon_coverage.py` encodes all of
+them.
 
 `PhonemeTable.fingerprint` is a digest of the table, recorded into `VocabSpec` and checked when
 a checkpoint loads, so a `phonreps.csv` edit that silently relabels every id is detectable.
@@ -318,6 +354,8 @@ tests/domain/model/test_rotary_layers.py
 tests/domain/model/test_any_length.py position, padding and generation on the whole model
 tests/domain/model/test_max_new_tokens.py
                                       the cap on what generation writes
+tests/domain/tokenizer/test_lexicon_coverage.py
+                                      no word of a shipped lexicon encodes to [UNK]
 tests/test_documentation.py           asserts this document against the live system
 tests/test_diagram.py                 asserts BRIDGE-Models.drawio against the live model
 tests/fixtures/sync_diagram_table.py  rewrites the figure's feature table from phonreps.csv

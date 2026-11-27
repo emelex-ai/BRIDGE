@@ -223,7 +223,7 @@ The single easiest way to get silently wrong output. Both are `torch.long` and o
 
 | space | range | indexes | where it appears |
 |---|---|---|---|
-| **row** | 0–90 | *which phoneme*, a row of the feature table | the phonological `ids` of an input and of a target, `Model.embed_phon_tokens` |
+| **row** | 0–97 | *which phoneme*, a row of the feature table | the phonological `ids` of an input and of a target, `Model.embed_phon_tokens` |
 | **feature** | 0–35 | *which phonetic feature*, a column | `GenerationOutput.phon_tokens`, `PhonemeTokenizer.decode`, `VocabSpec.phon_*_id`, the phonological `labels` of a target |
 
 ```python
@@ -367,7 +367,7 @@ Each event's `metrics` also carry `input` and `target`, the strings of the rows 
 
 ## Phonological representations
 
-Phonemes are encoded against the feature table at [`bridge/core/phonreps.csv`](bridge/core/phonreps.csv) (31 distinctive features) augmented with 5 special tokens (`[BOS]`, `[EOS]`, `[UNK]`, `[SPC]`, `[PAD]`). A phoneme's embedding is the mean of its active feature embeddings, never a free parameter of its own, so phonemes sharing features share embedding mass. Pronunciations are looked up from the bundled lexicons. A word no lexicon holds has no phonology: its input carries `phon=None`, and it cannot be a target.
+Phonemes are encoded against the feature table at [`bridge/core/phonreps.csv`](bridge/core/phonreps.csv) (31 distinctive features) augmented with 5 special tokens (`[BOS]`, `[EOS]`, `[UNK]`, `[SPC]`, `[PAD]`). A phoneme's embedding is the mean of its active feature embeddings, never a free parameter of its own, so phonemes sharing features share embedding mass. The table holds 93 phonemes: the ARPAbet set, and seven Spanish sounds ARPAbet lacks, such as the trill of "perro" and the "ñ" of "niño". Every word of both bundled lexicons encodes without `[UNK]`. Pronunciations are looked up from the bundled lexicons. A word no lexicon holds has no phonology: its input carries `phon=None`, and it cannot be a target.
 
 The feature inventory is based on the phonological vectors from [Traindata](https://github.com/MCooperBorkenhagen/Traindata).
 

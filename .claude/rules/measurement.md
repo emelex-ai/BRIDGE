@@ -60,6 +60,23 @@ computes is pinned against reference and analytic oracles in
 `tests/domain/model/test_rotary_layers.py`, `tests/domain/model/test_any_length.py` and
 `tests/domain/model/test_max_new_tokens.py`, not against a re-recording.
 
+**The phoneme table has seven more rows than the recording saw, and no node moved.** The
+table holds 98 rows, with seven Spanish phonemes at rows 91 to 97. All 24 nodes pass with
+the test file and the fixture untouched. Three things make that so. The recording holds
+phonology as feature sets, not row ids. Its nine words are English. Every row those
+words use kept its id and its features. Measured 2026-11-27 on CPU against `3d28ee9`,
+one thread, torch 2.12.0+cu130:
+
+| what | reading | script |
+|---|---|---|
+| every lexicon word that encoded without `[UNK]` at `3d28ee9`, encoded on both trees | 127925 of 127925 words bitwise equal, 1066293 ids | `spanish-patching/phonemes/compare_encodings.py` |
+| a model at seed 0, `d_model=32`: parameters, 24 steps on each of five pathways, a generation on each | 1013 of 1013 float tensors and 635 of 635 integer tensors bitwise equal | `spanish-patching/phonemes/compare_model_differential.py` |
+| the 24 nodes with `K`, a row the recorded words use, given `voice` in a copy | 4 fail | `spanish-patching/phonemes/plant_defects.py` |
+| the 24 nodes with the special tokens moved to rows 93 to 97 in a copy | 0 fail: the recording cannot see a row id | the same |
+
+Both comparators were checked on a planted difference first: one id moved by one, and one
+float moved by one unit in the last place.
+
 The fixture names its tensors as the code did when it was recorded: `enc_input_ids`,
 `dec_input_ids`, `targets`. The test maps each to the tensor that holds it. The encoder's
 are the ids and mask of the input (`BridgeInput`, what the encoders read). The decoder's
@@ -176,10 +193,10 @@ wrong output rather than an error.
 
 | space | range | what it indexes | where it appears |
 |---|---|---|---|
-| row | 0 to 90 | phoneme table rows (91 phonemes plus specials) | the phonological `ids` of `BridgeInput.phon` and `BridgeTarget.phon`, `Model.embed_phon_tokens` |
+| row | 0 to 97 | phoneme table rows (93 phonemes and 5 specials) | the phonological `ids` of `BridgeInput.phon` and `BridgeTarget.phon`, `Model.embed_phon_tokens` |
 | feature | 0 to 35 | phonetic feature columns (31 base plus 5 specials) | `GenerationOutput.phon_tokens`, `PhonemeTokenizer.decode`, `VocabSpec.phon_*_id`, the phonological `labels` of `BridgeTarget.phon` |
 
-Current table fingerprint: `4c4a9c388f46bc35`. A checkpoint recording a different one was
+Current table fingerprint: `1a9b6eee9bf74384`. A checkpoint recording a different one was
 trained against a different `phonreps.csv` and its phoneme ids may not mean the same things.
 
 ## Running things

@@ -41,6 +41,14 @@ Since 2026-11-24 it also checks three things the position change wrote down:
 
 Each was verified to fail on planted defects in a copy of the tree, 9 in all: the call shown without `max_new_tokens`, with a default for it, and with it positional; a `d_embedding` default of 1 in either table, a size missing from the README's, and a size in the map's that `ModelConfig` does not have; a tensor count of 169, and a scalar count of 629555. The check that runs the README's examples was verified on three more: a `generate` call without its cap in the generation example and in the usage example, and a changed result under the cap example.
 
+Since 2026-11-27 it also checks three things the Spanish phoneme change wrote down:
+
+- The map's table of row ranges, and the count of phonemes in the map, the README and `.claude/rules/measurement.md`, against the live phoneme table.
+- The map's table of the seven Spanish phonemes, each one's row id and features, against the live table and the header of `phonreps.csv`.
+- The two word counts under that table, against the Spanish lexicon.
+
+Each was verified to fail on planted defects in a copy of the tree, 11 in all: a row id off by one, a feature dropped, the features of `_JJ_` and `_LL_` exchanged, a row deleted, either range of rows moved, a phoneme count of 92 in the map or the README and of 91 in the rules, and either word count changed. The same run planted 14 more in `phonreps.csv`, the loader, the lexicons and the older claims, and each failed a test.
+
 `tests/test_diagram.py` does the same for `BRIDGE-Models.drawio`, the public architecture
 figure, as of 2026-11-07. It checks one page per pathway; block opacity against which modules
 each pathway actually fires, measured by forward hooks; the label of the block fed to the
@@ -88,6 +96,8 @@ general instruction to keep things updated.
 - a pathway is added, removed, or changes what it reads or writes
 - a module is added, removed, renamed, or takes on a different responsibility
 - a shape or dtype anywhere in the documented data flow changes
+- a phoneme is added to `phonreps.csv`; the test catches its row and its features, not the
+  sound, the example words or the reason given for its row
 - a dataset column is added or removed, or what a missing column means changes; the README's
   "Dataset files" section says the same thing and moves with it
 - what `Model.generate` takes from its caller changes, such as `orth_start` or

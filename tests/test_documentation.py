@@ -81,6 +81,59 @@ def test_recorded_fingerprint_matches_the_table(project_rules):
     )
 
 
+def test_the_documented_row_layout_is_the_tables(architecture, readme):
+    """Which rows hold the csv's phonemes, which the special tokens, and how many of each.
+
+    Oracle: the live table. A phoneme appended to phonreps.csv moves the last range and
+    the phoneme count.
+    """
+    special = sorted(TABLE.row_index[token] for token in SPECIAL_TOKENS)
+    phonemes = len(TABLE.phonemes)
+    tokens = ", ".join(f"`{token}`" for token in SPECIAL_TOKENS)
+    assert (
+        f"Of the {TABLE.num_rows} rows, {phonemes} are phonemes read from the csv and "
+        f"{len(SPECIAL_TOKENS)} are the special tokens" in flat(architecture)
+    )
+    assert f"| 0 to {special[0] - 1} |" in architecture
+    assert f"| {special[0]} to {special[-1]} | {tokens} |" in architecture
+    assert f"| {special[-1] + 1} to {TABLE.num_rows - 1} |" in architecture
+    assert f"is the {phonemes} phonemes without the special tokens" in flat(architecture)
+    assert f"The table holds {phonemes} phonemes" in flat(readme)
+    assert f"({phonemes} phonemes and {len(SPECIAL_TOKENS)} specials)" in PROJECT_RULES.read_text()
+
+
+def test_the_documented_spanish_phonemes_are_the_tables(architecture):
+    """The map tabulates each phoneme that sits after the special tokens: its row and its
+    features. Oracle: the live table, with feature names from the csv's header. The two
+    word counts under the table are checked against the Spanish lexicon.
+    """
+    header = (ROOT / "bridge/core/phonreps.csv").read_text().splitlines()[0].split(",")[1:]
+    features = [name.lstrip("#") for name in header]
+    last_special = max(TABLE.row_index[token] for token in SPECIAL_TOKENS)
+    live = {
+        phoneme: (row, {features[column] for column in TABLE.features_of(row).tolist()})
+        for phoneme, row in TABLE.row_index.items()
+        if row > last_special
+    }
+    section = architecture.split("| symbol | row | sound |")[1].split("\n\n")[0]
+    listed = {
+        symbol: (int(row), set(cells.split(", ")))
+        for symbol, row, cells in re.findall(
+            r"^\| `(\w+)` \| (\d+) \|[^|]*\|[^|]*\| ([\w, ]+) \|", section, re.M
+        )
+    }
+    assert listed == live
+
+    lexicon = BridgeTokenizer().phoneme_tokenizer.pronunciation_dict
+    holding = {
+        symbol: sum(symbol in entry["es"][0] for entry in lexicon.values() if "es" in entry)
+        for symbol in ("_JJ_", "_LL_")
+    }
+    text = flat(architecture)
+    assert f"All {holding['_JJ_']} words that hold `_JJ_` are spelt" in text
+    assert f"none of the {holding['_LL_']} that hold `_LL_` is" in text
+
+
 def test_documented_target_width_matches_the_vocabulary(architecture):
     """Loss targets are one column narrower than the vocabulary: [PAD] is never predicted."""
     width = VOCAB_SIZES["phonological"] - 1
