@@ -93,7 +93,7 @@ SPANISH_PHONEMES = {
     "_JJ_": (94, {"palatal", "liquid", "voice"}),
     "_LL_": (95, {"palatal", "fricative", "glide", "voice"}),
     "_NN_": (96, {"palatal", "nasal", "voice"}),
-    "_RR_": (97, {"alveolar", "liquid", "rhotic", "voice"}),
+    "_RR_": (97, {"alveolar", "liquid", "rhotic", "tap", "voice"}),
 }
 
 
@@ -106,6 +106,80 @@ def test_the_spanish_phonemes_hold_the_documented_rows_and_features():
         assert table.row_index[phoneme] == row, phoneme
         active = {features[column] for column in table.features_of(row).tolist()}
         assert active == expected, phoneme
+
+
+# Rows whose coding is a decision, not a transcription of a source. The reasons are in
+# docs/decisions/0018.
+DECIDED_ROWS = {
+    "AE1": {"voice", "front", "near-open", "primary"},
+    "W": {"labial", "glide", "voice"},
+    "WH": {"labial", "glide"},
+    "NG": {"velar", "nasal", "voice"},
+    "CH": {"palatal", "stop", "fricative", "affricate"},
+    "JH": {"palatal", "stop", "fricative", "affricate", "voice"},
+}
+
+
+def test_the_decided_rows_hold_the_documented_features():
+    """Oracle: the feature sets written out by hand above."""
+    features = [name.lstrip("#") for name in phonreps_csv().columns]
+    table = load_phoneme_table()
+
+    for phoneme, expected in DECIDED_ROWS.items():
+        active = {
+            features[column] for column in table.features_of(table.row_index[phoneme]).tolist()
+        }
+        assert active == expected, phoneme
+
+
+# Every pair of rows that differ in one articulatory feature, with that feature. Scoring
+# takes the nearest row, so one wrong feature at such a row reads as the other phoneme.
+# No word of either lexicon uses `WH`, `NX` or `IX`.
+ONE_FEATURE_APART = {
+    ("B", "P"): "voice",
+    ("CH", "JH"): "voice",
+    ("D", "T"): "voice",
+    ("DH", "TH"): "voice",
+    ("F", "V"): "voice",
+    ("G", "K"): "voice",
+    ("S", "Z"): "voice",
+    ("SH", "ZH"): "voice",
+    ("W", "WH"): "voice",
+    ("X", "_GG_"): "voice",
+    ("IH", "IY"): "tense",
+    ("UH", "UW"): "tense",
+    ("DH", "V"): "labial",
+    ("F", "TH"): "labial",
+    ("AO", "OY"): "post_y",
+    ("V", "_BB_"): "dental",
+    ("Y", "_LL_"): "fricative",
+    ("ZH", "_LL_"): "glide",
+    ("DX", "NX"): "nasal",
+    ("N", "NX"): "tap",
+    ("IX", "UW"): "round",
+}
+
+
+def test_the_rows_one_feature_apart_are_the_documented_pairs():
+    """A row edit that puts two phonemes side by side, or parts two, fails here by name.
+
+    Stress is set aside: a vowel is read at primary stress with the two stress columns
+    dropped, so its three rows count once. Oracle: the pairs written out by hand above.
+    """
+    frame = phonreps_csv()
+    frame.columns = [name.lstrip("#") for name in frame.columns]
+    rows = frame[~frame.index.str.endswith(("0", "2"))].drop(columns=["primary", "secondary"])
+    rows.index = rows.index.str.removesuffix("1")
+
+    found = {}
+    names = list(rows.index)
+    for i, first in enumerate(names):
+        for second in names[i + 1 :]:
+            differing = rows.columns[(rows.loc[first] != rows.loc[second]).to_numpy()]
+            if len(differing) == 1:
+                found[(first, second)] = differing[0]
+
+    assert found == ONE_FEATURE_APART
 
 
 def test_the_two_palatal_symbols_are_told_apart_by_spelling():
@@ -199,7 +273,7 @@ def test_fingerprint_matches_the_committed_digest():
     Changing the recipe (the row-name encoding, the truncation length, the byte cast)
     silently invalidates every fingerprint already recorded, so it must break here first.
     """
-    assert load_phoneme_table().fingerprint == "1a9b6eee9bf74384"
+    assert load_phoneme_table().fingerprint == "7ec53c751f53eb0a"
 
 
 def test_fingerprint_is_stable_and_order_sensitive():

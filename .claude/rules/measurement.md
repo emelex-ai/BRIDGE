@@ -231,7 +231,7 @@ wrong output rather than an error.
 | row | 0 to 97 | phoneme table rows (93 phonemes and 5 specials) | the phonological `ids` of `BridgeInput.phon` and `BridgeTarget.phon`, `Model.embed_phon_tokens` |
 | feature | 0 to 35 | phonetic feature columns (31 base plus 5 specials) | `GenerationOutput.phon_tokens`, `PhonemeTokenizer.decode`, `VocabSpec.phon_*_id`, the phonological `labels` of `BridgeTarget.phon` |
 
-Current table fingerprint: `1a9b6eee9bf74384`. A checkpoint recording a different one was
+Current table fingerprint: `7ec53c751f53eb0a`. A checkpoint recording a different one was
 trained against a different `phonreps.csv` and its phoneme ids may not mean the same things.
 
 ## Running things

@@ -303,7 +303,7 @@ to the csv takes the next id after the last. `PhonemeTable.phonetic_features` is
 phonemes without the special tokens, in csv order, so its row 86 is table row 91.
 
 **Seven rows are Spanish.** The Spanish lexicon writes each with a symbol ARPAbet lacks.
-Each row is an existing row with one thing changed, and uses only the 31 features.
+Each row is built from an existing row and uses only the 31 features.
 
 | symbol | row | sound | as in | features | nearest row, and the change |
 |---|---|---|---|---|---|
@@ -313,13 +313,44 @@ Each row is an existing row with one thing changed, and uses only the 31 feature
 | `_JJ_` | 94 | [ʎ], palatal lateral | "calle", "ella" | palatal, liquid, voice | `L`, moved from alveolar to palatal |
 | `_LL_` | 95 | [ʝ], voiced palatal fricative | "yo", "ayuda" | palatal, fricative, glide, voice | `Y`, a glide made a fricative as well |
 | `_NN_` | 96 | [ɲ], palatal nasal | "niño", "año" | palatal, nasal, voice | `N`, moved from alveolar to palatal |
-| `_RR_` | 97 | [r], alveolar trill | "perro", "razón" | alveolar, liquid, rhotic, voice | `L`, made rhotic |
+| `_RR_` | 97 | [r], alveolar trill | "perro", "razón" | alveolar, liquid, rhotic, tap, voice | `L`, made rhotic and a tap |
 
 Two of the names mislead. `_JJ_` is the sound spelt "ll" and `_LL_` is the sound spelt
 "y". All 307 words that hold `_JJ_` are spelt with "ll", and none of the 98 that hold
 `_LL_` is. `_LL_` keeps `glide` because the plain row, palatal, fricative and voice, is
-already `ZH`. The other sounds of Spanish use rows English already had: the tap of "pero"
-is `DX`, and the [ð] of "nada" is `DH`.
+already `ZH`. `_RR_` carries `tap` beside `rhotic` because a trill is a run of taps, and
+that keeps it two features from `L` and two from `DX`, the tap of "pero". The other sounds
+of Spanish use rows English already had: that tap, and the [ð] of "nada", which is `DH`.
+
+**Rows are coded to stay apart.** A decoded position is scored as the row nearest to it.
+A row one feature from another is therefore one wrong feature from being read as the
+other phoneme. Phoneticians disagree about how several of these sounds should be written
+as features. Where they do, the table takes the coding that leaves the rows farther
+apart. Five codings were decided that way or corrected, and `docs/decisions/0018` gives
+the reason for each.
+
+| rows | features | the choice |
+|---|---|---|
+| `AE0`, `AE1`, `AE2` | voice, front, near-open, and stress | front alone, not front and back |
+| `W` | labial, glide, voice | voiced |
+| `WH` | labial, glide | voiceless; no word of either lexicon uses it |
+| `NG` | velar, nasal, voice | velar alone, so it is two features from `N`, as `M` is |
+| `CH`, `JH` | palatal, stop, fricative, affricate, and voice on `JH` | a stop released as a fricative; `affricate` keeps `CH` two features from `SH` |
+
+Stress set aside, 21 pairs of rows still differ in one feature. Ten are voicing pairs,
+such as `B` and `P`. `tests/core/test_phoneme_table.py` lists all 21, so an edit that
+puts two rows side by side, or parts two, fails by name.
+
+| feature | pairs one feature apart |
+|---|---|
+| voice | `B`/`P`, `CH`/`JH`, `D`/`T`, `DH`/`TH`, `F`/`V`, `G`/`K`, `S`/`Z`, `SH`/`ZH`, `W`/`WH`, `X`/`_GG_` |
+| tense | `IH`/`IY`, `UH`/`UW` |
+| labial | `F`/`TH`, `V`/`DH` |
+| post_y | `AO`/`OY` |
+| dental | `V`/`_BB_` |
+| fricative | `Y`/`_LL_` |
+| glide | `ZH`/`_LL_` |
+| nasal, tap, round | `DX`/`NX`, `N`/`NX`, `IX`/`UW`; no word of either lexicon uses `NX` or `IX` |
 
 A symbol with no row encodes as `[UNK]`, row 88, and raises nothing. No word of either
 shipped lexicon does: `tests/domain/tokenizer/test_lexicon_coverage.py` encodes all of

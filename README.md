@@ -238,7 +238,7 @@ row
 
 # Row id to its active feature columns.
 table.features_of(row).tolist()
-# [14, 15, 17, 22, 29]
+# [14, 15, 22, 29]
 ```
 
 ---

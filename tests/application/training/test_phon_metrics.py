@@ -12,8 +12,8 @@ docs/decisions/0005.
     metric                    over padding    real positions only     ratio
     cosine similarity              0.5262                  0.9487      1.80
     euclidean distance           112.2570                  0.2339     0.002
-    closest phoneme, L2            0.3894                  0.8504      2.18
-    closest phoneme, cosine        0.4483                  0.9738      2.17
+    closest phoneme, L2            0.3942                  0.8609      2.18
+    closest phoneme, cosine        0.4411                  0.9633      2.18
 
 **The candidate phoneme set.** ``PHON_REPS`` is ``PhonemeTable.phonetic_features``,
 ``(93, 31)``, which is what ``TrainingPipeline`` passes and what
@@ -21,9 +21,9 @@ docs/decisions/0005.
 featureless phoneme, is ``(92, 31)``, a candidate set the pipeline never uses.
 
     metric                  92 candidates    93 candidates (production)
-    closest phoneme, L1            0.8504                        0.8530
-    closest phoneme, L2            0.8504                        0.8530
-    closest phoneme, cosine        0.9738                        0.9738  (as similarity)
+    closest phoneme, L1            0.8609                        0.8635
+    closest phoneme, L2            0.8609                        0.8635
+    closest phoneme, cosine        0.9633                        0.9633  (as similarity)
 
 One position of 381 scores differently, which is what an all-zero candidate row in an
 L1/L2 search should do. Cosine is unaffected, and the two metrics that never
@@ -34,13 +34,13 @@ both sets, which is what shows the candidate set is all that differs.
 variant reduces with `argmin`. `argmin` over a cosine *similarity* selects the least
 similar phoneme, so a metric named "closest phoneme" scores agreement on the *farthest*
 one. Over the 93 real phoneme rows that reduction picks a row's own index 0 times out of
-93, where `argmax` picks it 92 times, and on a fully scrambled prediction it reads 0.6237
+93, where `argmax` picks it 92 times, and on a fully scrambled prediction it reads 0.5914
 where the L2 control correctly reads 0.0.
 
     metric                  as similarity (wrong)    as distance (correct)
-    closest phoneme, cosine                0.9738                   0.8504
+    closest phoneme, cosine                0.9633                   0.8609
 
-The correct figure sits beside L1 and L2 at 0.8530 rather than 12 points above them,
+The correct figure sits beside L1 and L2 at 0.8635 rather than 10 points above them,
 which is what a metric measuring the same thing under a different norm should do. A
 `closest_phoneme_cosine_accuracy` computed as a similarity is void.
 
@@ -144,7 +144,7 @@ def test_euclidean_distance():
 
 
 @pytest.mark.parametrize(
-    ("metric", "expected"), [("l1", 0.8530), ("l2", 0.8530), ("cosine", 0.8504)]
+    ("metric", "expected"), [("l1", 0.8635), ("l2", 0.8635), ("cosine", 0.8609)]
 )
 def test_closest_phoneme(metric, expected):
     true_base, pred_base = base_block(
@@ -185,7 +185,7 @@ def test_a_scrambled_prediction_scores_zero(metric):
     """The control that fails loudest on a reversed comparison.
 
     A prediction that is every phoneme except its own must agree nowhere. ``argmin`` over
-    a cosine similarity scores 0.6237 here.
+    a cosine similarity scores 0.5914 here.
 
     The scramble is a shift by one row, which leaves no row in place whatever the row
     count. A seeded permutation can leave one: ``randperm(93)`` at seed 0 does.
