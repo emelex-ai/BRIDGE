@@ -49,6 +49,10 @@ Since 2026-11-27 it also checks three things the Spanish phoneme change wrote do
 
 Each was verified to fail on planted defects in a copy of the tree, 11 in all: a row id off by one, a feature dropped, the features of `_JJ_` and `_LL_` exchanged, a row deleted, either range of rows moved, a phoneme count of 92 in the map or the README and of 91 in the rules, and either word count changed. The same run planted 14 more in `phonreps.csv`, the loader, the lexicons and the older claims, and each failed a test.
 
+Since 2026-11-27 it also checks the orthographic vocabulary tables. The map and the README each give the vocabulary's size, its four id ranges, and the characters of the last range. All are held against a live `CharacterTokenizer`.
+
+It was verified to fail on planted defects in a copy of the tree, 5 in all: a size of 124 in the map, a range starting one late in the README, a character missing from the README's row, a character in the map's row that the vocabulary lacks, and a seventeenth character appended to `SPANISH_CHARACTERS` and to neither table. The check that runs the README's examples was verified on one more: the decomposed-word example shown with the wrong result. The parameter count check was verified on a scalar count of 627842.
+
 `tests/test_diagram.py` does the same for `BRIDGE-Models.drawio`, the public architecture
 figure, as of 2026-11-07. It checks one page per pathway; block opacity against which modules
 each pathway actually fires, measured by forward hooks; the label of the block fed to the
@@ -103,6 +107,9 @@ general instruction to keep things updated.
 - what `Model.generate` takes from its caller changes, such as `orth_start` or
   `max_new_tokens`; the README's "Generating" section says the same thing and moves with it
 - where position enters the model changes, or what bounds a sequence's length
+- a character is added to the orthographic vocabulary, or what is done to a row before it
+  is read changes, such as composition or case; the README's "Characters" section says the
+  same thing and moves with it
 - a default in `ModelConfig` changes, or a rule relating two of its sizes
 - what a checkpoint load accepts or refuses changes
 - an issue in Known defects is closed, or a defect of comparable severity is found
@@ -131,6 +138,10 @@ Render every page after editing and look at it; the test does not see layout.
 - the commands for running the suite or the checks change
 - the suite's runtime moves enough to change the figure it gives for the suite
 - the model gains or loses a parameter tensor, which moves the count it records
+- a character is added to the orthographic vocabulary, which moves the scalar count it
+  records and the shapes its noise floor was measured on. The same change moves the seed
+  `tests/domain/model/test_generation_stops_at_eos.py` builds its model from; that
+  module's docstring gives the rule for choosing it
 
 ## Write a decision record when
 

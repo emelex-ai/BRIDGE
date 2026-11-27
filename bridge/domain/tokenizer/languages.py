@@ -6,6 +6,7 @@ they cannot disagree about where a word starts or which language it is in.
 """
 
 import re
+import unicodedata
 from collections.abc import Sequence
 
 SUPPORTED_LANGUAGES = ("EN", "ES")
@@ -87,8 +88,7 @@ def per_row_languages(texts: list[str], languages: Languages = None) -> list[tup
     One string is not read as a code for every row: it raises, since a row's own entry may
     be a string of several codes.
     """
-    if not isinstance(texts, list) or not all(isinstance(row, str) for row in texts):
-        raise TypeError("The rows to encode are a list of strings")
+    _require_rows(texts)
     if languages is None:
         languages = [None] * len(texts)
     elif not isinstance(languages, list | tuple):
@@ -98,3 +98,21 @@ def per_row_languages(texts: list[str], languages: Languages = None) -> list[tup
     elif len(languages) != len(texts):
         raise ValueError(f"{len(languages)} language entries for {len(texts)} rows")
     return [per_word_languages(row, entry) for row, entry in zip(texts, languages, strict=True)]
+
+
+def read_rows(texts: list[str], languages: Languages = None) -> list[tuple[str, tuple[str, ...]]]:
+    """Every row of one tokenizer call in Unicode NFC, beside the language of each word.
+
+    An accented letter can arrive as one code point or as its base letter followed by a
+    combining mark. The character vocabulary and the lexicons hold the one code point, so
+    a row is composed before either tokenizer reads it, and words are counted on the
+    composed row. ``texts`` and ``languages`` are as for :func:`per_row_languages`.
+    """
+    _require_rows(texts)
+    rows = [unicodedata.normalize("NFC", row) for row in texts]
+    return list(zip(rows, per_row_languages(rows, languages), strict=True))
+
+
+def _require_rows(texts: list[str]) -> None:
+    if not isinstance(texts, list) or not all(isinstance(row, str) for row in texts):
+        raise TypeError("The rows to encode are a list of strings")

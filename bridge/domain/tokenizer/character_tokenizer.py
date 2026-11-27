@@ -8,12 +8,18 @@ from bridge.domain.tokenizer.languages import (
     SUPPORTED_LANGUAGES,
     UNSPECIFIED,
     Languages,
-    per_row_languages,
+    read_rows,
     split_words,
 )
 from bridge.utils import device_manager
 
 logger = logging.getLogger(__name__)
+
+# The characters of Spanish that ``string.printable`` lacks, each one code point. A
+# character's place in the vocabulary is its row in a checkpoint's orthographic embedding
+# and output head, so this is written out, not read from a lexicon, and it only grows at
+# its end: a character added anywhere else moves every id after it.
+SPANISH_CHARACTERS = "áéíóúüñÁÉÍÓÚÜÑ¿¡"
 
 
 class CharacterTokenizer:
@@ -25,7 +31,12 @@ class CharacterTokenizer:
         # vs Spanish "leer" can share spellings or share phonemes in mixed corpora).
         # ``"--"`` is the unspecified-language placeholder that preserves tensor shape.
         self.language_tokens = [UNSPECIFIED, *SUPPORTED_LANGUAGES]
-        self.vocab = self.special_tokens + self.language_tokens + list(string.printable)
+        self.vocab = [
+            *self.special_tokens,
+            *self.language_tokens,
+            *string.printable,
+            *SPANISH_CHARACTERS,
+        ]
 
         self.char_2_idx = {ch: i for i, ch in enumerate(self.vocab)}
         self.idx_2_char = {i: ch for i, ch in enumerate(self.vocab)}
@@ -47,8 +58,10 @@ class CharacterTokenizer:
             the word is gato        EN EN EN ES
             [EN] [BOS] t h e _ w o r d _ i s _ [ES] g a t o [EOS]
 
-        Characters are kept exactly as written, whitespace included, so a row in one
-        language holds a single language token.
+        Each row is first composed to Unicode NFC, so ``e`` followed by a combining acute
+        accent is the one character ``é``. Past that, characters are kept as written, case
+        and whitespace included, so a row in one language holds a single language token.
+        A character outside the vocabulary encodes as ``[UNK]``.
 
         Args:
             texts: The rows to encode, a list of strings.
@@ -82,7 +95,7 @@ class CharacterTokenizer:
         bos = self.char_2_idx["[BOS]"]
         return [
             [self.char_2_idx[word_langs[0]], bos, *self._body(text, word_langs)]
-            for text, word_langs in zip(texts, per_row_languages(texts, languages), strict=True)
+            for text, word_langs in read_rows(texts, languages)
         ]
 
     def _padded(self, rows: list[list[int]]) -> tuple[torch.Tensor, torch.Tensor]:
@@ -101,7 +114,11 @@ class CharacterTokenizer:
         return ids
 
     def decode(self, list_of_ints: list[list[int]]) -> list[str]:
-        """The text of each row: its characters, without special or language tokens."""
+        """The text of each row: its characters, without special or language tokens.
+
+        ``[UNK]`` is a special token, so a character the vocabulary lacks is absent from
+        the text and not marked in it.
+        """
         return [text for text, _ in self.decode_with_languages(list_of_ints)]
 
     def decode_with_languages(
