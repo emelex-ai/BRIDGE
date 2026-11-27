@@ -265,19 +265,21 @@ uv run mypy bridge
 uv run ruff check . && uv run ruff format --check .
 ```
 
-The suite runs in about eleven and a half seconds because the pronunciation lexicon parse
-is memoised process-wide. A change that takes it well past that has probably reintroduced
-per-instance parsing, which cost 45 seconds before the memo (measured 2026-08-30).
-Currently 1046 passed and 6 skipped, in 11.39 to 11.55 s by pytest's own count and 14.28
-to 14.43 s of wall clock, which includes interpreter start. Measured 2026-11-24 on the
-position change: three runs of `uv run --no-sync pytest -q -p no:cacheprovider` with
-`OMP_NUM_THREADS=1` and `MKL_NUM_THREADS=1`, load average 1.4 to 2.3. The 873 tests of
-`a3cb285` took 10.07 to 10.22 s by pytest's count in the same session, the two suites run
-alternately. That is 173 more tests and about 1.3 s more than `a3cb285`. Record 0017
-names the script. The 6 skips are six cases of one test, each a pathway that does read
-the modality the case leaves out. No test is skipped for want of a GPU on a machine that
-has one. With the thread variables unset, 1042 of these tests were run and passed, so no
-tolerance in them is tuned to one thread. The suite took 12.9 s before the pipeline
+The suite runs in about fifteen and a half seconds. The pronunciation lexicon parse is
+memoised process-wide, and a change that takes the suite well past that figure has
+probably reintroduced per-instance parsing, which cost 45 seconds before the memo
+(measured 2026-08-30). Currently 1097 passed and 6 skipped, in 15.37 to 15.79 s by
+pytest's own count and 18.40 to 18.76 s of wall clock, which includes interpreter start.
+Measured 2026-11-27 at `6cd859f`: three runs of `pytest -q -p no:cacheprovider` with
+`OMP_NUM_THREADS=1` and `MKL_NUM_THREADS=1`, load average 3.7 to 4.0. The 1046 tests of
+`3d28ee9` took 12.07 to 12.26 s by pytest's count in the same session, the two suites run
+alternately. That is 51 more tests and about 3.3 s more than `3d28ee9`. Two of the new
+tests read every word of both lexicons, one through each tokenizer, and each takes about
+1.7 s alone. Script: `spanish-patching/letters/12_suite_timing.sh`, output in
+`spanish-patching/merged/`. The 6 skips are six cases of one test, each a pathway that
+does read the modality the case leaves out. No test is skipped for want of a GPU on a
+machine that has one. With the thread variables unset, all 1097 were run and passed, so
+no tolerance in them is tuned to one thread. The suite took 12.9 s before the pipeline
 stopped running `gc.collect()` every ten steps.
 
 `mypy` is clean over `bridge/`. CI enforces it rather than advising, as of 2026-09-16.
