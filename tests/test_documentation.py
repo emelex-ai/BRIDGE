@@ -81,6 +81,113 @@ def test_recorded_fingerprint_matches_the_table(project_rules):
     )
 
 
+def test_the_documented_row_layout_is_the_tables(architecture, readme):
+    """Which rows hold the csv's phonemes, which the special tokens, and how many of each.
+
+    Oracle: the live table. A phoneme appended to phonreps.csv moves the last range and
+    the phoneme count.
+    """
+    special = sorted(TABLE.row_index[token] for token in SPECIAL_TOKENS)
+    phonemes = len(TABLE.phonemes)
+    tokens = ", ".join(f"`{token}`" for token in SPECIAL_TOKENS)
+    assert (
+        f"Of the {TABLE.num_rows} rows, {phonemes} are phonemes read from the csv and "
+        f"{len(SPECIAL_TOKENS)} are the special tokens" in flat(architecture)
+    )
+    assert f"| 0 to {special[0] - 1} |" in architecture
+    assert f"| {special[0]} to {special[-1]} | {tokens} |" in architecture
+    assert f"| {special[-1] + 1} to {TABLE.num_rows - 1} |" in architecture
+    assert f"is the {phonemes} phonemes without the special tokens" in flat(architecture)
+    assert f"The table holds {phonemes} phonemes" in flat(readme)
+    assert f"({phonemes} phonemes and {len(SPECIAL_TOKENS)} specials)" in PROJECT_RULES.read_text()
+
+
+def test_the_documented_spanish_phonemes_are_the_tables(architecture):
+    """The map tabulates each phoneme that sits after the special tokens: its row and its
+    features. Oracle: the live table, with feature names from the csv's header. The two
+    word counts under the table are checked against the Spanish lexicon.
+    """
+    header = (ROOT / "bridge/core/phonreps.csv").read_text().splitlines()[0].split(",")[1:]
+    features = [name.lstrip("#") for name in header]
+    last_special = max(TABLE.row_index[token] for token in SPECIAL_TOKENS)
+    live = {
+        phoneme: (row, {features[column] for column in TABLE.features_of(row).tolist()})
+        for phoneme, row in TABLE.row_index.items()
+        if row > last_special
+    }
+    section = architecture.split("| symbol | row | sound |")[1].split("\n\n")[0]
+    listed = {
+        symbol: (int(row), set(cells.split(", ")))
+        for symbol, row, cells in re.findall(
+            r"^\| `(\w+)` \| (\d+) \|[^|]*\|[^|]*\| ([\w, ]+) \|", section, re.M
+        )
+    }
+    assert listed == live
+
+    lexicon = BridgeTokenizer().phoneme_tokenizer.pronunciation_dict
+    holding = {
+        symbol: sum(symbol in entry["es"][0] for entry in lexicon.values() if "es" in entry)
+        for symbol in ("_JJ_", "_LL_")
+    }
+    text = flat(architecture)
+    assert f"All {holding['_JJ_']} words that hold `_JJ_` are spelt" in text
+    assert f"none of the {holding['_LL_']} that hold `_LL_` is" in text
+
+
+def test_the_documented_decided_rows_are_the_tables(architecture):
+    """The map tabulates the rows whose coding record 0018 decided, each with its features.
+    Oracle: the live table, with feature names from the csv's header."""
+    header = (ROOT / "bridge/core/phonreps.csv").read_text().splitlines()[0].split(",")[1:]
+    features = [name.lstrip("#") for name in header]
+    section = architecture.split("| row | features | the choice |")[1].split("\n\n")[0]
+    listed = {
+        phoneme: set(cells.split(", "))
+        for phoneme, cells in re.findall(r"^\| `(\w+)` \| ([\w, -]+) \|", section, re.M)
+    }
+    assert set(listed) == {"AE1", "W", "WH", "NG", "CH", "JH"}
+    for phoneme, expected in listed.items():
+        row = TABLE.row_index[phoneme]
+        assert {features[column] for column in TABLE.features_of(row).tolist()} == expected, phoneme
+
+
+def test_the_documented_pairs_one_feature_apart_are_the_tables(architecture):
+    """The map lists every pair of rows that differ in one articulatory feature, under
+    that feature, and gives their count. Oracle: the pairs counted from the csv here, a
+    vowel read at primary stress with the two stress columns dropped."""
+    lines = (ROOT / "bridge/core/phonreps.csv").read_text().splitlines()
+    names = [name.lstrip("#") for name in lines[0].split(",")[1:]]
+    stress = {names.index("primary"), names.index("secondary")}
+    rows = {}
+    for line in lines[1:]:
+        phoneme, *cells = line.split(",")
+        if phoneme.endswith(("0", "2")):
+            continue
+        rows[phoneme.removesuffix("1")] = [c for i, c in enumerate(cells) if i not in stress]
+    kept = [name for i, name in enumerate(names) if i not in stress]
+    live = set()
+    ordered = list(rows)
+    for i, first in enumerate(ordered):
+        for second in ordered[i + 1 :]:
+            differing = [
+                n for n, a, b in zip(kept, rows[first], rows[second], strict=True) if a != b
+            ]
+            if len(differing) == 1:
+                live.add((differing[0], frozenset((first, second))))
+
+    section = architecture.split("| feature | pairs one feature apart |")[1].split("\n\n")[0]
+    listed = set()
+    for cell, pairs in re.findall(r"^\| ([\w, ]+) \| (.+) \|$", section, re.M):
+        found = re.findall(r"`(\w+)`/`(\w+)`", pairs)
+        cell_features = cell.split(", ")
+        # A row naming several features gives one pair for each, in order.
+        assert len(cell_features) in (1, len(found)), cell
+        for n, pair in enumerate(found):
+            feature = cell_features[n] if len(cell_features) > 1 else cell_features[0]
+            listed.add((feature, frozenset(pair)))
+    assert listed == live
+    assert f"{len(live)} pairs of rows still differ in one feature" in flat(architecture)
+
+
 def test_documented_target_width_matches_the_vocabulary(architecture):
     """Loss targets are one column narrower than the vocabulary: [PAD] is never predicted."""
     width = VOCAB_SIZES["phonological"] - 1
@@ -206,6 +313,48 @@ def test_the_size_tables_give_the_real_defaults(architecture, readme):
             f"only on ModelConfig {sorted(set(live) - set(documented))}; "
             f"differing {sorted(k for k in set(live) & set(documented) if live[k] != documented[k])}"
         )
+
+
+def test_the_vocabulary_tables_give_the_real_ids(architecture, readme):
+    """The map and the README each tabulate the orthographic vocabulary by id range.
+
+    Oracle: a live ``CharacterTokenizer``. An id is a row of a checkpoint's embedding, so
+    a table one off sends a reader to the wrong row. A character added to the vocabulary
+    and not to both tables fails here too.
+    """
+    import string
+
+    from bridge import CharacterTokenizer
+    from bridge.domain.tokenizer.character_tokenizer import SPANISH_CHARACTERS
+
+    tok = CharacterTokenizer()
+    groups = [
+        tok.special_tokens,
+        tok.language_tokens,
+        list(string.printable),
+        list(SPANISH_CHARACTERS),
+    ]
+    assert [entry for group in groups for entry in group] == tok.vocab
+    bounds, start = [], 0
+    for group in groups:
+        bounds.append((start, start + len(group) - 1))
+        start += len(group)
+
+    for name, document, heading in (
+        ("docs/architecture.md", architecture, "## The orthographic vocabulary"),
+        ("README.md", readme, "### Characters"),
+    ):
+        section = document.split(heading)[1].split("\n#")[0]
+        size = re.search(r"holds (\d+) entries", flat(section))
+        assert size and int(size.group(1)) == len(tok.vocab), f"{name}: vocabulary size"
+        rows = re.findall(r"^\| (\d+) to (\d+) \| (.*) \|$", section, re.M)
+        assert [(int(first), int(last)) for first, last, _ in rows] == bounds, name
+        specials, languages, printable, spanish = (cell for _, _, cell in rows)
+        assert re.findall(r"`(\[\w+\])`", specials) == tok.special_tokens, name
+        assert re.findall(r"`([^`]+)`", languages) == tok.language_tokens, name
+        assert "`string.printable`" in printable, name
+        assert f"the {len(string.printable)} " in printable, name
+        assert sorted(ch for ch in spanish if not ch.isascii()) == sorted(SPANISH_CHARACTERS), name
 
 
 def test_the_recorded_parameter_count_is_a_default_models(project_rules):

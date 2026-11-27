@@ -10,16 +10,25 @@ So the returned tensor is self-describing, content then `[EOS]` then padding, an
 produces the right string as it is. ``docs/decisions/0009`` carries the measurements.
 
 **Batch invariance is exact here, but only just, and only on this configuration.** Batching
-perturbs `global_encoding` by up to about 6e-07, and `phono_sample` thresholds a probability
+perturbs `global_encoding` by up to about 1e-06, and `phono_sample` thresholds a probability
 at `> 0.5`, so a feature sitting within an ulp of 0.5 can flip between a solo and a batched
 run. That is unrelated to padding, and it has been observed elsewhere in the lexicon. It
-does not reach these tests: measured in this exact configuration (seed 18, `MIXED`, a cap
-of 28, CPU), the smallest `|P(ON) - 0.5|` is 5.4e-04, about 900 times the perturbation, and
-the smallest orthographic argmax margin is 6.7e-05, about 110 times it. The seed was chosen
-by that measurement, out of 40: it is one of three on which `p2o` ends two rows at
-different steps, and of those it has the widest orthographic margin. If a future edit to
-the model config or the word list makes an invariance test below fail by a single feature
-or a single character, suspect that knife edge before suspecting the padding guard.
+does not reach these tests: measured in this exact configuration (seed 75, `MIXED`, a cap
+of 28, CPU, an orthographic vocabulary of 125, the phoneme table of
+``docs/decisions/0018``), the smallest `|P(ON) - 0.5|` on `o2p` is 1.7e-03, about 1700
+times the perturbation, and the smallest orthographic argmax margin is 5.0e-05, about 50
+times it. The seed was chosen by that measurement, out of 200: it is one
+of six on which `p2o` ends two rows at different steps and every test here passes, and of
+those it has the widest orthographic margin. If a future edit to the model config or the
+word list makes an invariance test below fail by a single feature or a single character,
+suspect that knife edge before suspecting the padding guard.
+
+**The seed holds for one orthographic vocabulary size and one phoneme table.** A seed's
+draws depend on the shape of every parameter drawn before them, so a character added to
+the vocabulary changes what every seed generates: the seed that suited a vocabulary of 109
+ends no row of `p2o` at 125. A phoneme's features set what its embedding is, so a row edit
+moves the margins: the same seed had 8.0e-05 on the table before record 0018. When either
+changes, sweep the seeds again by the rule above.
 
 **The oracle throughout is batch invariance.** A causal decoder's rows are independent, so
 what a word generates must not depend on which other words share its batch. That is a
@@ -58,7 +67,7 @@ def vocab(tokenizer):
 
 @pytest.fixture(scope="module")
 def model(vocab):
-    built = Model(ModelConfig(vocab=vocab, d_model=32, nhead=2, seed=18))
+    built = Model(ModelConfig(vocab=vocab, d_model=32, nhead=2, seed=75))
     built.eval()
     return built
 
@@ -80,11 +89,11 @@ def phon_first_eos(sets, eos_id):
     return next((i for i, features in enumerate(sets) if eos_id in features), None)
 
 
-# An untrained model terminates wherever it happens to. On this word list only `p2o` ends
-# a row early, two of its five, so a test written against it cannot choose where a row
-# ends, and two of three pathways see nothing. Driving the sampler directly puts the
-# termination schedule under the test's control, which is the only way to cover all three
-# shapes deliberately.
+# An untrained model terminates wherever it happens to. On this word list `p2o` ends two
+# of its five rows early and `o2o` and `op2op` end one each, so a test written against it
+# cannot choose where a row ends, and two of three pathways never end two rows at
+# different steps. Driving the sampler directly puts the termination schedule under the
+# test's control, which is the only way to cover all three shapes deliberately.
 #
 # The sampler is an input here, not an oracle. What is asserted is the loop's contract given a
 # known emission schedule, and the schedule is chosen so a loop that padded on the wrong
@@ -191,8 +200,8 @@ def test_padding_starts_after_the_terminator_not_at_it(tokenizer, model, vocab):
 def test_nothing_but_padding_follows_the_orthographic_eos(tokenizer, model, vocab):
     """The same contract through the public path, on the pathway that terminates naturally.
 
-    Only `p2o` ends early on this word list. The scripted tests above cover the pathways and
-    shapes that an untrained model does not happen to produce.
+    Only `p2o` ends two rows of this word list. The scripted tests above cover the pathways
+    and shapes that an untrained model does not happen to produce.
     """
 
     rows = orth_rows(generate(model, tokenizer, MIXED, "p2o"))
@@ -307,9 +316,10 @@ def test_nothing_but_padding_follows_the_phonological_eos(tokenizer, model, voca
     """The same defect on the phonological loop.
 
     Stochastic sampling with a fixed seed, because greedy decoding on an untrained model
-    terminates every item on the same step and a lockstep batch cannot show this. A padded
-    phonological position is the one-hot at ``phon_pad_id``, which is the encoding
-    ``phono_sample`` already uses for an all-off vector rather than a new convention.
+    terminates every item within a step of the others, which leaves next to nothing after
+    an `[EOS]` to look at. A padded phonological position is the one-hot at
+    ``phon_pad_id``, which is the encoding ``phono_sample`` already uses for an all-off
+    vector rather than a new convention.
     """
     torch.manual_seed(3)
     result = generate(model, tokenizer, MIXED * 3, "o2p", deterministic=False)

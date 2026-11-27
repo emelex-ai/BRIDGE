@@ -178,6 +178,52 @@ language token, so it measures spelling alone. `VocabSpec.orth_language_ids` nam
 language tokens and is required, so both pairs are always reported. See
 `docs/decisions/0015`.
 
+## The orthographic vocabulary
+
+`CharacterTokenizer` (`bridge/domain/tokenizer/character_tokenizer.py`) holds 125 entries
+in a fixed order.
+
+| ids | entries |
+|---|---|
+| 0 to 5 | the special tokens `[BOS]`, `[EOS]`, `[PAD]`, `[UNK]`, `[CLS]`, `[SEP]` |
+| 6 to 8 | the language tokens `--`, `EN`, `ES` |
+| 9 to 108 | Python's `string.printable`: the 100 digits, letters, punctuation marks and whitespace characters of ASCII |
+| 109 to 124 | `SPANISH_CHARACTERS`: `á é í ó ú ü ñ`, `Á É Í Ó Ú Ü Ñ`, `¿` and `¡` |
+
+An id is a row of the orthographic embedding and of the output head, so it is part of
+every checkpoint. The list is written out in the code and never read from a lexicon file.
+It grows only at its end.
+
+Think of numbered seats. A new guest takes the next free seat, and nobody already sitting
+moves.
+
+Every spelling in both shipped lexicons is made of these characters, so every word
+decodes to itself: 123472 English keys and 7095 Spanish keys, counted 2026-11-27.
+`tests/domain/tokenizer/test_lexicon_spellings.py` pins that for every word of every
+lexicon file. The seven lower-case Spanish letters are the ones the Spanish lexicon uses.
+The capitals, `¿` and `¡` are in no lexicon word, and are there because a writer of
+Spanish types them.
+
+**A row is composed before it is read.** An accented letter can arrive as one code point
+(`é`, U+00E9) or as a base letter and a combining mark (`e`, then U+0301). `read_rows` in
+`bridge/domain/tokenizer/languages.py` composes every row to Unicode NFC, and both
+tokenizers read a row through it. The two forms give the same ids and the same
+pronunciation, and a row decodes to the composed form. A composed letter is one character,
+so it is one token.
+
+Composing never moves a word boundary, so the dataset's count of a cell's words at load,
+taken on the cell as written, is the tokenizers' count. Measured 2026-11-27 over every
+code point of Unicode 15.0: no code point changes between whitespace and non-whitespace
+under NFC.
+
+**Case is kept in orthography and ignored in a lexicon lookup.** `Qué` and `qué` are
+different ids, and each decodes as written. Phonology looks a word up by its lower-case
+composed spelling, so both have one pronunciation. A lexicon key is filed the same way,
+whichever case and form its file holds it in.
+
+**Any other character is `[UNK]`.** `ç`, `à` and `«` are three. Decoding leaves `[UNK]`
+out, so `garçon` decodes as `garon`. No shipped lexicon word holds one.
+
 ## A dataset row is an input and a target
 
 `BridgeDataset` (`bridge/domain/data/bridge_dataset.py`) reads a csv or a pkl file with
@@ -227,7 +273,7 @@ names a position in `dataset.examples`. They differ after a shuffle, and after a
 Both are `torch.long`. Only naming separates them, and confusing them yields silently wrong
 output rather than an error.
 
-- **Row space**, 0 to 90, indexes rows of the phoneme table: *which phoneme*. This is what
+- **Row space**, 0 to 97, indexes rows of the phoneme table: *which phoneme*. This is what
   the phonological `ids` hold, in `BridgeInput.phon` and in `BridgeTarget.phon`, and what
   `Model.embed_phon_tokens` consumes.
 - **Feature space**, 0 to 35, indexes phonetic feature columns: *which feature*. This is what
@@ -239,9 +285,77 @@ Convert with `PhonemeTable.features_of(row)` and `PhonemeTable.row_of(phoneme)`.
 ## The phoneme table
 
 `bridge/core/phonreps.py` owns the feature scheme and is the single source of truth. It builds
-a `PhonemeTable` from `bridge/core/phonreps.csv`: a `(91, 36)` multi-hot matrix of 91 phonemes
+a `PhonemeTable` from `bridge/core/phonreps.csv`: a `(98, 36)` multi-hot matrix of 98 phonemes
 by 31 phonetic features plus 5 special-token columns (`[BOS]`, `[EOS]`, `[UNK]`, `[SPC]`,
 `[PAD]`). Loading is cached per device for the process lifetime.
+
+Of the 98 rows, 93 are phonemes read from the csv and 5 are the special tokens. No two
+rows share a feature vector.
+
+| rows | hold |
+|---|---|
+| 0 to 85 | the first 86 rows of the csv: the ARPAbet phonemes, and `_`, which has no feature |
+| 86 to 90 | `[BOS]`, `[EOS]`, `[UNK]`, `[SPC]`, `[PAD]` |
+| 91 to 97 | the rest of the csv: seven phonemes of Spanish |
+
+The special tokens sit inside the table so that no row id ever moves. A phoneme appended
+to the csv takes the next id after the last. `PhonemeTable.phonetic_features` is the 93
+phonemes without the special tokens, in csv order, so its row 86 is table row 91.
+
+**Seven rows are Spanish.** The Spanish lexicon writes each with a symbol ARPAbet lacks.
+Each row is built from an existing row and uses only the 31 features.
+
+| symbol | row | sound | as in | features | nearest row, and the change |
+|---|---|---|---|---|---|
+| `X` | 91 | [x], voiceless velar fricative | "mejor", "gente" | velar, fricative | `K`, a stop made a fricative |
+| `_BB_` | 92 | [β], voiced bilabial fricative | "sabe", "favor" | labial, fricative, voice | `B`, a stop made a fricative |
+| `_GG_` | 93 | [ɣ], voiced velar fricative | "algo", "amigo" | velar, fricative, voice | `G`, a stop made a fricative |
+| `_JJ_` | 94 | [ʎ], palatal lateral | "calle", "ella" | palatal, liquid, voice | `L`, moved from alveolar to palatal |
+| `_LL_` | 95 | [ʝ], voiced palatal fricative | "yo", "ayuda" | palatal, fricative, glide, voice | `Y`, a glide made a fricative as well |
+| `_NN_` | 96 | [ɲ], palatal nasal | "niño", "año" | palatal, nasal, voice | `N`, moved from alveolar to palatal |
+| `_RR_` | 97 | [r], alveolar trill | "perro", "razón" | alveolar, liquid, rhotic, tap, voice | `L`, made rhotic and a tap |
+
+Two of the names mislead. `_JJ_` is the sound spelt "ll" and `_LL_` is the sound spelt
+"y". All 307 words that hold `_JJ_` are spelt with "ll", and none of the 98 that hold
+`_LL_` is. `_LL_` keeps `glide` because the plain row, palatal, fricative and voice, is
+already `ZH`. `_RR_` carries `tap` beside `rhotic` because a trill is a run of taps, and
+that keeps it two features from `L` and two from `DX`, the tap of "pero". The other sounds
+of Spanish use rows English already had: that tap, and the [ð] of "nada", which is `DH`.
+
+**Rows are coded to stay apart.** A decoded position is scored as the row nearest to it.
+A row one feature from another is therefore one wrong feature from being read as the
+other phoneme. Phoneticians disagree about how several of these sounds should be written
+as features. Where they do, the table takes the coding that leaves the rows farther
+apart. The rows below were set that way or corrected, and `docs/decisions/0018` gives the
+reason for each.
+
+| row | features | the choice |
+|---|---|---|
+| `AE1` | voice, front, near-open, primary | front alone, not front and back; `AE0` and `AE2` the same |
+| `W` | labial, glide, voice | voiced |
+| `WH` | labial, glide | voiceless; no word of either lexicon uses it |
+| `NG` | velar, nasal, voice | velar alone, so it is two features from `N`, as `M` is |
+| `CH` | palatal, stop, fricative, affricate | a stop released as a fricative; `affricate` keeps it two features from `SH` |
+| `JH` | palatal, stop, fricative, affricate, voice | `CH`, voiced |
+
+Stress set aside, 21 pairs of rows still differ in one feature. Ten are voicing pairs,
+such as `B` and `P`. `tests/core/test_phoneme_table.py` lists all 21, so an edit that
+puts two rows side by side, or parts two, fails by name.
+
+| feature | pairs one feature apart |
+|---|---|
+| voice | `B`/`P`, `CH`/`JH`, `D`/`T`, `DH`/`TH`, `F`/`V`, `G`/`K`, `S`/`Z`, `SH`/`ZH`, `W`/`WH`, `X`/`_GG_` |
+| tense | `IH`/`IY`, `UH`/`UW` |
+| labial | `F`/`TH`, `DH`/`V` |
+| post_y | `AO`/`OY` |
+| dental | `V`/`_BB_` |
+| fricative | `Y`/`_LL_` |
+| glide | `ZH`/`_LL_` |
+| nasal, tap, round | `DX`/`NX`, `N`/`NX`, `IX`/`UW`; no word of either lexicon uses `NX` or `IX` |
+
+A symbol with no row encodes as `[UNK]`, row 88, and raises nothing. No word of either
+shipped lexicon does: `tests/domain/tokenizer/test_lexicon_coverage.py` encodes all of
+them.
 
 `PhonemeTable.fingerprint` is a digest of the table, recorded into `VocabSpec` and checked when
 a checkpoint loads, so a `phonreps.csv` edit that silently relabels every id is detectable.
@@ -301,7 +415,8 @@ bridge/domain/datamodels/             VocabSpec, ModelConfig, GenerationOutput, 
 bridge/domain/datamodels/encodings.py Tokens, Target, BridgeInput, BridgeTarget, BridgeBatch
 bridge/domain/datamodels/pathways.py  PATHWAY_IO: what each pathway reads and writes
 bridge/domain/tokenizer/              CharacterTokenizer, PhonemeTokenizer, BridgeTokenizer
-bridge/domain/tokenizer/languages.py  what a word is, and which language each word is in
+bridge/domain/tokenizer/languages.py  what a word is, which language each word is in, and
+                                      the composed form a row is read in
 bridge/domain/model/layers.py         rotate, and the encoder and decoder blocks whose
                                       self-attention reads position through it
 bridge/domain/model/model.py          token embeddings, the mixer, the five pathways,
@@ -318,6 +433,10 @@ tests/domain/model/test_rotary_layers.py
 tests/domain/model/test_any_length.py position, padding and generation on the whole model
 tests/domain/model/test_max_new_tokens.py
                                       the cap on what generation writes
+tests/domain/tokenizer/test_lexicon_coverage.py
+                                      no word of a shipped lexicon encodes to [UNK]
+tests/domain/tokenizer/test_lexicon_spellings.py
+                                      every lexicon spelling survives encode then decode
 tests/test_documentation.py           asserts this document against the live system
 tests/test_diagram.py                 asserts BRIDGE-Models.drawio against the live model
 tests/fixtures/sync_diagram_table.py  rewrites the figure's feature table from phonreps.csv
@@ -443,6 +562,12 @@ those weights were trained to read position from the tables, and would mean noth
 here. A checkpoint whose `d_embedding` or `d_model` differs from the model's is refused
 by its shapes. See `docs/decisions/0017`.
 
+So is a checkpoint saved with another orthographic vocabulary. One saved at commit
+`3d28ee9`, the last with 109 entries, holds 109 rows in `orthography_embedding.weight`,
+`linear_orthography_decoder.weight` and `linear_orthography_decoder.bias`, where the
+model has 125. The load raises naming 3 of 167 tensors, and no tensor, optimizer entry or
+`start_epoch` changes. No migration is provided. Measured 2026-11-27 on CPU.
+
 ## Dependencies
 
 PyTorch for the model, pydantic v2 for configs and validation, pandas for the feature CSV,
@@ -488,3 +613,4 @@ Tracked as GitHub issues rather than restated here:
 | [0015](decisions/0015-language-belongs-to-each-word.md) | Language belongs to each word of a row, by position; phonology reads each word in its own lexicon and orthography marks each change |
 | [0016](decisions/0016-a-training-example-is-an-input-and-a-target.md) | A training example is an input and a target, held in five types named for their side; `target_raw` is required, and the caller names the language orthographic generation starts in |
 | [0017](decisions/0017-positions-are-computed-for-any-length.md) | Position is a rotation inside the self-attention of the encoders and decoders, computed for any length; generation takes a required `max_new_tokens`; `d_embedding` defaults to 2; checkpoints from a model with position tables are refused |
+| [0018](decisions/0018-spanish-has-its-letters-and-phonemes-and-rows-stay-apart.md) | Sixteen Spanish characters and seven Spanish phonemes take ids after every existing one; where a phoneme's coding is debated the table takes the one that leaves rows farther apart; checkpoints saved before this are refused |

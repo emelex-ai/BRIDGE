@@ -222,7 +222,7 @@ class Model(nn.Module):
 
         A phoneme's embedding is the mean of its active features' embeddings. That is linear
         in the embedding weight, so the mean for *every* phoneme is one small matmul over the
-        91-row feature matrix, independent of batch size, after which embedding a batch is
+        98-row feature matrix, independent of batch size, after which embedding a batch is
         a table lookup. The table is rebuilt each call because the weight trains.
 
         Featureless phonemes (``phonreps.csv`` contains one, ``'_'``) embed to the zero
@@ -906,7 +906,7 @@ class Model(nn.Module):
         if modality == "orth":
             id_space = self.orthographic_vocabulary_size
         else:
-            # Row space, not feature space: phoneme ids index table rows (~91), not the
+            # Row space, not feature space: phoneme ids index table rows (~98), not the
             # phonological feature vocabulary (~36).
             id_space = self.phon_feature_matrix.shape[0]
 

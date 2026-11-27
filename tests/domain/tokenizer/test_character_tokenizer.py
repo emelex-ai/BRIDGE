@@ -16,6 +16,7 @@ Oracle: rows written out by hand from the layout above.
 """
 
 import string
+import unicodedata
 
 import pytest
 import torch
@@ -161,7 +162,7 @@ def test_language_code_case_is_accepted_either_way(tok):
 
 
 def test_characters_outside_the_vocabulary_become_unk(tok):
-    out = tok.encode_input(["caté"])
+    out = tok.encode_input(["catç"])
     unk = tok.char_2_idx["[UNK]"]
     assert out.ids[0].tolist()[5] == unk
 
@@ -223,6 +224,99 @@ def test_vocabulary_order_is_specials_then_languages_then_printable(tok):
     assert tok.vocab[start : start + len(tok.language_tokens)] == tok.language_tokens
     assert tok.char_2_idx["[BOS]"] == 0
     assert tok.char_2_idx["[EOS]"] == 1
+
+
+# Written out by hand, code point and id, so the test cannot agree with the constant by
+# reading it. An id here is a row of every checkpoint's orthographic embedding.
+SPANISH_IDS = [
+    ("á", 0x00E1, 109),
+    ("é", 0x00E9, 110),
+    ("í", 0x00ED, 111),
+    ("ó", 0x00F3, 112),
+    ("ú", 0x00FA, 113),
+    ("ü", 0x00FC, 114),
+    ("ñ", 0x00F1, 115),
+    ("Á", 0x00C1, 116),
+    ("É", 0x00C9, 117),
+    ("Í", 0x00CD, 118),
+    ("Ó", 0x00D3, 119),
+    ("Ú", 0x00DA, 120),
+    ("Ü", 0x00DC, 121),
+    ("Ñ", 0x00D1, 122),
+    ("¿", 0x00BF, 123),
+    ("¡", 0x00A1, 124),
+]
+
+
+def test_the_spanish_characters_follow_everything_else_and_no_earlier_id_moves(tok):
+    """Oracle: hand-written. The 109 entries that came first are the special tokens, the
+    language tokens and ``string.printable``, at the ids they have always had."""
+    before = [*tok.special_tokens, *tok.language_tokens, *string.printable]
+    assert len(before) == 109
+    assert tok.vocab[:109] == before
+    assert [(ch, tok.char_2_idx[ch]) for ch in tok.vocab[109:]] == [
+        (chr(code_point), idx) for _, code_point, idx in SPANISH_IDS
+    ]
+    assert tok.get_vocabulary_size() == 125
+
+
+@pytest.mark.parametrize(("char", "code_point", "idx"), SPANISH_IDS)
+def test_a_spanish_character_is_one_composed_code_point_with_its_own_id(tok, char, code_point, idx):
+    """A literal typed as a letter plus a combining mark would look the same in this
+    file and encode as two tokens, the second ``[UNK]``."""
+    assert [ord(c) for c in char] == [code_point]
+    assert unicodedata.normalize("NFC", char) == char
+    assert tok.encode_input([char]).ids.tolist() == [
+        [tok.char_2_idx["--"], tok.char_2_idx["[BOS]"], idx, tok.char_2_idx["[EOS]"]]
+    ]
+    assert tok.decode([[idx]]) == [char]
+
+
+def test_case_is_kept(tok):
+    """Nothing folds case: each case of a letter has its own id and decodes as written."""
+    for lower, upper in [("que", "QUE"), ("\u00f1u", "\u00d1U"), ("\u00e9", "\u00c9")]:
+        ids_lower = tok.encode_input([lower]).ids.tolist()
+        ids_upper = tok.encode_input([upper]).ids.tolist()
+        assert ids_lower != ids_upper
+        assert tok.decode(ids_lower) == [lower]
+        assert tok.decode(ids_upper) == [upper]
+
+
+@pytest.mark.parametrize(
+    ("composed", "decomposed"),
+    [
+        ("qu\u00e9", "que\u0301"),
+        ("a\u00f1o", "an\u0303o"),
+        ("ping\u00fcino", "pingu\u0308ino"),
+        ("\u00c1RBOL", "A\u0301RBOL"),
+        ("el ni\u00f1o", "el nin\u0303o"),
+    ],
+    ids=["que", "ano", "pinguino", "ARBOL", "el nino"],
+)
+def test_a_letter_and_its_combining_mark_encode_as_the_composed_letter(tok, composed, decomposed):
+    """Oracle: hand-written pairs. Both sides are spelt in escapes, so neither depends on
+    how this file was saved. The two spell one word, so they are one row of ids, in an
+    input and in a target, and the row decodes to the composed spelling."""
+    assert len(decomposed) == len(composed) + 1
+    assert tok.encode_input([decomposed]).ids.tolist() == tok.encode_input([composed]).ids.tolist()
+    target, expected = tok.encode_target([decomposed]), tok.encode_target([composed])
+    assert target.ids.tolist() == expected.ids.tolist()
+    assert target.labels.tolist() == expected.labels.tolist()
+    assert tok.char_2_idx["[UNK]"] not in target.labels.tolist()[0]
+    assert tok.decode(tok.encode_input([decomposed]).ids.tolist()) == [composed]
+
+
+def test_composition_is_all_that_is_done_to_a_row(tok):
+    """Oracle: hand-written. ``c`` with a combining cedilla composes to a letter the
+    vocabulary lacks. ``q`` with a combining acute accent composes to nothing, so the mark
+    stays a character of its own. The ligature ``fi`` (U+FB01) is one character with no
+    canonical decomposition: it stays one ``[UNK]``, where the compatibility forms NFKC
+    and NFKD would spell it ``f``, ``i``."""
+    unk = tok.char_2_idx["[UNK]"]
+    a, n, q = (tok.char_2_idx[ch] for ch in "anq")
+    assert tok.encode_input(["c\u0327a"]).ids.tolist()[0][2:-1] == [unk, a]
+    assert tok.encode_input(["q\u0301a"]).ids.tolist()[0][2:-1] == [q, unk, a]
+    assert tok.encode_input(["\ufb01n"]).ids.tolist()[0][2:-1] == [unk, n]
 
 
 def test_idx_2_char_is_the_inverse_of_char_2_idx(tok):

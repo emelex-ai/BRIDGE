@@ -1,6 +1,7 @@
 """The phonological feature scheme: which phonetic features each phoneme carries.
 
-`bridge/core/phonreps.csv` maps each ARPAbet phoneme to a binary feature vector. Both the
+`bridge/core/phonreps.csv` maps each phoneme to a binary feature vector. The names are
+ARPAbet's, and the Spanish lexicon's own for the seven sounds ARPAbet lacks. Both the
 tokenizer (to encode words) and the model (to embed phonemes, and to score closest-phoneme
 metrics) need it, and neither owns it. It is configuration of the feature scheme, not
 state of any tokenizer.
@@ -20,9 +21,13 @@ from bridge.utils import get_project_root
 
 _PHONREPS_CSV_RELATIVE = "bridge/core/phonreps.csv"
 
-# Appended after the phonreps rows, in this order, to form the full phoneme vocabulary.
 # Order is part of the row-id contract. See PhonemeTable.
 SPECIAL_TOKENS: tuple[str, ...] = ("[BOS]", "[EOS]", "[UNK]", "[SPC]", "[PAD]")
+
+# The special tokens hold rows 86 to 90, after the first 86 rows of phonreps.csv and before
+# every later one, so a phoneme appended to the csv takes a new row id and moves none.
+# Row ids are held outside this module: in batches a caller keeps, and as literals in tests.
+_FIRST_SPECIAL_ROW = 86
 
 # `[PAD]` occupies the final feature column, and three places rely on it: the tokenizer
 # drops that column to build loss targets, the decoder head is sized to match, and
@@ -56,8 +61,8 @@ class PhonemeTable:
     ``multihot[r, f]`` is 1 when phoneme ``r`` has feature ``f``, the bridge between them.
 
     Row order is the contract that lets the tokenizer and the model agree without talking
-    to each other: ``phonreps.csv`` order first, then :data:`SPECIAL_TOKENS`. Defined here
-    and nowhere else.
+    to each other: the first 86 rows of ``phonreps.csv``, then :data:`SPECIAL_TOKENS`, then
+    the rest of the csv. Defined here and nowhere else.
 
     A phoneme's embedding is the mean of its active features' embeddings, which is linear
     in the embedding weight, so ``row_normalize(multihot) @ W`` yields *every* phoneme's
@@ -91,19 +96,21 @@ class PhonemeTable:
         digest.update(self.multihot.detach().to("cpu", torch.uint8).numpy().tobytes())
         return digest.hexdigest()[:16]
 
-    @property
+    @functools.cached_property
     def phonetic_features(self) -> torch.Tensor:
         """The real phonemes' feature vectors, without the special-token rows or columns.
 
         The ``(phonemes, base_dim)`` block that closest-phoneme distance metrics compare
-        against.
+        against. Row ``i`` is ``phonemes[i]``, which is not table row ``i`` past the special
+        tokens. Shared between callers, so treat it as read-only.
         """
-        return self.multihot[: self.num_rows - len(SPECIAL_TOKENS), : self.base_dim]
+        rows = [self.row_index[phoneme] for phoneme in self.phonemes]
+        return self.multihot[rows, : self.base_dim]
 
     @property
     def phonemes(self) -> list[str]:
         """The real phonemes, in table order, excluding special tokens."""
-        return list(self.row_index)[: self.num_rows - len(SPECIAL_TOKENS)]
+        return [name for name in self.row_index if name not in SPECIAL_TOKENS]
 
     def row_of(self, phoneme: str) -> int:
         """Row id for ``phoneme``, falling back to ``[UNK]`` for unknown phonemes."""
@@ -137,17 +144,20 @@ def _load_phoneme_table(device: torch.device) -> PhonemeTable:
     dataframe.set_index("phone", inplace=True)
     features = torch.tensor(dataframe.values, dtype=torch.float, device=device)
 
-    base_dim = features.shape[1]
-    num_rows = len(dataframe.index) + len(SPECIAL_TOKENS)
-    multihot = torch.zeros(
-        (num_rows, base_dim + len(SPECIAL_TOKENS)), dtype=torch.float, device=device
-    )
-    # The CSV's row order is the first half of the row contract.
-    multihot[: len(dataframe.index), :base_dim] = features
+    phonemes = list(dataframe.index)
+    names = [
+        *phonemes[:_FIRST_SPECIAL_ROW],
+        *SPECIAL_TOKENS,
+        *phonemes[_FIRST_SPECIAL_ROW:],
+    ]
+    row_index = {name: row for row, name in enumerate(names)}
 
-    row_index = {phoneme: row for row, phoneme in enumerate(dataframe.index)}
+    base_dim = features.shape[1]
+    multihot = torch.zeros(
+        (len(names), base_dim + len(SPECIAL_TOKENS)), dtype=torch.float, device=device
+    )
+    multihot[[row_index[phoneme] for phoneme in phonemes], :base_dim] = features
     for offset, token in enumerate(SPECIAL_TOKENS):
-        row_index[token] = len(dataframe.index) + offset
         multihot[row_index[token], base_dim + offset] = 1.0
 
     return PhonemeTable(multihot=multihot, row_index=row_index, base_dim=base_dim)

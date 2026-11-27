@@ -2,6 +2,7 @@ import functools
 import json
 import logging
 import os
+import unicodedata
 
 import torch
 
@@ -10,7 +11,7 @@ from bridge.domain.datamodels.encodings import Target, Tokens, pad_rows
 from bridge.domain.tokenizer.languages import (
     UNSPECIFIED,
     Languages,
-    per_row_languages,
+    read_rows,
     split_words,
 )
 from bridge.utils import device_manager, get_project_root
@@ -26,6 +27,15 @@ def _load_lexicon(directory: str, lang_codes: tuple[str, ...]) -> dict[str, dict
     result. The returned dict is shared, so callers must treat it as read-only.
     """
     return PhonemeTokenizer._read_multilingual_vocab(directory, lang_codes)
+
+
+def _lexicon_key(word: str) -> str:
+    """The spelling a word is filed under and looked up by.
+
+    Composed here as well as in ``read_rows``: a key is read from a lexicon file as
+    written, and a caller's own file may hold it decomposed.
+    """
+    return unicodedata.normalize("NFC", word.lower())
 
 
 class PhonemeTokenizer:
@@ -78,9 +88,9 @@ class PhonemeTokenizer:
         if custom_prons:
             self.pronunciation_dict = dict(self.pronunciation_dict)
             for word, langs in custom_prons.items():
-                merged = dict(self.pronunciation_dict.get(word.lower(), {}))
+                merged = dict(self.pronunciation_dict.get(_lexicon_key(word), {}))
                 merged.update({lang.lower(): pron for lang, pron in langs.items()})
-                self.pronunciation_dict[word.lower()] = merged
+                self.pronunciation_dict[_lexicon_key(word)] = merged
 
         # Special tokens at end of vector space. Derived from the table so the two cannot
         # drift apart. The table's column layout is the definition.
@@ -149,8 +159,7 @@ class PhonemeTokenizer:
                 lang_dict = json.load(f)
 
             for word, pronunciations in lang_dict.items():
-                normalized = word.lower()
-                vocab.setdefault(normalized, {})[lang_code] = pronunciations
+                vocab.setdefault(_lexicon_key(word), {})[lang_code] = pronunciations
 
         return vocab
 
@@ -165,7 +174,7 @@ class PhonemeTokenizer:
         result: list = []
         for i, word in enumerate(split_words(phrase)):
             lexicon = "en" if word_langs[i] == UNSPECIFIED else word_langs[i].lower()
-            entry = self.pronunciation_dict.get(word.group().lower(), {})
+            entry = self.pronunciation_dict.get(_lexicon_key(word.group()), {})
             if lexicon not in entry:
                 logger.debug(f"No {lexicon} pronunciation for '{word.group()}'")
                 return None
@@ -222,7 +231,7 @@ class PhonemeTokenizer:
         """
         table = self.phoneme_table
         rows = []
-        for text, word_langs in zip(texts, per_row_languages(texts, languages), strict=True):
+        for text, word_langs in read_rows(texts, languages):
             phonemes = self._get_phrase_phonemes(text, word_langs)
             if phonemes is None:
                 return None

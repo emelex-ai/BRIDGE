@@ -57,8 +57,8 @@ def nearest_phoneme(rows: torch.Tensor, phon_reps: torch.Tensor, metric: str) ->
 
     Every metric is computed as a *distance*, so the reduction is always ``argmin``.
     Cosine is ``1 - similarity`` for that reason: ``argmin`` over a similarity selects the
-    least similar phoneme. Over the 86 real phoneme rows it picks a row's own index 0
-    times, where ``argmax`` picks it 85 times.
+    least similar phoneme. Over the 93 real phoneme rows it picks a row's own index 0
+    times, where ``argmax`` picks it 92 times.
     """
     if metric == "cosine":
         eps = 1e-8

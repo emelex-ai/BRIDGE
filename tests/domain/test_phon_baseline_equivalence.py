@@ -5,7 +5,7 @@ before the phonological refactor (issue #221). This module rebuilds the same obj
 asserts every recorded value that still describes them.
 
 **The fixture is immutable.** Regenerating it to make a test pass destroys the only thing
-it is for. Three groups of recorded values are superseded. Each is handled by reducing its
+it is for. Five groups of recorded values are superseded. Each is handled by reducing its
 assertions here to what still holds, and the fixture is not touched.
 
 **Orthographic generation.** Generation seeds the orthographic decoder with the
@@ -64,6 +64,32 @@ What the model computes is pinned against reference and analytic oracles in
 ``tests/domain/model/test_rotary_layers.py``, ``tests/domain/model/test_any_length.py`` and
 ``tests/domain/model/test_max_new_tokens.py``, not against a re-recording.
 
+**The orthographic vocabulary size.** The recording holds ``orth_vocab_size`` 109: six
+special tokens, three language tokens and the 100 characters of ``string.printable``. The
+tokenizer's vocabulary is those 109 followed by 16 characters of Spanish (issue #237), so
+its size is 125 and the recorded number is no longer the tokenizer's. Measured 2026-11-27
+against ``3d28ee9``, the commit before that change, on CPU: none of the 109 moved, and
+every row that decoded to its own text there encodes to the same ids, masks and labels,
+258446 of 258446 rows over both lexicons, each tagged with its language and untagged,
+and 4818 of 4818 mixed phrases. The reduced assertion reads the recorded number exactly,
+as the size of the vocabulary before the characters ``SPANISH_CHARACTERS`` names, and
+every other recorded vocabulary value as it always did. The model rebuilt here is still
+built at the recorded size, which every id of the fixture's words is under, so the
+recorded shapes ``(9, 30)`` and ``(9, 30, 109)`` are still the shapes it gives. The ids
+of the added characters are pinned by hand in
+``tests/domain/tokenizer/test_character_tokenizer.py``.
+
+**The features of three phonemes.** The recording holds each phoneme of its nine words as
+a set of feature columns, read from the table as it stood. Three of those rows are coded
+differently now (``docs/decisions/0018``): ``AE1`` without ``back``, ``NG`` without
+``alveolar`` and ``W`` with ``voice``. ``RECODED`` below writes the three out by hand,
+old set to new. The feature sets and the targets are asserted exactly against the
+recording with those sets rewritten, and the recording is checked to hold them at four
+positions a side, so the rewrite is not vacuous: every other position is read as it always
+was. The recorded gradient is first checked to be the count its test describes, taken over
+the recorded sets, so nothing else it held is dropped. The model's gradient is then
+compared with the same count over the rewritten sets.
+
 **Two differences of form are bridged, not asserted.** The fixture holds phonology as a
 ragged ``list[list[Tensor]]`` of feature indices and the tokenizer returns a
 ``(batch, sequence)`` tensor of row ids; ``canon_features`` reduces both to one form. The
@@ -86,12 +112,52 @@ import torch
 from bridge.domain.datamodels import BridgeInput, ModelConfig, VocabSpec
 from bridge.domain.model import Model
 from bridge.domain.tokenizer.bridge_tokenizer import BridgeTokenizer
+from bridge.domain.tokenizer.character_tokenizer import SPANISH_CHARACTERS
 
 FIXTURE_PATH = Path(__file__).resolve().parents[1] / "fixtures" / "phon_baseline.pt"
 
 # Gradients diverge further than the forward pass under a reduction-order change: measured
 # worst case is 3.8e-6 absolute, which clears the default rtol=1e-5 but not atol alone.
 GRAD_ATOL, GRAD_RTOL = 1e-6, 1e-5
+
+
+# Feature sets the recording holds that the table codes differently now, old to new, as
+# feature columns. See "The features of three phonemes" in this module's docstring.
+RECODED = {
+    (14, 15, 17, 22, 29): (14, 15, 22, 29),  # AE1 without `back`
+    (2, 4, 9, 14): (4, 9, 14),  # NG without `alveolar`
+    (0, 11): (0, 11, 14),  # W with `voice`
+}
+# In the recording, per side: two AE1 ("at" twice), one NG ("long"), one W ("world").
+RECODED_POSITIONS = 4
+
+
+def recoded(features: list[list[tuple[int, ...]]]) -> list[list[tuple[int, ...]]]:
+    return [[RECODED.get(position, position) for position in row] for row in features]
+
+
+def recoded_targets(targets: torch.Tensor) -> tuple[torch.Tensor, int]:
+    """``targets`` with each recoded feature set rewritten, and how many positions held one."""
+    rewritten, positions = targets.clone(), 0
+    for old, new in RECODED.items():
+        before, after = (torch.zeros(targets.shape[-1], dtype=targets.dtype) for _ in range(2))
+        before[list(old)] = 1
+        after[list(new)] = 1
+        held = (targets == before).all(dim=-1)
+        rewritten[held] = after
+        positions += int(held.sum())
+    return rewritten, positions
+
+
+def feature_counts(features: list[list[tuple[int, ...]]], columns: int) -> torch.Tensor:
+    """Per feature column, the sum over positions holding it of one over that position's
+    feature count: the gradient of an embedded batch's sum, in float64."""
+    counts = torch.zeros(columns, dtype=torch.float64)
+    for row in features:
+        for position in row:
+            for feature in position:
+                counts[feature] += 1 / len(position)
+    return counts
 
 
 def canon_features(ids, tokenizer) -> list[list[tuple[int, ...]]]:
@@ -209,11 +275,18 @@ RETIRED_VOCAB_FIELDS = {"orth_spc_id", "phon_spc_id"}
 
 
 def test_vocab_spec_unchanged(baseline, rebuilt):
+    """Superseded in one value; see this module's docstring. The recorded
+    ``orth_vocab_size`` is the size before the Spanish characters, which sit after every
+    entry it counted. Every other recorded value is the tokenizer's, exactly."""
     tokenizer, _, _ = rebuilt
     current = VocabSpec.from_tokenizer(tokenizer).model_dump()
     for key, expected in baseline["vocab"].items():
         if key in RETIRED_VOCAB_FIELDS:
             assert key not in current, f"VocabSpec.{key} came back"
+            continue
+        if key == "orth_vocab_size":
+            assert current[key] - len(SPANISH_CHARACTERS) == expected, f"VocabSpec.{key} changed"
+            assert tokenizer.char_tokenizer.vocab[expected:] == list(SPANISH_CHARACTERS)
             continue
         assert current[key] == expected, f"VocabSpec.{key} changed"
 
@@ -237,15 +310,23 @@ def test_phonological_pad_masks_unchanged(baseline, rebuilt, field):
 
 @pytest.mark.parametrize("side", ["enc", "dec"])
 def test_phonological_feature_sets_unchanged(baseline, rebuilt, side):
-    """The load-bearing one: same features per position, whatever the storage."""
+    """The load-bearing one: same features per position, whatever the storage.
+
+    Superseded at three phonemes; see this module's docstring."""
     tokenizer, example, _ = rebuilt
     actual = canon_features(recorded_field(example, "phon", f"{side}_input_ids"), tokenizer)
-    assert actual == baseline["tok"][f"phon_{side}_features"]
+    recorded = baseline["tok"][f"phon_{side}_features"]
+    held = sum(position in RECODED for row in recorded for position in row)
+    assert held == RECODED_POSITIONS
+    assert actual == recoded(recorded)
 
 
 def test_phon_targets_unchanged(baseline, rebuilt):
+    """Superseded at three phonemes; see this module's docstring."""
     _, example, _ = rebuilt
-    assert torch.equal(phon_targets_of(example), baseline["tok"]["phon_targets"])
+    expected, held = recoded_targets(baseline["tok"]["phon_targets"])
+    assert held == RECODED_POSITIONS
+    assert torch.equal(phon_targets_of(example), expected)
 
 
 def test_an_input_without_phonology_generates_on_the_pathway_the_stand_in_served(baseline, rebuilt):
@@ -300,18 +381,29 @@ def test_embed_phon_tokens_has_the_recorded_form(baseline, rebuilt, side):
 
 
 def test_gradients_unchanged(baseline, rebuilt):
-    """Compared with the recording at the tolerance it has always had, ``GRAD_ATOL`` and
-    ``GRAD_RTOL``. The gradient of an embedded batch's sum with respect to the
-    phonological embedding counts how often each feature is active, divided by its
-    phoneme's feature count. No weight enters it and no position does."""
+    """Superseded at three phonemes; see this module's docstring.
+
+    The gradient of an embedded batch's sum with respect to the phonological embedding
+    counts how often each feature is active, divided by its phoneme's feature count. No
+    weight enters it and no position does. The recording is checked to be that count over
+    the recorded feature sets, at the tolerance it has always had, ``GRAD_ATOL`` and
+    ``GRAD_RTOL``. The model's gradient is compared, at the same tolerance, with the count
+    over those sets recoded."""
     _, example, model = rebuilt
+    recorded = baseline["grads"]["phonology_embedding"]
+    features = baseline["tok"]["phon_dec_features"]
+
+    def expected(sets):
+        counts = feature_counts(sets, recorded.shape[0]).to(recorded.dtype)
+        return counts[:, None].expand_as(recorded)
+
+    assert torch.allclose(recorded, expected(features), atol=GRAD_ATOL, rtol=GRAD_RTOL)
+
     model.zero_grad(set_to_none=True)
     model.embed_phon_tokens(example["target"].phon.ids).sum().backward()
     actual = model.phonology_embedding.weight.grad
     model.zero_grad(set_to_none=True)
-    assert torch.allclose(
-        actual, baseline["grads"]["phonology_embedding"], atol=GRAD_ATOL, rtol=GRAD_RTOL
-    )
+    assert torch.allclose(actual, expected(recoded(features)), atol=GRAD_ATOL, rtol=GRAD_RTOL)
 
 
 def test_the_recorded_position_gradient_has_no_parameter_left_to_reach(baseline, rebuilt):

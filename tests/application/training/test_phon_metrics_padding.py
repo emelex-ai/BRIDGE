@@ -5,7 +5,7 @@ Phonological targets are multi-hot rows whose only values are 0, 1 and 35, so th
 comparison is a tautology: it keeps every position, and padded rows are scored as though
 they were real phonemes. See docs/decisions/0005.
 
-The two id spaces are the trap. Row space (0 to 90) says which phoneme; feature space
+The two id spaces are the trap. Row space (0 to 97) says which phoneme; feature space
 (0 to 35) says which phonetic feature, and the target's labels live in feature space
 where [PAD] is 35. A literal that belongs to neither space silently disables the mask
 instead of raising.
@@ -68,7 +68,7 @@ def tokenizer():
 
 @pytest.fixture(scope="module")
 def phon_reps():
-    """What ``TrainingPipeline`` passes: the (86, 31) base feature matrix."""
+    """What ``TrainingPipeline`` passes: the (93, 31) base feature matrix."""
     return PHONEME_TABLE.phonetic_features
 
 
