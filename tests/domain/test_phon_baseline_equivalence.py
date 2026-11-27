@@ -5,7 +5,7 @@ before the phonological refactor (issue #221). This module rebuilds the same obj
 asserts every recorded value that still describes them.
 
 **The fixture is immutable.** Regenerating it to make a test pass destroys the only thing
-it is for. Three groups of recorded values are superseded. Each is handled by reducing its
+it is for. Four groups of recorded values are superseded. Each is handled by reducing its
 assertions here to what still holds, and the fixture is not touched.
 
 **Orthographic generation.** Generation seeds the orthographic decoder with the
@@ -64,6 +64,21 @@ What the model computes is pinned against reference and analytic oracles in
 ``tests/domain/model/test_rotary_layers.py``, ``tests/domain/model/test_any_length.py`` and
 ``tests/domain/model/test_max_new_tokens.py``, not against a re-recording.
 
+**The orthographic vocabulary size.** The recording holds ``orth_vocab_size`` 109: six
+special tokens, three language tokens and the 100 characters of ``string.printable``. The
+tokenizer's vocabulary is those 109 followed by 16 characters of Spanish (issue #237), so
+its size is 125 and the recorded number is no longer the tokenizer's. Measured 2026-11-27
+against ``3d28ee9``, the commit before that change, on CPU: none of the 109 moved, and
+every row that decoded to its own text there encodes to the same ids, masks and labels,
+253220 of 253220 rows over both lexicons, each tagged with its language and untagged,
+and 4818 of 4818 mixed phrases. The reduced assertion reads the recorded number exactly,
+as the size of the vocabulary before the characters ``SPANISH_CHARACTERS`` names, and
+every other recorded vocabulary value as it always did. The model rebuilt here is still
+built at the recorded size, which every id of the fixture's words is under, so the
+recorded shapes ``(9, 30)`` and ``(9, 30, 109)`` are still the shapes it gives. The ids
+of the added characters are pinned by hand in
+``tests/domain/tokenizer/test_character_tokenizer.py``.
+
 **Two differences of form are bridged, not asserted.** The fixture holds phonology as a
 ragged ``list[list[Tensor]]`` of feature indices and the tokenizer returns a
 ``(batch, sequence)`` tensor of row ids; ``canon_features`` reduces both to one form. The
@@ -86,6 +101,7 @@ import torch
 from bridge.domain.datamodels import BridgeInput, ModelConfig, VocabSpec
 from bridge.domain.model import Model
 from bridge.domain.tokenizer.bridge_tokenizer import BridgeTokenizer
+from bridge.domain.tokenizer.character_tokenizer import SPANISH_CHARACTERS
 
 FIXTURE_PATH = Path(__file__).resolve().parents[1] / "fixtures" / "phon_baseline.pt"
 
@@ -209,11 +225,18 @@ RETIRED_VOCAB_FIELDS = {"orth_spc_id", "phon_spc_id"}
 
 
 def test_vocab_spec_unchanged(baseline, rebuilt):
+    """Superseded in one value; see this module's docstring. The recorded
+    ``orth_vocab_size`` is the size before the Spanish characters, which sit after every
+    entry it counted. Every other recorded value is the tokenizer's, exactly."""
     tokenizer, _, _ = rebuilt
     current = VocabSpec.from_tokenizer(tokenizer).model_dump()
     for key, expected in baseline["vocab"].items():
         if key in RETIRED_VOCAB_FIELDS:
             assert key not in current, f"VocabSpec.{key} came back"
+            continue
+        if key == "orth_vocab_size":
+            assert current[key] - len(SPANISH_CHARACTERS) == expected, f"VocabSpec.{key} changed"
+            assert tokenizer.char_tokenizer.vocab[expected:] == list(SPANISH_CHARACTERS)
             continue
         assert current[key] == expected, f"VocabSpec.{key} changed"
 

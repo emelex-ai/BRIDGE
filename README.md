@@ -117,7 +117,7 @@ Two things to know before using long sequences. Both were measured, and [decisio
 | `num_orth_dec_layers` | 2 |
 | `num_phon_dec_layers` | 2 |
 
-A checkpoint loads only into a model with the same tensors, name for name and shape for shape. Anything else raises a `RuntimeError` that names the file, and leaves the model as it was. That includes a checkpoint from a model that held position tables, such as one saved at commit `a3cb285`. There is no migration for those.
+A checkpoint loads only into a model with the same tensors, name for name and shape for shape. Anything else raises a `RuntimeError` that names the file, and leaves the model as it was. That includes a checkpoint from a model that held position tables, such as one saved at commit `a3cb285`. There is no migration for those. It also includes a checkpoint saved with another orthographic vocabulary, such as one saved at commit `3d28ee9` or before, whose orthographic tensors have 109 rows where the model has 125.
 
 ---
 
@@ -273,6 +273,50 @@ the word is gato        EN EN EN ES
 ```
 
 An input in one language is therefore laid out as `[LANG, BOS, …chars, EOS, PAD, …]`. A call with no `languages` leaves every row unspecified: the `"--"` token, and English pronunciations.
+
+### Characters
+
+The orthographic vocabulary holds 125 entries. Each keeps its id for good, because an id is a row of every checkpoint's orthographic embedding. New characters are added at the end.
+
+| ids | entries |
+|---|---|
+| 0 to 5 | `[BOS]`, `[EOS]`, `[PAD]`, `[UNK]`, `[CLS]`, `[SEP]` |
+| 6 to 8 | the language tokens `--`, `EN`, `ES` |
+| 9 to 108 | Python's `string.printable`: the 100 digits, letters, punctuation marks and whitespace characters of ASCII |
+| 109 to 124 | the Spanish characters `á é í ó ú ü ñ`, `Á É Í Ó Ú Ü Ñ`, `¿` and `¡` |
+
+Every word in both lexicons is spelt with these, so every one decodes to itself.
+
+```python
+from bridge import BridgeTokenizer
+
+tok = BridgeTokenizer()
+chars = tok.char_tokenizer
+
+# The Spanish letters, their capitals, and the opening marks are characters of their own.
+chars.decode(chars.encode_input(["¿Qué año?"], ["ES"]).ids.tolist())
+# ['¿Qué año?']
+
+# A row is composed to Unicode NFC first, so "e" followed by a combining acute accent
+# (U+0301) is the one letter "é": the same ids, and the same pronunciation.
+typed_apart = tok.encode_input(["que\u0301"], ["ES"])
+composed = tok.encode_input(["qué"], ["ES"])
+typed_apart.orth.ids.tolist() == composed.orth.ids.tolist()
+# True
+typed_apart.phon.ids.tolist() == composed.phon.ids.tolist()
+# True
+
+# Orthography keeps case. A pronunciation is looked up in lower case.
+shouted = tok.encode_input(["QUÉ"], ["ES"])
+shouted.orth.ids.tolist() == composed.orth.ids.tolist()
+# False
+shouted.phon.ids.tolist() == composed.phon.ids.tolist()
+# True
+
+# Any other character encodes as [UNK], and decoding leaves it out.
+chars.decode(chars.encode_input(["garçon"]).ids.tolist())
+# ['garon']
+```
 
 ### Dataset files
 

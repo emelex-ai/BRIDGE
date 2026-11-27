@@ -369,22 +369,22 @@ def test_a_word_takes_the_language_in_force_at_its_first_character(tok):
 
 
 def test_an_unknown_character_is_dropped_and_its_word_keeps_its_language(tok):
-    """Oracle: hand-written. ``é`` encodes as ``[UNK]``, which decoding leaves out.
+    """Oracle: hand-written. ``ç`` encodes as ``[UNK]``, which decoding leaves out.
 
     The word it sat in is still a word, so the row keeps one language per word.
     """
-    out = tok.char_tokenizer.encode_input(["qué pasa"], ["ES EN"])
+    out = tok.char_tokenizer.encode_input(["ça pasa"], ["ES EN"])
     assert names(tok, out.ids[0]) == [
         "ES",
         "[BOS]",
-        *"qu",
         "[UNK]",
+        "a",
         " ",
         "EN",
         *"pasa",
         "[EOS]",
     ]
-    assert tok.decode_with_languages(out.ids.tolist()) == [("qu pasa", ["ES", "EN"])]
+    assert tok.decode_with_languages(out.ids.tolist()) == [("a pasa", ["ES", "EN"])]
 
 
 def test_an_unspecified_row_decodes_to_none_per_word_and_encodes_back(tok):

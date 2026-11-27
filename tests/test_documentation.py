@@ -208,6 +208,48 @@ def test_the_size_tables_give_the_real_defaults(architecture, readme):
         )
 
 
+def test_the_vocabulary_tables_give_the_real_ids(architecture, readme):
+    """The map and the README each tabulate the orthographic vocabulary by id range.
+
+    Oracle: a live ``CharacterTokenizer``. An id is a row of a checkpoint's embedding, so
+    a table one off sends a reader to the wrong row. A character added to the vocabulary
+    and not to both tables fails here too.
+    """
+    import string
+
+    from bridge import CharacterTokenizer
+    from bridge.domain.tokenizer.character_tokenizer import SPANISH_CHARACTERS
+
+    tok = CharacterTokenizer()
+    groups = [
+        tok.special_tokens,
+        tok.language_tokens,
+        list(string.printable),
+        list(SPANISH_CHARACTERS),
+    ]
+    assert [entry for group in groups for entry in group] == tok.vocab
+    bounds, start = [], 0
+    for group in groups:
+        bounds.append((start, start + len(group) - 1))
+        start += len(group)
+
+    for name, document, heading in (
+        ("docs/architecture.md", architecture, "## The orthographic vocabulary"),
+        ("README.md", readme, "### Characters"),
+    ):
+        section = document.split(heading)[1].split("\n#")[0]
+        size = re.search(r"holds (\d+) entries", flat(section))
+        assert size and int(size.group(1)) == len(tok.vocab), f"{name}: vocabulary size"
+        rows = re.findall(r"^\| (\d+) to (\d+) \| (.*) \|$", section, re.M)
+        assert [(int(first), int(last)) for first, last, _ in rows] == bounds, name
+        specials, languages, printable, spanish = (cell for _, _, cell in rows)
+        assert re.findall(r"`(\[\w+\])`", specials) == tok.special_tokens, name
+        assert re.findall(r"`([^`]+)`", languages) == tok.language_tokens, name
+        assert "`string.printable`" in printable, name
+        assert f"the {len(string.printable)} " in printable, name
+        assert sorted(ch for ch in spanish if not ch.isascii()) == sorted(SPANISH_CHARACTERS), name
+
+
 def test_the_recorded_parameter_count_is_a_default_models(project_rules):
     """The project rules say how many parameter tensors and scalars a default model has,
     which is what a differential reports "n of n tensors" against.

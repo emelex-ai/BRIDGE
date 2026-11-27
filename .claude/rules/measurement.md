@@ -108,7 +108,8 @@ Re-measure rather than reuse these figures if the shapes, the optimizer or the d
 change. Reruns of an unchanged tree are bit-exact, 167 of 167 tensors, so any nonzero
 difference between two runs of the same code indicates a real nondeterminism, not noise.
 
-A default model has 167 parameter tensors and 625779 scalars, at `d_embedding` 2.
+A default model has 167 parameter tensors and 627843 scalars, at `d_embedding` 2 and an
+orthographic vocabulary of 125.
 
 ## Splitting exact from approximate
 

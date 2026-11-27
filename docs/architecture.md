@@ -178,6 +178,52 @@ language token, so it measures spelling alone. `VocabSpec.orth_language_ids` nam
 language tokens and is required, so both pairs are always reported. See
 `docs/decisions/0015`.
 
+## The orthographic vocabulary
+
+`CharacterTokenizer` (`bridge/domain/tokenizer/character_tokenizer.py`) holds 125 entries
+in a fixed order.
+
+| ids | entries |
+|---|---|
+| 0 to 5 | the special tokens `[BOS]`, `[EOS]`, `[PAD]`, `[UNK]`, `[CLS]`, `[SEP]` |
+| 6 to 8 | the language tokens `--`, `EN`, `ES` |
+| 9 to 108 | Python's `string.printable`: the 100 digits, letters, punctuation marks and whitespace characters of ASCII |
+| 109 to 124 | `SPANISH_CHARACTERS`: `á é í ó ú ü ñ`, `Á É Í Ó Ú Ü Ñ`, `¿` and `¡` |
+
+An id is a row of the orthographic embedding and of the output head, so it is part of
+every checkpoint. The list is written out in the code and never read from a lexicon file.
+It grows only at its end.
+
+Think of numbered seats. A new guest takes the next free seat, and nobody already sitting
+moves.
+
+Every spelling in both shipped lexicons is made of these characters, so every word
+decodes to itself: 123472 English keys and 7095 Spanish keys, counted 2026-11-27.
+`tests/domain/tokenizer/test_lexicon_spellings.py` pins that for every word of every
+lexicon file. The seven lower-case Spanish letters are the ones the Spanish lexicon uses.
+The capitals, `¿` and `¡` are in no lexicon word, and are there because a writer of
+Spanish types them.
+
+**A row is composed before it is read.** An accented letter can arrive as one code point
+(`é`, U+00E9) or as a base letter and a combining mark (`e`, then U+0301). `read_rows` in
+`bridge/domain/tokenizer/languages.py` composes every row to Unicode NFC, and both
+tokenizers read a row through it. The two forms give the same ids and the same
+pronunciation, and a row decodes to the composed form. A composed letter is one character,
+so it is one token.
+
+Composing never moves a word boundary, so the dataset's count of a cell's words at load,
+taken on the cell as written, is the tokenizers' count. Measured 2026-11-27 over every
+code point of Unicode 15.0: no code point changes between whitespace and non-whitespace
+under NFC.
+
+**Case is kept in orthography and ignored in a lexicon lookup.** `Qué` and `qué` are
+different ids, and each decodes as written. Phonology looks a word up by its lower-case
+composed spelling, so both have one pronunciation. A lexicon key is filed the same way,
+whichever case and form its file holds it in.
+
+**Any other character is `[UNK]`.** `ç`, `à` and `«` are three. Decoding leaves `[UNK]`
+out, so `garçon` decodes as `garon`. No shipped lexicon word holds one.
+
 ## A dataset row is an input and a target
 
 `BridgeDataset` (`bridge/domain/data/bridge_dataset.py`) reads a csv or a pkl file with
@@ -301,7 +347,8 @@ bridge/domain/datamodels/             VocabSpec, ModelConfig, GenerationOutput, 
 bridge/domain/datamodels/encodings.py Tokens, Target, BridgeInput, BridgeTarget, BridgeBatch
 bridge/domain/datamodels/pathways.py  PATHWAY_IO: what each pathway reads and writes
 bridge/domain/tokenizer/              CharacterTokenizer, PhonemeTokenizer, BridgeTokenizer
-bridge/domain/tokenizer/languages.py  what a word is, and which language each word is in
+bridge/domain/tokenizer/languages.py  what a word is, which language each word is in, and
+                                      the composed form a row is read in
 bridge/domain/model/layers.py         rotate, and the encoder and decoder blocks whose
                                       self-attention reads position through it
 bridge/domain/model/model.py          token embeddings, the mixer, the five pathways,
@@ -318,6 +365,8 @@ tests/domain/model/test_rotary_layers.py
 tests/domain/model/test_any_length.py position, padding and generation on the whole model
 tests/domain/model/test_max_new_tokens.py
                                       the cap on what generation writes
+tests/domain/tokenizer/test_lexicon_spellings.py
+                                      every lexicon spelling survives encode then decode
 tests/test_documentation.py           asserts this document against the live system
 tests/test_diagram.py                 asserts BRIDGE-Models.drawio against the live model
 tests/fixtures/sync_diagram_table.py  rewrites the figure's feature table from phonreps.csv
@@ -442,6 +491,12 @@ one saved at commit `a3cb285`, the last commit with the tables. There is no migr
 those weights were trained to read position from the tables, and would mean nothing
 here. A checkpoint whose `d_embedding` or `d_model` differs from the model's is refused
 by its shapes. See `docs/decisions/0017`.
+
+So is a checkpoint saved with another orthographic vocabulary. One saved at commit
+`3d28ee9`, the last with 109 entries, holds 109 rows in `orthography_embedding.weight`,
+`linear_orthography_decoder.weight` and `linear_orthography_decoder.bias`, where the
+model has 125. The load raises naming 3 of 167 tensors, and no tensor, optimizer entry or
+`start_epoch` changes. No migration is provided. Measured 2026-11-27 on CPU.
 
 ## Dependencies
 
